@@ -156,8 +156,15 @@
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyOXz7C9aeNepwulbnJ2H6Hr-Jw1vU4w42VcQajYDFFqYZbSWunvI3hT2YppGFNu7yv/exec";
 const MAQUINAS = ['BL005','BL009','CAT320','EXC001','EXC013','EXC014','EXC015','MC705','MO03','MO04','MO09','NH69'];
-const ACTIVIDADES = ['DESMONTE','EXCAVACION COMUN','EXCAVACION PRESTAMO','TERRAPLEN','SUBBASE','BASE','CONFORMACION'];
-const SUBACTIVIDADES = ['DESMONTE','EXCAVACION APROVECHABLE','EXCAVACION NO APROVECHABLE','NUCLEO DE TERRAPLEN','CORONA DE TERRAPLEN','CONFORMACION SUBBASE','CEREO SUBBASE','ZODME','CEREO CORONA','DESCAPOTE'];
+const ACTIVIDADES = ['CONFORMACION','DESMONTE','EXCAVACION COMUN','EXCAVACION PRESTAMO','SUBBASE','TERRAPLEN'];
+const SUBACTIVIDADES = {
+  'CONFORMACION':        ['ZODME'],
+  'DESMONTE':            ['DESMONTE','DESCAPOTE'],
+  'EXCAVACION COMUN':    ['EXCAVACION APROVECHABLE','EXCAVACION NO APROVECHABLE'],
+  'EXCAVACION PRESTAMO': ['EXCAVACION APROVECHABLE','EXCAVACION NO APROVECHABLE'],
+  'SUBBASE':             ['CEREO SUBBASE','CONFORMACION SUBBASE'],
+  'TERRAPLEN':           ['NUCLEO DE TERRAPLEN','CORONA DE TERRAPLEN','CEREO CORONA']
+};
 const ESTADOS = ['ESPERA','LLUVIAS','MANTENIMIENTO','VARADO','SIN OPERADOR','NO PROGRAMADO','OPERANDO','MEDIA JORNADA'];
 const TIPO_EQUIPO = {
   'BL005':'BULLDOZER','BL009':'BULLDOZER','NH69':'BULLDOZER',
@@ -205,7 +212,19 @@ function initFecha() {
 }
 
 function actOpts() { return ACTIVIDADES.map(a=>`<option>${a}</option>`).join(''); }
-function subOpts() { return SUBACTIVIDADES.map(s=>`<option>${s}</option>`).join(''); }
+function subOpts(actividad='') {
+  const subs = actividad && SUBACTIVIDADES[actividad] ? SUBACTIVIDADES[actividad] : [];
+  if (!actividad) return '<option value="">— elige actividad primero —</option>';
+  return subs.map(s=>`<option>${s}</option>`).join('');
+}
+function updateSubs(actSelect) {
+  const actividad = actSelect.value;
+  const block = actSelect.closest('.actividad-block');
+  const subSelect = block.querySelector('.a-sub');
+  subSelect.innerHTML = subOpts(actividad);
+  subSelect.disabled = !actividad;
+}
+
 function estOpts() { return ESTADOS.map(e=>`<option>${e}</option>`).join(''); }
 
 function buildActividadHTML(mIdx, aIdx) {
@@ -218,11 +237,11 @@ function buildActividadHTML(mIdx, aIdx) {
     <div class="grid2">
       <div class="field">
         <label>Actividad <span class="req">*</span></label>
-        <select class="a-act"><option value="">Seleccionar...</option>${actOpts()}</select>
+        <select class="a-act" onchange="updateSubs(this)"><option value="">Seleccionar...</option>${actOpts()}</select>
       </div>
       <div class="field">
         <label>Sub Actividad <span class="req">*</span></label>
-        <select class="a-sub"><option value="">Seleccionar...</option>${subOpts()}</select>
+        <select class="a-sub" disabled><option value="">— elige actividad primero —</option></select>
       </div>
     </div>
     <div class="field">
