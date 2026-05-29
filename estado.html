@@ -100,7 +100,7 @@
 </div>
 
 <script>
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzBd-eCxGN608_6X6yCX8mkxrNPx5p_oFQUyqegkQJa-Ot4ZEMxTtQ9Kqxjpd2k94cr/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx0Eo_9by3BwfJFuYpJ0Yt4_vFRj5e2Bwg1gzuw2TmtD4p88ospAZVnmumuQR44m-8/exec";
 const TODAS_MAQUINAS = ['BL005','BL009','CAT320','EXC001','EXC013','EXC014','EXC015','MC705','MO03','MO04','MO09','NH69'];
 const TIPO_EQUIPO = {
   'BL005':'BULLDOZER','BL009':'BULLDOZER','NH69':'BULLDOZER',
@@ -126,7 +126,8 @@ async function consultar() {
   document.getElementById('resultados').innerHTML = '<div class="loading">⏳ Consultando datos...</div>';
 
   try {
-    const url = `${APPS_SCRIPT_URL}?action=estado&fecha=${fecha}&proyecto=${encodeURIComponent(proyecto)}`;
+    let url = `${APPS_SCRIPT_URL}?action=estado&fecha=${fecha}`;
+    if (proyecto) url += `&proyecto=${encodeURIComponent(proyecto)}`;
     const resp = await fetch(url);
     const data = await resp.json();
     renderResultados(data.reportadas || [], fecha, proyecto);
