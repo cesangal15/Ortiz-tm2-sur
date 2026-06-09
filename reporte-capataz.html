@@ -250,6 +250,9 @@ function onPkChange(i){
   else { ccBadge.style.display='none'; }
 }
 
+const MOTIVOS = ['Mantenimiento','Sin operador','Falla mecánica','Lluvia / clima','Sin frente de trabajo','Esperando material','Abastecimiento de combustible','Traslado / movilización','Otro (especificar)'];
+function motivoOptions(){ return '<option value="">— Motivo —</option>'+MOTIVOS.map(m=>'<option>'+m+'</option>').join(''); }
+function onMotChange(sel){ const otro=sel.parentElement.querySelector('.e-mot-otro'); otro.style.display=(sel.value==='Otro (especificar)')?'block':'none'; }
 let eqIdx=0;
 function addEquipo(i){
   const cont=document.getElementById('eqs_'+i);
@@ -265,7 +268,9 @@ function addEquipo(i){
     +'<div class="field" style="margin:0;"><label>Horas operadas <span class="req">*</span></label><input type="number" step="any" class="e-hrs" placeholder="0" oninput="onEqChange('+j+')"></div>'
     +'</div>'
     +'<div class="eq-diff" id="eqdiff_'+j+'"></div>'
-    +'<div class="eq-motivo field" id="eqmot_'+j+'" style="margin:0;"><label>Motivo de horas menos <span class="req">*</span></label><input type="text" class="e-mot" placeholder="ej. mantenimiento, sin operador, lluvia"></div>';
+    +'<div class="eq-motivo field" id="eqmot_'+j+'" style="margin:0;"><label>Motivo de horas menos <span class="req">*</span></label>'
+    +'<select class="e-mot-sel" onchange="onMotChange(this)">'+motivoOptions()+'</select>'
+    +'<input type="text" class="e-mot-otro" placeholder="especifica el motivo" style="display:none;margin-top:8px;"></div>';
   cont.appendChild(row);
 }
 function onEqChange(j){
@@ -307,8 +312,9 @@ function getCantidades(){
       if(!id && !hrs) return;
       const ph=progHoras(id);
       const muertas=Math.max(0, +(ph-hrs).toFixed(2));
+      const motSel=r.querySelector('.e-mot-sel'); const motivo = motSel ? (motSel.value==='Otro (especificar)' ? (r.querySelector('.e-mot-otro').value||'').trim() : motSel.value) : '';
       equipos.push({ id_maquina:id, tipo_equipo:TIPO_EQUIPO[id]||'', operador:r.querySelector('.e-op').value.trim(),
-        horas_programadas:ph, horas_operadas:hrs, horas_muertas:muertas, motivo:(r.querySelector('.e-mot').value||'').trim() });
+        horas_programadas:ph, horas_operadas:hrs, horas_muertas:muertas, motivo:motivo });
     });
     rows.push({
       grupo: grupoFromCc(x.cc), capitulo: capFromCc(x.cc),
@@ -337,13 +343,16 @@ function validate(){
     if(!pki.value.trim()){ pki.classList.add('field-error'); ok=false; }
     if(!largo.value){ largo.classList.add('field-error'); ok=false; }
     b.querySelectorAll('.eq-item').forEach(r=>{
-      const idI=r.querySelector('.e-id'), hrsI=r.querySelector('.e-hrs'), opI=r.querySelector('.e-op'), motI=r.querySelector('.e-mot');
+      const idI=r.querySelector('.e-id'), hrsI=r.querySelector('.e-hrs'), opI=r.querySelector('.e-op'), motSel=r.querySelector('.e-mot-sel'), motOtro=r.querySelector('.e-mot-otro');
       const id=idI.value, hrs=parseFloat(hrsI.value)||0;
       if(!id && !hrs && !opI.value.trim()) return; // fila vacía, se ignora
       if(!id){ idI.classList.add('field-error'); ok=false; }
       if(!opI.value.trim()){ opI.classList.add('field-error'); ok=false; }
       if(!hrsI.value){ hrsI.classList.add('field-error'); ok=false; }
-      if(id && hrs>0 && (progHoras(id)-hrs)>0.01 && !motI.value.trim()){ motI.classList.add('field-error'); ok=false; }
+      if(id && hrs>0 && (progHoras(id)-hrs)>0.01){
+        if(!motSel.value){ motSel.classList.add('field-error'); ok=false; }
+        else if(motSel.value==='Otro (especificar)' && !motOtro.value.trim()){ motOtro.classList.add('field-error'); ok=false; }
+      }
     });
   });
   if(getCantidades().length===0){ alert('Agrega al menos una actividad.'); return false; }
