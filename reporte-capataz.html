@@ -45,6 +45,7 @@
   .badge.uf1{border-color:rgba(58,155,220,0.4);background:rgba(58,155,220,0.1);color:var(--uf1);}
   .badge.uf2{border-color:rgba(155,89,182,0.4);background:rgba(155,89,182,0.1);color:var(--uf2);}
   .badge.unidad{border-color:rgba(245,166,35,0.3);background:rgba(245,166,35,0.08);color:var(--accent);}
+  .badge.nodata{border-color:rgba(122,128,160,0.4);color:var(--muted);}
   .largo-wrap{position:relative;}
   .largo-unit{position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--muted);pointer-events:none;}
   .equipos-block{margin-top:14px;border-top:1px dashed var(--border);padding-top:12px;}
@@ -73,7 +74,6 @@
   .success p{color:var(--muted);font-size:14px;margin-bottom:24px;}
   .success button{padding:12px 28px;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:'Syne',sans-serif;font-weight:700;cursor:pointer;}
   .hidden{display:none;}
-  @media(max-width:430px){.grid2{gap:8px;}}
 </style>
 </head>
 <body>
@@ -121,64 +121,54 @@
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
 
-/* Actividad específica (lo que ve el capataz)  ->  ítem contractual (lo que va a DATA) */
+/* Actividad: medida = m3 | m2_via (cereo, =ml×ancho) | ha | directo ; data = entra a DATA */
 const ACTIVIDADES = [
-  {g:'Excavación', a:'Excavación aprovechable (masivo)', item:'Excavaciones en material común APROVECHABLE', uni:'m3', cc:'02.05'},
-  {g:'Excavación', a:'Excavación no aprovechable', item:'Excavaciones en material común NO APROVECHABLE', uni:'m3', cc:'02.05'},
-  {g:'Excavación', a:'Excavación de préstamo (Diviso)', item:'Excavación en material común de préstamos', uni:'m3', cc:'02.06'},
-  {g:'Terraplén', a:'Núcleo de terraplén', item:'Terraplenes (solo conformación)', uni:'m3', cc:'02.07'},
-  {g:'Terraplén', a:'Corona de terraplén', item:'Terraplenes (solo conformación)', uni:'m3', cc:'02.07'},
-  {g:'Terraplén', a:'Cereo de corona', item:'Terraplenes (solo conformación)', uni:'m3', cc:'02.07'},
-  {g:'Conformación', a:'Conformación y disposición de sobrantes (ZODME)', item:'Conformación y disposición de sobrantes', uni:'m3', cc:'02.08'},
-  {g:'Pedraplén', a:'Pedraplén compacto', item:'Pedraplén compacto', uni:'m3', cc:'02.07'},
-  {g:'Subbase', a:'Conformación de subbase', item:'Subbase Granular', uni:'m3', cc:'03.01'},
-  {g:'Subbase', a:'Cereo de subbase', item:'Subbase Granular', uni:'m3', cc:'03.01'},
-  {g:'Base', a:'Base estabilizada con cemento (BTC)', item:'Base granular estabilizada con cemento', uni:'m3', cc:'03.03'},
-  {g:'Desmonte', a:'Desmonte y limpieza en bosque', item:'Desmonte y limpieza en bosque', uni:'Ha', cc:'02.01'},
-  {g:'Desmonte', a:'Descapote / zonas no boscosas', item:'Desmonte y limpieza en zonas no boscosas', uni:'Ha', cc:'02.03'},
-  {g:'Estructuras / MSR', a:'Relleno para muros de tierra MSR', item:'Relleno para muros de tierra MSR', uni:'M3', cc:'05.04'},
-  {g:'Estructuras / MSR', a:'Material granular drenante MSR', item:'Material granular drenante MSR', uni:'M3', cc:'05.05'},
-  {g:'Estructuras / MSR', a:'Geobolsas / costales (propybag)', item:'Geobolsas de geotextil (propybag) MSR', uni:'UND', cc:'05.11'},
-  {g:'Estructuras / MSR', a:'Geomalla uniaxial 115 kn/m', item:'Geomalla tejida uniaxial de 115 kn/m (método md)', uni:'M2', cc:'05.07'},
-  {g:'Estructuras / MSR', a:'Geomalla uniaxial 55 kn/m', item:'Geomalla tejida uniaxial de 55 kn/m (método md)', uni:'M2', cc:'05.06'},
-  {g:'Estructuras / MSR', a:'Geotextil tejido 2890 n', item:'Geotextil tejido uniaxial de 2890 n (método grab md)', uni:'M2', cc:'05.09'},
-  {g:'Estructuras / MSR', a:'Geotextil tejido 1480 n', item:'Geotextil tejido uniaxial de 1480 n (método grab md)', uni:'M2', cc:'05.08'},
-  {g:'Estructuras / MSR', a:'Geodrén planar h=1 m', item:'Geodrén planar h=1 m MSR', uni:'M', cc:'05.10'},
-  {g:'Estructuras / MSR', a:'Geodrén planar h=0,5 m', item:'Geodrén planar h=0,5 m MSR', uni:'M', cc:'05.02'},
-  {g:'Estructuras / MSR', a:'Tubería PVC 4" perforada', item:'Tubería PVC d=4" para drenaje perforada MSR', uni:'M', cc:'05.03'},
+  {g:'Excavación', a:'Excavación aprovechable (masivo)', item:'Excavaciones en material común APROVECHABLE', uni:'m3', cc:'02.05', medida:'m3', data:true},
+  {g:'Excavación', a:'Excavación no aprovechable', item:'Excavaciones en material común NO APROVECHABLE', uni:'m3', cc:'02.05', medida:'m3', data:true},
+  {g:'Excavación', a:'Excavación de préstamo (Diviso)', item:'Excavación en material común de préstamos', uni:'m3', cc:'02.06', medida:'m3', data:true},
+  {g:'Terraplén', a:'Núcleo de terraplén', item:'Terraplenes (solo conformación)', uni:'m3', cc:'02.07', medida:'m3', data:true},
+  {g:'Terraplén', a:'Corona de terraplén', item:'Terraplenes (solo conformación)', uni:'m3', cc:'02.07', medida:'m3', data:true},
+  {g:'Terraplén', a:'Cereo de corona', item:'Cereo de corona', uni:'m2', cc:'', medida:'m2_via', data:false},
+  {g:'Subbase', a:'Conformación de subbase', item:'Subbase Granular', uni:'m3', cc:'03.01', medida:'m3', data:true},
+  {g:'Subbase', a:'Cereo de subbase', item:'Cereo de subbase', uni:'m2', cc:'', medida:'m2_via', data:false},
+  {g:'Base', a:'Base estabilizada con cemento (BTC)', item:'Base granular estabilizada con cemento', uni:'m3', cc:'03.03', medida:'m3', data:true},
+  {g:'Pedraplén', a:'Pedraplén compacto', item:'Pedraplén compacto', uni:'m3', cc:'02.07', medida:'m3', data:true},
+  {g:'Desmonte', a:'Desmonte y limpieza en bosque', item:'Desmonte y limpieza en bosque', uni:'Ha', cc:'02.01', medida:'ha', data:true},
+  {g:'Desmonte', a:'Descapote / zonas no boscosas', item:'Desmonte y limpieza en zonas no boscosas', uni:'Ha', cc:'02.03', medida:'ha', data:true},
+  {g:'Estructuras / MSR', a:'Relleno para muros de tierra MSR', item:'Relleno para muros de tierra MSR', uni:'M3', cc:'05.04', medida:'directo', data:true},
+  {g:'Estructuras / MSR', a:'Material granular drenante MSR', item:'Material granular drenante MSR', uni:'M3', cc:'05.05', medida:'directo', data:true},
+  {g:'Estructuras / MSR', a:'Geobolsas / costales (propybag)', item:'Geobolsas de geotextil (propybag) MSR', uni:'UND', cc:'05.11', medida:'directo', data:true},
+  {g:'Estructuras / MSR', a:'Geomalla uniaxial 115 kn/m', item:'Geomalla tejida uniaxial de 115 kn/m (método md)', uni:'M2', cc:'05.07', medida:'directo', data:true},
+  {g:'Estructuras / MSR', a:'Geomalla uniaxial 55 kn/m', item:'Geomalla tejida uniaxial de 55 kn/m (método md)', uni:'M2', cc:'05.06', medida:'directo', data:true},
+  {g:'Estructuras / MSR', a:'Geotextil tejido 2890 n', item:'Geotextil tejido uniaxial de 2890 n (método grab md)', uni:'M2', cc:'05.09', medida:'directo', data:true},
+  {g:'Estructuras / MSR', a:'Geotextil tejido 1480 n', item:'Geotextil tejido uniaxial de 1480 n (método grab md)', uni:'M2', cc:'05.08', medida:'directo', data:true},
+  {g:'Estructuras / MSR', a:'Geodrén planar h=1 m', item:'Geodrén planar h=1 m MSR', uni:'M', cc:'05.10', medida:'directo', data:true},
+  {g:'Estructuras / MSR', a:'Geodrén planar h=0,5 m', item:'Geodrén planar h=0,5 m MSR', uni:'M', cc:'05.02', medida:'directo', data:true},
+  {g:'Estructuras / MSR', a:'Tubería PVC 4" perforada', item:'Tubería PVC d=4" para drenaje perforada MSR', uni:'M', cc:'05.03', medida:'directo', data:true},
 ];
 const ACT_IDX = {}; ACTIVIDADES.forEach(x=>ACT_IDX[x.a]=x);
-function capFromCc(cc){ const p=cc.split('.')[0]; return p==='02'?'EXPLANACIONES':p==='03'?'BASES, SUBBASES Y AFIRMADOS':'ESTRUCTURAS'; }
-function grupoFromCc(cc){ return cc.split('.')[0]==='05'?'DRENAJES Y ESTRUCTURAS':'TIERRAS'; }
+function capFromCc(cc){ if(!cc) return ''; const p=cc.split('.')[0]; return p==='02'?'EXPLANACIONES':p==='03'?'BASES, SUBBASES Y AFIRMADOS':'ESTRUCTURAS'; }
+function grupoFromCc(cc){ if(!cc) return 'TIERRAS'; return cc.split('.')[0]==='05'?'DRENAJES Y ESTRUCTURAS':'TIERRAS'; }
 
 const MAQUINAS = ['BL005','BL009','CAT320','EXC001','EXC013','EXC014','EXC015','MC705','MO03','MO04','MO09','NH69'];
-const TIPO_EQUIPO = {
-  'BL005':'BULLDOZER','BL009':'BULLDOZER','NH69':'BULLDOZER',
-  'CAT320':'EXCAVADORA','EXC001':'EXCAVADORA','EXC013':'EXCAVADORA','EXC014':'EXCAVADORA','EXC015':'EXCAVADORA',
-  'MO03':'MOTONIVELADORA','MO04':'MOTONIVELADORA','MO09':'MOTONIVELADORA','MC705':'MOTONIVELADORA'
-};
-const HORAS_PROG = {'NH69':5,'CAT320':5,'MC705':5}; // alquiladas = 5h; el resto 6.4h
+const TIPO_EQUIPO = {'BL005':'BULLDOZER','BL009':'BULLDOZER','NH69':'BULLDOZER','CAT320':'EXCAVADORA','EXC001':'EXCAVADORA','EXC013':'EXCAVADORA','EXC014':'EXCAVADORA','EXC015':'EXCAVADORA','MO03':'MOTONIVELADORA','MO04':'MOTONIVELADORA','MO09':'MOTONIVELADORA','MC705':'MOTONIVELADORA'};
+const HORAS_PROG = {'NH69':5,'CAT320':5,'MC705':5};
 function progHoras(id){ return HORAS_PROG[id]!==undefined?HORAS_PROG[id]:6.4; }
+const MOTIVOS = ['Mantenimiento','Sin operador','Falla mecánica','Lluvia / clima','Sin frente de trabajo','Esperando material','Abastecimiento de combustible','Traslado / movilización','Otro (especificar)'];
 
-let lineaIdx = 0;
+let lineaIdx = 0, eqIdx = 0;
 
 window.onload = function(){
-  const rol = sessionStorage.getItem('rol');
-  const usuario = sessionStorage.getItem('usuario');
+  const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
   if(!rol || (rol!=='capataz' && rol!=='admin')){ window.location.href='index.html'; return; }
-  document.getElementById('userDisplay').textContent = usuario || 'capataz';
-  document.getElementById('fechaReporte').value = new Date().toISOString().split('T')[0];
+  document.getElementById('userDisplay').textContent=usuario||'capataz';
+  document.getElementById('fechaReporte').value=new Date().toISOString().split('T')[0];
   addLinea();
 };
 function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
 
-function pkToMeters(pk){
-  if(!pk) return null;
-  pk = String(pk).trim().replace(/\s/g,'');
-  if(pk.includes('+')){ const p=pk.split('+'); const km=parseInt(p[0]); const m=parseInt(p[1]||'0'); if(isNaN(km)) return null; return km*1000+(isNaN(m)?0:m); }
-  const n=parseFloat(pk); return isNaN(n)?null:n*1000;
-}
-function ufFromPk(pk){ const m=pkToMeters(pk); if(m==null) return null; return m<=30000?'UF1':'UF2'; }
+function pkToMeters(pk){ if(!pk) return null; pk=String(pk).trim().replace(/\s/g,''); if(pk.includes('+')){const p=pk.split('+');const km=parseInt(p[0]);const m=parseInt(p[1]||'0');if(isNaN(km))return null;return km*1000+(isNaN(m)?0:m);} const n=parseFloat(pk);return isNaN(n)?null:n*1000; }
+function ufFromPk(pk){ const m=pkToMeters(pk); if(m==null) return ''; return m<=30000?'UF1':'UF2'; }
 function proyectoFromUf(uf){ return uf==='UF1'?'3701':uf==='UF2'?'3702':''; }
 
 function actividadOptions(){
@@ -189,10 +179,11 @@ function actividadOptions(){
   return html;
 }
 function maqOptions(){ return '<option value="">— Máquina —</option>'+MAQUINAS.map(m=>'<option>'+m+'</option>').join(''); }
+function motivoOptions(){ return '<option value="">— Motivo —</option>'+MOTIVOS.map(m=>'<option>'+m+'</option>').join(''); }
 
 function addLinea(){
-  const i = lineaIdx++;
-  const div = document.createElement('div');
+  const i=lineaIdx++;
+  const div=document.createElement('div');
   div.className='linea'; div.id='linea_'+i;
   div.innerHTML=
     '<div class="linea-head"><span class="linea-num">Actividad #'+(document.querySelectorAll('.linea').length+1)+'</span>'
@@ -207,11 +198,9 @@ function addLinea(){
     +'<div class="grid2">'
     +'<div class="field" style="margin:0;"><label>PK inicial <span class="req">*</span></label>'
     +'<input type="text" class="l-pki" placeholder="14+635" oninput="onPkChange('+i+')"></div>'
-    +'<div class="field" style="margin:0;"><label>PK final <span class="opt">(opcional)</span></label>'
-    +'<input type="text" class="l-pkf" placeholder="solo si es tramo"></div></div>'
-    +'<div class="field" style="margin-top:14px;"><label>Largo (cantidad de campo) <span class="req">*</span></label>'
-    +'<div class="largo-wrap"><input type="number" step="any" class="l-largo" placeholder="0">'
-    +'<span class="largo-unit" id="largoUnit_'+i+'"></span></div></div>'
+    +'<div class="field" style="margin:0;"><label>PK final <span class="opt" id="pkfOpt_'+i+'">(opcional)</span></label>'
+    +'<input type="text" class="l-pkf" placeholder="solo si es tramo" oninput="onPkChange('+i+')"></div></div>'
+    +'<div id="prod_'+i+'" style="margin-top:14px;"></div>'
     +'<div class="equipos-block"><span class="eqlabel">Equipos que ejecutaron esta actividad</span>'
     +'<div id="eqs_'+i+'"></div>'
     +'<button class="btn-add mini" onclick="addEquipo('+i+')">+ Equipo</button></div>'
@@ -223,42 +212,62 @@ function addLinea(){
 function delLinea(i){ const el=document.getElementById('linea_'+i); if(el) el.remove(); renumber(); refreshCounts(); }
 function renumber(){ document.querySelectorAll('#cantidadesContainer .linea').forEach((el,k)=>{ el.querySelector('.linea-num').textContent='Actividad #'+(k+1); }); }
 
+function renderProd(i, x){
+  const cont=document.getElementById('prod_'+i);
+  if(x.medida==='m2_via'){
+    cont.innerHTML=
+      '<div class="grid2">'
+      +'<div class="field" style="margin:0;"><label>Ancho de vía (m)</label><input type="number" step="any" class="l-ancho" value="11.5" oninput="recalcM2('+i+')"></div>'
+      +'<div class="field" style="margin:0;"><label>Producción (m²)</label><div class="largo-wrap"><input type="number" class="l-m2disp" placeholder="auto" readonly style="opacity:.85;cursor:not-allowed;"><span class="largo-unit">m²</span></div></div>'
+      +'</div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-top:6px;">= (PK final − PK inicial) × ancho. No va a DATA; queda en la producción de la máquina.</div>';
+    recalcM2(i);
+  } else {
+    const lbl = x.medida==='ha' ? 'Producción (Ha)' : (x.medida==='directo' ? ('Cantidad ('+x.uni+')') : 'Producción (m³)');
+    cont.innerHTML=
+      '<div class="field" style="margin:0;"><label>'+lbl+' <span class="req">*</span></label>'
+      +'<div class="largo-wrap"><input type="number" step="any" class="l-prod" placeholder="0"><span class="largo-unit">'+x.uni+'</span></div></div>';
+  }
+}
+function recalcM2(i){
+  const b=document.getElementById('linea_'+i), a=b.querySelector('.l-act').value; if(!a) return;
+  const x=ACT_IDX[a]; if(x.medida!=='m2_via') return;
+  const ai=pkToMeters(b.querySelector('.l-pki').value), af=pkToMeters(b.querySelector('.l-pkf').value);
+  const ancho=parseFloat(b.querySelector('.l-ancho').value)||0, disp=b.querySelector('.l-m2disp');
+  if(ai!=null && af!=null && ancho>0) disp.value=Math.round(Math.abs(af-ai)*ancho*100)/100; else disp.value='';
+}
+
 function onActChange(i){
-  const block=document.getElementById('linea_'+i);
-  const a=block.querySelector('.l-act').value;
-  const meta=document.getElementById('meta_'+i);
-  const hint=document.getElementById('hint_'+i);
-  if(!a){ meta.style.display='none'; hint.style.display='none'; document.getElementById('largoUnit_'+i).textContent=''; return; }
+  const block=document.getElementById('linea_'+i), a=block.querySelector('.l-act').value;
+  const meta=document.getElementById('meta_'+i), hint=document.getElementById('hint_'+i);
+  const pkfOpt=document.getElementById('pkfOpt_'+i);
+  if(!a){ meta.style.display='none'; hint.style.display='none'; document.getElementById('prod_'+i).innerHTML=''; return; }
   const x=ACT_IDX[a];
-  meta.style.display='flex';
-  hint.style.display='block';
-  hint.innerHTML='→ ítem: <b>'+x.item+'</b>';
-  document.getElementById('uniBadge_'+i).textContent=x.uni;
-  document.getElementById('largoUnit_'+i).textContent=x.uni;
+  meta.style.display='flex'; hint.style.display='block';
+  hint.innerHTML = x.data ? ('→ ítem: <b>'+x.item+'</b>') : '→ <b>'+x.item+'</b> · solo maquinaria (no va a DATA)';
+  const uniB=document.getElementById('uniBadge_'+i); uniB.textContent=x.uni;
+  uniB.className='badge unidad';
+  pkfOpt.textContent = (x.medida==='m2_via') ? '(requerido)' : '(opcional)';
+  renderProd(i, x);
   onPkChange(i);
 }
 function onPkChange(i){
-  const block=document.getElementById('linea_'+i);
-  const pki=block.querySelector('.l-pki').value;
-  const uf=ufFromPk(pki);
-  const ufBadge=document.getElementById('ufBadge_'+i);
-  const ccBadge=document.getElementById('ccBadge_'+i);
-  const a=block.querySelector('.l-act').value;
+  const block=document.getElementById('linea_'+i), pki=block.querySelector('.l-pki').value;
+  const uf=ufFromPk(pki), a=block.querySelector('.l-act').value;
+  const ufBadge=document.getElementById('ufBadge_'+i), ccBadge=document.getElementById('ccBadge_'+i);
   ufBadge.className='badge'+(uf==='UF1'?' uf1':uf==='UF2'?' uf2':'');
   ufBadge.textContent= uf? (uf+' · '+proyectoFromUf(uf)) : 'UF —';
-  if(uf && a){ const x=ACT_IDX[a]; ccBadge.textContent=proyectoFromUf(uf)+'.'+x.cc; ccBadge.style.display='inline-flex'; }
-  else { ccBadge.style.display='none'; }
+  if(a){ const x=ACT_IDX[a];
+    if(!x.data){ ccBadge.className='badge nodata'; ccBadge.textContent='solo maquinaria'; ccBadge.style.display='inline-flex'; }
+    else if(uf){ ccBadge.className='badge'; ccBadge.textContent=proyectoFromUf(uf)+'.'+x.cc; ccBadge.style.display='inline-flex'; }
+    else ccBadge.style.display='none';
+    if(x.medida==='m2_via') recalcM2(i);
+  } else ccBadge.style.display='none';
 }
 
-const MOTIVOS = ['Mantenimiento','Sin operador','Falla mecánica','Lluvia / clima','Sin frente de trabajo','Esperando material','Abastecimiento de combustible','Traslado / movilización','Otro (especificar)'];
-function motivoOptions(){ return '<option value="">— Motivo —</option>'+MOTIVOS.map(m=>'<option>'+m+'</option>').join(''); }
-function onMotChange(sel){ const otro=sel.parentElement.querySelector('.e-mot-otro'); otro.style.display=(sel.value==='Otro (especificar)')?'block':'none'; }
-let eqIdx=0;
 function addEquipo(i){
-  const cont=document.getElementById('eqs_'+i);
-  const j=eqIdx++;
-  const row=document.createElement('div');
-  row.className='eq-item'; row.id='eq_'+j;
+  const cont=document.getElementById('eqs_'+i), j=eqIdx++;
+  const row=document.createElement('div'); row.className='eq-item'; row.id='eq_'+j;
   row.innerHTML=
     '<div class="eq-top"><select class="e-id" onchange="onEqChange('+j+')">'+maqOptions()+'</select>'
     +'<button class="btn-del" onclick="document.getElementById(\'eq_'+j+'\').remove()" title="Quitar">✕</button></div>'
@@ -273,18 +282,14 @@ function addEquipo(i){
     +'<input type="text" class="e-mot-otro" placeholder="especifica el motivo" style="display:none;margin-top:8px;"></div>';
   cont.appendChild(row);
 }
+function onMotChange(sel){ const otro=sel.parentElement.querySelector('.e-mot-otro'); otro.style.display=(sel.value==='Otro (especificar)')?'block':'none'; }
 function onEqChange(j){
-  const row=document.getElementById('eq_'+j);
-  const id=row.querySelector('.e-id').value;
-  const prog=document.getElementById('eqprog_'+j);
-  const diff=document.getElementById('eqdiff_'+j);
-  const mot=document.getElementById('eqmot_'+j);
+  const row=document.getElementById('eq_'+j), id=row.querySelector('.e-id').value;
+  const prog=document.getElementById('eqprog_'+j), diff=document.getElementById('eqdiff_'+j), mot=document.getElementById('eqmot_'+j);
   if(!id){ prog.style.display='none'; diff.style.display='none'; mot.style.display='none'; return; }
   const ph=progHoras(id);
-  prog.style.display='block';
-  prog.innerHTML='Programadas: <b>'+ph+' h</b> · '+(ph===5?'alquilada':'propia');
-  const op=parseFloat(row.querySelector('.e-hrs').value);
-  const falt = (!isNaN(op)) ? +(ph-op).toFixed(2) : 0;
+  prog.style.display='block'; prog.innerHTML='Programadas: <b>'+ph+' h</b> · '+(ph===5?'alquilada':'propia');
+  const op=parseFloat(row.querySelector('.e-hrs').value), falt=(!isNaN(op))?+(ph-op).toFixed(2):0;
   if(falt>0.01){ diff.style.display='block'; diff.textContent='⚠ Hizo '+falt+' h menos — indica el motivo'; mot.style.display='block'; }
   else { diff.style.display='none'; mot.style.display='none'; }
 }
@@ -299,53 +304,43 @@ function buildElemento(pki,pkf){ if(!pki) return ''; return pkf? ('tm2 pk '+pki+
 function getCantidades(){
   const rows=[];
   document.querySelectorAll('#cantidadesContainer .linea').forEach(b=>{
-    const a=b.querySelector('.l-act').value;
-    if(!a) return;
+    const a=b.querySelector('.l-act').value; if(!a) return;
     const x=ACT_IDX[a];
-    const pki=b.querySelector('.l-pki').value.trim();
-    const pkf=b.querySelector('.l-pkf').value.trim();
-    const uf=ufFromPk(pki); const proy=proyectoFromUf(uf);
+    const pki=b.querySelector('.l-pki').value.trim(), pkf=b.querySelector('.l-pkf').value.trim();
+    const uf=ufFromPk(pki), proy=proyectoFromUf(uf);
+    let largo;
+    if(x.medida==='m2_via'){ const ai=pkToMeters(pki), af=pkToMeters(pkf), an=parseFloat(b.querySelector('.l-ancho').value)||0; largo=(ai!=null&&af!=null&&an>0)?Math.round(Math.abs(af-ai)*an*100)/100:0; }
+    else { largo=parseFloat(b.querySelector('.l-prod').value)||0; }
     const equipos=[];
     b.querySelectorAll('.eq-item').forEach(r=>{
-      const id=r.querySelector('.e-id').value;
-      const hrs=parseFloat(r.querySelector('.e-hrs').value)||0;
+      const id=r.querySelector('.e-id').value, hrs=parseFloat(r.querySelector('.e-hrs').value)||0;
       if(!id && !hrs) return;
-      const ph=progHoras(id);
-      const muertas=Math.max(0, +(ph-hrs).toFixed(2));
-      const motSel=r.querySelector('.e-mot-sel'); const motivo = motSel ? (motSel.value==='Otro (especificar)' ? (r.querySelector('.e-mot-otro').value||'').trim() : motSel.value) : '';
-      equipos.push({ id_maquina:id, tipo_equipo:TIPO_EQUIPO[id]||'', operador:r.querySelector('.e-op').value.trim(),
-        horas_programadas:ph, horas_operadas:hrs, horas_muertas:muertas, motivo:motivo });
+      const ph=progHoras(id), muertas=Math.max(0,+(ph-hrs).toFixed(2));
+      const motSel=r.querySelector('.e-mot-sel'); const motivo=motSel?(motSel.value==='Otro (especificar)'?(r.querySelector('.e-mot-otro').value||'').trim():motSel.value):'';
+      equipos.push({ id_maquina:id, tipo_equipo:TIPO_EQUIPO[id]||'', operador:r.querySelector('.e-op').value.trim(), horas_programadas:ph, horas_operadas:hrs, horas_muertas:muertas, motivo:motivo });
     });
-    rows.push({
-      grupo: grupoFromCc(x.cc), capitulo: capFromCc(x.cc),
-      actividad: a, descripcion: x.item,
-      centro_costo: proy?(proy+'.'+x.cc):'', unidad: x.uni,
-      uf: uf||'', proyecto: proy,
-      elemento: buildElemento(pki,pkf),
-      pk_inicial: pki, pk_final: pkf,
-      abs_inicial: pkToMeters(pki), abs_final: pkToMeters(pkf),
-      liberacion: 'CAMPO',
-      largo: parseFloat(b.querySelector('.l-largo').value)||0,
-      observacion: b.querySelector('.l-obs').value.trim(),
-      equipos: equipos
-    });
+    rows.push({ grupo:grupoFromCc(x.cc), capitulo:capFromCc(x.cc), actividad:a, descripcion:x.item,
+      centro_costo: (x.data&&proy)?(proy+'.'+x.cc):'', unidad:x.uni, data:x.data, uf:uf||'', proyecto: x.data?proy:'',
+      elemento:buildElemento(pki,pkf), pk_inicial:pki, pk_final:pkf, abs_inicial:pkToMeters(pki), abs_final:pkToMeters(pkf),
+      liberacion:'CAMPO', largo:largo, observacion:b.querySelector('.l-obs').value.trim(), equipos:equipos });
   });
   return rows;
 }
 function validate(){
   let ok=true;
   document.querySelectorAll('.field-error').forEach(e=>e.classList.remove('field-error'));
-  const fecha=document.getElementById('fechaReporte');
-  if(!fecha.value){ fecha.classList.add('field-error'); ok=false; }
+  const fecha=document.getElementById('fechaReporte'); if(!fecha.value){ fecha.classList.add('field-error'); ok=false; }
   document.querySelectorAll('#cantidadesContainer .linea').forEach(b=>{
-    const act=b.querySelector('.l-act'), pki=b.querySelector('.l-pki'), largo=b.querySelector('.l-largo');
-    if(!act.value){ act.classList.add('field-error'); ok=false; }
+    const act=b.querySelector('.l-act'), pki=b.querySelector('.l-pki'), pkf=b.querySelector('.l-pkf');
+    if(!act.value){ act.classList.add('field-error'); ok=false; return; }
+    const x=ACT_IDX[act.value];
     if(!pki.value.trim()){ pki.classList.add('field-error'); ok=false; }
-    if(!largo.value){ largo.classList.add('field-error'); ok=false; }
+    if(x.medida==='m2_via'){ if(!pkf.value.trim()){ pkf.classList.add('field-error'); ok=false; } }
+    else { const prod=b.querySelector('.l-prod'); if(prod && !prod.value){ prod.classList.add('field-error'); ok=false; } }
     b.querySelectorAll('.eq-item').forEach(r=>{
       const idI=r.querySelector('.e-id'), hrsI=r.querySelector('.e-hrs'), opI=r.querySelector('.e-op'), motSel=r.querySelector('.e-mot-sel'), motOtro=r.querySelector('.e-mot-otro');
       const id=idI.value, hrs=parseFloat(hrsI.value)||0;
-      if(!id && !hrs && !opI.value.trim()) return; // fila vacía, se ignora
+      if(!id && !hrs && !opI.value.trim()) return;
       if(!id){ idI.classList.add('field-error'); ok=false; }
       if(!opI.value.trim()){ opI.classList.add('field-error'); ok=false; }
       if(!hrsI.value){ hrsI.classList.add('field-error'); ok=false; }
@@ -360,14 +355,8 @@ function validate(){
 }
 async function submitForm(){
   if(!validate()){ if(document.querySelector('.field-error')) alert('Revisa los campos marcados.'); return; }
-  const btn=document.getElementById('btnSubmit');
-  btn.textContent='ENVIANDO...'; btn.disabled=true;
-  const data={
-    fecha: document.getElementById('fechaReporte').value,
-    rol:'capataz',
-    capataz: sessionStorage.getItem('usuario')||'capataz',
-    cantidades: getCantidades()
-  };
+  const btn=document.getElementById('btnSubmit'); btn.textContent='ENVIANDO...'; btn.disabled=true;
+  const data={ fecha:document.getElementById('fechaReporte').value, rol:'capataz', capataz:sessionStorage.getItem('usuario')||'capataz', cantidades:getCantidades() };
   try{
     const resp=await fetch(APPS_SCRIPT_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(data) });
     const res=await resp.json();
@@ -382,13 +371,11 @@ async function submitForm(){
   }
 }
 function resetForm(){
-  document.getElementById('cantidadesContainer').innerHTML='';
-  lineaIdx=0;
+  document.getElementById('cantidadesContainer').innerHTML=''; lineaIdx=0;
   document.getElementById('successScreen').classList.remove('visible');
   document.getElementById('formMain').classList.remove('hidden');
   document.getElementById('submitBar').classList.remove('hidden');
-  document.getElementById('btnSubmit').textContent='ENVIAR REPORTE DEL DÍA →';
-  document.getElementById('btnSubmit').disabled=false;
+  document.getElementById('btnSubmit').textContent='ENVIAR REPORTE DEL DÍA →'; document.getElementById('btnSubmit').disabled=false;
   document.getElementById('fechaReporte').value=new Date().toISOString().split('T')[0];
   addLinea();
 }

@@ -160,14 +160,14 @@ function categoria(c){
   if(d.includes('NO APRO')) return 'Excavación no aprovechable';
   if(d.includes('PRESTAMO')||d.includes('PRÉSTAMO')) return 'Excavación préstamo';
   if(d.includes('APROVEC')) return 'Excavación aprovechable';
-  if(d.includes('SOBRANTE')) return 'Excavación no aprovechable';
+  if(d.includes('SOBRANTE')||d.includes('ZODME')) return 'Conformación / ZODME';
   if(d.includes('TERRAPL')||d.includes('PEDRAPL')) return 'Terraplén';
   if(d.includes('SUBBASE')) return 'Subbase';
   if(d.includes('BASE GRANULAR')) return 'Base / BTC';
   if(d.includes('DESMONTE')||d.includes('DESCAPOTE')) return 'Desmonte y limpieza';
   return 'Estructuras / MSR';
 }
-const ORDEN_CAT=['Excavación aprovechable','Excavación préstamo','Excavación no aprovechable','Terraplén','Subbase','Base / BTC','Desmonte y limpieza','Estructuras / MSR'];
+const ORDEN_CAT=['Excavación aprovechable','Excavación préstamo','Excavación no aprovechable','Conformación / ZODME','Terraplén','Subbase','Base / BTC','Desmonte y limpieza','Estructuras / MSR'];
 const SPLIT_UF=['Terraplén','Subbase','Base / BTC'];
 function fmt(n){ return (Math.round(n*100)/100).toLocaleString('es-CO'); }
 
@@ -258,8 +258,9 @@ function renderMaquinas(){
   STATE.maquinas.forEach(m=>{
     const muertas=parseFloat(m.horas_muertas)||0;
     const menos= muertas>0 ? ` · <span style="color:var(--error)">${muertas}h menos${m.motivo?(': '+m.motivo):''}</span>`:'';
+    const prod = m.produccion ? ` · ${m.produccion} ${m.unidad_prod||''}` : '';
     html+=`<div class="linea-item" style="opacity:1;"><div class="li-main"><div class="li-act">${m.id_maquina||'?'} <span style="color:var(--muted);font-weight:400;font-size:11px;">${m.tipo_equipo||''}</span></div>
-      <div class="li-sub">${m.actividad||'—'} · ${m.operador||'s/op'} · ${m.reporta||''}</div></div>
+      <div class="li-sub">${m.actividad||'—'} · ${m.operador||'s/op'}${prod}</div></div>
       <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;white-space:nowrap;">${m.horas_operadas||0}h${menos}</div></div>`;
   });
   return html;
