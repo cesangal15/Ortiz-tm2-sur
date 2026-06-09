@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panel del Encargado</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--success:#2ecc71;--error:#e74c3c;--input-bg:#12151f;--uf1:#3a9bdc;--uf2:#9b59b6;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:0 0 40px;}
+  .header{background:linear-gradient(135deg,#1a1d27 0%,#0f1117 100%);border-bottom:3px solid var(--accent);padding:20px 24px;display:flex;align-items:center;justify-content:space-between;}
+  .header-left .label{font-family:'Syne',sans-serif;font-size:10px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;}
+  .header-left h1{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;}
+  .header-user{font-size:12px;color:var(--muted);text-align:right;}
+  .header-user span{display:block;color:var(--accent);font-weight:600;}
+  .logout-btn{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:4px 10px;cursor:pointer;margin-top:4px;font-family:'DM Sans',sans-serif;}
+  .logout-btn:hover{border-color:var(--error);color:var(--error);}
+  .container{max-width:700px;margin:0 auto;padding:24px 16px;}
+  .filtro-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:20px;}
+  .filtro-row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;}
+  .field{flex:1;min-width:130px;}
+  label{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-bottom:5px;letter-spacing:0.5px;text-transform:uppercase;}
+  input[type="date"],select,input[type="number"],input[type="text"]{width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 14px;outline:none;transition:border-color 0.2s;appearance:none;color-scheme:dark;}
+  select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a80a0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px;cursor:pointer;}
+  input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,0.1);}
+  select option,optgroup{background:#1a1d27;}
+  .btn-consultar{padding:10px 18px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:8px;color:#0f1117;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;transition:all 0.2s;}
+  .btn-consultar:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(245,166,35,0.3);}
+
+  .section-title{font-family:'Syne',sans-serif;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin:24px 0 12px;display:flex;align-items:center;gap:8px;}
+  .section-title::after{content:'';flex:1;height:1px;background:var(--border);}
+
+  .estado-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .estado-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;}
+  .estado-box h3{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:12px;font-weight:600;}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;}
+  .chip{font-size:12px;font-weight:600;padding:5px 11px;border-radius:20px;border:1px solid var(--border);background:var(--input-bg);}
+  .chip.ok{border-color:rgba(46,204,113,0.4);background:rgba(46,204,113,0.08);color:var(--success);}
+  .chip.no{border-color:rgba(231,76,60,0.4);background:rgba(231,76,60,0.08);color:var(--error);}
+  .mini-lbl{font-size:10px;color:var(--muted);margin:10px 0 5px;text-transform:uppercase;letter-spacing:1px;}
+
+  .totales{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px;}
+  .tot-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;}
+  .tot-row:last-child{border-bottom:none;}
+  .tot-row .cat{color:var(--muted);}
+  .tot-row .val{font-family:'Syne',sans-serif;font-weight:700;}
+  .uf-split{font-size:11px;color:var(--muted);}
+  .uf-split .u1{color:var(--uf1);} .uf-split .u2{color:var(--uf2);}
+
+  .grupo-cat{font-family:'Syne',sans-serif;font-size:12px;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px;}
+  .linea-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .li-main{flex:1;min-width:160px;}
+  .li-act{font-size:13px;font-weight:600;}
+  .li-sub{font-size:11px;color:var(--muted);margin-top:2px;}
+  .li-largo{width:96px;}
+  .li-largo input{padding:7px 10px;font-size:13px;text-align:right;}
+  .li-unit{font-size:11px;color:var(--muted);width:30px;}
+  .badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:20px;border:1px solid var(--border);}
+  .badge.uf1{border-color:rgba(58,155,220,0.4);color:var(--uf1);} .badge.uf2{border-color:rgba(155,89,182,0.4);color:var(--uf2);}
+  .btn-del{background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;width:26px;height:26px;font-size:13px;cursor:pointer;}
+  .btn-del:hover{border-color:var(--error);color:var(--error);}
+
+  .add-card{background:var(--surface2);border:1px dashed var(--border);border-radius:10px;padding:14px;margin-top:10px;}
+  .add-grid{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:end;}
+  .add-grid label{font-size:10px;}
+  .btn-add{padding:9px 14px;background:var(--input-bg);border:1px solid var(--accent);border-radius:8px;color:var(--accent);font-family:'Syne',sans-serif;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:1px;}
+
+  .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px;}
+  .btn-action{flex:1;min-width:160px;padding:14px;border-radius:10px;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:0.5px;border:1px solid var(--border);background:var(--surface);color:var(--text);transition:all 0.2s;}
+  .btn-action:hover{border-color:var(--accent);}
+  .btn-action.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#0f1117;border:none;}
+
+  .msg-box{margin-top:16px;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:14px;white-space:pre-wrap;font-size:12.5px;line-height:1.6;color:var(--text);max-height:340px;overflow:auto;display:none;}
+  .empty-state{text-align:center;padding:40px 20px;color:var(--muted);}
+  .empty-state .icon{font-size:40px;margin-bottom:12px;}
+  .loading{text-align:center;padding:30px;color:var(--muted);font-size:14px;}
+  .saved-flag{font-size:12px;color:var(--success);margin-left:8px;display:none;}
+  @media(max-width:480px){.estado-grid{grid-template-columns:1fr;}.add-grid{grid-template-columns:1fr 1fr;}}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <div class="label">Consolidado · Encargado</div>
+    <h1>🗂️ Panel del Encargado</h1>
+  </div>
+  <div class="header-user">
+    <span id="userDisplay">—</span>
+    <button class="logout-btn" onclick="logout()">Salir</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="filtro-card">
+    <div class="filtro-row">
+      <div class="field"><label>Fecha</label><input type="date" id="fecha"></div>
+      <div class="field" style="max-width:130px;"><label>Proyecto</label>
+        <select id="proyecto"><option value="">Todos</option><option value="3701">3701 (UF1)</option><option value="3702">3702 (UF2)</option></select>
+      </div>
+      <button class="btn-consultar" onclick="consultar()">CONSULTAR →</button>
+    </div>
+  </div>
+  <div id="resultados">
+    <div class="empty-state"><div class="icon">🗓️</div><p>Selecciona una fecha y consulta el consolidado del día</p></div>
+  </div>
+</div>
+
+<script>
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
+
+const CAPATACES_ESPERADOS = ['capataz1','capataz2','capataz3','capataz4','capataz5'];
+const TODAS_MAQUINAS = ['BL005','BL009','CAT320','EXC001','EXC013','EXC014','EXC015','MC705','MO03','MO04','MO09','NH69'];
+const TIPO_EQUIPO = {'BL005':'BULLDOZER','BL009':'BULLDOZER','NH69':'BULLDOZER','CAT320':'EXCAVADORA','EXC001':'EXCAVADORA','EXC013':'EXCAVADORA','EXC014':'EXCAVADORA','EXC015':'EXCAVADORA','MO03':'MOTONIVELADORA','MO04':'MOTONIVELADORA','MO09':'MOTONIVELADORA','MC705':'MOTONIVELADORA'};
+const ACTIVIDADES = [
+  {g:'Excavación', a:'Excavación aprovechable (masivo)', item:'Excavaciones en material común APROVECHABLE', uni:'m3', cc:'02.05'},
+  {g:'Excavación', a:'Excavación no aprovechable', item:'Excavaciones en material común NO APROVECHABLE', uni:'m3', cc:'02.05'},
+  {g:'Excavación', a:'Excavación de préstamo (Diviso)', item:'Excavación en material común de préstamos', uni:'m3', cc:'02.06'},
+  {g:'Terraplén', a:'Núcleo de terraplén', item:'Terraplenes (solo conformación)', uni:'m3', cc:'02.07'},
+  {g:'Terraplén', a:'Corona de terraplén', item:'Terraplenes (solo conformación)', uni:'m3', cc:'02.07'},
+  {g:'Terraplén', a:'Cereo de corona', item:'Terraplenes (solo conformación)', uni:'m3', cc:'02.07'},
+  {g:'Conformación', a:'Conformación y disposición de sobrantes (ZODME)', item:'Conformación y disposición de sobrantes', uni:'m3', cc:'02.08'},
+  {g:'Pedraplén', a:'Pedraplén compacto', item:'Pedraplén compacto', uni:'m3', cc:'02.07'},
+  {g:'Subbase', a:'Conformación de subbase', item:'Subbase Granular', uni:'m3', cc:'03.01'},
+  {g:'Subbase', a:'Cereo de subbase', item:'Subbase Granular', uni:'m3', cc:'03.01'},
+  {g:'Base', a:'Base estabilizada con cemento (BTC)', item:'Base granular estabilizada con cemento', uni:'m3', cc:'03.03'},
+  {g:'Desmonte', a:'Desmonte y limpieza en bosque', item:'Desmonte y limpieza en bosque', uni:'Ha', cc:'02.01'},
+  {g:'Desmonte', a:'Descapote / zonas no boscosas', item:'Desmonte y limpieza en zonas no boscosas', uni:'Ha', cc:'02.03'},
+  {g:'Estructuras / MSR', a:'Relleno para muros de tierra MSR', item:'Relleno para muros de tierra MSR', uni:'M3', cc:'05.04'},
+  {g:'Estructuras / MSR', a:'Material granular drenante MSR', item:'Material granular drenante MSR', uni:'M3', cc:'05.05'},
+  {g:'Estructuras / MSR', a:'Geobolsas / costales (propybag)', item:'Geobolsas de geotextil (propybag) MSR', uni:'UND', cc:'05.11'},
+  {g:'Estructuras / MSR', a:'Geomalla uniaxial 115 kn/m', item:'Geomalla tejida uniaxial de 115 kn/m (método md)', uni:'M2', cc:'05.07'},
+  {g:'Estructuras / MSR', a:'Geomalla uniaxial 55 kn/m', item:'Geomalla tejida uniaxial de 55 kn/m (método md)', uni:'M2', cc:'05.06'},
+  {g:'Estructuras / MSR', a:'Geotextil tejido 2890 n', item:'Geotextil tejido uniaxial de 2890 n (método grab md)', uni:'M2', cc:'05.09'},
+  {g:'Estructuras / MSR', a:'Geotextil tejido 1480 n', item:'Geotextil tejido uniaxial de 1480 n (método grab md)', uni:'M2', cc:'05.08'},
+  {g:'Estructuras / MSR', a:'Geodrén planar h=1 m', item:'Geodrén planar h=1 m MSR', uni:'M', cc:'05.10'},
+  {g:'Estructuras / MSR', a:'Geodrén planar h=0,5 m', item:'Geodrén planar h=0,5 m MSR', uni:'M', cc:'05.02'},
+  {g:'Estructuras / MSR', a:'Tubería PVC 4" perforada', item:'Tubería PVC d=4" para drenaje perforada MSR', uni:'M', cc:'05.03'},
+];
+const ACT_IDX={}; ACTIVIDADES.forEach(x=>ACT_IDX[x.a]=x);
+
+let STATE = { fecha:'', cantidades:[], maquinas:[], capataces:[] };
+
+window.onload = function(){
+  const rol=sessionStorage.getItem('rol');
+  const usuario=sessionStorage.getItem('usuario');
+  if(!rol || (rol!=='encargado' && rol!=='admin')){ window.location.href='index.html'; return; }
+  document.getElementById('userDisplay').textContent=usuario||'encargado';
+  document.getElementById('fecha').value=new Date().toISOString().split('T')[0];
+};
+function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
+
+function pkToMeters(pk){ if(!pk) return null; pk=String(pk).trim().replace(/\s/g,''); if(pk.includes('+')){const p=pk.split('+');const km=parseInt(p[0]);const m=parseInt(p[1]||'0');if(isNaN(km))return null;return km*1000+(isNaN(m)?0:m);} const n=parseFloat(pk);return isNaN(n)?null:n*1000; }
+function ufFromPk(pk){ const m=pkToMeters(pk); if(m==null) return ''; return m<=30000?'UF1':'UF2'; }
+
+async function consultar(){
+  const fecha=document.getElementById('fecha').value;
+  const proyecto=document.getElementById('proyecto').value;
+  if(!fecha){ alert('Selecciona una fecha'); return; }
+  document.getElementById('resultados').innerHTML='<div class="loading">⏳ Consultando consolidado...</div>';
+  try{
+    let url=`${APPS_SCRIPT_URL}?action=consolidado&fecha=${fecha}`;
+    if(proyecto) url+=`&proyecto=${encodeURIComponent(proyecto)}`;
+    const resp=await fetch(url);
+    const data=await resp.json();
+    STATE.fecha=fecha;
+    STATE.cantidades=(data.cantidades||[]).map(c=>({...c, largo: parseFloat(c.largo)||0}));
+    STATE.maquinas=data.maquinas||[];
+    STATE.capataces=[...new Set([...(STATE.cantidades.map(c=>c.capataz)), ...(STATE.maquinas.map(m=>m.capataz))].filter(Boolean))];
+    render();
+  }catch(err){
+    document.getElementById('resultados').innerHTML=`<div class="empty-state"><div class="icon">⚠️</div><p>No se pudo consultar. Verifica el Apps Script o tu conexión.</p></div>`;
+  }
+}
+
+/* ---- categoría para totales / mensaje ---- */
+function categoria(c){
+  const d=(c.descripcion||c.actividad||'').toUpperCase();
+  if(d.includes('NO APRO')) return 'Excavación no aprovechable';
+  if(d.includes('PRESTAMO')||d.includes('PRÉSTAMO')) return 'Excavación préstamo';
+  if(d.includes('APROVEC')) return 'Excavación aprovechable';
+  if(d.includes('SOBRANTE')) return 'Excavación no aprovechable';
+  if(d.includes('TERRAPL')||d.includes('PEDRAPL')) return 'Terraplén';
+  if(d.includes('SUBBASE')) return 'Subbase';
+  if(d.includes('BASE GRANULAR')) return 'Base / BTC';
+  if(d.includes('DESMONTE')||d.includes('DESCAPOTE')) return 'Desmonte y limpieza';
+  return 'Estructuras / MSR';
+}
+const ORDEN_CAT=['Excavación aprovechable','Excavación préstamo','Excavación no aprovechable','Terraplén','Subbase','Base / BTC','Desmonte y limpieza','Estructuras / MSR'];
+const SPLIT_UF=['Terraplén','Subbase','Base / BTC'];
+
+function calcTotales(){
+  const t={};
+  STATE.cantidades.forEach(c=>{
+    const cat=categoria(c); const uf=c.uf||ufFromPk(c.pk_inicial);
+    if(!t[cat]) t[cat]={total:0,uf1:0,uf2:0,uni:c.unidad||''};
+    t[cat].total+=c.largo; if(uf==='UF1') t[cat].uf1+=c.largo; else if(uf==='UF2') t[cat].uf2+=c.largo;
+  });
+  return t;
+}
+function fmt(n){ return (Math.round(n*100)/100).toLocaleString('es-CO'); }
+
+function render(){
+  const cont=document.getElementById('resultados');
+  const repC=new Set(STATE.capataces);
+  const faltC=CAPATACES_ESPERADOS.filter(c=>!repC.has(c));
+  const repM=new Set(STATE.maquinas.map(m=>m.id_maquina));
+  const faltM=TODAS_MAQUINAS.filter(m=>!repM.has(m));
+  const tot=calcTotales();
+
+  let html='';
+  // ---- estado de reportes ----
+  html+='<div class="section-title">Estado de reportes</div><div class="estado-grid">';
+  html+='<div class="estado-box"><h3>Capataces</h3><div class="mini-lbl">Reportaron</div><div class="chips">'+
+    (STATE.capataces.length? STATE.capataces.map(c=>`<span class="chip ok">✓ ${c}</span>`).join(''):'<span class="chip">—</span>')+'</div>'+
+    '<div class="mini-lbl">Faltan</div><div class="chips">'+
+    (faltC.length? faltC.map(c=>`<span class="chip no">${c}</span>`).join(''):'<span class="chip ok">Todos reportaron</span>')+'</div></div>';
+  html+='<div class="estado-box"><h3>Maquinaria</h3><div class="mini-lbl">Sin reporte ('+faltM.length+')</div><div class="chips">'+
+    (faltM.length? faltM.map(m=>`<span class="chip no">${m}</span>`).join(''):'<span class="chip ok">Todas reportadas</span>')+'</div></div>';
+  html+='</div>';
+
+  // ---- totales ----
+  html+='<div class="section-title">Totales del día</div><div class="totales">';
+  let anyTot=false;
+  ORDEN_CAT.forEach(cat=>{ if(!tot[cat])return; anyTot=true; const o=tot[cat];
+    let split=''; if(SPLIT_UF.includes(cat)&&(o.uf1||o.uf2)) split=`<span class="uf-split"> · <span class="u1">UF1 ${fmt(o.uf1)}</span> · <span class="u2">UF2 ${fmt(o.uf2)}</span></span>`;
+    html+=`<div class="tot-row"><span class="cat">${cat}${split}</span><span class="val">${fmt(o.total)} ${o.uni}</span></div>`;
+  });
+  if(!anyTot) html+='<div class="cat" style="color:var(--muted)">Sin cantidades para esta fecha</div>';
+  html+='</div>';
+
+  // ---- consolidado editable ----
+  html+='<div class="section-title">Consolidado del día <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);font-size:11px;">(editable)</span></div>';
+  html+='<div id="lineasBox">'+renderLineas()+'</div>';
+  html+=renderAddCard();
+
+  // ---- acciones ----
+  html+='<div class="actions">'+
+    '<button class="btn-action" onclick="guardar()">💾 Guardar cambios<span class="saved-flag" id="savedFlag">guardado ✓</span></button>'+
+    '<button class="btn-action primary" onclick="generarMensaje()">📲 Generar WhatsApp</button>'+
+    '</div>';
+  html+='<div class="msg-box" id="msgBox"></div>';
+  cont.innerHTML=html;
+}
+
+function renderLineas(){
+  if(!STATE.cantidades.length) return '<div class="empty-state" style="padding:20px;"><p>Sin actividades. Agrega abajo si necesitas.</p></div>';
+  // agrupar por categoria en orden
+  let html=''; const byCat={};
+  STATE.cantidades.forEach((c,idx)=>{ const cat=categoria(c); (byCat[cat]=byCat[cat]||[]).push({c,idx}); });
+  ORDEN_CAT.forEach(cat=>{ if(!byCat[cat])return;
+    html+=`<div class="grupo-cat">${cat}</div>`;
+    byCat[cat].forEach(({c,idx})=>{
+      const uf=c.uf||ufFromPk(c.pk_inicial);
+      const pk=c.pk_inicial+(c.pk_final?(' - '+c.pk_final):'');
+      html+=`<div class="linea-item">
+        <div class="li-main"><div class="li-act">${c.actividad||c.descripcion||''}</div>
+        <div class="li-sub">PK ${pk||'—'} · ${c.capataz||'—'}${uf?` · <span class="badge ${uf.toLowerCase()}">${uf}</span>`:''}</div></div>
+        <div class="li-largo"><input type="number" step="any" value="${c.largo}" onchange="editLargo(${idx}, this.value)"></div>
+        <div class="li-unit">${c.unidad||''}</div>
+        <button class="btn-del" onclick="delLinea(${idx})" title="Eliminar">✕</button>
+      </div>`;
+    });
+  });
+  return html;
+}
+function renderAddCard(){
+  let opts='<option value="">— Actividad —</option>';
+  const groups={},order=[]; ACTIVIDADES.forEach(x=>{if(!groups[x.g]){groups[x.g]=[];order.push(x.g);}groups[x.g].push(x);});
+  order.forEach(g=>{opts+=`<optgroup label="${g}">`+groups[g].map(x=>`<option value="${x.a.replace(/"/g,'&quot;')}">${x.a}</option>`).join('')+'</optgroup>';});
+  return `<div class="add-card"><div class="add-grid">
+    <div><label>Agregar actividad</label><select id="addAct">${opts}</select></div>
+    <div><label>PK inicial</label><input type="text" id="addPk" placeholder="14+635"></div>
+    <div><label>Largo</label><input type="number" step="any" id="addLargo" placeholder="0"></div>
+    <button class="btn-add" onclick="addLinea()">+ Añadir</button>
+  </div></div>`;
+}
+function editLargo(idx,val){ STATE.cantidades[idx].largo=parseFloat(val)||0; refreshTotales(); }
+function delLinea(idx){ STATE.cantidades.splice(idx,1); render(); }
+function addLinea(){
+  const a=document.getElementById('addAct').value;
+  const pk=document.getElementById('addPk').value.trim();
+  const largo=parseFloat(document.getElementById('addLargo').value)||0;
+  if(!a){ alert('Elige una actividad'); return; }
+  const x=ACT_IDX[a]; const uf=ufFromPk(pk); const proy=uf==='UF1'?'3701':uf==='UF2'?'3702':'';
+  STATE.cantidades.push({ grupo:x.cc.split('.')[0]==='05'?'DRENAJES Y ESTRUCTURAS':'TIERRAS', capitulo:'', actividad:a, descripcion:x.item,
+    centro_costo:proy?`${proy}.${x.cc}`:'', unidad:x.uni, uf, proyecto:proy, elemento:pk?`tm2 pk ${pk}`:'', pk_inicial:pk, pk_final:'',
+    liberacion:'CAMPO', largo, observacion:'', capataz:'(encargado)' });
+  render();
+}
+function refreshTotales(){
+  const tot=calcTotales(); /* re-render solo totales */ const box=document.querySelector('.totales'); if(!box)return;
+  let html=''; let any=false;
+  ORDEN_CAT.forEach(cat=>{ if(!tot[cat])return; any=true; const o=tot[cat];
+    let split=''; if(SPLIT_UF.includes(cat)&&(o.uf1||o.uf2)) split=`<span class="uf-split"> · <span class="u1">UF1 ${fmt(o.uf1)}</span> · <span class="u2">UF2 ${fmt(o.uf2)}</span></span>`;
+    html+=`<div class="tot-row"><span class="cat">${cat}${split}</span><span class="val">${fmt(o.total)} ${o.uni}</span></div>`;
+  });
+  if(!any) html='<div class="cat" style="color:var(--muted)">Sin cantidades</div>';
+  box.innerHTML=html;
+}
+
+async function guardar(){
+  try{
+    const resp=await fetch(APPS_SCRIPT_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify({action:'guardar_consolidado', fecha:STATE.fecha, cantidades:STATE.cantidades})});
+    const res=await resp.json();
+    if(!res||!res.ok) throw new Error((res&&res.error)||'Respuesta inesperada');
+    const f=document.getElementById('savedFlag'); f.style.display='inline'; setTimeout(()=>f.style.display='none',2500);
+  }catch(err){ alert('⚠ No se pudo guardar: '+err.message); }
+}
+
+function generarMensaje(){
+  const tot=calcTotales();
+  const f=new Date(STATE.fecha+'T12:00:00');
+  const dd=String(f.getDate()).padStart(2,'0'), mm=String(f.getMonth()+1).padStart(2,'0'), yy=String(f.getFullYear()).slice(2);
+  let msg=`*Reporte de actividades de movimiento de Tierras ${dd}/${mm}/${yy}*\n——————————\n`;
+  const byCat={}; STATE.cantidades.forEach(c=>{const cat=categoria(c);(byCat[cat]=byCat[cat]||[]).push(c);});
+  ORDEN_CAT.forEach(cat=>{ if(!byCat[cat])return; const o=tot[cat];
+    let head=`\n* *${cat}: ${fmt(o.total)} ${o.uni}`;
+    if(SPLIT_UF.includes(cat)&&(o.uf1||o.uf2)) head+=`  (UF1: ${fmt(o.uf1)} / UF2: ${fmt(o.uf2)})`;
+    msg+=head+'\n';
+    byCat[cat].forEach(c=>{ const pk=c.pk_inicial+(c.pk_final?(' - '+c.pk_final):''); msg+=`${pk||'—'}  ${fmt(c.largo)} ${c.unidad}\n`; });
+  });
+  if(STATE.maquinas.length){
+    msg+='\n*Equipos:*\n';
+    STATE.maquinas.forEach(m=>{ msg+=`- ${m.id_maquina} (${m.operador||'s/op'}) ${m.horas_operadas||0}h`+((m.horas_muertas>0)?` · ${m.horas_muertas}h menos: ${m.motivo||''}`:'')+'\n'; });
+  }
+  const box=document.getElementById('msgBox'); box.style.display='block'; box.textContent=msg;
+  if(navigator.clipboard){ navigator.clipboard.writeText(msg).then(()=>{}, ()=>{}); }
+}
+</script>
+</body>
+</html>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sistema Maquinaria — Login</title>
+<title>Sistema Reporte de Obra — Login</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
 <style>
   :root { --bg:#0f1117;--surface:#1a1d27;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--error:#e74c3c;--input-bg:#12151f; }
@@ -30,7 +30,7 @@
 <div class="card">
   <div class="logo">
     <div class="logo-icon">🚜</div>
-    <h1>Control de Maquinaria</h1>
+    <h1>Reporte de Obra</h1>
     <p>Ingresa tus credenciales para continuar</p>
   </div>
   <div class="field">
@@ -44,23 +44,26 @@
   <button class="btn" onclick="login()">INGRESAR →</button>
   <div class="error" id="errorMsg">Usuario o contraseña incorrectos</div>
   <div class="divider"></div>
-  <div class="version">Sistema de Reporte v1.0</div>
+  <div class="version">Sistema de Reporte v2.0</div>
 </div>
 <script>
 const USUARIOS = {
-  'admin':    { clave: 'venganza753', rol: 'admin',    redirige: 'estado.html' },
-  'capataz1': { clave: 'uf1-2',      rol: 'capataz',  redirige: 'formulario.html' },
-  'capataz2': { clave: 'uf1-2',      rol: 'capataz',  redirige: 'formulario.html' },
-  'capataz3': { clave: 'uf1-2',      rol: 'capataz',  redirige: 'formulario.html' },
-  'capataz4': { clave: 'uf1-2',      rol: 'capataz',  redirige: 'formulario.html' },
-  'capataz5': { clave: 'uf1-2',      rol: 'capataz',  redirige: 'formulario.html' },
+  'admin':       { clave: 'venganza753', rol: 'admin',       redirige: 'menu.html' },
+  'encargado':   { clave: 'enc1-2', rol: 'encargado',  redirige: 'encargado.html' },
+  'capataz1':    { clave: 'uf1-2', rol: 'capataz',    redirige: 'reporte-capataz.html' },
+  'capataz2':    { clave: 'uf1-2', rol: 'capataz',    redirige: 'reporte-capataz.html' },
+  'capataz3':    { clave: 'uf1-2', rol: 'capataz',    redirige: 'reporte-capataz.html' },
+  'capataz4':    { clave: 'uf1-2', rol: 'capataz',    redirige: 'reporte-capataz.html' },
+  'capataz5':    { clave: 'uf1-2', rol: 'capataz',    redirige: 'reporte-capataz.html' },
+  // Chequeadoras (su formulario lo construimos en el siguiente paso)
+  'chequeadora1':{ clave: 'cheq1-2', rol: 'chequeadora', redirige: 'reporte-chequeadora.html' },
+  'chequeadora2':{ clave: 'cheq1-2', rol: 'chequeadora', redirige: 'reporte-chequeadora.html' },
 };
 
 function login() {
   const u = document.getElementById('usuario').value.trim().toLowerCase();
   const c = document.getElementById('clave').value;
   const err = document.getElementById('errorMsg');
-
   if (USUARIOS[u] && USUARIOS[u].clave === c) {
     sessionStorage.setItem('usuario', u);
     sessionStorage.setItem('rol', USUARIOS[u].rol);
