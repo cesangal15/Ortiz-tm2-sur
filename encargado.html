@@ -234,6 +234,10 @@ function render(){
   html+='<div id="lineasBox">'+renderLineas()+'</div>';
   html+=renderAddCard();
 
+  // ---- maquinaria reportada ----
+  html+='<div class="section-title">Maquinaria reportada ('+STATE.maquinas.length+')</div>';
+  html+=renderMaquinas();
+
   // ---- acciones ----
   html+='<div class="actions">'+
     '<button class="btn-action" onclick="guardar()">💾 Guardar cambios<span class="saved-flag" id="savedFlag">guardado ✓</span></button>'+
@@ -274,6 +278,20 @@ function renderAddCard(){
     <div><label>Largo</label><input type="number" step="any" id="addLargo" placeholder="0"></div>
     <button class="btn-add" onclick="addLinea()">+ Añadir</button>
   </div></div>`;
+}
+function renderMaquinas(){
+  if(!STATE.maquinas.length) return '<div class="empty-state" style="padding:16px;"><p>Sin maquinaria reportada este día</p></div>';
+  let html='';
+  STATE.maquinas.forEach(m=>{
+    const muertas=parseFloat(m.horas_muertas)||0;
+    const menos = muertas>0 ? ` · <span style="color:var(--error)">${muertas}h menos${m.motivo?(': '+m.motivo):''}</span>` : '';
+    html+=`<div class="linea-item">
+      <div class="li-main"><div class="li-act">${m.id_maquina||'?'} <span style="color:var(--muted);font-weight:400;font-size:11px;">${m.tipo_equipo||''}</span></div>
+      <div class="li-sub">${m.actividad||'—'} · ${m.operador||'s/op'} · ${m.capataz||''}</div></div>
+      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;white-space:nowrap;">${m.horas_operadas||0}h${menos}</div>
+    </div>`;
+  });
+  return html;
 }
 function editLargo(idx,val){ STATE.cantidades[idx].largo=parseFloat(val)||0; refreshTotales(); }
 function delLinea(idx){ STATE.cantidades.splice(idx,1); render(); }
