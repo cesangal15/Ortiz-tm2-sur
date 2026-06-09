@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reporte de Chequeadora</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--success:#2ecc71;--error:#e74c3c;--input-bg:#12151f;--uf1:#3a9bdc;--uf2:#9b59b6;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:0 0 80px;}
+  .header{background:linear-gradient(135deg,#1a1d27 0%,#0f1117 100%);border-bottom:3px solid var(--accent);padding:20px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20;}
+  .header-left .label{font-family:'Syne',sans-serif;font-size:10px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;}
+  .header-left h1{font-family:'Syne',sans-serif;font-size:19px;font-weight:800;}
+  .header-user{font-size:12px;color:var(--muted);text-align:right;}
+  .header-user span{display:block;color:var(--accent);font-weight:600;}
+  .logout-btn{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:4px 10px;cursor:pointer;margin-top:4px;font-family:'DM Sans',sans-serif;}
+  .logout-btn:hover{border-color:var(--error);color:var(--error);}
+  .container{max-width:600px;margin:0 auto;padding:20px 16px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px;}
+  .section-title{font-family:'Syne',sans-serif;font-size:12px;letter-spacing:2px;color:var(--accent);text-transform:uppercase;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+  .section-title::after{content:'';flex:1;height:1px;background:var(--border);}
+  .section-title .count{font-size:11px;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:2px 10px;letter-spacing:0;}
+  .field{margin-bottom:14px;}
+  .field:last-child{margin-bottom:0;}
+  label{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-bottom:5px;letter-spacing:0.5px;text-transform:uppercase;}
+  label .req{color:var(--accent);margin-left:2px;}
+  select,input[type="number"],input[type="text"],input[type="date"]{width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 14px;outline:none;transition:border-color 0.2s;appearance:none;}
+  input[type="date"]{color-scheme:dark;}
+  select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a80a0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:36px;cursor:pointer;}
+  select:focus,input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,0.1);}
+  select option{background:#1a1d27;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .field-error{border-color:var(--error)!important;}
+  .origen-pill{font-size:11px;color:var(--muted);margin-top:6px;font-style:italic;}
+  .origen-pill b{color:var(--accent);font-style:normal;}
+  .linea{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px;}
+  .linea-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+  .linea-num{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:1px;text-transform:uppercase;}
+  .btn-del{background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;width:26px;height:26px;font-size:14px;cursor:pointer;line-height:1;flex-shrink:0;}
+  .btn-del:hover{border-color:var(--error);color:var(--error);}
+  .meta-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;border:1px solid var(--border);background:var(--input-bg);color:var(--muted);}
+  .badge.uf1{border-color:rgba(58,155,220,0.4);background:rgba(58,155,220,0.1);color:var(--uf1);}
+  .badge.uf2{border-color:rgba(155,89,182,0.4);background:rgba(155,89,182,0.1);color:var(--uf2);}
+  .badge.m3{border-color:rgba(245,166,35,0.3);background:rgba(245,166,35,0.08);color:var(--accent);}
+  .btn-add{width:100%;padding:12px;background:var(--input-bg);border:1px dashed var(--border);border-radius:10px;color:var(--accent);font-family:'Syne',sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;cursor:pointer;transition:all 0.2s;text-transform:uppercase;}
+  .btn-add:hover{border-color:var(--accent);background:rgba(245,166,35,0.05);}
+  .empty-hint{font-size:12px;color:var(--muted);text-align:center;padding:8px 0 14px;}
+  .resumen{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 16px;margin-top:4px;font-size:13px;display:flex;justify-content:space-between;}
+  .resumen b{font-family:'Syne',sans-serif;}
+  .submit-bar{position:fixed;bottom:0;left:0;right:0;background:linear-gradient(to top,#0f1117 60%,transparent);padding:16px;z-index:15;}
+  .submit-inner{max-width:600px;margin:0 auto;}
+  .btn-submit{width:100%;padding:16px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:12px;color:#0f1117;font-family:'Syne',sans-serif;font-size:15px;font-weight:800;cursor:pointer;letter-spacing:1px;transition:all 0.2s;box-shadow:0 6px 24px rgba(245,166,35,0.25);}
+  .btn-submit:hover{transform:translateY(-1px);}
+  .btn-submit:disabled{opacity:0.6;cursor:default;transform:none;}
+  .success{display:none;text-align:center;padding:60px 20px;}
+  .success.visible{display:block;}
+  .success .ico{font-size:56px;margin-bottom:16px;}
+  .success h2{font-family:'Syne',sans-serif;font-size:22px;margin-bottom:8px;}
+  .success p{color:var(--muted);font-size:14px;margin-bottom:24px;}
+  .success button{padding:12px 28px;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:'Syne',sans-serif;font-weight:700;cursor:pointer;}
+  .hidden{display:none;}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <div class="label">Reporte Diario · Chequeadora</div>
+    <h1>🚛 Viajes del día</h1>
+  </div>
+  <div class="header-user">
+    <span id="userDisplay">—</span>
+    <button class="logout-btn" onclick="logout()">Salir</button>
+  </div>
+</div>
+
+<div id="formMain">
+<div class="container">
+  <div class="card">
+    <div class="grid2">
+      <div class="field"><label>Fecha <span class="req">*</span></label><input type="date" id="fecha"></div>
+      <div class="field"><label>m³ por viaje</label><input type="number" step="any" id="m3viaje" value="14" oninput="recalcAll()"></div>
+    </div>
+    <div class="field">
+      <label>Origen del material <span class="req">*</span></label>
+      <select id="origen" onchange="onOrigen()">
+        <option value="">— Selecciona origen —</option>
+        <option value="Masivo">Masivo</option>
+        <option value="Diviso">Diviso / Préstamo</option>
+        <option value="Botadero">Botadero / RCD</option>
+      </select>
+      <div class="origen-pill" id="origenPill" style="display:none;"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">Viajes por PK destino <span class="count" id="cnt">0</span></div>
+    <div id="lineasContainer"></div>
+    <div class="empty-hint" id="empty">Agrega los viajes por cada PK</div>
+    <button class="btn-add" onclick="addLinea()">+ Agregar PK</button>
+    <div class="resumen" id="resumen" style="display:none;">
+      <span>Total: <b id="totViajes">0</b> viajes</span>
+      <span><b id="totM3">0</b> m³</span>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="success" id="successScreen">
+  <div class="ico">✅</div>
+  <h2>Reporte enviado</h2>
+  <p id="successMsg">Tus viajes quedaron registrados.</p>
+  <button onclick="resetForm()">Nuevo reporte</button>
+</div>
+
+<div class="submit-bar" id="submitBar">
+  <div class="submit-inner">
+    <button class="btn-submit" id="btnSubmit" onclick="submitForm()">ENVIAR VIAJES DEL DÍA →</button>
+  </div>
+</div>
+
+<script>
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
+
+// origen -> ítem de excavación
+const ORIGENES = {
+  'Masivo':   {actividad:'Excavación aprovechable (masivo)', item:'Excavaciones en material común APROVECHABLE', cc:'02.05'},
+  'Diviso':   {actividad:'Excavación de préstamo (Diviso)',  item:'Excavación en material común de préstamos',   cc:'02.06'},
+  'Botadero': {actividad:'Excavación no aprovechable',       item:'Excavaciones en material común NO APROVECHABLE', cc:'02.05'},
+};
+const TIPOS = ['Terraplén','Puente','ODL','Botadero'];
+
+let lineaIdx = 0;
+
+window.onload = function(){
+  const rol = sessionStorage.getItem('rol');
+  const usuario = sessionStorage.getItem('usuario');
+  if(!rol || (rol!=='chequeadora' && rol!=='admin')){ window.location.href='index.html'; return; }
+  document.getElementById('userDisplay').textContent = usuario || 'chequeadora';
+  document.getElementById('fecha').value = new Date().toISOString().split('T')[0];
+  addLinea();
+};
+function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
+
+function pkToMeters(pk){ if(!pk) return null; pk=String(pk).trim().replace(/\s/g,''); if(pk.includes('+')){const p=pk.split('+');const km=parseInt(p[0]);const m=parseInt(p[1]||'0');if(isNaN(km))return null;return km*1000+(isNaN(m)?0:m);} const n=parseFloat(pk);return isNaN(n)?null:n*1000; }
+function ufFromPk(pk){ const m=pkToMeters(pk); if(m==null) return ''; return m<=30000?'UF1':'UF2'; }
+function proyectoFromUf(uf){ return uf==='UF1'?'3701':uf==='UF2'?'3702':''; }
+function m3viaje(){ return parseFloat(document.getElementById('m3viaje').value)||14; }
+
+function onOrigen(){
+  const o=document.getElementById('origen').value;
+  const pill=document.getElementById('origenPill');
+  if(!o){ pill.style.display='none'; return; }
+  pill.style.display='block';
+  pill.innerHTML='→ genera: <b>'+ORIGENES[o].item+'</b>';
+}
+
+function tipoOptions(){ return TIPOS.map(t=>'<option>'+t+'</option>').join(''); }
+
+function addLinea(){
+  const i=lineaIdx++;
+  const div=document.createElement('div');
+  div.className='linea'; div.id='linea_'+i;
+  div.innerHTML=
+    '<div class="linea-head"><span class="linea-num">PK #'+(document.querySelectorAll('.linea').length+1)+'</span>'
+    +'<button class="btn-del" onclick="delLinea('+i+')" title="Eliminar">✕</button></div>'
+    +'<div class="grid2">'
+    +'<div class="field" style="margin:0;"><label>PK destino <span class="req">*</span></label>'
+    +'<input type="text" class="l-pk" placeholder="16+200" oninput="onLinea('+i+')"></div>'
+    +'<div class="field" style="margin:0;"><label>N° viajes <span class="req">*</span></label>'
+    +'<input type="number" step="1" class="l-viajes" placeholder="0" oninput="onLinea('+i+')"></div>'
+    +'</div>'
+    +'<div class="field" style="margin-top:14px;"><label>Tipo de destino</label>'
+    +'<select class="l-tipo">'+tipoOptions()+'</select></div>'
+    +'<div class="meta-row" id="meta_'+i+'" style="display:none;">'
+    +'<span class="badge m3" id="m3Badge_'+i+'">0 m³</span>'
+    +'<span class="badge" id="ufBadge_'+i+'">UF —</span></div>';
+  document.getElementById('lineasContainer').appendChild(div);
+  refresh();
+}
+function delLinea(i){ const el=document.getElementById('linea_'+i); if(el) el.remove(); renumber(); refresh(); }
+function renumber(){ document.querySelectorAll('#lineasContainer .linea').forEach((el,k)=>{ el.querySelector('.linea-num').textContent='PK #'+(k+1); }); }
+
+function onLinea(i){
+  const b=document.getElementById('linea_'+i);
+  const pk=b.querySelector('.l-pk').value;
+  const viajes=parseFloat(b.querySelector('.l-viajes').value)||0;
+  const meta=document.getElementById('meta_'+i);
+  if(!pk && !viajes){ meta.style.display='none'; refresh(); return; }
+  meta.style.display='flex';
+  const uf=ufFromPk(pk);
+  document.getElementById('m3Badge_'+i).textContent=(viajes*m3viaje()).toLocaleString('es-CO')+' m³';
+  const ufb=document.getElementById('ufBadge_'+i);
+  ufb.className='badge'+(uf==='UF1'?' uf1':uf==='UF2'?' uf2':'');
+  ufb.textContent= uf? (uf+' · '+proyectoFromUf(uf)) : 'UF —';
+  refresh();
+}
+function recalcAll(){ document.querySelectorAll('#lineasContainer .linea').forEach((el)=>{ onLinea(el.id.split('_')[1]); }); }
+
+function refresh(){
+  const lineas=document.querySelectorAll('#lineasContainer .linea');
+  document.getElementById('cnt').textContent=lineas.length;
+  document.getElementById('empty').style.display=lineas.length?'none':'block';
+  let tv=0; lineas.forEach(b=>{ tv+=parseFloat(b.querySelector('.l-viajes').value)||0; });
+  const res=document.getElementById('resumen');
+  if(lineas.length){ res.style.display='flex'; document.getElementById('totViajes').textContent=tv; document.getElementById('totM3').textContent=(tv*m3viaje()).toLocaleString('es-CO'); }
+  else res.style.display='none';
+}
+
+function getCantidades(){
+  const origen=document.getElementById('origen').value;
+  if(!origen) return [];
+  const exc=ORIGENES[origen];
+  const factor=m3viaje();
+  const rows=[];
+  document.querySelectorAll('#lineasContainer .linea').forEach(b=>{
+    const pk=b.querySelector('.l-pk').value.trim();
+    const viajes=parseFloat(b.querySelector('.l-viajes').value)||0;
+    const tipo=b.querySelector('.l-tipo').value;
+    if(!pk || !viajes) return;
+    const m3=viajes*factor;
+    const uf=ufFromPk(pk), proy=proyectoFromUf(uf);
+    const base={ grupo:'TIERRAS', capitulo:'EXPLANACIONES', uf, proyecto:proy,
+      elemento:'tm2 pk '+pk, pk_inicial:pk, pk_final:'', abs_inicial:pkToMeters(pk), abs_final:null,
+      liberacion:'CAMPO', largo:m3, equipos:[] };
+    // excavación (según origen)
+    rows.push(Object.assign({}, base, { actividad:exc.actividad, descripcion:exc.item,
+      centro_costo: proy?(proy+'.'+exc.cc):'', unidad:'m3',
+      observacion: 'Chequeadora '+origen+' · '+viajes+' viajes'+(tipo!=='Terraplén'?(' ('+tipo+')'):'') }));
+    // terraplén (solo si el destino es terraplén)
+    if(tipo==='Terraplén'){
+      rows.push(Object.assign({}, base, { actividad:'Terraplén (conformación)', descripcion:'Terraplenes (solo conformación)',
+        centro_costo: proy?(proy+'.02.07'):'', unidad:'m3',
+        observacion: 'Chequeadora '+origen+' · '+viajes+' viajes' }));
+    }
+  });
+  return rows;
+}
+function validate(){
+  let ok=true;
+  document.querySelectorAll('.field-error').forEach(e=>e.classList.remove('field-error'));
+  const fecha=document.getElementById('fecha'), origen=document.getElementById('origen');
+  if(!fecha.value){ fecha.classList.add('field-error'); ok=false; }
+  if(!origen.value){ origen.classList.add('field-error'); ok=false; }
+  document.querySelectorAll('#lineasContainer .linea').forEach(b=>{
+    const pk=b.querySelector('.l-pk'), v=b.querySelector('.l-viajes');
+    if(!pk.value.trim()){ pk.classList.add('field-error'); ok=false; }
+    if(!v.value){ v.classList.add('field-error'); ok=false; }
+  });
+  if(getCantidades().length===0){ if(ok) alert('Agrega al menos un PK con viajes y elige el origen.'); return false; }
+  return ok;
+}
+async function submitForm(){
+  if(!validate()){ if(document.querySelector('.field-error')) alert('Revisa los campos marcados.'); return; }
+  const btn=document.getElementById('btnSubmit');
+  btn.textContent='ENVIANDO...'; btn.disabled=true;
+  const data={ fecha:document.getElementById('fecha').value, rol:'chequeadora',
+    capataz: sessionStorage.getItem('usuario')||'chequeadora', cantidades:getCantidades() };
+  try{
+    const resp=await fetch(APPS_SCRIPT_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(data) });
+    const res=await resp.json();
+    if(!res || !res.ok) throw new Error((res&&res.error)||'Respuesta inesperada del servidor');
+    document.getElementById('successMsg').textContent='Se registraron '+res.cantidades+' filas (excavación + terraplén).';
+    document.getElementById('formMain').classList.add('hidden');
+    document.getElementById('submitBar').classList.add('hidden');
+    document.getElementById('successScreen').classList.add('visible');
+  }catch(err){
+    alert('⚠ No se pudo guardar: '+err.message+'\n\nIntenta de nuevo.');
+    btn.textContent='ENVIAR VIAJES DEL DÍA →'; btn.disabled=false;
+  }
+}
+function resetForm(){
+  document.getElementById('lineasContainer').innerHTML='';
+  lineaIdx=0;
+  document.getElementById('successScreen').classList.remove('visible');
+  document.getElementById('formMain').classList.remove('hidden');
+  document.getElementById('submitBar').classList.remove('hidden');
+  document.getElementById('btnSubmit').textContent='ENVIAR VIAJES DEL DÍA →';
+  document.getElementById('btnSubmit').disabled=false;
+  document.getElementById('fecha').value=new Date().toISOString().split('T')[0];
+  addLinea();
+}
+</script>
+</body>
+</html>
