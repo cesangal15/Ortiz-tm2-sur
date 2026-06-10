@@ -84,7 +84,7 @@
   </div>
   <div class="header-user">
     <span id="userDisplay">—</span>
-    <button class="logout-btn" onclick="logout()">Salir</button>
+    <button class="logout-btn" id="backBtn" onclick="logout()">Salir</button>
   </div>
 </div>
 
@@ -160,12 +160,17 @@ let lineaIdx = 0, eqIdx = 0;
 
 window.onload = function(){
   const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
-  if(!rol || (rol!=='capataz' && rol!=='admin')){ window.location.href='index.html'; return; }
+  if(!rol || (rol!=='capataz' && rol!=='admin' && rol!=='encargado')){ window.location.href='index.html'; return; }
   document.getElementById('userDisplay').textContent=usuario||'capataz';
+  document.getElementById('backBtn').textContent = (rol==='encargado') ? '← Volver' : 'Salir';
   document.getElementById('fechaReporte').value=new Date().toISOString().split('T')[0];
   addLinea();
 };
-function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
+function logout(){
+  const rol=sessionStorage.getItem('rol');
+  if(rol==='encargado'){ window.location.href='encargado.html'; return; }
+  sessionStorage.clear(); window.location.href='index.html';
+}
 
 function pkToMeters(pk){ if(!pk) return null; pk=String(pk).trim().replace(/\s/g,''); if(pk.includes('+')){const p=pk.split('+');const km=parseInt(p[0]);const m=parseInt(p[1]||'0');if(isNaN(km))return null;return km*1000+(isNaN(m)?0:m);} const n=parseFloat(pk);return isNaN(n)?null:n*1000; }
 function ufFromPk(pk){ const m=pkToMeters(pk); if(m==null) return ''; return m<=30000?'UF1':'UF2'; }
