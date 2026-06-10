@@ -160,8 +160,6 @@ let lineaIdx = 0, eqIdx = 0;
 
 window.onload = function(){
   const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
-  // DEBUG TEMPORAL - borrar después
-  alert('rol: [' + rol + '] | usuario: [' + usuario + ']');
   if(!rol || (rol!=='capataz' && rol!=='admin' && rol!=='encargado')){ window.location.href='index.html'; return; }
   document.getElementById('userDisplay').textContent=usuario||'capataz';
   document.getElementById('backBtn').textContent = (rol==='encargado') ? '← Volver' : 'Salir';
