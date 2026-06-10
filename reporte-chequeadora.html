@@ -86,11 +86,15 @@
       <label>Origen del material <span class="req">*</span></label>
       <select id="origen" onchange="onOrigen()">
         <option value="">— Selecciona origen —</option>
-        <option value="Masivo">Masivo</option>
+        <option value="Masivo2">Masivo 2 (PK 19)</option>
+        <option value="Masivo1">Masivo 1 (PK 14)</option>
         <option value="Diviso">Diviso / Préstamo</option>
-        <option value="Botadero">Botadero / RCD</option>
+        <option value="Complementario">PK Complementario</option>
+        <option value="Otro">Otro origen</option>
       </select>
-      <div class="origen-pill" id="origenPill" style="display:none;"></div>
+    <div class="field" id="origenTextoWrap" style="display:none;">
+      <label>Especifica el origen</label>
+      <input type="text" id="origenTexto" placeholder="ej. PK 22+100">
     </div>
   </div>
 
@@ -125,9 +129,11 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IV
 
 // origen -> ítem de excavación
 const ORIGENES = {
-  'Masivo':   {actividad:'Excavación aprovechable (masivo)', item:'Excavaciones en material común APROVECHABLE', cc:'02.05'},
-  'Diviso':   {actividad:'Excavación de préstamo (Diviso)',  item:'Excavación en material común de préstamos',   cc:'02.06'},
-  'Botadero': {actividad:'Excavación no aprovechable',       item:'Excavaciones en material común NO APROVECHABLE', cc:'02.05'},
+  'Masivo2':        {actividad:'Excavación aprovechable (masivo)', item:'Excavaciones en material común APROVECHABLE', cc:'02.05', label:'Masivo 2 (PK 19)'},
+  'Masivo1':        {actividad:'Excavación aprovechable (masivo)', item:'Excavaciones en material común APROVECHABLE', cc:'02.05', label:'Masivo 1 (PK 14)'},
+  'Diviso':         {actividad:'Excavación de préstamo (Diviso)',  item:'Excavación en material común de préstamos',   cc:'02.06', label:'Diviso / Préstamo'},
+  'Complementario': {actividad:'Excavación aprovechable (masivo)', item:'Excavaciones en material común APROVECHABLE', cc:'02.05', label:'PK Complementario'},
+  'Otro':           {actividad:'Excavación aprovechable (masivo)', item:'Excavaciones en material común APROVECHABLE', cc:'02.05', label:'Otro origen'},
 };
 const TIPOS = ['Terraplén','Puente','ODL','Botadero'];
 
@@ -151,7 +157,10 @@ function m3viaje(){ return parseFloat(document.getElementById('m3viaje').value)|
 function onOrigen(){
   const o=document.getElementById('origen').value;
   const pill=document.getElementById('origenPill');
-  if(!o){ pill.style.display='none'; return; }
+  const textoWrap=document.getElementById('origenTextoWrap');
+  if(!o){ pill.style.display='none'; textoWrap.style.display='none'; return; }
+  const needsText=(o==='Complementario'||o==='Otro');
+  textoWrap.style.display=needsText?'block':'none';
   pill.style.display='block';
   pill.innerHTML='→ genera: <b>'+ORIGENES[o].item+'</b>';
 }
@@ -212,6 +221,7 @@ function getCantidades(){
   const origen=document.getElementById('origen').value;
   if(!origen) return [];
   const exc=ORIGENES[origen];
+  const origenLabel=(origen==='Complementario'||origen==='Otro')?(document.getElementById('origenTexto').value.trim()||exc.label):exc.label;
   const factor=m3viaje();
   const rows=[];
   document.querySelectorAll('#lineasContainer .linea').forEach(b=>{
@@ -221,18 +231,17 @@ function getCantidades(){
     if(!pk || !viajes) return;
     const m3=viajes*factor;
     const uf=ufFromPk(pk), proy=proyectoFromUf(uf);
-    const base={ grupo:'TIERRAS', capitulo:'EXPLANACIONES', uf, proyecto:proy,
+    const grupo=exc.cc==='02.06'?'TIERRAS':'TIERRAS';
+    const base={ grupo, capitulo:'EXPLANACIONES', uf, proyecto:proy,
       elemento:'tm2 pk '+pk, pk_inicial:pk, pk_final:'', abs_inicial:pkToMeters(pk), abs_final:null,
-      liberacion:'CAMPO', largo:m3, equipos:[] };
-    // excavación (según origen)
+      liberacion:'CAMPO', largo:m3, equipos:[], data:true };
     rows.push(Object.assign({}, base, { actividad:exc.actividad, descripcion:exc.item,
       centro_costo: proy?(proy+'.'+exc.cc):'', unidad:'m3',
-      observacion: 'Chequeadora '+origen+' · '+viajes+' viajes'+(tipo!=='Terraplén'?(' ('+tipo+')'):'') }));
-    // terraplén (solo si el destino es terraplén)
+      observacion: origenLabel+' · '+viajes+' viajes'+(tipo!=='Terraplén'?(' ('+tipo+')'):'') }));
     if(tipo==='Terraplén'){
       rows.push(Object.assign({}, base, { actividad:'Terraplén (conformación)', descripcion:'Terraplenes (solo conformación)',
         centro_costo: proy?(proy+'.02.07'):'', unidad:'m3',
-        observacion: 'Chequeadora '+origen+' · '+viajes+' viajes' }));
+        observacion: origenLabel+' · '+viajes+' viajes' }));
     }
   });
   return rows;

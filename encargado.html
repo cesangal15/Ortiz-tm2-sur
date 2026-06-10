@@ -147,7 +147,7 @@ async function consultar(){
     if(proyecto) url+=`&proyecto=${encodeURIComponent(proyecto)}`;
     const resp=await fetch(url); const data=await resp.json();
     STATE.fecha=fecha;
-    STATE.cantidades=(data.cantidades||[]).map(c=>({...c, largo:parseFloat(c.largo)||0, _inc:(c.estado!=='descartado')}));
+    STATE.cantidades=(data.cantidades||[]).map(c=>({...c, largo:parseFloat(c.largo)||0, _inc:(c.estado!=='descartado'&&c.estado!=='no_data'), _nodata:(c.estado==='no_data')}));
     STATE.maquinas=data.maquinas||[];
     render();
   }catch(err){
@@ -215,9 +215,15 @@ function render(){
   html+='<div class="section-title">Maquinaria reportada ('+STATE.maquinas.length+')</div>'+renderMaquinas();
 
   html+='<div class="actions">'+
+    '<button class="btn-action" onclick="window.location.href=\'reporte-capataz.html\'">📋 Agregar actividad / maquinaria</button>'+
     '<button class="btn-action primary" onclick="enviar()">📤 Enviar a DATA<span class="saved-flag" id="savedFlag">enviado ✓</span></button>'+
     '<button class="btn-action" onclick="generarMensaje()">📲 Generar WhatsApp</button>'+
-    '</div><div class="msg-box" id="msgBox"></div>';
+    '</div>';
+  html+='<div class="card" style="margin-top:16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">'+
+    '<div class="section-title" style="margin-bottom:10px;">Equipos inoperativos / novedades</div>'+
+    '<textarea id="inoperativos" placeholder="ej. Motoniveladora MO03: sin operador&#10;Minicargador: falla mecánica" style="width:100%;min-height:80px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:\'DM Sans\',sans-serif;font-size:13px;padding:10px 12px;outline:none;resize:vertical;"></textarea>'+
+    '</div>';
+  html+='<div class="msg-box" id="msgBox"></div>';
   cont.innerHTML=html;
 }
 
@@ -230,13 +236,21 @@ function renderBandeja(){
     byCat[cat].forEach(({c,idx})=>{
       const uf=c.uf||ufFromPk(c.pk_inicial);
       const pk=c.pk_inicial+(c.pk_final?(' - '+c.pk_final):'');
-      html+=`<div class="linea-item ${c._inc?'':'off'}" id="li_${idx}">
-        <button class="tog ${c._inc?'on':'no'}" onclick="toggleInc(${idx})">${c._inc?'✓':'✕'}</button>
-        <div class="li-main"><div class="li-act">${c.actividad||c.descripcion||''}</div>
-        <div class="li-sub"><span class="src ${srcClass(c)}">${c.rol||'?'}·${c.reporta||'?'}</span> PK ${pk||'—'}${uf?` <span class="badge ${uf.toLowerCase()}">${uf}</span>`:''}</div></div>
-        <div class="li-largo"><input type="number" step="any" value="${c.largo}" onchange="editLargo(${idx},this.value)"></div>
-        <div class="li-unit">${c.unidad||''}</div>
-      </div>`;
+      if(c._nodata){
+        html+=`<div class="linea-item off" id="li_${idx}" style="opacity:.65;border-style:dashed;">
+          <div style="width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;">🔧</div>
+          <div class="li-main"><div class="li-act">${c.actividad||c.descripcion||''} <span style="font-size:10px;color:var(--muted);font-weight:400;">(solo maquinaria)</span></div>
+          <div class="li-sub"><span class="src ${srcClass(c)}">${c.rol||'?'}·${c.reporta||'?'}</span> PK ${pk||'—'}${uf?` <span class="badge ${uf.toLowerCase()}">${uf}</span>`:''} · ${c.largo} ${c.unidad}</div></div>
+        </div>`;
+      } else {
+        html+=`<div class="linea-item ${c._inc?'':'off'}" id="li_${idx}">
+          <button class="tog ${c._inc?'on':'no'}" onclick="toggleInc(${idx})">${c._inc?'✓':'✕'}</button>
+          <div class="li-main"><div class="li-act">${c.actividad||c.descripcion||''}</div>
+          <div class="li-sub"><span class="src ${srcClass(c)}">${c.rol||'?'}·${c.reporta||'?'}</span> PK ${pk||'—'}${uf?` <span class="badge ${uf.toLowerCase()}">${uf}</span>`:''}</div></div>
+          <div class="li-largo"><input type="number" step="any" value="${c.largo}" onchange="editLargo(${idx},this.value)"></div>
+          <div class="li-unit">${c.unidad||''}</div>
+        </div>`;
+      }
     });
   });
   return html;
@@ -313,6 +327,8 @@ function generarMensaje(){
   });
   if(STATE.maquinas.length){ msg+='\n*Equipos:*\n';
     STATE.maquinas.forEach(m=>{ msg+=`- ${m.id_maquina} (${m.operador||'s/op'}) ${m.horas_operadas||0}h`+((m.horas_muertas>0)?` · ${m.horas_muertas}h menos: ${m.motivo||''}`:'')+'\n'; }); }
+  const inop=(document.getElementById('inoperativos').value||'').trim();
+  if(inop) msg+='\n*EQUIPOS INOPERATIVOS*\n'+inop+'\n';
   const box=document.getElementById('msgBox'); box.style.display='block'; box.textContent=msg;
   if(navigator.clipboard) navigator.clipboard.writeText(msg).then(()=>{},()=>{});
 }
