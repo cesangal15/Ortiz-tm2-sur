@@ -67,10 +67,17 @@
   .linea-item.dupmark{border-color:rgba(245,166,35,0.45);}
   .linea-item.dupmark.hard{border-color:rgba(231,76,60,0.5);}
   .maq-id{font-family:'Syne',sans-serif;font-weight:700;font-size:14px;white-space:nowrap;min-width:60px;flex-shrink:0;}
-  .maq-edit-inline{width:72px;background:var(--input-bg);border:1px solid rgba(231,76,60,0.5);border-radius:5px;color:var(--text);font-family:'Syne',sans-serif;font-weight:700;font-size:12px;padding:2px 6px;outline:none;text-transform:uppercase;display:none;}
+  .maq-edit-inline{width:auto;min-width:96px;background:var(--input-bg);border:1px solid rgba(231,76,60,0.5);border-radius:5px;color:var(--text);font-family:'Syne',sans-serif;font-weight:700;font-size:12px;padding:3px 22px 3px 7px;outline:none;text-transform:uppercase;display:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23e74c3c' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 7px center;cursor:pointer;}
   .maq-edit-inline:focus{border-color:var(--accent);}
+  .maq-edit-inline option{background:#1a1d27;}
   .maq-pencil{background:none;border:none;cursor:pointer;color:rgba(231,76,60,0.7);font-size:11px;padding:0 2px;vertical-align:middle;}
   .maq-pencil:hover{color:var(--error);}
+  .ctrl-tag{font-size:9px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--muted);background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:1px 7px;margin-left:7px;}
+  .ofi-tag{font-size:9px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--success);background:rgba(46,204,113,0.08);border:1px solid rgba(46,204,113,0.4);border-radius:10px;padding:1px 7px;margin-left:7px;}
+  .linea-item.control{border-style:dashed;border-color:var(--border);}
+  .check-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;border-radius:10px;font-size:12.5px;margin:0 0 16px;}
+  .check-row.ok{background:rgba(46,204,113,0.08);border:1px solid rgba(46,204,113,0.35);color:var(--success);}
+  .check-row.warn{background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.45);color:var(--error);}
   .add-card{background:var(--surface2);border:1px dashed var(--border);border-radius:10px;padding:14px;margin-top:10px;}
   .add-grid{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:end;}
   .add-grid label{font-size:10px;}
@@ -118,6 +125,10 @@
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
 const CAPATACES_ESPERADOS = ['capataz1','capataz2','capataz3','capataz4','capataz5'];
 const TODAS_MAQUINAS = ['BL005','BL009','CAT320','EXC001','EXC013','EXC014','EXC015','MC705','MO03','MO04','MO09','NH69'];
+// Lista completa de IDs conocidos (para el desplegable de corrección de máquina)
+const MAQUINAS_LISTA = ['BL005','BL009','NH69','EXC001','EXC013','EXC014','EXC015','CAT320','MO03','MO04','MO09','MC705','FNG02','CR08','CR13','CR16','CR19','CR26','PEXC027','NH404','CS78B','CR020','NH420','D150B'];
+// Categorías cuyo volumen es OFICIAL de la chequeadora; el conteo del capataz es solo control.
+const CAT_CONTROL_CAPATAZ = ['Excavación aprovechable','Excavación préstamo','Excavación no aprovechable','Conformación / ZODME','Terraplén'];
 const ACTIVIDADES = [
   {g:'Excavación', a:'Excavación aprovechable (masivo)', item:'Excavaciones en material común APROVECHABLE', uni:'m3', cc:'02.05'},
   {g:'Excavación', a:'Excavación no aprovechable', item:'Excavaciones en material común NO APROVECHABLE', uni:'m3', cc:'02.05'},
@@ -158,6 +169,7 @@ async function consultar(){
     STATE.fecha=fecha;
     STATE.cantidades=(data.cantidades||[]).map(c=>({...c, largo:parseFloat(c.largo)||0, _inc:(c.estado!=='descartado'&&c.estado!=='no_data'), _nodata:(c.estado==='no_data')}));
     STATE.maquinas=data.maquinas||[];
+    autoReconcile();
     render();
   }catch(err){
     document.getElementById('resultados').innerHTML=`<div class="empty-state"><div class="icon">⚠️</div><p>No se pudo consultar. Revisa el Apps Script o la conexión.</p></div>`;
@@ -190,6 +202,23 @@ function calcTotales(){
   return t;
 }
 function srcClass(c){ return c.rol==='chequeadora'?'cheq':c.rol==='encargado'?'enc':'cap'; }
+
+// Al cargar: si una categoría de volumen (excavación/terraplén) la reportó la chequeadora (oficial)
+// Y también un capataz (control), apaga las filas del capataz por defecto y las marca como control.
+// El encargado puede volver a prenderlas manualmente si hace falta.
+function autoReconcile(){
+  const rolesPorCat={};
+  STATE.cantidades.forEach(c=>{ if(c._nodata) return;
+    const cat=categoria(c); (rolesPorCat[cat]=rolesPorCat[cat]||new Set()).add(c.rol);
+  });
+  STATE.cantidades.forEach(c=>{ if(c._nodata) return;
+    const cat=categoria(c);
+    const hayCheq=(rolesPorCat[cat]||new Set()).has('chequeadora');
+    if(c.rol==='capataz' && hayCheq && CAT_CONTROL_CAPATAZ.includes(cat)){
+      c._control=true; c._inc=false;
+    }
+  });
+}
 
 // Detecta posible doble conteo: misma categoría con filas de chequeadora Y capataz.
 // "hard" = además coincide el PK inicial exacto entre roles distintos.
@@ -241,6 +270,8 @@ function render(){
   if(!any) html+='<div class="cat" style="color:var(--muted)">Sin cantidades incluidas</div>';
   html+='</div>';
 
+  html+=renderChequeoTerraplen(tot);
+
   html+='<div class="section-title">Bandeja del día <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);font-size:11px;">(prende/apaga para incluir en DATA)</span></div>';
   html+='<div id="bandejaBox">'+renderBandeja()+'</div>';
   html+=renderAddCard();
@@ -260,6 +291,18 @@ function render(){
   cont.innerHTML=html;
 }
 
+// Regla: el material que va a terraplén proviene de excavación aprovechable (+ préstamo),
+// así que el terraplén debe ser siempre ≤ aprovechable. Si lo excede, probable doble conteo o error.
+function renderChequeoTerraplen(tot){
+  const terra=(tot['Terraplén']&&tot['Terraplén'].total)||0;
+  const aprov=((tot['Excavación aprovechable']&&tot['Excavación aprovechable'].total)||0)
+            +((tot['Excavación préstamo']&&tot['Excavación préstamo'].total)||0);
+  if(terra<=0 || aprov<=0) return '';
+  if(terra>aprov){
+    return `<div class="check-row warn">⚠ <span>Terraplén (${fmt(terra)}) supera al aprovechable+préstamo (${fmt(aprov)}). Revisa: posible doble conteo o material de más.</span></div>`;
+  }
+  return `<div class="check-row ok">✓ <span>Terraplén ${fmt(terra)} ≤ aprovechable+préstamo ${fmt(aprov)} m³ (coherente)</span></div>`;
+}
 function renderBandeja(){
   if(!STATE.cantidades.length) return '<div class="empty-state" style="padding:20px;"><p>La bandeja está vacía para esta fecha.</p></div>';
   let html=''; const byCat={}; const dups=computeDups();
@@ -281,9 +324,11 @@ function renderBandeja(){
           <div class="li-sub"><span class="src ${srcClass(c)}">${c.rol||'?'}·${c.reporta||'?'}</span> PK ${pk||'—'}${uf?` <span class="badge ${uf.toLowerCase()}">${uf}</span>`:''} · ${c.largo} ${c.unidad}</div></div>
         </div>`;
       } else {
-        html+=`<div class="linea-item ${c._inc?'':'off'}${dupCls}" id="li_${idx}">
+        const ctrlTag = c._control ? `<span class="ctrl-tag">control · no suma</span>` : '';
+        const ofiTag = (!c._control && c.rol==='chequeadora' && CAT_CONTROL_CAPATAZ.includes(cat)) ? `<span class="ofi-tag">oficial</span>` : '';
+        html+=`<div class="linea-item ${c._inc?'':'off'}${c._control?' control':''}${dupCls}" id="li_${idx}">
           <button class="tog ${c._inc?'on':'no'}" onclick="toggleInc(${idx})">${c._inc?'✓':'✕'}</button>
-          <div class="li-main"><div class="li-act">${c.actividad||c.descripcion||''}</div>
+          <div class="li-main"><div class="li-act">${c.actividad||c.descripcion||''}${ofiTag}${ctrlTag}</div>
           <div class="li-sub"><span class="src ${srcClass(c)}">${c.rol||'?'}·${c.reporta||'?'}</span> PK ${pk||'—'}${uf?` <span class="badge ${uf.toLowerCase()}">${uf}</span>`:''}${dupBadge}</div></div>
           <div class="li-largo"><input type="number" step="any" value="${c.largo}" onchange="editLargo(${idx},this.value)"></div>
           <div class="li-unit">${c.unidad||''}</div>
@@ -313,7 +358,10 @@ function renderMaquinas(){
     const prod = m.produccion ? ` · ${m.produccion} ${m.unidad_prod||''}` : '';
     const isDup = (cnt[(m.id_maquina||'').toUpperCase()]||0) > 1;
     const maqId = (m.id_maquina||'').replace(/"/g,'&quot;');
-    const editBtn = isDup ? `<button class="maq-pencil" title="Corregir ID (uno se confundió)" onclick="showMaqEdit(this,'${m.id_registro}',${idx})">✏</button><input class="maq-edit-inline" type="text" value="${maqId}" onblur="editMaquina('${m.id_registro}',${idx},this.value)">` : '';
+    const cur=(m.id_maquina||'').toUpperCase();
+    const lista = MAQUINAS_LISTA.includes(cur)||!cur ? MAQUINAS_LISTA : [cur].concat(MAQUINAS_LISTA);
+    const opts = lista.map(id=>`<option value="${id}"${id===cur?' selected':''}>${id}</option>`).join('');
+    const editBtn = isDup ? `<button class="maq-pencil" title="Corregir máquina (uno se confundió)" onclick="showMaqEdit(this)">✏</button><select class="maq-edit-inline" onchange="editMaquina('${m.id_registro}',${idx},this.value)" onblur="hideMaqEdit(this)">${opts}</select>` : '';
     const dupBadge = isDup ? `<span class="dup hard" title="Misma máquina reportada por varios capataces — edita el ID si hubo error">⚠ ×${cnt[(m.id_maquina||'').toUpperCase()]}</span>` : '';
     html+=`<div class="linea-item${isDup?' dupmark hard':''}" style="opacity:1;">
       <span class="maq-id">${maqId}</span>${editBtn}
@@ -323,9 +371,13 @@ function renderMaquinas(){
   });
   return html;
 }
-function showMaqEdit(btn, idReg, idx){
-  const inp=btn.nextElementSibling;
-  btn.style.display='none'; inp.style.display='inline-block'; inp.focus(); inp.select();
+function showMaqEdit(btn){
+  const sel=btn.nextElementSibling;
+  btn.style.display='none'; sel.style.display='inline-block'; sel.focus();
+}
+function hideMaqEdit(sel){
+  const btn=sel.previousElementSibling;
+  sel.style.display='none'; if(btn) btn.style.display='';
 }
 
 function toggleInc(idx){ STATE.cantidades[idx]._inc=!STATE.cantidades[idx]._inc; render(); }
