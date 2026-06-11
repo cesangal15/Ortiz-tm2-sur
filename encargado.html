@@ -62,6 +62,13 @@
   .li-unit{font-size:11px;color:var(--muted);width:26px;flex-shrink:0;}
   .badge{font-size:10px;font-weight:600;padding:1px 7px;border-radius:12px;border:1px solid var(--border);}
   .badge.uf1{border-color:rgba(58,155,220,0.4);color:var(--uf1);} .badge.uf2{border-color:rgba(155,89,182,0.4);color:var(--uf2);}
+  .dup{font-size:10px;font-weight:600;padding:1px 7px;border-radius:12px;border:1px solid rgba(245,166,35,0.5);color:var(--accent);background:rgba(245,166,35,0.08);}
+  .dup.hard{border-color:rgba(231,76,60,0.55);color:var(--error);background:rgba(231,76,60,0.08);}
+  .linea-item.dupmark{border-color:rgba(245,166,35,0.45);}
+  .linea-item.dupmark.hard{border-color:rgba(231,76,60,0.5);}
+  .maq-edit{width:78px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'Syne',sans-serif;font-weight:700;font-size:13px;padding:4px 7px;outline:none;text-transform:uppercase;}
+  .maq-edit:focus{border-color:var(--accent);}
+  .maq-edit.dupe{border-color:rgba(231,76,60,0.5);}
   .add-card{background:var(--surface2);border:1px dashed var(--border);border-radius:10px;padding:14px;margin-top:10px;}
   .add-grid{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:end;}
   .add-grid label{font-size:10px;}
@@ -182,6 +189,30 @@ function calcTotales(){
 }
 function srcClass(c){ return c.rol==='chequeadora'?'cheq':c.rol==='encargado'?'enc':'cap'; }
 
+// Detecta posible doble conteo: misma categoría con filas de chequeadora Y capataz.
+// "hard" = además coincide el PK inicial exacto entre roles distintos.
+function computeDups(){
+  const catRoles={}, catIdx={};
+  STATE.cantidades.forEach((c,idx)=>{ if(c._nodata) return;
+    const cat=categoria(c);
+    (catIdx[cat]=catIdx[cat]||[]).push(idx);
+    (catRoles[cat]=catRoles[cat]||new Set()).add(c.rol);
+  });
+  const info={};
+  STATE.cantidades.forEach((c,idx)=>{ if(c._nodata) return;
+    const cat=categoria(c), roles=catRoles[cat]||new Set();
+    const crossRole = roles.has('chequeadora') && roles.has('capataz');
+    if(!crossRole) return;
+    const exact=(catIdx[cat]||[]).filter(j=>j!==idx
+      && (STATE.cantidades[j].pk_inicial||'')===(c.pk_inicial||'')
+      && STATE.cantidades[j].rol!==c.rol)
+      .map(j=>`${STATE.cantidades[j].rol}·${STATE.cantidades[j].reporta}`);
+    info[idx]={hard:exact.length>0, exact};
+  });
+  return info;
+}
+function maqDupCount(){ const cnt={}; STATE.maquinas.forEach(m=>{const k=(m.id_maquina||'').toUpperCase();cnt[k]=(cnt[k]||0)+1;}); return cnt; }
+
 function render(){
   const cont=document.getElementById('resultados');
   const repC=new Set(STATE.cantidades.map(c=>c.reporta).concat(STATE.maquinas.map(m=>m.reporta)).filter(Boolean));
@@ -229,13 +260,18 @@ function render(){
 
 function renderBandeja(){
   if(!STATE.cantidades.length) return '<div class="empty-state" style="padding:20px;"><p>La bandeja está vacía para esta fecha.</p></div>';
-  let html=''; const byCat={};
+  let html=''; const byCat={}; const dups=computeDups();
   STATE.cantidades.forEach((c,idx)=>{ const cat=categoria(c); (byCat[cat]=byCat[cat]||[]).push({c,idx}); });
   ORDEN_CAT.forEach(cat=>{ if(!byCat[cat])return;
     html+=`<div class="grupo-cat">${cat}</div>`;
     byCat[cat].forEach(({c,idx})=>{
       const uf=c.uf||ufFromPk(c.pk_inicial);
       const pk=c.pk_inicial+(c.pk_final?(' - '+c.pk_final):'');
+      const dp=dups[idx];
+      const dupBadge = dp ? (dp.hard
+        ? `<span class="dup hard" title="Mismo PK reportado por: ${dp.exact.join(', ')}">⚠ duplicado: ${dp.exact.join(', ')}</span>`
+        : `<span class="dup" title="Misma categoría reportada por capataz y chequeadora">⚠ posible duplicado (control vs oficial)</span>`) : '';
+      const dupCls = dp ? (dp.hard?' dupmark hard':' dupmark') : '';
       if(c._nodata){
         html+=`<div class="linea-item off" id="li_${idx}" style="opacity:.65;border-style:dashed;">
           <div style="width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0;">🔧</div>
@@ -243,10 +279,10 @@ function renderBandeja(){
           <div class="li-sub"><span class="src ${srcClass(c)}">${c.rol||'?'}·${c.reporta||'?'}</span> PK ${pk||'—'}${uf?` <span class="badge ${uf.toLowerCase()}">${uf}</span>`:''} · ${c.largo} ${c.unidad}</div></div>
         </div>`;
       } else {
-        html+=`<div class="linea-item ${c._inc?'':'off'}" id="li_${idx}">
+        html+=`<div class="linea-item ${c._inc?'':'off'}${dupCls}" id="li_${idx}">
           <button class="tog ${c._inc?'on':'no'}" onclick="toggleInc(${idx})">${c._inc?'✓':'✕'}</button>
           <div class="li-main"><div class="li-act">${c.actividad||c.descripcion||''}</div>
-          <div class="li-sub"><span class="src ${srcClass(c)}">${c.rol||'?'}·${c.reporta||'?'}</span> PK ${pk||'—'}${uf?` <span class="badge ${uf.toLowerCase()}">${uf}</span>`:''}</div></div>
+          <div class="li-sub"><span class="src ${srcClass(c)}">${c.rol||'?'}·${c.reporta||'?'}</span> PK ${pk||'—'}${uf?` <span class="badge ${uf.toLowerCase()}">${uf}</span>`:''}${dupBadge}</div></div>
           <div class="li-largo"><input type="number" step="any" value="${c.largo}" onchange="editLargo(${idx},this.value)"></div>
           <div class="li-unit">${c.unidad||''}</div>
         </div>`;
@@ -268,19 +304,38 @@ function renderAddCard(){
 }
 function renderMaquinas(){
   if(!STATE.maquinas.length) return '<div class="empty-state" style="padding:16px;"><p>Sin maquinaria reportada</p></div>';
-  let html='';
-  STATE.maquinas.forEach(m=>{
+  let html=''; const cnt=maqDupCount();
+  STATE.maquinas.forEach((m,idx)=>{
     const muertas=parseFloat(m.horas_muertas)||0;
     const menos= muertas>0 ? ` · <span style="color:var(--error)">${muertas}h menos${m.motivo?(': '+m.motivo):''}</span>`:'';
     const prod = m.produccion ? ` · ${m.produccion} ${m.unidad_prod||''}` : '';
-    html+=`<div class="linea-item" style="opacity:1;"><div class="li-main"><div class="li-act">${m.id_maquina||'?'} <span style="color:var(--muted);font-weight:400;font-size:11px;">${m.tipo_equipo||''}</span></div>
-      <div class="li-sub">${m.actividad||'—'} · ${m.operador||'s/op'}${prod}</div></div>
+    const isDup = (cnt[(m.id_maquina||'').toUpperCase()]||0) > 1;
+    const dupBadge = isDup ? `<span class="dup hard" title="Misma máquina reportada por varios capataces — corrige el ID si uno se confundió">⚠ ×${cnt[(m.id_maquina||'').toUpperCase()]}</span>` : '';
+    html+=`<div class="linea-item${isDup?' dupmark hard':''}" style="opacity:1;">
+      <input class="maq-edit${isDup?' dupe':''}" type="text" value="${(m.id_maquina||'').replace(/"/g,'&quot;')}" title="Editar máquina (se guarda en el Sheet)" onchange="editMaquina('${m.id_registro}',${idx},this.value)">
+      <div class="li-main"><div class="li-act"><span style="color:var(--muted);font-weight:400;font-size:11px;">${m.tipo_equipo||''}</span> ${dupBadge}</div>
+      <div class="li-sub">${m.actividad||'—'} · ${m.operador||'s/op'}${prod} · <span class="src ${m.reporta&&String(m.reporta).indexOf('cheq')===0?'cheq':'cap'}">${m.reporta||'?'}</span></div></div>
       <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;white-space:nowrap;">${m.horas_operadas||0}h${menos}</div></div>`;
   });
   return html;
 }
 
 function toggleInc(idx){ STATE.cantidades[idx]._inc=!STATE.cantidades[idx]._inc; render(); }
+async function editMaquina(idReg, idx, val){
+  val=(val||'').trim().toUpperCase();
+  const m=STATE.maquinas[idx]; if(!m) return;
+  const prev=m.id_maquina||'';
+  if(!val || val===prev){ render(); return; }
+  if(!idReg){ alert('No se puede editar: falta id_registro'); render(); return; }
+  m.id_maquina=val;
+  try{
+    const resp=await fetch(APPS_SCRIPT_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify({action:'editar_maquina', id_registro:idReg, id_maquina:val})});
+    const res=await resp.json();
+    if(!res||!res.ok) throw new Error((res&&res.error)||'Respuesta inesperada');
+    render();
+  }catch(err){ m.id_maquina=prev; alert('⚠ No se pudo cambiar la máquina: '+err.message); render(); }
+}
 function editLargo(idx,val){ STATE.cantidades[idx].largo=parseFloat(val)||0; refreshTot(); }
 function refreshTot(){ const tot=calcTotales(); const box=document.querySelector('.totales'); if(!box)return;
   let html='',any=false;
