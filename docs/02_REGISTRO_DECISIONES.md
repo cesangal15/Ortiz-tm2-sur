@@ -1,0 +1,46 @@
+# REGISTRO DE DECISIONES — TM2 Sur
+
+Decisiones cerradas. **No replantear** salvo solicitud explícita del dueño del proyecto.
+
+| ID | Decisión | Estado | Observaciones |
+|---|---|---|---|
+| D01 | Arquitectura de 3 capas: BANDEJA (crudo) → revisión del encargado → DATA (oficial) | ✅ Cerrada | Reemplazó la escritura directa a DATA. |
+| D02 | Bandeja conserva historial: al enviar, filas quedan marcadas incluido/descartado (no se borran) | ✅ Cerrada | |
+| D03 | Re-enviar una fecha a DATA **pisa** lo de ese día | ✅ Cerrada | Con confirmación previa en UI. |
+| D04 | UF por PK: ≤30 → UF1/3701; >30 → UF2/3702 | ✅ Cerrada | Automático, no se pregunta. |
+| D05 | m³ = viajes × 14, factor editable por reporte | ✅ Cerrada | |
+| D06 | Volumen oficial de excavación/terraplén = **chequeadora**; conteo geométrico del capataz = solo control | ✅ Cerrada | Verificado con datos reales (28/05: 156 vs 153). |
+| D07 | Material interno/acopio del capataz NO se suma al volumen oficial | ✅ Cerrada | El encargado histórico solo tomaba chequeadora. |
+| D08 | No aprovechable: ambos roles pueden reportarlo; el encargado reconcilia (opción C) | ✅ Cerrada | Fuente varía por día (capataz al RCD o chequeadora descapote). |
+| D09 | Sin horómetros HI/HF; horas operadas directas | ✅ Cerrada | Evita errores de digitación. |
+| D10 | Horas programadas: 5 h alquiladas (NH69, CAT320, MC705) / 6.4 h propias | ✅ Cerrada | FNG02 = propia (6.4). |
+| D11 | Operador obligatorio al agregar máquina | ✅ Cerrada | |
+| D12 | Motivo de horas menos = lista desplegable + "Otro (especificar)" | ✅ Cerrada | 9 opciones definidas. |
+| D13 | ESTADO derivado del motivo; sin horas muertas = OPERANDO | ✅ Cerrada | No se pregunta aparte. |
+| D14 | App captura hasta LARGO; sin FC ni CANTIDAD (van en el maestro) | ✅ Cerrada | |
+| D15 | Campo se llama **"Producción"**, adaptativo por actividad (m³ / m² calculado / Ha / cantidad) | ✅ Cerrada | Reemplazó "Largo" en UI. |
+| D16 | Cereo: m² = (PKf−PKi) × ancho vía (11.5 editable); **no va a DATA** pero sí a bandeja (no_data) y a maquinaria | ✅ Cerrada | PK final requerido en cereo. |
+| D17 | ZODME automático tras excavación no aprovechable | ✅ Cerrada | Ítem secuencial, mismo volumen. |
+| D18 | Liberación fija = CAMPO; campo Elemento autogenerado y oculto | ✅ Cerrada | |
+| D19 | PK final opcional (salvo cereo) | ✅ Cerrada | |
+| D20 | Equipos anidados dentro de cada actividad (no sección aparte); producción de la máquina = largo de la línea | ✅ Cerrada | Eliminó el doble trabajo. |
+| D21 | Capataz elige actividades específicas de campo (núcleo, cereo, etc.); el sistema mapea al ítem contractual | ✅ Cerrada | Evita confusión con nombres generales. |
+| D22 | Alcance V1: Tierras + Estructuras/MSR; sin drenajes, pavimentos, transporte, demoliciones, taludes | ✅ Cerrada | |
+| D23 | DATA con columnas A–T en orden exacto del maestro TM2; internas a la derecha | ✅ Cerrada | Paste por bloque A:S. |
+| D24 | Traspaso a Excel maestros = manual copy-paste (no escritura directa a .xlsx) | ✅ Cerrada | Protege fórmulas del maestro. |
+| D25 | Orígenes chequeadora: Masivo 2, Masivo 1, Diviso/Préstamo, PK Complementario, Otro | ✅ Cerrada | Crudo de Río y Fresado son **materiales**, no orígenes. Botadero/RCD es **destino**, no origen. |
+| D26 | Tipo de destino en línea de viajes: Terraplén / Puente / ODL / Botadero; solo Terraplén genera fila de terraplén | ✅ Cerrada | |
+| D27 | Encargado agrega actividades+maquinaria usando el formulario del capataz (opción B, navegación) | ✅ Cerrada | Rol encargado aceptado en reporte-capataz; botón "← Volver". |
+| D28 | Equipos inoperativos: texto libre en panel del encargado; entra al WhatsApp, no a MAQUINARIA | ✅ Cerrada | |
+| D29 | Bandeja modo A (cruda con toggles); sugerencia automática pre-armada = fase 2 | ✅ Cerrada | Emparejamiento por PK pospuesto. |
+| D30 | POST con Content-Type text/plain para leer respuesta del servidor (confirmación real de guardado) | ✅ Cerrada | Eliminó el "enviado" falso del modo no-cors. |
+| D31 | Detección de fechas en Apps Script por duck-typing (getFullYear), nunca instanceof Date | ✅ Cerrada | Bug conocido del entorno GAS; costó 3 iteraciones. |
+| D32 | Períodos de maquinaria: del 16 del mes anterior al 15 del mes de cierre | ✅ Cerrada | RESUMEN_MES lo implementa con cruce de año. |
+| D33 | RESUMEN_MES: proyecto 0 = ambos; actividades generales (no subactividad); producción individual real | ✅ Cerrada | |
+| D34 | Metas de rendimiento: Excavación 106.25 m³/hr, Terraplén 85 m³/hr (editables en la hoja) | ✅ Cerrada | Extraídas del resumen histórico de abril. |
+| D35 | Máquinas agregadas a dim: FNG02, CR08, CR13, CR16, CR19, CR26, PEXC027 (pajarita) | ✅ Cerrada | Marca/modelo/valor-hora de referencia, corregir con contrato. |
+| D36 | Producción multi-máquina: cada una muestra el total de la actividad (visibilidad, no sumar entre máquinas) | ✅ Cerrada | |
+| D37 | Clima en formularios | ⏸️ Pospuesta | "Hay otras cuestiones de por medio". |
+| D38 | Festivos en rojo en RESUMEN_MES | ⏸️ Pospuesta | Se abordará después. |
+| D39 | Resto de máquinas (NH404, CS78B, etc.) | ⏸️ Pendiente | Usuario consigue IDs reales. |
+| D40 | Alineación de hoja MAQUINARIA al orden de Captura_Diaria | ⏸️ Pendiente | Mapeo de columnas ya definido en Doc Maestro §7. |
