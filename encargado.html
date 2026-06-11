@@ -66,9 +66,11 @@
   .dup.hard{border-color:rgba(231,76,60,0.55);color:var(--error);background:rgba(231,76,60,0.08);}
   .linea-item.dupmark{border-color:rgba(245,166,35,0.45);}
   .linea-item.dupmark.hard{border-color:rgba(231,76,60,0.5);}
-  .maq-edit{width:78px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'Syne',sans-serif;font-weight:700;font-size:13px;padding:4px 7px;outline:none;text-transform:uppercase;}
-  .maq-edit:focus{border-color:var(--accent);}
-  .maq-edit.dupe{border-color:rgba(231,76,60,0.5);}
+  .maq-id{font-family:'Syne',sans-serif;font-weight:700;font-size:14px;white-space:nowrap;min-width:60px;flex-shrink:0;}
+  .maq-edit-inline{width:72px;background:var(--input-bg);border:1px solid rgba(231,76,60,0.5);border-radius:5px;color:var(--text);font-family:'Syne',sans-serif;font-weight:700;font-size:12px;padding:2px 6px;outline:none;text-transform:uppercase;display:none;}
+  .maq-edit-inline:focus{border-color:var(--accent);}
+  .maq-pencil{background:none;border:none;cursor:pointer;color:rgba(231,76,60,0.7);font-size:11px;padding:0 2px;vertical-align:middle;}
+  .maq-pencil:hover{color:var(--error);}
   .add-card{background:var(--surface2);border:1px dashed var(--border);border-radius:10px;padding:14px;margin-top:10px;}
   .add-grid{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:end;}
   .add-grid label{font-size:10px;}
@@ -193,13 +195,13 @@ function srcClass(c){ return c.rol==='chequeadora'?'cheq':c.rol==='encargado'?'e
 // "hard" = además coincide el PK inicial exacto entre roles distintos.
 function computeDups(){
   const catRoles={}, catIdx={};
-  STATE.cantidades.forEach((c,idx)=>{ if(c._nodata) return;
+  STATE.cantidades.forEach((c,idx)=>{ if(c._nodata||!c._inc) return;
     const cat=categoria(c);
     (catIdx[cat]=catIdx[cat]||[]).push(idx);
     (catRoles[cat]=catRoles[cat]||new Set()).add(c.rol);
   });
   const info={};
-  STATE.cantidades.forEach((c,idx)=>{ if(c._nodata) return;
+  STATE.cantidades.forEach((c,idx)=>{ if(c._nodata||!c._inc) return;
     const cat=categoria(c), roles=catRoles[cat]||new Set();
     const crossRole = roles.has('chequeadora') && roles.has('capataz');
     if(!crossRole) return;
@@ -310,14 +312,20 @@ function renderMaquinas(){
     const menos= muertas>0 ? ` · <span style="color:var(--error)">${muertas}h menos${m.motivo?(': '+m.motivo):''}</span>`:'';
     const prod = m.produccion ? ` · ${m.produccion} ${m.unidad_prod||''}` : '';
     const isDup = (cnt[(m.id_maquina||'').toUpperCase()]||0) > 1;
-    const dupBadge = isDup ? `<span class="dup hard" title="Misma máquina reportada por varios capataces — corrige el ID si uno se confundió">⚠ ×${cnt[(m.id_maquina||'').toUpperCase()]}</span>` : '';
+    const maqId = (m.id_maquina||'').replace(/"/g,'&quot;');
+    const editBtn = isDup ? `<button class="maq-pencil" title="Corregir ID (uno se confundió)" onclick="showMaqEdit(this,'${m.id_registro}',${idx})">✏</button><input class="maq-edit-inline" type="text" value="${maqId}" onblur="editMaquina('${m.id_registro}',${idx},this.value)">` : '';
+    const dupBadge = isDup ? `<span class="dup hard" title="Misma máquina reportada por varios capataces — edita el ID si hubo error">⚠ ×${cnt[(m.id_maquina||'').toUpperCase()]}</span>` : '';
     html+=`<div class="linea-item${isDup?' dupmark hard':''}" style="opacity:1;">
-      <input class="maq-edit${isDup?' dupe':''}" type="text" value="${(m.id_maquina||'').replace(/"/g,'&quot;')}" title="Editar máquina (se guarda en el Sheet)" onchange="editMaquina('${m.id_registro}',${idx},this.value)">
-      <div class="li-main"><div class="li-act"><span style="color:var(--muted);font-weight:400;font-size:11px;">${m.tipo_equipo||''}</span> ${dupBadge}</div>
+      <span class="maq-id">${maqId}</span>${editBtn}
+      <div class="li-main"><div class="li-act"><span style="color:var(--muted);font-weight:400;font-size:11px;">${m.tipo_equipo||''}</span>${dupBadge}</div>
       <div class="li-sub">${m.actividad||'—'} · ${m.operador||'s/op'}${prod} · <span class="src ${m.reporta&&String(m.reporta).indexOf('cheq')===0?'cheq':'cap'}">${m.reporta||'?'}</span></div></div>
       <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;white-space:nowrap;">${m.horas_operadas||0}h${menos}</div></div>`;
   });
   return html;
+}
+function showMaqEdit(btn, idReg, idx){
+  const inp=btn.nextElementSibling;
+  btn.style.display='none'; inp.style.display='inline-block'; inp.focus(); inp.select();
 }
 
 function toggleInc(idx){ STATE.cantidades[idx]._inc=!STATE.cantidades[idx]._inc; render(); }
@@ -333,7 +341,7 @@ async function editMaquina(idReg, idx, val){
       body:JSON.stringify({action:'editar_maquina', id_registro:idReg, id_maquina:val})});
     const res=await resp.json();
     if(!res||!res.ok) throw new Error((res&&res.error)||'Respuesta inesperada');
-    render();
+    render(); // re-render recomputes dup count with new ID
   }catch(err){ m.id_maquina=prev; alert('⚠ No se pudo cambiar la máquina: '+err.message); render(); }
 }
 function editLargo(idx,val){ STATE.cantidades[idx].largo=parseFloat(val)||0; refreshTot(); }
