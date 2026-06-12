@@ -41,6 +41,9 @@ Formato: actividad de campo → ítem contractual | unidad | CC | medición | ¿
 
 ### Actividades de apoyo (sin producción) — CONFIRMADO
 Aplican a excavadoras, motoniveladoras, bulldozer, pajarita. Estado `no_data`; no van a DATA; sí a MAQUINARIA con producción nula.
+- Compactación de terraplén
+- Compactación de subbase
+- Compactación de BTC
 - Paisajeo / ornato
 - Adecuación de caminos
 - Limpieza de derrumbe
@@ -79,7 +82,7 @@ Terraplén (genera fila de terraplén) · Puente · ODL · Botadero (solo excava
 
 **Regla de producción por tipo:**
 - VIBROCOMPACTADOR: producción siempre nula — compactan frentes ejecutados por otras máquinas; el campo producción no se muestra ni se guarda.
-- Actividades de apoyo (Paisajeo / Adecuación de caminos / Limpieza de derrumbe): producción nula para cualquier tipo de máquina.
+- Actividades de apoyo (Compactación terraplén/subbase/BTC · Paisajeo / Adecuación de caminos / Limpieza de derrumbe): producción nula para cualquier tipo de máquina.
 - Todos los demás tipos + actividades productivas: producción = largo de la línea de la actividad.
 
 CC habituales por máquina (de reportes Abr–May): BL→02.07/02.08 · EXC→02.05/02.06/02.03 · MO→02.07/03.01/03.03 · CR013→02.07-UF2/03.01 · CR016→02.07/03.01 · CR019→02.07-UF1 · FNG02→03.03.
