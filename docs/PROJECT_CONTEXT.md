@@ -15,6 +15,7 @@
 - No aprovechable: ambos roles pueden reportar; encargado reconcilia (destino PK15+800/RCD). ZODME se agrega automático tras no aprovechable.
 - Cereo: m²=(PKf−PKi)×ancho(11.5 editable); va a bandeja como **no_data** (nunca a DATA) y a maquinaria con su producción.
 - Maquinaria: sin horómetros; horas directas. Prog 5h alquiladas / 6.4h propias. Alquiladas: NH69, CAT320, MC705, CS78B, NH403, NH404, NH420, CAT900. Propias: resto. Operador obligatorio. Horas muertas=prog−oper → motivo obligatorio (dropdown 9 opciones). ESTADO derivado (sin muertas=OPERANDO). Equipos anidados en la actividad; producción máquina = largo de su línea; multi-máquina muestra el total (no sumar).
+- **Máquina en múltiples actividades el mismo día:** horas operadas y motivo se ingresan una sola vez en la primera aparición de la máquina; actividades adicionales solo capturan producción. Al construir el payload de MAQUINARIA, las horas se reparten proporcionalmente según la producción de cada actividad; si alguna actividad no tiene producción numérica, reparto en partes iguales entre todas sus apariciones. Horas muertas = programadas − total del día (D46).
 - **VIBROCOMPACTADORES** (CR019, CR013, CR016, CS78B, NH403, NH404, NH420, CAT900): producción siempre nula — campo oculto/no guardado. Compactan frentes de otras máquinas.
 - **Actividades de apoyo** (Compactación terraplén/subbase/BTC · Paisajeo / Adecuación de caminos / Limpieza de derrumbe): sin producción, estado no_data, sí a MAQUINARIA. Aplica a cualquier tipo de máquina no-vibro.
 - Máquina con 0 horas: el capataz NO la reporta; el encargado la anota como inoperativo en texto libre (D28, va al WhatsApp, no a MAQUINARIA).
@@ -22,8 +23,10 @@
 - Apps Script: fechas SIEMPRE por duck-typing (getFullYear), nunca instanceof Date. POST text/plain (respuesta legible). Redespliegue = editar implementación → nueva versión (misma URL).
 - Reconciliación automática al abrir bandeja: filas de capataz que duplican volumen ya reportado por chequeadora se apagan por defecto (etiqueta "control · no suma", borde punteado). El total queda correcto sin intervención. Regla de validación: terraplén ≤ aprovechable+préstamo; el panel avisa en rojo si se viola. Corrección de máquina duplicada: `<select>` con lista de máquinas conocidas (no texto libre); requiere endpoint `editar_maquina` en Apps Script.
 
+**Usuarios capataces:** albert / angel / ariel / alejandro / robinson (contraseña: cap2025). Encargado y chequeadoras: contraseñas placeholder pendientes de definir.
+
 **Entidades:** BANDEJA(22 cols, estado) · DATA(A–T maestro + 7 internas) · MAQUINARIA(18 cols, con produccion/unidad_prod; pendiente alinear a Captura_Diaria) · Catálogo 29 actividades (23 productivas + 6 de apoyo, ver 05_CATALOGO) · 20 máquinas. Formulario capataz incluye resumen en vivo (actividades, producción, equipos, validación pre-envío).
 
-**Pendientes V1:** prueba punta a punta; alinear MAQUINARIA a Captura_Diaria; IDs bulldozer D150B y moto 120 alquilada; valores reales dim para vibros nuevos; contraseñas definitivas. **Pospuesto:** clima, festivos, emparejamiento automático por PK (V2).
+**Pendientes V1:** prueba punta a punta; alinear MAQUINARIA a Captura_Diaria; IDs bulldozer D150B y moto 120 alquilada; valores reales dim para vibros nuevos; contraseñas definitivas encargado/chequeadoras. **Pospuesto:** clima, festivos, emparejamiento automático por PK (V2).
 
 **Restricción de trabajo:** no inventar funcionalidades (ver 03_BACKLOG); no escribir directo en los .xlsx maestros; el usuario valida con datos reales antes de dar por cerrado.
