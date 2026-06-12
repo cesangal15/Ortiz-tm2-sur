@@ -74,6 +74,20 @@
   .success p{color:var(--muted);font-size:14px;margin-bottom:24px;}
   .success button{padding:12px 28px;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:'Syne',sans-serif;font-weight:700;cursor:pointer;}
   .hidden{display:none;}
+  .resumen-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px;}
+  .resumen-row{border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px;background:var(--input-bg);}
+  .resumen-row.incompleto{border-color:rgba(245,166,35,0.4);}
+  .resumen-row:last-child{margin-bottom:0;}
+  .resumen-act{font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px;}
+  .resumen-pk{font-size:11px;color:var(--muted);margin-bottom:6px;}
+  .resumen-prod{font-size:12px;color:var(--accent);font-weight:600;margin-bottom:6px;}
+  .resumen-eqs{display:flex;flex-wrap:wrap;gap:6px;}
+  .resumen-eq{font-size:11px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:3px 8px;color:var(--muted);}
+  .resumen-eq b{color:var(--text);}
+  .resumen-eq.sin-op{border-color:rgba(245,166,35,0.4);color:var(--accent);}
+  .resumen-footer{display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);}
+  .resumen-footer b{color:var(--text);}
+  .resumen-warn{font-size:11px;color:var(--accent);margin-top:2px;}
 </style>
 </head>
 <body>
@@ -101,6 +115,10 @@
     <div id="cantidadesContainer"></div>
     <div class="empty-hint" id="cantEmpty">Agrega las actividades ejecutadas hoy</div>
     <button class="btn-add" onclick="addLinea()">+ Agregar actividad</button>
+  </div>
+  <div class="resumen-card" id="resumenCard" style="display:none;">
+    <div class="section-title">Resumen a enviar</div>
+    <div id="resumenBody"></div>
   </div>
 </div>
 </div>
@@ -238,7 +256,7 @@ function renderProd(i, x){
     const lbl = x.medida==='ha' ? 'Producción (Ha)' : (x.medida==='directo' ? ('Cantidad ('+x.uni+')') : 'Producción (m³)');
     cont.innerHTML=
       '<div class="field" style="margin:0;"><label>'+lbl+' <span class="req">*</span></label>'
-      +'<div class="largo-wrap"><input type="number" step="any" class="l-prod" placeholder="0"><span class="largo-unit">'+x.uni+'</span></div></div>';
+      +'<div class="largo-wrap"><input type="number" step="any" class="l-prod" placeholder="0" oninput="updateResumen()"><span class="largo-unit">'+x.uni+'</span></div></div>';
   }
 }
 function recalcM2(i){
@@ -269,6 +287,7 @@ function onActChange(i){
   pkfOpt.textContent = (x.medida==='m2_via') ? '(requerido)' : '(opcional)';
   renderProd(i, x);
   onPkChange(i);
+  updateResumen();
 }
 function updateProdVisibility(i){
   const block=document.getElementById('linea_'+i);
@@ -293,6 +312,7 @@ function onPkChange(i){
     else ccBadge.style.display='none';
     if(x.medida==='m2_via') recalcM2(i);
   } else ccBadge.style.display='none';
+  updateResumen();
 }
 
 function addEquipo(i){
@@ -323,12 +343,68 @@ function onEqChange(j){
   if(falt>0.01){ diff.style.display='block'; diff.textContent='⚠ Hizo '+falt+' h menos — indica el motivo'; mot.style.display='block'; }
   else { diff.style.display='none'; mot.style.display='none'; }
   const linea=row.closest('.linea'); if(linea) updateProdVisibility(linea.id.split('_')[1]);
+  updateResumen();
 }
 
 function refreshCounts(){
   const nc=document.querySelectorAll('#cantidadesContainer .linea').length;
   document.getElementById('cntCantidades').textContent=nc;
   document.getElementById('cantEmpty').style.display=nc?'none':'block';
+  updateResumen();
+}
+
+function updateResumen(){
+  const lineas=document.querySelectorAll('#cantidadesContainer .linea');
+  const card=document.getElementById('resumenCard'), body=document.getElementById('resumenBody');
+  if(!lineas.length){ card.style.display='none'; return; }
+  let totalEqs=0, warnings=0, html='';
+  lineas.forEach(b=>{
+    const a=b.querySelector('.l-act').value;
+    if(!a){ warnings++; return; }
+    const x=ACT_IDX[a];
+    const pki=b.querySelector('.l-pki').value.trim(), pkf=b.querySelector('.l-pkf').value.trim();
+    const lineaI=b.id.split('_')[1];
+    const prodDiv=document.getElementById('prod_'+lineaI);
+    const prodEl=b.querySelector('.l-prod');
+    const ancho=b.querySelector('.l-ancho');
+    let prodHtml='';
+    if(x.medida==='apoyo'){
+      prodHtml='<div class="resumen-prod" style="color:var(--muted);font-weight:400;">actividad de apoyo · no va a DATA</div>';
+    } else if(prodDiv && prodDiv.style.display==='none'){
+      prodHtml='';
+    } else if(x.medida==='m2_via'){
+      const m2=b.querySelector('.l-m2disp'); const val=m2?m2.value:'';
+      prodHtml=val?'<div class="resumen-prod">'+val+' m²</div>':'';
+    } else if(prodEl && prodEl.value){
+      prodHtml='<div class="resumen-prod">'+prodEl.value+' '+x.uni+'</div>';
+    } else if(x.medida!=='apoyo'){
+      prodHtml='<div class="resumen-warn">⚠ sin producción</div>'; warnings++;
+    }
+    const pkTxt = pki ? (pkf ? pki+' → '+pkf : pki) : (x.medida==='apoyo'?'':'⚠ sin PK');
+    if(!pki && x.medida!=='apoyo') warnings++;
+    const eqItems=b.querySelectorAll('.eq-item');
+    let eqsHtml='';
+    eqItems.forEach(r=>{
+      const id=r.querySelector('.e-id').value, hrs=r.querySelector('.e-hrs').value, op=r.querySelector('.e-op').value.trim();
+      if(!id && !hrs && !op) return;
+      totalEqs++;
+      const sinOp=!op||!id||!hrs;
+      if(sinOp) warnings++;
+      eqsHtml+='<span class="resumen-eq'+(sinOp?' sin-op':'')+'"><b>'+(id||'?')+'</b> · '+(hrs||'?')+' h'+(op?' · '+op:'')+'</span>';
+    });
+    const incompleto=(!pki && x.medida!=='apoyo')||(prodEl&&!prodEl.value&&x.medida!=='apoyo'&&x.medida!=='m2_via'&&prodDiv&&prodDiv.style.display!=='none');
+    html+='<div class="resumen-row'+(incompleto?' incompleto':'')+'">'
+      +'<div class="resumen-act">'+a+'</div>'
+      +(pkTxt?'<div class="resumen-pk">📍 '+pkTxt+'</div>':'')
+      +prodHtml
+      +(eqsHtml?'<div class="resumen-eqs">'+eqsHtml+'</div>':'<div class="resumen-warn">⚠ sin equipos</div>')
+      +'</div>';
+  });
+  const totalActs=lineas.length;
+  html+='<div class="resumen-footer"><span><b>'+totalActs+'</b> actividad'+(totalActs!==1?'es':'')+' · <b>'+totalEqs+'</b> equipo'+(totalEqs!==1?'s':'')+'</span>'
+    +(warnings?'<span style="color:var(--accent)">⚠ '+warnings+' campo'+(warnings!==1?'s':'')+' incompleto'+(warnings!==1?'s':'')+'</span>':'<span style="color:var(--success)">✓ listo para enviar</span>')+'</div>';
+  body.innerHTML=html;
+  card.style.display='block';
 }
 function buildElemento(pki,pkf){ if(!pki) return ''; return pkf? ('tm2 pk '+pki+' - '+pkf) : ('tm2 pk '+pki); }
 
