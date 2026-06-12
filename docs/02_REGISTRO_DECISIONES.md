@@ -21,7 +21,7 @@ Decisiones cerradas. **No replantear** salvo solicitud explícita del dueño del
 | D15 | Campo se llama **"Producción"**, adaptativo por actividad (m³ / m² calculado / Ha / cantidad) | ✅ Cerrada | Reemplazó "Largo" en UI. |
 | D16 | Cereo: m² = (PKf−PKi) × ancho vía (11.5 editable); **no va a DATA** pero sí a bandeja (no_data) y a maquinaria | ✅ Cerrada | PK final requerido en cereo. |
 | D17 | ZODME automático tras excavación no aprovechable | ✅ Cerrada | Ítem secuencial, mismo volumen. |
-| D18 | Liberación fija = CAMPO; campo Elemento autogenerado y oculto | ✅ Cerrada | |
+| D18 | Liberación fija = CAMPO. ELEMENTO ya NO se autogenera como texto "tm2 pk X": se toma fijo de la hoja BASE (mismo Sheet) al Enviar a DATA, cruzando CC + descripción + PK dentro del rango [ABSCISA INICIO, ABSCISA FIN] de BASE. PK a ≤30 m de un tramo se ajusta al más cercano (error humano); más lejos se marca "REVISAR ·" en DATA. BASE vacía/sin match → respaldo al texto previo. | ✅ Cerrada | Lookup en Codigo.gs (lookupElemento). Tolerancia BASE_TOL_M=30 editable. Forma de BASE: A=CC, F=DESCRIPCIÓN, J=ELEMENTO, K/L=abscisas en metros. Reemplaza la regla original (elemento autogenerado y oculto). |
 | D19 | PK final opcional (salvo cereo) | ✅ Cerrada | |
 | D20 | Equipos anidados dentro de cada actividad (no sección aparte); producción de la máquina = largo de la línea | ✅ Cerrada | Eliminó el doble trabajo. |
 | D21 | Capataz elige actividades específicas de campo (núcleo, cereo, etc.); el sistema mapea al ítem contractual | ✅ Cerrada | Evita confusión con nombres generales. |
