@@ -135,6 +135,12 @@ const ACTIVIDADES = [
   {g:'Pedraplén', a:'Pedraplén compacto', item:'Pedraplén compacto', uni:'m3', cc:'02.07', medida:'m3', data:true},
   {g:'Desmonte', a:'Desmonte y limpieza en bosque', item:'Desmonte y limpieza en bosque', uni:'Ha', cc:'02.01', medida:'ha', data:true},
   {g:'Desmonte', a:'Descapote / zonas no boscosas', item:'Desmonte y limpieza en zonas no boscosas', uni:'Ha', cc:'02.03', medida:'ha', data:true},
+  {g:'Actividades de apoyo', a:'Compactación de terraplén', item:'Compactación de terraplén', uni:'', cc:'', medida:'apoyo', data:false, sub:'COMPACT_TERRAPLEN'},
+  {g:'Actividades de apoyo', a:'Compactación de subbase', item:'Compactación de subbase', uni:'', cc:'', medida:'apoyo', data:false, sub:'COMPACT_SUBBASE'},
+  {g:'Actividades de apoyo', a:'Compactación de BTC', item:'Compactación de BTC', uni:'', cc:'', medida:'apoyo', data:false, sub:'COMPACT_BTC'},
+  {g:'Actividades de apoyo', a:'Paisajeo / ornato', item:'Paisajeo / ornato', uni:'', cc:'', medida:'apoyo', data:false, sub:'PAISAJEO'},
+  {g:'Actividades de apoyo', a:'Adecuación de caminos', item:'Adecuación de caminos', uni:'', cc:'', medida:'apoyo', data:false, sub:'ADECUACION'},
+  {g:'Actividades de apoyo', a:'Limpieza de derrumbe', item:'Limpieza de derrumbe', uni:'', cc:'', medida:'apoyo', data:false, sub:'DERRUMBE'},
   {g:'Estructuras / MSR', a:'Relleno para muros de tierra MSR', item:'Relleno para muros de tierra MSR', uni:'M3', cc:'05.04', medida:'directo', data:true},
   {g:'Estructuras / MSR', a:'Material granular drenante MSR', item:'Material granular drenante MSR', uni:'M3', cc:'05.05', medida:'directo', data:true},
   {g:'Estructuras / MSR', a:'Geobolsas / costales (propybag)', item:'Geobolsas de geotextil (propybag) MSR', uni:'UND', cc:'05.11', medida:'directo', data:true},
@@ -145,12 +151,6 @@ const ACTIVIDADES = [
   {g:'Estructuras / MSR', a:'Geodrén planar h=1 m', item:'Geodrén planar h=1 m MSR', uni:'M', cc:'05.10', medida:'directo', data:true},
   {g:'Estructuras / MSR', a:'Geodrén planar h=0,5 m', item:'Geodrén planar h=0,5 m MSR', uni:'M', cc:'05.02', medida:'directo', data:true},
   {g:'Estructuras / MSR', a:'Tubería PVC 4" perforada', item:'Tubería PVC d=4" para drenaje perforada MSR', uni:'M', cc:'05.03', medida:'directo', data:true},
-  {g:'Actividades de apoyo', a:'Compactación de terraplén', item:'Compactación de terraplén', uni:'', cc:'', medida:'apoyo', data:false, sub:'COMPACT_TERRAPLEN'},
-  {g:'Actividades de apoyo', a:'Compactación de subbase', item:'Compactación de subbase', uni:'', cc:'', medida:'apoyo', data:false, sub:'COMPACT_SUBBASE'},
-  {g:'Actividades de apoyo', a:'Compactación de BTC', item:'Compactación de BTC', uni:'', cc:'', medida:'apoyo', data:false, sub:'COMPACT_BTC'},
-  {g:'Actividades de apoyo', a:'Paisajeo / ornato', item:'Paisajeo / ornato', uni:'', cc:'', medida:'apoyo', data:false, sub:'PAISAJEO'},
-  {g:'Actividades de apoyo', a:'Adecuación de caminos', item:'Adecuación de caminos', uni:'', cc:'', medida:'apoyo', data:false, sub:'ADECUACION'},
-  {g:'Actividades de apoyo', a:'Limpieza de derrumbe', item:'Limpieza de derrumbe', uni:'', cc:'', medida:'apoyo', data:false, sub:'DERRUMBE'},
 ];
 const ACT_IDX = {}; ACTIVIDADES.forEach(x=>ACT_IDX[x.a]=x);
 function capFromCc(cc){ if(!cc) return ''; const p=cc.split('.')[0]; return p==='02'?'EXPLANACIONES':p==='03'?'BASES, SUBBASES Y AFIRMADOS':'ESTRUCTURAS'; }
