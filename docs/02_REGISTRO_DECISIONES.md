@@ -13,7 +13,7 @@ Decisiones cerradas. **No replantear** salvo solicitud explícita del dueño del
 | D07 | Material interno/acopio del capataz NO se suma al volumen oficial | ✅ Cerrada | El encargado histórico solo tomaba chequeadora. |
 | D08 | No aprovechable: ambos roles pueden reportarlo; el encargado reconcilia (opción C) | ✅ Cerrada | Fuente varía por día (capataz al RCD o chequeadora descapote). |
 | D09 | Sin horómetros HI/HF; horas operadas directas | ✅ Cerrada | Evita errores de digitación. |
-| D10 | Horas programadas: 5 h alquiladas (NH69, CAT320, MC705) / 6.4 h propias | ✅ Cerrada | FNG02 = propia (6.4). |
+| D10 | Horas programadas: 5 h alquiladas (NH69, CAT320, MC705) / 6.4 h propias | ✅ Cerrada | FNG02 = propia (6.4). Vibros ORTIZ (CR013/CR016/CR019) = propios 6.4h; CS78B/NH403/NH404/NH420/CAT900 = alquilados 5h. |
 | D11 | Operador obligatorio al agregar máquina | ✅ Cerrada | |
 | D12 | Motivo de horas menos = lista desplegable + "Otro (especificar)" | ✅ Cerrada | 9 opciones definidas. |
 | D13 | ESTADO derivado del motivo; sin horas muertas = OPERANDO | ✅ Cerrada | No se pregunta aparte. |
@@ -38,9 +38,12 @@ Decisiones cerradas. **No replantear** salvo solicitud explícita del dueño del
 | D32 | Períodos de maquinaria: del 16 del mes anterior al 15 del mes de cierre | ✅ Cerrada | RESUMEN_MES lo implementa con cruce de año. |
 | D33 | RESUMEN_MES: proyecto 0 = ambos; actividades generales (no subactividad); producción individual real | ✅ Cerrada | |
 | D34 | Metas de rendimiento: Excavación 106.25 m³/hr, Terraplén 85 m³/hr (editables en la hoja) | ✅ Cerrada | Extraídas del resumen histórico de abril. |
-| D35 | Máquinas agregadas a dim: FNG02, CR08, CR13, CR16, CR19, CR26, PEXC027 (pajarita) | ✅ Cerrada | Marca/modelo/valor-hora de referencia, corregir con contrato. |
+| D35 | Máquinas en dim: lista definitiva ver §4 de 05_CATALOGO | ✅ Cerrada | Vibros anteriores (CR08/CR13/CR16/CR19/CR26) reemplazados por lista nueva. FNG02 confirmada. |
 | D36 | Producción multi-máquina: cada una muestra el total de la actividad (visibilidad, no sumar entre máquinas) | ✅ Cerrada | |
 | D37 | Clima en formularios | ⏸️ Pospuesta | "Hay otras cuestiones de por medio". |
 | D38 | Festivos en rojo en RESUMEN_MES | ⏸️ Pospuesta | Se abordará después. |
-| D39 | Resto de máquinas (NH404, CS78B, etc.) | ⏸️ Pendiente | Usuario consigue IDs reales. |
+| D39 | IDs de máquinas faltantes — resuelto parcialmente | ✅ Cerrada | Vibros confirmados. Pendiente: bulldozer D150B, moto 120 alquilada. |
 | D40 | Alineación de hoja MAQUINARIA al orden de Captura_Diaria | ⏸️ Pendiente | Mapeo de columnas ya definido en Doc Maestro §7. |
+| D41 | Vibrocompactadores nunca reportan producción | ✅ Cerrada | Su rol es compactar frentes ejecutados por retros/motos/bulldozer/finisher. Campo producción oculto/nulo para tipo VIBROCOMPACTADOR en MAQUINARIA. |
+| D42 | Actividades de apoyo sin producción: Paisajeo / Adecuación de caminos / Limpieza de derrumbe | ✅ Cerrada | Lista fija. Estado no_data; no van a DATA; sí a MAQUINARIA con producción nula. Aplica a cualquier máquina no-vibro. |
+| D43 | Máquina con 0 horas operadas: capataz no la reporta; encargado la anota como inoperativo en su panel (texto libre, D28) | ✅ Cerrada | El capataz solo reporta máquinas que efectivamente trabajaron. |
