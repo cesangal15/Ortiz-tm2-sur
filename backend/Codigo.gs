@@ -54,10 +54,71 @@ function readSheet(name){
   return out;
 }
 function buildDataRow(c, fecha, ts, reporta, rol, idC){
+  // ELEMENTO oficial: se busca en la hoja BASE por CC + descripción + abscisa (no se construye a mano).
+  const lk = lookupElemento(c.centro_costo, c.descripcion, c.abs_inicial);
+  const elemento = lk.elem ? lk.elem
+                 : lk.revisar ? ('REVISAR · ' + (c.elemento || ('pk ' + (c.pk_inicial||''))))
+                 : (c.elemento||''); // BASE vacía / sin candidato -> respaldo al texto previo
   return [ toDate(fecha), '', c.grupo||'', c.centro_costo||'', c.capitulo||'', c.descripcion||'',
-    c.uf||'', c.proyecto||'', c.elemento||'', (c.abs_inicial!=null?c.abs_inicial:''), (c.abs_final!=null?c.abs_final:''),
+    c.uf||'', c.proyecto||'', elemento, (c.abs_inicial!=null?c.abs_inicial:''), (c.abs_final!=null?c.abs_final:''),
     c.liberacion||'CAMPO', '', c.unidad||'', (c.largo!=null?c.largo:''), '', '', '', c.observacion||'', '',
     idC, ts, reporta||'', rol||'', c.actividad||'', c.pk_inicial||'', c.pk_final||'' ];
+}
+
+/* ---------- BASE: ELEMENTO fijo por CC + descripción + abscisa ----------
+ * La hoja BASE (mismo Sheet) es la fuente del ELEMENTO oficial.
+ * Columnas usadas: A=CC, F=DESCRIPCION, J=ELEMENTO, K=ABSCISA INICIO(m), L=ABSCISA FIN(m).
+ * Cruce: misma actividad (CC, y descripción si está) + el PK reportado dentro del rango [K,L].
+ * Error humano: si el PK cae justo fuera de un tramo pero a <= BASE_TOL_M metros, se ajusta
+ * al tramo más cercano de esa actividad; si está más lejos, se marca REVISAR (visible en DATA
+ * antes de pegar al maestro) en vez de inventar un elemento. */
+const BASE_TOL_M = 30; // metros de tolerancia para ajustar un PK cercano (editable)
+let _baseRows;
+function normKey(s){
+  return String(s==null?'':s).toUpperCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // sin acentos
+    .replace(/\s+/g,' ').trim();
+}
+function getBaseRows(){
+  if(_baseRows) return _baseRows;
+  _baseRows = [];
+  const ss = SpreadsheetApp.openById(SHEET_ID), sh = ss.getSheetByName('BASE');
+  if(!sh || sh.getLastRow() < 2) return _baseRows;
+  const v = sh.getDataRange().getValues();
+  for(let i=1;i<v.length;i++){
+    const cc=v[i][0], desc=v[i][5], elem=v[i][9];
+    if(elem==='' || elem==null) continue;
+    let ini=Number(v[i][10]), fin=Number(v[i][11]);
+    if(isNaN(ini)) ini=null;
+    if(isNaN(fin)) fin=(ini!=null?ini:null);
+    if(ini!=null && fin!=null && fin<ini){ const t=ini; ini=fin; fin=t; }
+    _baseRows.push({ cc:normKey(cc), desc:normKey(desc), elem:String(elem), ini:ini, fin:fin });
+  }
+  return _baseRows;
+}
+// -> { elem:'<ELEMENTO>'|'' , revisar:true|false }
+function lookupElemento(cc, descripcion, pkMeters){
+  const rows=getBaseRows();
+  if(!rows.length) return { elem:'', revisar:false };
+  const nCC=normKey(cc), nDesc=normKey(descripcion);
+  const pk=(pkMeters===''||pkMeters==null||isNaN(Number(pkMeters)))?null:Number(pkMeters);
+  // candidatos: 1º CC+descripción, 2º solo CC, 3º solo descripción
+  let cand = (nCC&&nDesc) ? rows.filter(r=>r.cc===nCC && r.desc===nDesc) : [];
+  if(!cand.length && nCC)   cand = rows.filter(r=>r.cc===nCC);
+  if(!cand.length && nDesc) cand = rows.filter(r=>r.desc===nDesc);
+  if(!cand.length) return { elem:'', revisar:false };
+  if(pk==null) return cand.length===1 ? { elem:cand[0].elem, revisar:false } : { elem:'', revisar:false };
+  // 1) PK dentro del rango del tramo
+  const hit = cand.filter(r=>r.ini!=null && r.fin!=null && pk>=r.ini && pk<=r.fin);
+  if(hit.length) return { elem:hit[0].elem, revisar:false };
+  // 2) PK cercano (error humano): ajustar al tramo más próximo dentro de la tolerancia
+  let best=null, bestD=Infinity;
+  cand.forEach(r=>{ if(r.ini==null||r.fin==null) return;
+    const d = pk<r.ini ? (r.ini-pk) : (pk-r.fin);
+    if(d<bestD){ bestD=d; best=r; } });
+  if(best && bestD<=BASE_TOL_M) return { elem:best.elem, revisar:false };
+  // 3) sin coincidencia razonable -> marcar para revisión del encargado
+  return { elem:'', revisar:true };
 }
 
 /* ---------- routing ---------- */
@@ -67,7 +128,7 @@ function doGet(e){
   if(a==='consolidado') return consolidado(e);
   if(a==='estado')      return estado(e);
   if(a==='debug')       return debug(e);
-  return json({ok:true, msg:'API viva', version:'v6'});
+  return json({ok:true, msg:'API viva', version:'v7'});
 }
 function doPost(e){
   try{
@@ -170,6 +231,6 @@ function debug(e){
   const fechaQ=fdate(e.parameter.fecha||'');
   const ban=readSheet('BANDEJA').filter(r=>r.fecha===fechaQ);
   const data=readSheet('DATA') ? '' : '';
-  return json({version:'v6', sheetTZ:shTZ(), queryFecha:fechaQ, bandejaFilas:ban.length,
+  return json({version:'v7', sheetTZ:shTZ(), queryFecha:fechaQ, bandejaFilas:ban.length,
     muestra: ban.slice(0,5).map(r=>({reporta:r.reporta, rol:r.rol, actividad:r.actividad, pk:r.pk_inicial, largo:r.largo, estado:r.estado})) });
 }
