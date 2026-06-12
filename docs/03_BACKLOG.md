@@ -15,9 +15,9 @@
 | 1.9 | Máquinas nuevas en dim (FNG02, CR08–CR26, PEXC027) | ✅ Hecho (datos de referencia) |
 | 1.10 | Prueba punta a punta del flujo bandeja → DATA con día real completo | 🔲 Pendiente |
 | 1.11 | Alinear hoja MAQUINARIA del Sheets al orden de Captura_Diaria | 🔲 Pendiente |
-| 1.12 | Completar catálogo de máquinas (IDs reales de vibros/alquiladas faltantes) | 🔲 Pendiente (bloqueado: usuario consigue datos) |
-| 1.13 | Corregir marca/modelo/valor-hora de máquinas nuevas en dim | 🔲 Pendiente (bloqueado: datos contrato) |
-| 1.14 | Contraseñas definitivas para encargado y chequeadoras | 🔲 Pendiente |
+| 1.12 | Completar catálogo de máquinas (IDs reales de vibros/alquiladas faltantes) | ✅ Hecho |
+| 1.13 | Corregir marca/modelo/valor-hora de máquinas nuevas en dim | ✅ Hecho |
+| 1.14 | Contraseñas definitivas para encargado y chequeadoras | 🟡 Parcial (capataces ✅ con usuario nominal y clave estándar compartida; falta encargado y chequeadoras) |
 
 ## V2 — Mejoras identificadas (no iniciar sin cerrar V1)
 

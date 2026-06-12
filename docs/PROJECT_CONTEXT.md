@@ -23,10 +23,10 @@
 - Apps Script: fechas SIEMPRE por duck-typing (getFullYear), nunca instanceof Date. POST text/plain (respuesta legible). Redespliegue = editar implementación → nueva versión (misma URL).
 - Reconciliación automática al abrir bandeja: filas de capataz que duplican volumen ya reportado por chequeadora se apagan por defecto (etiqueta "control · no suma", borde punteado). El total queda correcto sin intervención. Regla de validación: terraplén ≤ aprovechable+préstamo; el panel avisa en rojo si se viola. Corrección de máquina duplicada: `<select>` con lista de máquinas conocidas (no texto libre); requiere endpoint `editar_maquina` en Apps Script.
 
-**Usuarios capataces:** albert / angel / ariel / alejandro / robinson (contraseña: cap2025). Encargado y chequeadoras: contraseñas placeholder pendientes de definir.
+**Usuarios capataces:** albert / ariel / angel / alejo / robinson (login con usuario nominal, clave estándar compartida; se cambiará individual bajo demanda). Encargado y chequeadoras: contraseñas placeholder pendientes de definir.
 
 **Entidades:** BANDEJA(22 cols, estado) · DATA(A–T maestro + 7 internas) · MAQUINARIA(18 cols, con produccion/unidad_prod; pendiente alinear a Captura_Diaria) · Catálogo 29 actividades (23 productivas + 6 de apoyo, ver 05_CATALOGO) · 20 máquinas. Formulario capataz incluye resumen en vivo (actividades, producción, equipos, validación pre-envío).
 
-**Pendientes V1:** prueba punta a punta; alinear MAQUINARIA a Captura_Diaria; IDs bulldozer D150B y moto 120 alquilada; valores reales dim para vibros nuevos; contraseñas definitivas encargado/chequeadoras. **Pospuesto:** clima, festivos, emparejamiento automático por PK (V2).
+**Pendientes V1:** prueba punta a punta; alinear MAQUINARIA a Captura_Diaria; contraseñas definitivas encargado/chequeadoras. **Pospuesto:** clima, festivos, emparejamiento automático por PK (V2).
 
 **Restricción de trabajo:** no inventar funcionalidades (ver 03_BACKLOG); no escribir directo en los .xlsx maestros; el usuario valida con datos reales antes de dar por cerrado.
