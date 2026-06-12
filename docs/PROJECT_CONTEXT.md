@@ -17,6 +17,7 @@
 - Maquinaria: sin horómetros; horas directas. Prog 5h alquiladas (NH69/CAT320/MC705) / 6.4h propias (FNG02 propia). Operador obligatorio. Horas muertas=prog−oper → motivo obligatorio (dropdown 9 opciones). ESTADO derivado (sin muertas=OPERANDO). Equipos anidados en la actividad; producción máquina = largo de su línea; multi-máquina muestra el total (no sumar).
 - Períodos maquinaria: 16 del mes anterior → 15 del mes. RESUMEN_MES: B2=yyyy-mm, B3=3701/3702/0(ambos). Metas: excavación 106.25, terraplén 85 m³/hr.
 - Apps Script: fechas SIEMPRE por duck-typing (getFullYear), nunca instanceof Date. POST text/plain (respuesta legible). Redespliegue = editar implementación → nueva versión (misma URL).
+- Reconciliación automática al abrir bandeja: filas de capataz que duplican volumen ya reportado por chequeadora se apagan por defecto (etiqueta "control · no suma", borde punteado). El total queda correcto sin intervención. Regla de validación: terraplén ≤ aprovechable+préstamo; el panel avisa en rojo si se viola. Corrección de máquina duplicada: `<select>` con lista de máquinas conocidas (no texto libre); requiere endpoint `editar_maquina` en Apps Script.
 
 **Entidades:** BANDEJA(22 cols, estado) · DATA(A–T maestro + 7 internas) · MAQUINARIA(18 cols, con produccion/unidad_prod; pendiente alinear a Captura_Diaria) · Catálogo 23 actividades (ver 05_CATALOGO) · 19 máquinas.
 

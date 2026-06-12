@@ -84,4 +84,23 @@ Estados (Captura_Diaria): OPERANDO · MEDIA JORNADA · VARADO · SIN OPERADOR ·
 | Chequeadora Diviso (foto, externa) | viajes del diviso | Préstamo — sin digitalizar (V3) |
 
 ## 7. Usuarios — CONFIRMADO (contraseñas de encargado/chequeadoras = placeholder)
-admin/venganza753 → menu · encargado/enc1-2 → encargado · capataz1-5/uf1-2 → reporte-capataz · chequeadora1-2/cheq1-2 → reporte-chequeadora.
+admin/venganza753 → menu · encargado/enc1-2 → encargado · capataz1-5/uf1-2 → reporte-capataz · chequeadora1-3/cheq1-2 → reporte-chequeadora.
+
+## 8. Reglas de reconciliación automática (encargado) — CONFIRMADO
+
+- Al cargar la bandeja, las filas de **capataz** en categorías de volumen oficial
+  (Excavación aprovechable, Excavación préstamo, Excavación no aprovechable,
+  Conformación/ZODME, Terraplén) se **apagan automáticamente** si la chequeadora
+  ya reportó esa misma categoría. Quedan marcadas "control · no suma".
+  El encargado puede reactivarlas manualmente si hace falta.
+
+- **Regla terraplén ≤ aprovechable+préstamo**: el panel muestra un aviso verde/rojo
+  comparando los totales. Si terraplén > aprovechable+préstamo = probable doble
+  conteo o error de volumen. Chequearlo antes de enviar a DATA.
+
+- Las filas de chequeadora se etiquetan "oficial"; las de capataz en esas categorías
+  se etiquetan "control · no suma" y tienen borde punteado.
+
+- Corrección de máquina duplicada: el encargado elige el ID correcto de un
+  desplegable con la lista de máquinas conocidas (no texto libre). Requiere
+  endpoint `editar_maquina` en Apps Script desplegado.
