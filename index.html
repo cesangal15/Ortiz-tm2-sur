@@ -35,11 +35,11 @@
   </div>
   <div class="field">
     <label>Usuario</label>
-    <input type="text" id="usuario" placeholder="tu usuario" autocomplete="username">
+    <input type="text" id="usuario" placeholder="tu usuario" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false">
   </div>
   <div class="field">
     <label>Contraseña</label>
-    <input type="password" id="clave" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter') login()">
+    <input type="password" id="clave" placeholder="••••••••" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" onkeydown="if(event.key==='Enter') login()">
   </div>
   <button class="btn" onclick="login()">INGRESAR →</button>
   <div class="error" id="errorMsg">Usuario o contraseña incorrectos</div>
@@ -63,7 +63,7 @@ const USUARIOS = {
 
 function login() {
   const u = document.getElementById('usuario').value.trim().toLowerCase();
-  const c = document.getElementById('clave').value;
+  const c = document.getElementById('clave').value.trim();
   const err = document.getElementById('errorMsg');
   if (USUARIOS[u] && USUARIOS[u].clave === c) {
     sessionStorage.setItem('usuario', u);
