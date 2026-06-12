@@ -145,14 +145,17 @@ const ACTIVIDADES = [
   {g:'Estructuras / MSR', a:'Geodrén planar h=1 m', item:'Geodrén planar h=1 m MSR', uni:'M', cc:'05.10', medida:'directo', data:true},
   {g:'Estructuras / MSR', a:'Geodrén planar h=0,5 m', item:'Geodrén planar h=0,5 m MSR', uni:'M', cc:'05.02', medida:'directo', data:true},
   {g:'Estructuras / MSR', a:'Tubería PVC 4" perforada', item:'Tubería PVC d=4" para drenaje perforada MSR', uni:'M', cc:'05.03', medida:'directo', data:true},
+  {g:'Actividades de apoyo', a:'Paisajeo / ornato', item:'Paisajeo / ornato', uni:'', cc:'', medida:'apoyo', data:false, sub:'PAISAJEO'},
+  {g:'Actividades de apoyo', a:'Adecuación de caminos', item:'Adecuación de caminos', uni:'', cc:'', medida:'apoyo', data:false, sub:'ADECUACION'},
+  {g:'Actividades de apoyo', a:'Limpieza de derrumbe', item:'Limpieza de derrumbe', uni:'', cc:'', medida:'apoyo', data:false, sub:'DERRUMBE'},
 ];
 const ACT_IDX = {}; ACTIVIDADES.forEach(x=>ACT_IDX[x.a]=x);
 function capFromCc(cc){ if(!cc) return ''; const p=cc.split('.')[0]; return p==='02'?'EXPLANACIONES':p==='03'?'BASES, SUBBASES Y AFIRMADOS':'ESTRUCTURAS'; }
 function grupoFromCc(cc){ if(!cc) return 'TIERRAS'; return cc.split('.')[0]==='05'?'DRENAJES Y ESTRUCTURAS':'TIERRAS'; }
 
-const MAQUINAS = ['BL005','BL009','CAT320','EXC001','EXC013','EXC014','EXC015','MC705','MO03','MO04','MO09','NH69'];
-const TIPO_EQUIPO = {'BL005':'BULLDOZER','BL009':'BULLDOZER','NH69':'BULLDOZER','CAT320':'EXCAVADORA','EXC001':'EXCAVADORA','EXC013':'EXCAVADORA','EXC014':'EXCAVADORA','EXC015':'EXCAVADORA','MO03':'MOTONIVELADORA','MO04':'MOTONIVELADORA','MO09':'MOTONIVELADORA','MC705':'MOTONIVELADORA'};
-const HORAS_PROG = {'NH69':5,'CAT320':5,'MC705':5};
+const MAQUINAS = ['BL005','BL009','CAT320','EXC001','EXC013','EXC014','EXC015','FNG02','MC705','MO03','MO04','MO09','NH69','CR019','CR013','CR016','CS78B','NH403','NH404','NH420','CAT900'];
+const TIPO_EQUIPO = {'BL005':'BULLDOZER','BL009':'BULLDOZER','NH69':'BULLDOZER','CAT320':'EXCAVADORA','EXC001':'EXCAVADORA','EXC013':'EXCAVADORA','EXC014':'EXCAVADORA','EXC015':'EXCAVADORA','MO03':'MOTONIVELADORA','MO04':'MOTONIVELADORA','MO09':'MOTONIVELADORA','MC705':'MOTONIVELADORA','FNG02':'FINISHER','CR019':'VIBROCOMPACTADOR','CR013':'VIBROCOMPACTADOR','CR016':'VIBROCOMPACTADOR','CS78B':'VIBROCOMPACTADOR','NH403':'VIBROCOMPACTADOR','NH404':'VIBROCOMPACTADOR','NH420':'VIBROCOMPACTADOR','CAT900':'VIBROCOMPACTADOR'};
+const HORAS_PROG = {'NH69':5,'CAT320':5,'MC705':5,'CS78B':5,'NH403':5,'NH404':5,'NH420':5,'CAT900':5};
 function progHoras(id){ return HORAS_PROG[id]!==undefined?HORAS_PROG[id]:6.4; }
 const MOTIVOS = ['Mantenimiento','Sin operador','Falla mecánica','Lluvia / clima','Sin frente de trabajo','Esperando material','Abastecimiento de combustible','Traslado / movilización','Otro (especificar)'];
 
@@ -219,6 +222,7 @@ function renumber(){ document.querySelectorAll('#cantidadesContainer .linea').fo
 
 function renderProd(i, x){
   const cont=document.getElementById('prod_'+i);
+  if(x.medida==='apoyo'){ cont.innerHTML=''; return; }
   if(x.medida==='m2_via'){
     cont.innerHTML=
       '<div class="grid2">'
@@ -248,17 +252,35 @@ function onActChange(i){
   const pkfOpt=document.getElementById('pkfOpt_'+i);
   if(!a){ meta.style.display='none'; hint.style.display='none'; document.getElementById('prod_'+i).innerHTML=''; return; }
   const x=ACT_IDX[a];
-  meta.style.display='flex'; hint.style.display='block';
+  hint.style.display='block';
+  if(x.medida==='apoyo'){
+    meta.style.display='none';
+    hint.innerHTML='→ <b>'+x.a+'</b> · actividad de apoyo · no va a DATA';
+    pkfOpt.textContent='(opcional)';
+    document.getElementById('prod_'+i).innerHTML='';
+    return;
+  }
+  meta.style.display='flex';
   hint.innerHTML = x.data ? ('→ ítem: <b>'+x.item+'</b>') : '→ <b>'+x.item+'</b> · solo maquinaria (no va a DATA)';
-  const uniB=document.getElementById('uniBadge_'+i); uniB.textContent=x.uni;
-  uniB.className='badge unidad';
+  const uniB=document.getElementById('uniBadge_'+i); uniB.textContent=x.uni; uniB.className='badge unidad';
   pkfOpt.textContent = (x.medida==='m2_via') ? '(requerido)' : '(opcional)';
   renderProd(i, x);
   onPkChange(i);
 }
+function updateProdVisibility(i){
+  const block=document.getElementById('linea_'+i);
+  const a=block.querySelector('.l-act').value; if(!a) return;
+  const x=ACT_IDX[a]; if(!x || x.medida==='apoyo') return;
+  let hasVibro=false;
+  block.querySelectorAll('.eq-item .e-id').forEach(sel=>{ if(TIPO_EQUIPO[sel.value]==='VIBROCOMPACTADOR') hasVibro=true; });
+  document.getElementById('prod_'+i).style.display=hasVibro?'none':'';
+}
 function onPkChange(i){
-  const block=document.getElementById('linea_'+i), pki=block.querySelector('.l-pki').value;
-  const uf=ufFromPk(pki), a=block.querySelector('.l-act').value;
+  const block=document.getElementById('linea_'+i);
+  const a=block.querySelector('.l-act').value;
+  if(a && ACT_IDX[a] && ACT_IDX[a].medida==='apoyo') return;
+  const pki=block.querySelector('.l-pki').value;
+  const uf=ufFromPk(pki);
   const ufBadge=document.getElementById('ufBadge_'+i), ccBadge=document.getElementById('ccBadge_'+i);
   ufBadge.className='badge'+(uf==='UF1'?' uf1':uf==='UF2'?' uf2':'');
   ufBadge.textContent= uf? (uf+' · '+proyectoFromUf(uf)) : 'UF —';
@@ -297,6 +319,7 @@ function onEqChange(j){
   const op=parseFloat(row.querySelector('.e-hrs').value), falt=(!isNaN(op))?+(ph-op).toFixed(2):0;
   if(falt>0.01){ diff.style.display='block'; diff.textContent='⚠ Hizo '+falt+' h menos — indica el motivo'; mot.style.display='block'; }
   else { diff.style.display='none'; mot.style.display='none'; }
+  const linea=row.closest('.linea'); if(linea) updateProdVisibility(linea.id.split('_')[1]);
 }
 
 function refreshCounts(){
@@ -314,8 +337,13 @@ function getCantidades(){
     const pki=b.querySelector('.l-pki').value.trim(), pkf=b.querySelector('.l-pkf').value.trim();
     const uf=ufFromPk(pki), proy=proyectoFromUf(uf);
     let largo;
+    const lineaI = b.id.split('_')[1];
     if(x.medida==='m2_via'){ const ai=pkToMeters(pki), af=pkToMeters(pkf), an=parseFloat(b.querySelector('.l-ancho').value)||0; largo=(ai!=null&&af!=null&&an>0)?Math.round(Math.abs(af-ai)*an*100)/100:0; }
-    else { largo=parseFloat(b.querySelector('.l-prod').value)||0; }
+    else if(x.medida==='apoyo'){ largo=null; }
+    else {
+      const prodEl=b.querySelector('.l-prod'), prodDiv=document.getElementById('prod_'+lineaI);
+      largo=(prodEl && prodDiv && prodDiv.style.display!=='none') ? (parseFloat(prodEl.value)||0) : null;
+    }
     const equipos=[];
     b.querySelectorAll('.eq-item').forEach(r=>{
       const id=r.querySelector('.e-id').value, hrs=parseFloat(r.querySelector('.e-hrs').value)||0;
@@ -324,8 +352,10 @@ function getCantidades(){
       const motSel=r.querySelector('.e-mot-sel'); const motivo=motSel?(motSel.value==='Otro (especificar)'?(r.querySelector('.e-mot-otro').value||'').trim():motSel.value):'';
       equipos.push({ id_maquina:id, tipo_equipo:TIPO_EQUIPO[id]||'', operador:r.querySelector('.e-op').value.trim(), horas_programadas:ph, horas_operadas:hrs, horas_muertas:muertas, motivo:motivo });
     });
-    rows.push({ grupo:grupoFromCc(x.cc), capitulo:capFromCc(x.cc), actividad:a, descripcion:x.item,
-      centro_costo: (x.data&&proy)?(proy+'.'+x.cc):'', unidad:x.uni, data:x.data, uf:uf||'', proyecto: x.data?proy:'',
+    const esApoyo = x.medida==='apoyo';
+    rows.push({ grupo:esApoyo?'':grupoFromCc(x.cc), capitulo:esApoyo?'':capFromCc(x.cc),
+      actividad:esApoyo?'APOYO':a, descripcion:x.item, sub_actividad:x.sub||'',
+      centro_costo: (x.data&&proy)?(proy+'.'+x.cc):'', unidad:x.uni, data:x.data, uf:esApoyo?'':uf||'', proyecto: x.data?proy:'',
       elemento:buildElemento(pki,pkf), pk_inicial:pki, pk_final:pkf, abs_inicial:pkToMeters(pki), abs_final:pkToMeters(pkf),
       liberacion:'CAMPO', largo:largo, observacion:b.querySelector('.l-obs').value.trim(), equipos:equipos });
   });
@@ -339,9 +369,14 @@ function validate(){
     const act=b.querySelector('.l-act'), pki=b.querySelector('.l-pki'), pkf=b.querySelector('.l-pkf');
     if(!act.value){ act.classList.add('field-error'); ok=false; return; }
     const x=ACT_IDX[act.value];
-    if(!pki.value.trim()){ pki.classList.add('field-error'); ok=false; }
+    const lineaI=b.id.split('_')[1];
+    if(!pki.value.trim() && x.medida!=='apoyo'){ pki.classList.add('field-error'); ok=false; }
     if(x.medida==='m2_via'){ if(!pkf.value.trim()){ pkf.classList.add('field-error'); ok=false; } }
-    else { const prod=b.querySelector('.l-prod'); if(prod && !prod.value){ prod.classList.add('field-error'); ok=false; } }
+    else if(x.medida!=='apoyo'){
+      const prodDiv=document.getElementById('prod_'+lineaI);
+      const prod=b.querySelector('.l-prod');
+      if(prod && prodDiv && prodDiv.style.display!=='none' && !prod.value){ prod.classList.add('field-error'); ok=false; }
+    }
     b.querySelectorAll('.eq-item').forEach(r=>{
       const idI=r.querySelector('.e-id'), hrsI=r.querySelector('.e-hrs'), opI=r.querySelector('.e-op'), motSel=r.querySelector('.e-mot-sel'), motOtro=r.querySelector('.e-mot-otro');
       const id=idI.value, hrs=parseFloat(hrsI.value)||0;

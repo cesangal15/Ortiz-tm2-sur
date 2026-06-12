@@ -96,11 +96,14 @@ function guardarReporte(body){
           proy?(proy+'.02.08'):'', 'm3', c.uf, proy, c.elemento, c.pk_inicial, c.pk_final, c.abs_inicial, c.abs_final,
           c.liberacion, c.largo, 'Auto · secuencial a no aprovechable', 'pendiente']);
     }
-    // equipos -> MAQUINARIA con la producción de su actividad (incluye cereo)
+    // equipos -> MAQUINARIA; vibrocompactadores y actividades de apoyo van sin producción
     (c.equipos||[]).forEach(m=>{
+      const esVibro = m.tipo_equipo === 'VIBROCOMPACTADOR';
+      const prod = (!esVibro && c.largo != null) ? c.largo : '';
+      const uProd = (!esVibro && c.largo != null) ? c.unidad : '';
       maqRows.push([Utilities.getUuid(), idC, ts, fecha, reporta, m.id_maquina, m.tipo_equipo, m.operador,
         c.actividad, c.descripcion, c.uf, c.proyecto, m.horas_programadas, m.horas_operadas, m.horas_muertas, m.motivo,
-        c.largo, c.unidad]);
+        prod, uProd]);
     });
   });
   if(banRows.length) banSh.getRange(banSh.getLastRow()+1,1,banRows.length,BANDEJA_HEADERS.length).setValues(banRows);
