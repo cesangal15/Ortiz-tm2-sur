@@ -146,7 +146,7 @@ const ACTIVIDADES = [
 ];
 const ACT_IDX={}; ACTIVIDADES.forEach(x=>ACT_IDX[x.a]=x);
 
-let STATE = { fecha:'', cantidades:[], maquinas:[] };
+let STATE = { fecha:'', cantidades:[], maquinas:[], observaciones:[] };
 
 window.onload = function(){
   const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
@@ -169,6 +169,7 @@ async function consultar(){
     STATE.fecha=fecha;
     STATE.cantidades=(data.cantidades||[]).map(c=>({...c, largo:parseFloat(c.largo)||0, _inc:(c.estado!=='descartado'&&c.estado!=='no_data'), _nodata:(c.estado==='no_data')}));
     STATE.maquinas=data.maquinas||[];
+    STATE.observaciones=data.observaciones||[];
     autoReconcile();
     render();
   }catch(err){
@@ -269,6 +270,24 @@ function render(){
   });
   if(!any) html+='<div class="cat" style="color:var(--muted)">Sin cantidades incluidas</div>';
   html+='</div>';
+
+  const obsConTexto=(STATE.observaciones||[]).filter(o=>o.observacion);
+  html+='<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:16px;">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;" onclick="toggleObs()">'
+    +'<span style="font-family:\'Syne\',sans-serif;font-size:11px;letter-spacing:2px;color:'+(obsConTexto.length?'var(--accent)':'var(--muted)')+';text-transform:uppercase;">Observaciones de capataces</span>'
+    +'<button id="obsToggleBtn" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:3px 10px;cursor:pointer;font-family:\'DM Sans\',sans-serif;pointer-events:none;">'+(obsConTexto.length?'▸ ver':'—')+'</button>'
+    +'</div>'
+    +'<div id="obsPanel" style="display:none;margin-top:10px;">';
+  if(obsConTexto.length){
+    obsConTexto.forEach(o=>{
+      html+='<div style="background:var(--input-bg);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:8px 12px;margin-bottom:6px;">'
+        +'<span style="font-size:10px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:3px;">'+(o.reporta||'?')+'</span>'
+        +'<span style="font-size:13px;color:var(--text);line-height:1.5;">'+o.observacion+'</span></div>';
+    });
+  } else {
+    html+='<p style="font-size:12px;color:var(--muted);padding:4px 0;">Sin observaciones del día.</p>';
+  }
+  html+='</div></div>';
 
   html+=renderChequeoTerraplen(tot);
 
@@ -380,6 +399,13 @@ function hideMaqEdit(sel){
   sel.style.display='none'; if(btn) btn.style.display='';
 }
 
+function toggleObs(){
+  const p=document.getElementById('obsPanel'), b=document.getElementById('obsToggleBtn');
+  if(!p) return;
+  const open=p.style.display!=='none';
+  p.style.display=open?'none':'block';
+  if(b) b.textContent=open?'▸ ver':'▾ ocultar';
+}
 function toggleInc(idx){ STATE.cantidades[idx]._inc=!STATE.cantidades[idx]._inc; render(); }
 async function editMaquina(idReg, idx, val){
   val=(val||'').trim().toUpperCase();
@@ -442,6 +468,8 @@ function generarMensaje(){
   });
   if(STATE.maquinas.length){ msg+='\n*Equipos:*\n';
     STATE.maquinas.forEach(m=>{ msg+=`- ${m.id_maquina} (${m.operador||'s/op'}) ${m.horas_operadas||0}h`+((m.horas_muertas>0)?` · ${m.horas_muertas}h menos: ${m.motivo||''}`:'')+'\n'; }); }
+  const obsArr=(STATE.observaciones||[]).filter(o=>o.observacion);
+  if(obsArr.length){ msg+='\n*OBSERVACIONES:*\n'; obsArr.forEach(o=>{ msg+=`${o.reporta||'?'}: ${o.observacion}\n`; }); }
   const inop=(document.getElementById('inoperativos').value||'').trim();
   if(inop) msg+='\n*EQUIPOS INOPERATIVOS*\n'+inop+'\n';
   const box=document.getElementById('msgBox'); box.style.display='block'; box.textContent=msg;

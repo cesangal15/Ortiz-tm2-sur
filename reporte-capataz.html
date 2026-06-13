@@ -129,6 +129,13 @@
     <div class="empty-hint" id="cantEmpty">Agrega las actividades ejecutadas hoy</div>
     <button class="btn-add" onclick="addLinea()">+ Agregar actividad</button>
   </div>
+  <div class="card" id="obsCard">
+    <div class="section-title">Observaciones generales</div>
+    <div class="field" style="margin:0;">
+      <label>Observación del día <span class="opt">(opcional)</span></label>
+      <textarea id="obsGeneral" rows="3" placeholder="ej. Paró la lluvia a las 14h, se suspendieron trabajos en el frente norte" style="width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 14px;outline:none;transition:border-color 0.2s;resize:vertical;" onfocus="this.style.borderColor='var(--accent)'" onblur="this.style.borderColor='var(--border)'"></textarea>
+    </div>
+  </div>
   <div class="resumen-card" id="resumenCard" style="display:none;">
     <div class="section-title">Resumen a enviar</div>
     <div id="resumenBody"></div>
@@ -603,7 +610,7 @@ function validate(){
 async function submitForm(){
   if(!validate()){ if(document.querySelector('.field-error')) alert('Revisa los campos marcados.'); return; }
   const btn=document.getElementById('btnSubmit'); btn.textContent='ENVIANDO...'; btn.disabled=true;
-  const data={ fecha:document.getElementById('fechaReporte').value, rol:'capataz', capataz:sessionStorage.getItem('usuario')||'capataz', cantidades:getCantidades() };
+  const data={ fecha:document.getElementById('fechaReporte').value, rol:'capataz', capataz:sessionStorage.getItem('usuario')||'capataz', cantidades:getCantidades(), observacion_general:(document.getElementById('obsGeneral').value||'').trim() };
   try{
     const resp=await fetch(APPS_SCRIPT_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(data) });
     const res=await resp.json();
@@ -619,6 +626,7 @@ async function submitForm(){
 }
 function resetForm(){
   document.getElementById('cantidadesContainer').innerHTML=''; lineaIdx=0;
+  document.getElementById('obsGeneral').value='';
   document.getElementById('successScreen').classList.remove('visible');
   document.getElementById('formMain').classList.remove('hidden');
   document.getElementById('submitBar').classList.remove('hidden');
