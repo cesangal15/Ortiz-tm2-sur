@@ -30,6 +30,8 @@ const BANDEJA_HEADERS = ['id_registro','timestamp','fecha','reporta','rol','grup
 const MAQ_HEADERS = ['id_registro','id_cantidad','timestamp','fecha','reporta','id_maquina','tipo_equipo',
   'operador','actividad','descripcion','uf','proyecto','horas_programadas','horas_operadas','horas_muertas','motivo','produccion','unidad_prod'];
 
+const OBS_HEADERS = ['id_registro','timestamp','fecha','reporta','observacion'];
+
 /* ---------- helpers ---------- */
 function json(o){ return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 let _shTZ; function shTZ(){ if(!_shTZ) _shTZ=SpreadsheetApp.openById(SHEET_ID).getSpreadsheetTimeZone(); return _shTZ; }
@@ -169,6 +171,8 @@ function guardarReporte(body){
   });
   if(banRows.length) banSh.getRange(banSh.getLastRow()+1,1,banRows.length,BANDEJA_HEADERS.length).setValues(banRows);
   if(maqRows.length) maqSh.getRange(maqSh.getLastRow()+1,1,maqRows.length,MAQ_HEADERS.length).setValues(maqRows);
+  const obs=(body.observacion_general||'').trim();
+  if(obs) getSheet('OBSERVACIONES', OBS_HEADERS).appendRow([Utilities.getUuid(), ts, fecha, reporta, obs]);
   return json({ok:true, cantidades:banRows.length, maquinas:maqRows.length});
 }
 
@@ -177,7 +181,8 @@ function bandeja(e){
   const fecha=fdate(e.parameter.fecha), proy=e.parameter.proyecto||'';
   const cantidades=readSheet('BANDEJA').filter(r=> r.fecha===fecha && (!proy||String(r.proyecto)===proy));
   const maquinas=readSheet('MAQUINARIA').filter(r=> r.fecha===fecha && (!proy||String(r.proyecto)===proy));
-  return json({fecha, cantidades, maquinas});
+  const observaciones=readSheet('OBSERVACIONES').filter(r=>r.fecha===fecha).map(r=>({reporta:r.reporta||'', observacion:r.observacion||''}));
+  return json({fecha, cantidades, maquinas, observaciones});
 }
 
 /* ---------- DATA ya enviada (para verificar) ---------- */
