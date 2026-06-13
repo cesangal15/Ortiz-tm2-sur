@@ -303,14 +303,6 @@ function onActChange(i){
   onPkChange(i);
   refreshAll();
 }
-function updateProdVisibility(i){
-  const block=document.getElementById('linea_'+i);
-  const a=block.querySelector('.l-act').value; if(!a) return;
-  const x=ACT_IDX[a]; if(!x || x.medida==='apoyo') return;
-  let hasVibro=false;
-  block.querySelectorAll('.eq-item .e-id').forEach(sel=>{ if(TIPO_EQUIPO[sel.value]==='VIBROCOMPACTADOR') hasVibro=true; });
-  document.getElementById('prod_'+i).style.display=hasVibro?'none':'';
-}
 function onPkChange(i){
   const block=document.getElementById('linea_'+i);
   const a=block.querySelector('.l-act').value;
@@ -393,7 +385,6 @@ function refreshDuplicates(){
 }
 function refreshAll(){
   refreshDuplicates();
-  document.querySelectorAll('#cantidadesContainer .linea').forEach(b=>updateProdVisibility(b.id.split('_')[1]));
   updateResumen();
 }
 
@@ -412,7 +403,7 @@ function eqMotivo(eq){
   return sel.value||'';
 }
 /* Producción numérica de una actividad (para repartir horas). null = sin producción numérica
-   (apoyo, vibrocompactador con campo oculto, o tramo incompleto) → reparto en partes iguales. */
+   (apoyo o tramo incompleto) → reparto en partes iguales. */
 function lineaProd(li){
   const b=document.getElementById('linea_'+li); if(!b) return null;
   const a=b.querySelector('.l-act').value; if(!a) return null;
@@ -565,7 +556,7 @@ function getCantidades(){
       largo=(prodEl && prodDiv && prodDiv.style.display!=='none') ? (parseFloat(prodEl.value)||0) : null;
     }
     const equipos=[];
-    b.querySelectorAll('.eq-item').forEach(r=>{ const e=byEq[r.id]; if(e) equipos.push(e); });
+    b.querySelectorAll('.eq-item').forEach(r=>{ const e=byEq[r.id]; if(e) equipos.push({...e, produccion:e.tipo_equipo==='VIBROCOMPACTADOR'?null:largo}); });
     const esApoyo = x.medida==='apoyo';
     rows.push({ grupo:esApoyo?'':grupoFromCc(x.cc), capitulo:esApoyo?'':capFromCc(x.cc),
       actividad:esApoyo?'APOYO':a, descripcion:x.item, sub_actividad:x.sub||'',
