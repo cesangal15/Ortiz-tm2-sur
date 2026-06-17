@@ -25,13 +25,24 @@
   .field:last-child{margin-bottom:0;}
   label{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-bottom:5px;letter-spacing:0.5px;text-transform:uppercase;}
   label .req{color:var(--accent);margin-left:2px;}
-  select,input[type="number"],input[type="text"],input[type="date"]{width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 14px;outline:none;transition:border-color 0.2s;appearance:none;}
+  select,input[type="number"],input[type="text"],input[type="date"],textarea{width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 14px;outline:none;transition:border-color 0.2s;appearance:none;}
+  textarea{resize:vertical;min-height:96px;line-height:1.55;font-size:14px;}
+  textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,0.1);}
   input[type="date"]{color-scheme:dark;}
   select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a80a0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:36px;cursor:pointer;}
   select:focus,input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,0.1);}
   select option{background:#1a1d27;}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
   .field-error{border-color:var(--error)!important;}
+  .bloque-hint{font-size:11px;color:var(--muted);margin-top:5px;font-style:italic;}
+  .placas-preview{margin-top:10px;}
+  .placas-chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+  .placa-chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:4px 10px;border-radius:8px;border:1px solid var(--border);background:var(--input-bg);color:var(--text);font-variant-numeric:tabular-nums;}
+  .placa-chip .v{color:var(--muted);font-weight:500;}
+  .placa-chip.bad{border-color:rgba(245,166,35,0.55);background:rgba(245,166,35,0.12);color:var(--accent);}
+  .placas-total{font-size:12px;color:var(--muted);}
+  .placas-total b{color:var(--text);font-family:'Syne',sans-serif;}
+  .placas-warn{font-size:11px;color:var(--accent);margin-top:5px;}
   .origen-pill{font-size:11px;color:var(--muted);margin-top:6px;font-style:italic;}
   .origen-pill b{color:var(--accent);font-style:normal;}
   .linea{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px;}
@@ -177,11 +188,13 @@ function addLinea(){
     +'<div class="grid2">'
     +'<div class="field" style="margin:0;"><label>PK destino <span class="req">*</span></label>'
     +'<input type="text" class="l-pk" placeholder="16+200" oninput="onLinea('+i+')"></div>'
-    +'<div class="field" style="margin:0;"><label>N° viajes <span class="req">*</span></label>'
-    +'<input type="number" step="1" class="l-viajes" placeholder="0" oninput="onLinea('+i+')"></div>'
-    +'</div>'
-    +'<div class="field" style="margin-top:14px;"><label>Tipo de destino</label>'
+    +'<div class="field" style="margin:0;"><label>Tipo de destino</label>'
     +'<select class="l-tipo">'+tipoOptions()+'</select></div>'
+    +'</div>'
+    +'<div class="field" style="margin-top:14px;"><label>Placas y viajes <span class="req">*</span></label>'
+    +'<textarea class="l-bloque" rows="5" placeholder="Pega aquí el bloque (estilo WhatsApp):&#10;USD 360-5&#10;- TAW 895-4&#10;HSG 112-3" oninput="onLinea('+i+')"></textarea>'
+    +'<div class="bloque-hint">Una placa por renglón: placa (3 letras + 3 números) y viajes tras el guion. El encabezado se ignora.</div></div>'
+    +'<div class="placas-preview" id="prev_'+i+'" style="display:none;"></div>'
     +'<div class="meta-row" id="meta_'+i+'" style="display:none;">'
     +'<span class="badge m3" id="m3Badge_'+i+'">0 m³</span>'
     +'<span class="badge" id="ufBadge_'+i+'">UF —</span></div>';
@@ -191,15 +204,54 @@ function addLinea(){
 function delLinea(i){ const el=document.getElementById('linea_'+i); if(el) el.remove(); renumber(); refresh(); }
 function renumber(){ document.querySelectorAll('#lineasContainer .linea').forEach((el,k)=>{ el.querySelector('.linea-num').textContent='PK #'+(k+1); }); }
 
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* Parser del bloque estilo WhatsApp.
+ * Por renglón: viajes = 1-2 dígitos tras el último guion al final de la línea.
+ * Placa = los 6 alfanuméricos previos (ignorando espacios/guiones), MAYÚSCULAS.
+ * Válida si calza /^[A-Z]{3}[0-9]{3}$/. Renglones sin patrón viajes (encabezados) se ignoran. */
+function parseBloque(texto){
+  const out=[];
+  String(texto||'').split(/\r?\n/).forEach(raw=>{
+    const linea=raw.trim();
+    if(!linea) return;
+    const m=linea.match(/-\s*(\d{1,2})\s*$/);
+    if(!m) return; // encabezado / renglón sin viajes -> ignorar
+    const viajes=parseInt(m[1],10);
+    const antes=linea.slice(0,m.index);
+    const alnum=antes.replace(/[^A-Za-z0-9]/g,'').toUpperCase();
+    const placa=alnum.slice(-6);
+    const ok=/^[A-Z]{3}[0-9]{3}$/.test(placa) && viajes>0;
+    out.push({ placa: ok?placa:alnum, viajes: ok?viajes:0, ok:ok, raw:linea });
+  });
+  return out;
+}
+function lineaViajes(b){ return parseBloque(b.querySelector('.l-bloque').value).reduce((s,p)=>s+(p.ok?p.viajes:0),0); }
+
 function onLinea(i){
   const b=document.getElementById('linea_'+i);
   const pk=b.querySelector('.l-pk').value;
-  const viajes=parseFloat(b.querySelector('.l-viajes').value)||0;
+  const placas=parseBloque(b.querySelector('.l-bloque').value);
+  const total=placas.reduce((s,p)=>s+(p.ok?p.viajes:0),0);
+  // preview de placas parseadas
+  const prev=document.getElementById('prev_'+i);
+  if(placas.length){
+    prev.style.display='block';
+    const validas=placas.filter(p=>p.ok), bad=placas.length-validas.length;
+    const chips=placas.map(p=> p.ok
+      ? '<span class="placa-chip">'+p.placa+' <span class="v">×'+p.viajes+'</span></span>'
+      : '<span class="placa-chip bad" title="No calza el patrón de placa">⚠ '+escapeHtml(p.raw)+'</span>'
+    ).join('');
+    prev.innerHTML='<div class="placas-chips">'+chips+'</div>'
+      +'<div class="placas-total"><b>'+validas.length+'</b> placa(s) · total <b>'+total+'</b> viajes</div>'
+      +(bad?'<div class="placas-warn">'+bad+' renglón(es) en naranja no calzan placa y no se cuentan — revísalos.</div>':'');
+  } else { prev.style.display='none'; prev.innerHTML=''; }
+  // badges
   const meta=document.getElementById('meta_'+i);
-  if(!pk && !viajes){ meta.style.display='none'; refresh(); return; }
+  if(!pk && !total){ meta.style.display='none'; refresh(); return; }
   meta.style.display='flex';
   const uf=ufFromPk(pk);
-  document.getElementById('m3Badge_'+i).textContent=(viajes*m3viaje()).toLocaleString('es-CO')+' m³';
+  document.getElementById('m3Badge_'+i).textContent=(total*m3viaje()).toLocaleString('es-CO')+' m³';
   const ufb=document.getElementById('ufBadge_'+i);
   ufb.className='badge'+(uf==='UF1'?' uf1':uf==='UF2'?' uf2':'');
   ufb.textContent= uf? (uf+' · '+proyectoFromUf(uf)) : 'UF —';
@@ -211,7 +263,7 @@ function refresh(){
   const lineas=document.querySelectorAll('#lineasContainer .linea');
   document.getElementById('cnt').textContent=lineas.length;
   document.getElementById('empty').style.display=lineas.length?'none':'block';
-  let tv=0; lineas.forEach(b=>{ tv+=parseFloat(b.querySelector('.l-viajes').value)||0; });
+  let tv=0; lineas.forEach(b=>{ tv+=lineaViajes(b); });
   const res=document.getElementById('resumen');
   if(lineas.length){ res.style.display='flex'; document.getElementById('totViajes').textContent=tv; document.getElementById('totM3').textContent=(tv*m3viaje()).toLocaleString('es-CO'); }
   else res.style.display='none';
@@ -226,7 +278,7 @@ function getCantidades(){
   const rows=[];
   document.querySelectorAll('#lineasContainer .linea').forEach(b=>{
     const pk=b.querySelector('.l-pk').value.trim();
-    const viajes=parseFloat(b.querySelector('.l-viajes').value)||0;
+    const viajes=lineaViajes(b); // total calculado = suma de placas válidas
     const tipo=b.querySelector('.l-tipo').value;
     if(!pk || !viajes) return;
     const m3=viajes*factor;
@@ -246,6 +298,23 @@ function getCantidades(){
   });
   return rows;
 }
+// Desglose por placa para la hoja VOLQUETAS (no altera el flujo a BANDEJA).
+function getVolquetas(){
+  const origen=document.getElementById('origen').value;
+  if(!origen) return [];
+  const exc=ORIGENES[origen];
+  const origenLabel=(origen==='Complementario'||origen==='Otro')?(document.getElementById('origenTexto').value.trim()||exc.label):exc.label;
+  const out=[];
+  document.querySelectorAll('#lineasContainer .linea').forEach(b=>{
+    const pk=b.querySelector('.l-pk').value.trim();
+    const tipo=b.querySelector('.l-tipo').value;
+    const placas=parseBloque(b.querySelector('.l-bloque').value).filter(p=>p.ok).map(p=>({placa:p.placa, viajes:p.viajes}));
+    if(!pk || !placas.length) return;
+    const uf=ufFromPk(pk);
+    out.push({ origen:origenLabel, destino:pk, tipo_destino:tipo, uf:uf, placas:placas });
+  });
+  return out;
+}
 function validate(){
   let ok=true;
   document.querySelectorAll('.field-error').forEach(e=>e.classList.remove('field-error'));
@@ -253,11 +322,11 @@ function validate(){
   if(!fecha.value){ fecha.classList.add('field-error'); ok=false; }
   if(!origen.value){ origen.classList.add('field-error'); ok=false; }
   document.querySelectorAll('#lineasContainer .linea').forEach(b=>{
-    const pk=b.querySelector('.l-pk'), v=b.querySelector('.l-viajes');
+    const pk=b.querySelector('.l-pk'), bloque=b.querySelector('.l-bloque');
     if(!pk.value.trim()){ pk.classList.add('field-error'); ok=false; }
-    if(!v.value){ v.classList.add('field-error'); ok=false; }
+    if(!lineaViajes(b)){ bloque.classList.add('field-error'); ok=false; }
   });
-  if(getCantidades().length===0){ if(ok) alert('Agrega al menos un PK con viajes y elige el origen.'); return false; }
+  if(getCantidades().length===0){ if(ok) alert('Agrega al menos un PK con placas válidas y elige el origen.'); return false; }
   return ok;
 }
 let enviando=false;
@@ -269,13 +338,13 @@ async function submitForm(){
   const btn=document.getElementById('btnSubmit');
   btn.textContent='ENVIANDO...'; btn.disabled=true;
   const data={ fecha:document.getElementById('fecha').value, rol:'chequeadora',
-    capataz: sessionStorage.getItem('usuario')||'chequeadora', cantidades:getCantidades() };
+    capataz: sessionStorage.getItem('usuario')||'chequeadora', cantidades:getCantidades(), volquetas:getVolquetas() };
   try{
     const resp=await fetch(APPS_SCRIPT_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(data) });
     const res=await resp.json();
     if(!res || !res.ok) throw new Error((res&&res.error)||'Respuesta inesperada del servidor');
     exito=true;
-    document.getElementById('successMsg').textContent='Se registraron '+res.cantidades+' filas (excavación + terraplén).';
+    document.getElementById('successMsg').textContent='Se registraron '+res.cantidades+' filas (excavación + terraplén)'+(res.volquetas!=null?(' y '+res.volquetas+' placas'):'')+'.';
     document.getElementById('formMain').classList.add('hidden');
     document.getElementById('submitBar').classList.add('hidden');
     document.getElementById('successScreen').classList.add('visible');

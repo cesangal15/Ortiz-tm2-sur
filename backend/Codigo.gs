@@ -9,7 +9,8 @@
  *   GET  ?action=consolidado&fecha=...   -> {cantidades:[](de DATA, ya enviado)}
  *   GET  ?action=estado&fecha=...        -> {reportadas:[{id_maquina,capataz}]}
  *   GET  ?action=debug&fecha=...
- *   POST  reporte: {fecha,rol,capataz,cantidades:[{...,equipos:[]}]}   -> BANDEJA
+ *   POST  reporte: {fecha,rol,capataz,cantidades:[{...,equipos:[]}],volquetas:[{origen,destino,tipo_destino,uf,placas:[{placa,viajes}]}]}
+ *           -> BANDEJA (+ MAQUINARIA) ; chequeadora además -> VOLQUETAS (una fila por placa)
  *   POST  {action:'enviar_data', fecha, cantidades:[...incluidas...]}  -> DATA
  */
 
@@ -31,6 +32,10 @@ const MAQ_HEADERS = ['id_registro','id_cantidad','timestamp','fecha','reporta','
   'operador','actividad','descripcion','uf','proyecto','horas_programadas','horas_operadas','horas_muertas','motivo','produccion','unidad_prod'];
 
 const OBS_HEADERS = ['id_registro','timestamp','fecha','reporta','observacion'];
+
+// VOLQUETAS: desglose por placa de la chequeadora (una fila por placa). No toca DATA ni MAQUINARIA.
+const VOLQUETAS_HEADERS = ['id_registro','timestamp','fecha','reporta','origen','destino',
+  'tipo_destino','uf','placa','viajes'];
 
 /* ---------- helpers ---------- */
 function json(o){ return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
@@ -130,7 +135,7 @@ function doGet(e){
   if(a==='consolidado') return consolidado(e);
   if(a==='estado')      return estado(e);
   if(a==='debug')       return debug(e);
-  return json({ok:true, msg:'API viva', version:'v7'});
+  return json({ok:true, msg:'API viva', version:'v8'});
 }
 function doPost(e){
   try{
@@ -171,9 +176,21 @@ function guardarReporte(body){
   });
   if(banRows.length) banSh.getRange(banSh.getLastRow()+1,1,banRows.length,BANDEJA_HEADERS.length).setValues(banRows);
   if(maqRows.length) maqSh.getRange(maqSh.getLastRow()+1,1,maqRows.length,MAQ_HEADERS.length).setValues(maqRows);
+  // chequeadora: desglose por placa -> VOLQUETAS (una fila por placa). No toca DATA ni MAQUINARIA.
+  // Un id_registro por línea de PK destino (placas de la misma línea comparten id).
+  const volRows=[];
+  (body.volquetas||[]).forEach(line=>{
+    const idV=Utilities.getUuid();
+    (line.placas||[]).forEach(p=>{
+      volRows.push([idV, ts, fecha, reporta, line.origen||'', line.destino||'', line.tipo_destino||'',
+        line.uf||'', p.placa||'', (p.viajes!=null?p.viajes:'')]);
+    });
+  });
+  if(volRows.length){ const volSh=getSheet('VOLQUETAS', VOLQUETAS_HEADERS);
+    volSh.getRange(volSh.getLastRow()+1,1,volRows.length,VOLQUETAS_HEADERS.length).setValues(volRows); }
   const obs=(body.observacion_general||'').trim();
   if(obs) getSheet('OBSERVACIONES', OBS_HEADERS).appendRow([Utilities.getUuid(), ts, fecha, reporta, obs]);
-  return json({ok:true, cantidades:banRows.length, maquinas:maqRows.length});
+  return json({ok:true, cantidades:banRows.length, maquinas:maqRows.length, volquetas:volRows.length});
 }
 
 /* ---------- bandeja para el encargado ---------- */
@@ -236,6 +253,6 @@ function debug(e){
   const fechaQ=fdate(e.parameter.fecha||'');
   const ban=readSheet('BANDEJA').filter(r=>r.fecha===fechaQ);
   const data=readSheet('DATA') ? '' : '';
-  return json({version:'v7', sheetTZ:shTZ(), queryFecha:fechaQ, bandejaFilas:ban.length,
+  return json({version:'v8', sheetTZ:shTZ(), queryFecha:fechaQ, bandejaFilas:ban.length,
     muestra: ban.slice(0,5).map(r=>({reporta:r.reporta, rol:r.rol, actividad:r.actividad, pk:r.pk_inicial, largo:r.largo, estado:r.estado})) });
 }
