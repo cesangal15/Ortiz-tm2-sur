@@ -18,7 +18,7 @@
 │  GET  ?action=consolidado&fecha=…            → lo ya enviado a DATA                     │
 │  GET  ?action=estado&fecha=…                 → máquinas reportadas (estado.html)        │
 │  GET  ?action=debug&fecha=…                  → diagnóstico                              │
-│  POST {reporte}                              → escribe BANDEJA + MAQUINARIA             │
+│  POST {reporte}                              → escribe BANDEJA + MAQUINARIA (+VOLQUETAS)  │
 │  POST {action:enviar_data}                   → pisa DATA del día + marca bandeja        │
 │  Regla técnica: fechas por duck-typing (getFullYear), nunca instanceof Date.            │
 │  Redespliegue: Administrar implementaciones → editar → Nueva versión (misma URL).       │
@@ -27,6 +27,7 @@
 ┌──────────────────────────── GOOGLE SHEETS (almacenamiento) ─────────────────────────────┐
 │  BANDEJA     crudo con estado (pendiente/incluido/descartado/no_data)                   │
 │  MAQUINARIA  equipos con producción individual (directo, sin aprobación)                │
+│  VOLQUETAS   desglose por placa de la chequeadora (1 fila/placa, informativo; no a DATA) │
 │  DATA        oficial; columnas A–T = espejo del maestro TM2                             │
 └────────────────────────────────────┬─────────────────────────────────────────────────--┘
                                      │ copy-paste manual por bloques
@@ -44,7 +45,7 @@
 ## Flujo de captura (diario)
 
 1. **Capataz** entra → agrega N actividades. Por actividad: actividad específica → (sistema muestra ítem contractual, unidad, UF, CC) → PK → producción (campo adaptativo) → equipos (máquina, operador, horas; motivo si faltan horas) → observación.
-2. **Chequeadora** entra → fecha, m³/viaje (14), origen → N líneas {PK destino, viajes, tipo destino} → el sistema genera filas de excavación (+terraplén si aplica).
+2. **Chequeadora** entra → fecha, m³/viaje (14), origen → N líneas {PK destino, tipo destino, bloque de placas}. Pega el desglose por placa estilo WhatsApp; el sistema parsea placa+viajes, calcula el total de la línea y genera las filas de excavación (+terraplén si aplica) por ese total (D48). Cada placa se guarda en VOLQUETAS.
 3. Ambos envían → BANDEJA (+ MAQUINARIA). Confirmación real del servidor (cuenta de filas guardadas).
 
 ## Flujo de consolidación (diario, encargado)
