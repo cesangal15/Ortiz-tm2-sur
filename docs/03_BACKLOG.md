@@ -18,7 +18,8 @@
 | 1.12 | Completar catálogo de máquinas (IDs reales de vibros/alquiladas faltantes) | ✅ Hecho |
 | 1.13 | Corregir marca/modelo/valor-hora de máquinas nuevas en dim | ✅ Hecho |
 | 1.14 | Contraseñas definitivas para encargado y chequeadoras | 🟡 Parcial (capataces ✅ y chequeadoras ✅ con clave común cheq2025; falta solo el encargado) |
-| 1.15 | Desglose por placa en reporte de chequeadora (textarea + parser, hoja VOLQUETAS) | ✅ Hecho (validar con datos reales) |
+| 1.15 | Desglose por placa en reporte de chequeadora (textarea + parser, hoja VOLQUETAS) | ✅ Hecho (validado con datos reales, jun-2026) |
+| 1.16 | Confirmación de envío en reporte-chequeadora.html (cuenta de filas del servidor, igual que capataz, D30). Detectado al validar 1.15. | 🔲 Pendiente (a Claude Code) |
 
 ## V2 — Mejoras identificadas (no iniciar sin cerrar V1)
 
@@ -31,6 +32,8 @@
 | 2.5 | Actividades secuenciales adicionales (vendrán con las máquinas nuevas) | Usuario |
 | 2.6 | Generación del mensaje WhatsApp con desglose idéntico al formato histórico (equipos por actividad, secciones MSR) | Formato actual simplificado |
 | 2.7 | Registro de flota de volquetas (Ortiz vs particulares) — hoy se ignora | "Más adelante sí puede servir" |
+| 2.8 | Modo sin conexión Nivel 2 (captura offline + cola + sync) en capataz y chequeadora; encargado fuera. Requiere UUID en cliente para dedupe (toca Codigo.gs) y sesión en localStorage | D49 |
+| 2.9 | Escalamiento a Nivel 3 (service worker / PWA, carga sin señal desde cero) — solo si en pruebas el celular pierde la pestaña en zona muerta | D49 |
 
 ## V3 — Largo plazo
 
