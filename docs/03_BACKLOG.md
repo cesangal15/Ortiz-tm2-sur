@@ -17,7 +17,8 @@
 | 1.11 | Alinear hoja MAQUINARIA del Sheets al orden de Captura_Diaria | 🔲 Pendiente |
 | 1.12 | Completar catálogo de máquinas (IDs reales de vibros/alquiladas faltantes) | ✅ Hecho |
 | 1.13 | Corregir marca/modelo/valor-hora de máquinas nuevas en dim | ✅ Hecho |
-| 1.14 | Contraseñas definitivas para encargado y chequeadoras | 🟡 Parcial (capataces ✅ con usuario nominal y clave estándar compartida; falta encargado y chequeadoras) |
+| 1.14 | Contraseñas definitivas para encargado y chequeadoras | 🟡 Parcial (capataces ✅ y chequeadoras ✅ con clave común cheq2025; falta solo el encargado) |
+| 1.15 | Desglose por placa en reporte de chequeadora (textarea + parser, hoja VOLQUETAS) | ✅ Hecho (validar con datos reales) |
 
 ## V2 — Mejoras identificadas (no iniciar sin cerrar V1)
 
