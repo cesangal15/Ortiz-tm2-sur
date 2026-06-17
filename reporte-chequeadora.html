@@ -260,8 +260,12 @@ function validate(){
   if(getCantidades().length===0){ if(ok) alert('Agrega al menos un PK con viajes y elige el origen.'); return false; }
   return ok;
 }
+let enviando=false;
 async function submitForm(){
+  if(enviando) return;
   if(!validate()){ if(document.querySelector('.field-error')) alert('Revisa los campos marcados.'); return; }
+  enviando=true;
+  let exito=false;
   const btn=document.getElementById('btnSubmit');
   btn.textContent='ENVIANDO...'; btn.disabled=true;
   const data={ fecha:document.getElementById('fecha').value, rol:'chequeadora',
@@ -270,13 +274,17 @@ async function submitForm(){
     const resp=await fetch(APPS_SCRIPT_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(data) });
     const res=await resp.json();
     if(!res || !res.ok) throw new Error((res&&res.error)||'Respuesta inesperada del servidor');
+    exito=true;
     document.getElementById('successMsg').textContent='Se registraron '+res.cantidades+' filas (excavación + terraplén).';
     document.getElementById('formMain').classList.add('hidden');
     document.getElementById('submitBar').classList.add('hidden');
     document.getElementById('successScreen').classList.add('visible');
   }catch(err){
     alert('⚠ No se pudo guardar: '+err.message+'\n\nIntenta de nuevo.');
-    btn.textContent='ENVIAR VIAJES DEL DÍA →'; btn.disabled=false;
+  }finally{
+    if(!exito){ btn.textContent='ENVIAR VIAJES DEL DÍA →'; btn.disabled=false; }
+    else{ btn.textContent='✓ ENVIADO'; btn.disabled=true; }
+    enviando=false;
   }
 }
 function resetForm(){
