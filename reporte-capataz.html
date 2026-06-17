@@ -607,21 +607,29 @@ function validate(){
   if(getCantidades().length===0){ alert('Agrega al menos una actividad.'); return false; }
   return ok;
 }
+let enviando=false;
 async function submitForm(){
+  if(enviando) return;
   if(!validate()){ if(document.querySelector('.field-error')) alert('Revisa los campos marcados.'); return; }
+  enviando=true;
+  let exito=false;
   const btn=document.getElementById('btnSubmit'); btn.textContent='ENVIANDO...'; btn.disabled=true;
   const data={ fecha:document.getElementById('fechaReporte').value, rol:'capataz', capataz:sessionStorage.getItem('usuario')||'capataz', cantidades:getCantidades(), observacion_general:(document.getElementById('obsGeneral').value||'').trim() };
   try{
     const resp=await fetch(APPS_SCRIPT_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(data) });
     const res=await resp.json();
     if(!res || !res.ok) throw new Error((res&&res.error)||'Respuesta inesperada del servidor');
+    exito=true;
     document.getElementById('successMsg').textContent='Se guardaron '+res.cantidades+' actividad(es) y '+res.maquinas+' equipo(s).';
     document.getElementById('formMain').classList.add('hidden');
     document.getElementById('submitBar').classList.add('hidden');
     document.getElementById('successScreen').classList.add('visible');
   }catch(err){
     alert('⚠ No se pudo guardar: '+err.message+'\n\nNo cierres la página, intenta enviar de nuevo.');
-    btn.textContent='ENVIAR REPORTE DEL DÍA →'; btn.disabled=false;
+  }finally{
+    if(!exito){ btn.textContent='ENVIAR REPORTE DEL DÍA →'; btn.disabled=false; }
+    else{ btn.textContent='✓ ENVIADO'; btn.disabled=true; }
+    enviando=false;
   }
 }
 function resetForm(){
