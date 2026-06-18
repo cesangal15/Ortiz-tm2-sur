@@ -152,7 +152,7 @@ window.onload = function(){
   const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
   if(!rol || (rol!=='encargado' && rol!=='admin')){ window.location.href='index.html'; return; }
   document.getElementById('userDisplay').textContent=usuario||'encargado';
-  document.getElementById('fecha').value=new Date().toISOString().split('T')[0];
+  document.getElementById('fecha').value=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
 };
 function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
 function pkToMeters(pk){ if(!pk) return null; pk=String(pk).trim().replace(/\s/g,''); if(pk.includes('+')){const p=pk.split('+');const km=parseInt(p[0]);const m=parseInt(p[1]||'0');if(isNaN(km))return null;return km*1000+(isNaN(m)?0:m);} const n=parseFloat(pk);return isNaN(n)?null:n*1000; }
