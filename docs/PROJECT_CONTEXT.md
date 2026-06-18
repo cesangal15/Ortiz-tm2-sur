@@ -21,6 +21,7 @@
 - Máquina con 0 horas: el capataz NO la reporta; el encargado la anota como inoperativo en texto libre (D28, va al WhatsApp, no a MAQUINARIA).
 - Períodos maquinaria: 16 del mes anterior → 15 del mes. RESUMEN_MES: B2=yyyy-mm, B3=3701/3702/0(ambos). Metas: excavación 106.25, terraplén 85 m³/hr.
 - Apps Script: fechas SIEMPRE por duck-typing (getFullYear), nunca instanceof Date. POST text/plain (respuesta legible). Redespliegue = editar implementación → nueva versión (misma URL).
+- Fecha por defecto en el frontend: SIEMPRE `new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'})` (UTC−5), nunca `toISOString()` — esta última devuelve UTC y de noche en Colombia (≥7 PM) mostraba el día siguiente. Aplica a reporte-capataz, reporte-chequeadora, encargado y estado (ver D50).
 - Reconciliación automática al abrir bandeja: filas de capataz que duplican volumen ya reportado por chequeadora se apagan por defecto (etiqueta "control · no suma", borde punteado). El total queda correcto sin intervención. Regla de validación: terraplén ≤ aprovechable+préstamo; el panel avisa en rojo si se viola. Corrección de máquina duplicada: `<select>` con lista de máquinas conocidas (no texto libre); requiere endpoint `editar_maquina` en Apps Script.
 
 **Usuarios capataces:** albert / ariel / angel / alejo / robinson (login con usuario nominal, clave estándar compartida; se cambiará individual bajo demanda). **Chequeadoras (4):** maleja / mairy / maria / luzdary, clave común cheq2025. Encargado: contraseña placeholder pendiente de definir.
