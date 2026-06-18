@@ -207,7 +207,7 @@ window.onload = function(){
   if(!rol || (rol!=='capataz' && rol!=='admin' && rol!=='encargado')){ window.location.href='index.html'; return; }
   document.getElementById('userDisplay').textContent=usuario||'capataz';
   document.getElementById('backBtn').textContent = (rol==='encargado') ? '← Volver' : 'Salir';
-  document.getElementById('fechaReporte').value=new Date().toISOString().split('T')[0];
+  document.getElementById('fechaReporte').value=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
   addLinea();
 };
 function logout(){
@@ -639,7 +639,7 @@ function resetForm(){
   document.getElementById('formMain').classList.remove('hidden');
   document.getElementById('submitBar').classList.remove('hidden');
   document.getElementById('btnSubmit').textContent='ENVIAR REPORTE DEL DÍA →'; document.getElementById('btnSubmit').disabled=false;
-  document.getElementById('fechaReporte').value=new Date().toISOString().split('T')[0];
+  document.getElementById('fechaReporte').value=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
   addLinea();
 }
 </script>

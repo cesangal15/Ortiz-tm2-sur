@@ -113,7 +113,7 @@ window.onload = function() {
   const usuario = sessionStorage.getItem('usuario');
   if (!rol || rol !== 'admin') { window.location.href = 'index.html'; return; }
   document.getElementById('userDisplay').textContent = usuario;
-  document.getElementById('fechaConsulta').value = new Date().toISOString().split('T')[0];
+  document.getElementById('fechaConsulta').value = new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
 };
 
 function logout() { sessionStorage.clear(); window.location.href = 'index.html'; }
