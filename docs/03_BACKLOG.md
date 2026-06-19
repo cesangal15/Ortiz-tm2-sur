@@ -14,7 +14,7 @@
 | 1.8 | Hoja RESUMEN_MES en Modelo_Produccion (períodos 16–15, producción individual) | ✅ Hecho (validar con datos reales) |
 | 1.9 | Máquinas nuevas en dim (FNG02, CR08–CR26, PEXC027) | ✅ Hecho (datos de referencia) |
 | 1.10 | Prueba punta a punta del flujo bandeja → DATA con día real completo | ✅ Hecho (probado en ejecución real con chequeadoras enviando; residuales menores derivados a V2: WhatsApp de prueba = 2.6, ajustes de interfaz de DATA) |
-| 1.11 | Alinear hoja MAQUINARIA del Sheets al orden de Captura_Diaria | ✅ Hecho (Codigo.gs: layout A→AA + internos tras AA, derivaciones H/I/R/O/T y flag a_captura, D52). Operativo en curso: recrear/limpiar la hoja MAQUINARIA al layout D52 (backup de los días previos como MAQUINARIA_OLD) + redesplegar |
+| 1.11 | Alinear hoja MAQUINARIA del Sheets al orden de Captura_Diaria | ✅ Hecho (Codigo.gs: layout A→AA + internos tras AA, derivaciones H/I/R/O/T y flag a_captura, D52). Hoja MAQUINARIA recreada al layout D52 (respaldo MAQUINARIA_OLD) y redespliegue verificado con reporte real |
 | 1.12 | Completar catálogo de máquinas (IDs reales de vibros/alquiladas faltantes) | ✅ Hecho |
 | 1.13 | Corregir marca/modelo/valor-hora de máquinas nuevas en dim | ✅ Hecho |
 | 1.14 | Contraseñas definitivas para encargado y chequeadoras | ✅ Hecho (capataces ✅, chequeadoras ✅ con clave común cheq2025; el encargado se deja con su placeholder aceptado por el usuario) |

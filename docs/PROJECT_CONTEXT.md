@@ -29,6 +29,6 @@
 
 **Entidades:** BANDEJA(22 cols, estado) · DATA(A–T maestro + 7 internas) · MAQUINARIA(layout alineado a Captura_Diaria A→AA, D52; internos del app tras AA) · VOLQUETAS(13 cols: id_registro·timestamp·fecha·reporta·origen·destino·tipo_destino·uf·placa·viajes·**cubicaje·m3_placa·cubicaje_origen**; 1 fila/placa, informativo, no va a DATA) · CUBICAJE(`placa·cubicaje`[·tipo]; catálogo que mantiene el usuario como espejo del cubicaje de la Bitácora de Transporte; lo lee el backend, no va a DATA — D53/2.10) · Catálogo 29 actividades (23 productivas + 6 de apoyo, ver 05_CATALOGO) · 20 máquinas. Formulario capataz incluye resumen en vivo (actividades, producción, equipos, validación pre-envío).
 
-**Estado:** V1 ✅ cerrado (jun-2026). Queda solo el paso operativo de recrear/limpiar la hoja MAQUINARIA al layout D52 + redesplegar. **V2 en curso:** primer ítem 2.10 — cubicaje real por placa (hoja CUBICAJE + cálculo en backend + lectura en vivo, D53). **Pospuesto:** clima, festivos, emparejamiento automático por PK.
+**Estado:** V1 ✅ cerrado y verificado (jun-2026): hoja MAQUINARIA recreada al layout D52 y redespliegue probado con reporte real. **V2:** primer ítem 2.10 — cubicaje real por placa (documentado, aún sin implementar, D53). **Pospuesto:** clima, festivos, emparejamiento automático por PK.
 
 **Restricción de trabajo:** no inventar funcionalidades (ver 03_BACKLOG); no escribir directo en los .xlsx maestros; el usuario valida con datos reales antes de dar por cerrado.
