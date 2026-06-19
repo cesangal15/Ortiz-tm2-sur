@@ -150,6 +150,8 @@ const ORIGENES = {
 const TIPOS = ['Terraplén','Puente','ODL','Botadero'];
 
 let lineaIdx = 0;
+// Cubicaje real por placa (D53): mapa placa→m³/viaje cacheado al cargar. Vacío = todo cae al factor.
+let CUBMAP = {};
 
 window.onload = function(){
   const rol = sessionStorage.getItem('rol');
@@ -157,9 +159,24 @@ window.onload = function(){
   if(!rol || (rol!=='chequeadora' && rol!=='admin')){ window.location.href='index.html'; return; }
   document.getElementById('userDisplay').textContent = usuario || 'chequeadora';
   document.getElementById('fecha').value = new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
+  cargarCubicaje();
   addLinea();
 };
 function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
+
+// Trae el catálogo placa→cubicaje. Si falla (sin red / hoja vacía) deja CUBMAP={} y todo usa el factor.
+async function cargarCubicaje(){
+  try{
+    const resp=await fetch(APPS_SCRIPT_URL+'?action=cubicaje');
+    const data=await resp.json();
+    if(data && data.cubicaje) CUBMAP=data.cubicaje;
+  }catch(err){ CUBMAP={}; }
+  recalcAll(); // re-pinta totales/placas con el cubicaje ya cargado
+}
+// Normaliza la placa EXACTAMENTE como el parser: sin espacios ni guion, MAYÚSCULAS, 6 chars.
+function normPlaca(s){ return String(s==null?'':s).replace(/[^A-Za-z0-9]/g,'').toUpperCase().slice(-6); }
+// Cubicaje de una placa válida: del catálogo si existe, si no el factor del reporte (fallback 14).
+function cubDePlaca(placa){ const c=CUBMAP[normPlaca(placa)]; return (c!=null)?c:m3viaje(); }
 
 function pkToMeters(pk){ if(!pk) return null; pk=String(pk).trim().replace(/\s/g,''); if(pk.includes('+')){const p=pk.split('+');const km=parseInt(p[0]);const m=parseInt(p[1]||'0');if(isNaN(km))return null;return km*1000+(isNaN(m)?0:m);} const n=parseFloat(pk);return isNaN(n)?null:n*1000; }
 function ufFromPk(pk){ const m=pkToMeters(pk); if(m==null) return ''; return m<=30000?'UF1':'UF2'; }
@@ -228,31 +245,40 @@ function parseBloque(texto){
   return out;
 }
 function lineaViajes(b){ return parseBloque(b.querySelector('.l-bloque').value).reduce((s,p)=>s+(p.ok?p.viajes:0),0); }
+// Volumen real de la línea (D53): Σ(viajes × cubicaje de cada placa válida). Placa no catalogada → factor.
+function lineaM3(b){ return parseBloque(b.querySelector('.l-bloque').value).reduce((s,p)=>s+(p.ok?p.viajes*cubDePlaca(p.placa):0),0); }
 
 function onLinea(i){
   const b=document.getElementById('linea_'+i);
   const pk=b.querySelector('.l-pk').value;
   const placas=parseBloque(b.querySelector('.l-bloque').value);
   const total=placas.reduce((s,p)=>s+(p.ok?p.viajes:0),0);
+  const m3real=lineaM3(b); // volumen real con cubicaje por placa (D53)
+  const factor=m3viaje();
   // preview de placas parseadas
   const prev=document.getElementById('prev_'+i);
   if(placas.length){
     prev.style.display='block';
     const validas=placas.filter(p=>p.ok), bad=placas.length-validas.length;
-    const chips=placas.map(p=> p.ok
-      ? '<span class="placa-chip">'+p.placa+' <span class="v">×'+p.viajes+'</span></span>'
-      : '<span class="placa-chip bad" title="No calza el patrón de placa">⚠ '+escapeHtml(p.raw)+'</span>'
-    ).join('');
+    // placa válida pero sin cubicaje en el catálogo -> naranja + aviso (se tomó el factor)
+    let sinCub=0;
+    const chips=placas.map(p=>{
+      if(!p.ok) return '<span class="placa-chip bad" title="No calza el patrón de placa">⚠ '+escapeHtml(p.raw)+'</span>';
+      if(CUBMAP[normPlaca(p.placa)]==null){ sinCub++;
+        return '<span class="placa-chip bad" title="No registrada en CUBICAJE, se tomó '+factor+' m³/viaje">'+p.placa+' <span class="v">×'+p.viajes+'</span> ⚠</span>'; }
+      return '<span class="placa-chip">'+p.placa+' <span class="v">×'+p.viajes+'</span></span>';
+    }).join('');
     prev.innerHTML='<div class="placas-chips">'+chips+'</div>'
-      +'<div class="placas-total"><b>'+validas.length+'</b> placa(s) · total <b>'+total+'</b> viajes</div>'
-      +(bad?'<div class="placas-warn">'+bad+' renglón(es) en naranja no calzan placa y no se cuentan — revísalos.</div>':'');
+      +'<div class="placas-total"><b>'+validas.length+'</b> placa(s) · total <b>'+total+'</b> viajes · <b>'+m3real.toLocaleString('es-CO')+'</b> m³</div>'
+      +(bad?'<div class="placas-warn">'+bad+' renglón(es) en naranja no calzan placa y no se cuentan — revísalos.</div>':'')
+      +(sinCub?'<div class="placas-warn">'+sinCub+' placa(s) en naranja no están en CUBICAJE: se tomó '+factor+' m³/viaje. Se envían igual.</div>':'');
   } else { prev.style.display='none'; prev.innerHTML=''; }
   // badges
   const meta=document.getElementById('meta_'+i);
   if(!pk && !total){ meta.style.display='none'; refresh(); return; }
   meta.style.display='flex';
   const uf=ufFromPk(pk);
-  document.getElementById('m3Badge_'+i).textContent=(total*m3viaje()).toLocaleString('es-CO')+' m³';
+  document.getElementById('m3Badge_'+i).textContent=m3real.toLocaleString('es-CO')+' m³';
   const ufb=document.getElementById('ufBadge_'+i);
   ufb.className='badge'+(uf==='UF1'?' uf1':uf==='UF2'?' uf2':'');
   ufb.textContent= uf? (uf+' · '+proyectoFromUf(uf)) : 'UF —';
@@ -264,9 +290,9 @@ function refresh(){
   const lineas=document.querySelectorAll('#lineasContainer .linea');
   document.getElementById('cnt').textContent=lineas.length;
   document.getElementById('empty').style.display=lineas.length?'none':'block';
-  let tv=0; lineas.forEach(b=>{ tv+=lineaViajes(b); });
+  let tv=0, tm3=0; lineas.forEach(b=>{ tv+=lineaViajes(b); tm3+=lineaM3(b); });
   const res=document.getElementById('resumen');
-  if(lineas.length){ res.style.display='flex'; document.getElementById('totViajes').textContent=tv; document.getElementById('totM3').textContent=(tv*m3viaje()).toLocaleString('es-CO'); }
+  if(lineas.length){ res.style.display='flex'; document.getElementById('totViajes').textContent=tv; document.getElementById('totM3').textContent=tm3.toLocaleString('es-CO'); }
   else res.style.display='none';
 }
 
@@ -275,19 +301,19 @@ function getCantidades(){
   if(!origen) return [];
   const exc=ORIGENES[origen];
   const origenLabel=(origen==='Complementario'||origen==='Otro')?(document.getElementById('origenTexto').value.trim()||exc.label):exc.label;
-  const factor=m3viaje();
   const rows=[];
   document.querySelectorAll('#lineasContainer .linea').forEach(b=>{
     const pk=b.querySelector('.l-pk').value.trim();
     const viajes=lineaViajes(b); // total calculado = suma de placas válidas
     const tipo=b.querySelector('.l-tipo').value;
     if(!pk || !viajes) return;
-    const m3=viajes*factor;
+    const m3=lineaM3(b); // volumen real con cubicaje por placa (D53); el backend lo recalcula como fuente
+    const lineId=Number(b.id.split('_')[1]); // correlación con la línea de VOLQUETAS para el backend
     const uf=ufFromPk(pk), proy=proyectoFromUf(uf);
     const grupo=exc.cc==='02.06'?'TIERRAS':'TIERRAS';
     const base={ grupo, capitulo:'EXPLANACIONES', uf, proyecto:proy,
       elemento:'tm2 pk '+pk, pk_inicial:pk, pk_final:'', abs_inicial:pkToMeters(pk), abs_final:null,
-      liberacion:'CAMPO', largo:m3, equipos:[], data:true };
+      liberacion:'CAMPO', largo:m3, _linea:lineId, equipos:[], data:true };
     rows.push(Object.assign({}, base, { actividad:exc.actividad, descripcion:exc.item,
       centro_costo: proy?(proy+'.'+exc.cc):'', unidad:'m3',
       observacion: origenLabel+' · '+viajes+' viajes'+(tipo!=='Terraplén'?(' ('+tipo+')'):'') }));
@@ -312,7 +338,8 @@ function getVolquetas(){
     const placas=parseBloque(b.querySelector('.l-bloque').value).filter(p=>p.ok).map(p=>({placa:p.placa, viajes:p.viajes}));
     if(!pk || !placas.length) return;
     const uf=ufFromPk(pk);
-    out.push({ origen:origenLabel, destino:pk, tipo_destino:tipo, uf:uf, placas:placas });
+    const lineId=Number(b.id.split('_')[1]); // misma correlación que getCantidades para el backend (D53)
+    out.push({ origen:origenLabel, destino:pk, tipo_destino:tipo, uf:uf, placas:placas, _linea:lineId });
   });
   return out;
 }
@@ -339,7 +366,8 @@ async function submitForm(){
   const btn=document.getElementById('btnSubmit');
   btn.textContent='ENVIANDO...'; btn.disabled=true;
   const data={ fecha:document.getElementById('fecha').value, rol:'chequeadora',
-    capataz: sessionStorage.getItem('usuario')||'chequeadora', cantidades:getCantidades(), volquetas:getVolquetas() };
+    capataz: sessionStorage.getItem('usuario')||'chequeadora', m3viaje:m3viaje(),
+    cantidades:getCantidades(), volquetas:getVolquetas() };
   try{
     const resp=await fetch(APPS_SCRIPT_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(data) });
     const res=await resp.json();
