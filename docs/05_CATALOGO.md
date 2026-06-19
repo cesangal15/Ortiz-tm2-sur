@@ -51,6 +51,22 @@ Aplican a excavadoras, motoniveladoras, bulldozer, pajarita. Estado `no_data`; n
 ### Mapeo a actividad/subactividad del modelo de maquinaria (Captura_Diaria)
 02.03→DESMONTE/DESCAPOTE · 02.05→EXCAVACION COMUN/(NO)APROVECHABLE · 02.06→EXCAVACION PRESTAMO · 02.07→TERRAPLEN/NUCLEO-CORONA-CEREO · 02.08→CONFORMACION/ZODME · 03.01→SUBBASE · 03.03→BASE BTC · 05.04 y 02.12→TERRAPLEN(MSR) · APOYO→APOYO/PAISAJEO, APOYO/ADECUACION, APOYO/DERRUMBE.
 
+**Mapeo explícito actividad del capataz → actividad(H) / SUB ACTIVIDAD(I) de Captura_Diaria** (verificado con datos reales, D52):
+- Excavación aprovechable (masivo) → EXCAVACION COMUN / EXCAVACION APROVECHABLE
+- Excavación no aprovechable → EXCAVACION COMUN / EXCAVACION NO APROVECHABLE
+- Excavación de préstamo (Diviso) → EXCAVACION PRESTAMO / EXCAVACION APROVECHABLE
+- Núcleo de terraplén → TERRAPLEN / NUCLEO DE TERRAPLEN
+- Corona de terraplén → TERRAPLEN / CORONA DE TERRAPLEN
+- Cereo de corona → TERRAPLEN / CEREO CORONA
+- Conformación y disposición de sobrantes (ZODME) → CONFORMACION / ZODME
+- Conformación de subbase → SUBBASE / CONFORMACION SUBBASE
+- Cereo de subbase → SUBBASE / CEREO SUBBASE
+- Base estabilizada con cemento (BTC) → BASE / BTC
+- Desmonte y limpieza en bosque → DESMONTE / DESMONTE
+- Descapote / zonas no boscosas → DESMONTE / DESCAPOTE
+
+Máquina de **apoyo** (vibro/compactación sobre un frente): hereda el H/I del frente que apoya, producción en blanco. **No pasan a Captura** (sin par definido): paisajeo, adecuación de caminos, limpieza de derrumbe, materiales MSR y pedraplén.
+
 ## 2. Orígenes de material (chequeadora) — CONFIRMADO
 - Masivo 2 (PK 19) → excavación aprovechable
 - Masivo 1 (PK 14) → excavación aprovechable
@@ -90,8 +106,19 @@ CC habituales por máquina (de reportes Abr–May): BL→02.07/02.08 · EXC→02
 **PENDIENTE DE VALIDAR:** marca/modelo/valor-hora reales de vibros nuevos en dim; bulldozer alquilado D150B y motoniveladora 120 alquilada (IDs pendientes).
 
 ## 5. Motivos / Estados — CONFIRMADO
-Motivos (dropdown): Mantenimiento · Sin operador · Falla mecánica · Lluvia/clima · Sin frente de trabajo · Esperando material · Abastecimiento de combustible · Traslado/movilización · Otro (especificar).
-Estados (Captura_Diaria): OPERANDO · MEDIA JORNADA · VARADO · SIN OPERADOR · NO PROGRAMADO · LLUVIAS · MANTENIMIENTO · ESPERA.
+Motivos (dropdown, 10): Mantenimiento · Sin operador · Falla mecánica · Lluvia/clima · Sin frente de trabajo · Esperando material · Abastecimiento de combustible · Traslado/movilización · **Bloqueo** · Otro (especificar).
+Estados reales en Captura_Diaria (9): OPERANDO · LLUVIAS · NO PROGRAMADO · MEDIA JORNADA · ESPERA · VARADO · MANTENIMIENTO · SIN OPERADOR · BLOQUEO.
+
+**Mapeo motivo → ESTADO** (lo genera el app en la fila de MAQUINARIA, D52):
+- (sin horas muertas) → OPERANDO
+- Mantenimiento → MANTENIMIENTO
+- Falla mecánica → VARADO
+- Sin operador → SIN OPERADOR
+- Lluvia/clima → LLUVIAS
+- Sin frente de trabajo · Esperando material · Abastecimiento de combustible · Traslado/movilización · Otro → ESPERA
+- Bloqueo → BLOQUEO
+
+MEDIA JORNADA y NO PROGRAMADO **no salen del app**; son ajuste manual del encargado en Captura (D52).
 
 **Máquina con 0 horas operadas:** el capataz NO la reporta. El encargado la registra como inoperativo en texto libre desde su panel (D28); entra al WhatsApp, no a MAQUINARIA.
 
@@ -124,3 +151,10 @@ admin/venganza753 → menu · encargado/enc1-2 → encargado · capataz1-5/uf1-2
 - Corrección de máquina duplicada: el encargado elige el ID correcto de un
   desplegable con la lista de máquinas conocidas (no texto libre). Requiere
   endpoint `editar_maquina` en Apps Script desplegado.
+
+- **Detección de máquina duplicada (D51):** una máquina es duplicado SOLO si el mismo
+  `id_maquina` aparece bajo dos o más capataces (`reporta`) la misma fecha → conflicto
+  a conciliar (el encargado elige el reporte correcto, incluye uno y descarta el resto).
+  La misma máquina por UN solo capataz en varias actividades/PK NUNCA es duplicado
+  (es el reparto multi-actividad de D46). No se compara PK ni actividad; el único
+  discriminante es `reporta`.

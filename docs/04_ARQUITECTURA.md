@@ -60,6 +60,12 @@
 - encargado.html: consolidado y estado de reportes.
 - Excel maestros: análisis, KPI y resúmenes mensuales (RESUMEN_MES con B2=período, B3=proyecto/0).
 
-## Mapeo de paste MAQUINARIA → Captura_Diaria (pendiente de alinear en hoja)
+## Mapeo de paste MAQUINARIA → Captura_Diaria (D52, verificado con el archivo real)
 
-id_registro→A · fecha→B · id_proyecto→D · id_maquina→E · operador→G · actividad→H · sub_actividad→I · horas_operadas→L · horas_muertas→N · h_mantenimiento→O · estado→R · produccion→T · viajes→Y · observaciones→AA. Las demás columnas de Captura_Diaria son fórmulas propias y no se tocan.
+Captura_Diaria es una **tabla de Excel** (`fact_produccion`, A1:AA). Se pegan SOLO las columnas de entrada con **Pegado especial → Omitir blancos**; la tabla autocompleta las columnas-fórmula.
+
+- **Columnas de entrada (se pegan):** B id_fecha · D id_proyecto · E id_maquina · G operador · H actividad · I SUB ACTIVIDAD · L Horas Operación · O Horas Mantenimiento · R ESTADO · T Producción · AA Observaciones.
+- **Columnas-fórmula (NO se tocan, van en blanco):** A id_registro (`=ROW()-ROW(fact_produccion[#Headers])`, autonumera) · C dia · F Tipo Equipo · J Unidad · K Horas Programadas (VLOOKUP a `dim`) · M %util · N Horas Muertas (prog−oper) · P %muerto · Q Horas Facturadas · U Meta · V %ef · W rendimiento · X unitario · Z Costo.
+- **En blanco aunque sean editables:** S CLIMA (pospuesto, D37) · Y Viajes (no aplica a maquinaria).
+- **Derivaciones del app:** H/I desde la actividad del capataz (05_CATALOGO §1) · R ESTADO desde el motivo (05_CATALOGO §5) · O = prog−oper solo si motivo=Mantenimiento · T en blanco para vibros y actividades de apoyo (D41/D44).
+- La hoja MAQUINARIA del Sheets se reordena a este layout A→AA; los internos del app (id_registro, timestamp, reporta, motivo, unidad_prod, etc.) quedan **después de AA** para trazabilidad.
