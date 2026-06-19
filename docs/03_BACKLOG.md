@@ -1,6 +1,6 @@
 # BACKLOG — TM2 Sur
 
-## V1 — Alcance actual (en cierre)
+## V1 — Alcance actual (✅ cerrado jun-2026)
 
 | # | Ítem | Estado |
 |---|---|---|
@@ -13,13 +13,13 @@
 | 1.7 | ZODME automático; cereo no_data; estado derivado | ✅ Hecho |
 | 1.8 | Hoja RESUMEN_MES en Modelo_Produccion (períodos 16–15, producción individual) | ✅ Hecho (validar con datos reales) |
 | 1.9 | Máquinas nuevas en dim (FNG02, CR08–CR26, PEXC027) | ✅ Hecho (datos de referencia) |
-| 1.10 | Prueba punta a punta del flujo bandeja → DATA con día real completo | 🔲 Pendiente |
-| 1.11 | Alinear hoja MAQUINARIA del Sheets al orden de Captura_Diaria | ✅ Hecho (Codigo.gs: layout A→AA + internos tras AA, derivaciones H/I/R/O/T y flag a_captura, D52) — requiere recrear la hoja MAQUINARIA y redesplegar |
+| 1.10 | Prueba punta a punta del flujo bandeja → DATA con día real completo | ✅ Hecho (probado en ejecución real con chequeadoras enviando; residuales menores derivados a V2: WhatsApp de prueba = 2.6, ajustes de interfaz de DATA) |
+| 1.11 | Alinear hoja MAQUINARIA del Sheets al orden de Captura_Diaria | ✅ Hecho (Codigo.gs: layout A→AA + internos tras AA, derivaciones H/I/R/O/T y flag a_captura, D52). Operativo en curso: recrear/limpiar la hoja MAQUINARIA al layout D52 (backup de los días previos como MAQUINARIA_OLD) + redesplegar |
 | 1.12 | Completar catálogo de máquinas (IDs reales de vibros/alquiladas faltantes) | ✅ Hecho |
 | 1.13 | Corregir marca/modelo/valor-hora de máquinas nuevas en dim | ✅ Hecho |
-| 1.14 | Contraseñas definitivas para encargado y chequeadoras | 🟡 Parcial (capataces ✅ y chequeadoras ✅ con clave común cheq2025; falta solo el encargado) |
+| 1.14 | Contraseñas definitivas para encargado y chequeadoras | ✅ Hecho (capataces ✅, chequeadoras ✅ con clave común cheq2025; el encargado se deja con su placeholder aceptado por el usuario) |
 | 1.15 | Desglose por placa en reporte de chequeadora (textarea + parser, hoja VOLQUETAS) | ✅ Hecho (validado con datos reales, jun-2026) |
-| 1.16 | Confirmación de envío en reporte-chequeadora.html (cuenta de filas del servidor, igual que capataz, D30). Detectado al validar 1.15. | 🔲 Pendiente (a Claude Code) |
+| 1.16 | Confirmación de envío en reporte-chequeadora.html (cuenta de filas del servidor, igual que capataz, D30). Detectado al validar 1.15. | ✅ Hecho |
 | 1.17 | Detección de máquina duplicada por `reporta` en el panel del encargado (D51): solo es duplicado si el mismo `id_maquina` viene de dos capataces distintos | ✅ Hecho (encargado.html: agrupa por id_maquina; 1 capataz = reparto D46 con horas muertas = prog − Σ operadas; ≥2 capataces = conflicto con toggle ✓/✕ incluir/descartar) |
 
 ## V2 — Mejoras identificadas (no iniciar sin cerrar V1)
@@ -32,9 +32,10 @@
 | 2.4 | Reemplazar producción estimada por volumen real de chequeadora en la producción por máquina (depende de 2.1) | Conversación maquinaria |
 | 2.5 | Actividades secuenciales adicionales (vendrán con las máquinas nuevas) | Usuario |
 | 2.6 | Generación del mensaje WhatsApp con desglose idéntico al formato histórico (equipos por actividad, secciones MSR) | Formato actual simplificado |
-| 2.7 | Registro de flota de volquetas (Ortiz vs particulares) — hoy se ignora | "Más adelante sí puede servir" |
+| 2.7 | Registro de flota de volquetas (Ortiz vs particulares) | ✅ Resuelto fuera de la app — el cruce placa→empresa/cubicaje vive en la Bitácora de Transporte; la app solo lee cubicaje vía hoja CUBICAJE (D53) |
 | 2.8 | Modo sin conexión Nivel 2 (captura offline + cola + sync) en capataz y chequeadora; encargado fuera. Requiere UUID en cliente para dedupe (toca Codigo.gs) y sesión en localStorage | D49 |
 | 2.9 | Escalamiento a Nivel 3 (service worker / PWA, carga sin señal desde cero) — solo si en pruebas el celular pierde la pestaña en zona muerta | D49 |
+| 2.10 | **Cubicaje real por placa** (primer ítem de V2): hoja CUBICAJE (`placa·cubicaje`), cálculo del volumen por línea en backend = Σ(viajes×cubicaje), fallback al factor del reporte (14) + flag (naranja en la chequeadora + columna `cubicaje_origen` en VOLQUETAS), columnas nuevas en VOLQUETAS (cubicaje, m3_placa, cubicaje_origen), endpoint GET `?action=cubicaje` y lectura en vivo en reporte-chequeadora.html. Empresa fuera (vive en la Bitácora). | D53 |
 
 ## V3 — Largo plazo
 

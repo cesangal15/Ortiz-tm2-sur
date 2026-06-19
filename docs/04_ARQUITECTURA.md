@@ -18,6 +18,7 @@
 │  GET  ?action=consolidado&fecha=…            → lo ya enviado a DATA                     │
 │  GET  ?action=estado&fecha=…                 → máquinas reportadas (estado.html)        │
 │  GET  ?action=debug&fecha=…                  → diagnóstico                              │
+│  GET  ?action=cubicaje                        → mapa placa→cubicaje (frontend, D53/2.10) │
 │  POST {reporte}                              → escribe BANDEJA + MAQUINARIA (+VOLQUETAS)  │
 │  POST {action:enviar_data}                   → pisa DATA del día + marca bandeja        │
 │  Regla técnica: fechas por duck-typing (getFullYear), nunca instanceof Date.            │
@@ -28,6 +29,7 @@
 │  BANDEJA     crudo con estado (pendiente/incluido/descartado/no_data)                   │
 │  MAQUINARIA  equipos con producción individual (directo, sin aprobación)                │
 │  VOLQUETAS   desglose por placa de la chequeadora (1 fila/placa, informativo; no a DATA) │
+│  CUBICAJE    catálogo placa→cubicaje (lo lee el backend; lo mantiene el usuario; D53/2.10)│
 │  DATA        oficial; columnas A–T = espejo del maestro TM2                             │
 └────────────────────────────────────┬─────────────────────────────────────────────────--┘
                                      │ copy-paste manual por bloques
@@ -45,7 +47,7 @@
 ## Flujo de captura (diario)
 
 1. **Capataz** entra → agrega N actividades. Por actividad: actividad específica → (sistema muestra ítem contractual, unidad, UF, CC) → PK → producción (campo adaptativo) → equipos (máquina, operador, horas; motivo si faltan horas) → observación.
-2. **Chequeadora** entra → fecha, m³/viaje (14), origen → N líneas {PK destino, tipo destino, bloque de placas}. Pega el desglose por placa estilo WhatsApp; el sistema parsea placa+viajes, calcula el total de la línea y genera las filas de excavación (+terraplén si aplica) por ese total (D48). Cada placa se guarda en VOLQUETAS.
+2. **Chequeadora** entra → fecha, factor fallback m³/viaje (14), origen → N líneas {PK destino, tipo destino, bloque de placas}. Pega el desglose por placa estilo WhatsApp; el sistema parsea placa+viajes, calcula el **volumen real de la línea = Σ(viajes×cubicaje)** leyendo la hoja CUBICAJE, y genera las filas de excavación (+terraplén si aplica) por ese volumen (D53 sobre D06). Placa no registrada → fallback 14 + flag (naranja + `cubicaje_origen`=default). Cada placa se guarda en VOLQUETAS con su cubicaje y m3_placa.
 3. Ambos envían → BANDEJA (+ MAQUINARIA). Confirmación real del servidor (cuenta de filas guardadas).
 
 ## Flujo de consolidación (diario, encargado)
