@@ -148,13 +148,12 @@ admin/venganza753 → menu · encargado/enc1-2 → encargado · capataz1-5/uf1-2
 - Las filas de chequeadora se etiquetan "oficial"; las de capataz en esas categorías
   se etiquetan "control · no suma" y tienen borde punteado.
 
-- Corrección de máquina duplicada: el encargado elige el ID correcto de un
-  desplegable con la lista de máquinas conocidas (no texto libre). Requiere
-  endpoint `editar_maquina` en Apps Script desplegado.
-
-- **Detección de máquina duplicada (D51):** una máquina es duplicado SOLO si el mismo
-  `id_maquina` aparece bajo dos o más capataces (`reporta`) la misma fecha → conflicto
-  a conciliar (el encargado elige el reporte correcto, incluye uno y descarta el resto).
-  La misma máquina por UN solo capataz en varias actividades/PK NUNCA es duplicado
-  (es el reparto multi-actividad de D46). No se compara PK ni actividad; el único
-  discriminante es `reporta`.
+- **Detección y conciliación de máquina duplicada (D51):** el panel agrupa la maquinaria
+  del día por `id_maquina`. Una máquina es duplicado SOLO si el mismo `id_maquina` aparece
+  bajo dos o más capataces (`reporta`) la misma fecha → conflicto: se muestra la versión de
+  cada capataz y el encargado concilia con el toggle ✓/✕ (incluye una, descarta el resto;
+  solo las versiones incluidas pasan al WhatsApp). La misma máquina por UN solo capataz en
+  varias actividades/PK NUNCA es duplicado (reparto multi-actividad de D46): se muestra normal
+  y sus horas muertas del día = horas_programadas − Σ horas_operadas del grupo. No se compara
+  PK ni actividad; el único discriminante es `reporta`. (Sustituye la corrección por desplegable
+  + endpoint `editar_maquina`, que asumía duplicado por id_maquina repetido.)

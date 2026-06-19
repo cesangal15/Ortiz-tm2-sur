@@ -14,13 +14,13 @@
 | 1.8 | Hoja RESUMEN_MES en Modelo_Produccion (períodos 16–15, producción individual) | ✅ Hecho (validar con datos reales) |
 | 1.9 | Máquinas nuevas en dim (FNG02, CR08–CR26, PEXC027) | ✅ Hecho (datos de referencia) |
 | 1.10 | Prueba punta a punta del flujo bandeja → DATA con día real completo | 🔲 Pendiente |
-| 1.11 | Alinear hoja MAQUINARIA del Sheets al orden de Captura_Diaria | 🔲 Pendiente (a Claude Code) — diseño cerrado en D52 |
+| 1.11 | Alinear hoja MAQUINARIA del Sheets al orden de Captura_Diaria | ✅ Hecho (Codigo.gs: layout A→AA + internos tras AA, derivaciones H/I/R/O/T y flag a_captura, D52) — requiere recrear la hoja MAQUINARIA y redesplegar |
 | 1.12 | Completar catálogo de máquinas (IDs reales de vibros/alquiladas faltantes) | ✅ Hecho |
 | 1.13 | Corregir marca/modelo/valor-hora de máquinas nuevas en dim | ✅ Hecho |
 | 1.14 | Contraseñas definitivas para encargado y chequeadoras | 🟡 Parcial (capataces ✅ y chequeadoras ✅ con clave común cheq2025; falta solo el encargado) |
 | 1.15 | Desglose por placa en reporte de chequeadora (textarea + parser, hoja VOLQUETAS) | ✅ Hecho (validado con datos reales, jun-2026) |
 | 1.16 | Confirmación de envío en reporte-chequeadora.html (cuenta de filas del servidor, igual que capataz, D30). Detectado al validar 1.15. | 🔲 Pendiente (a Claude Code) |
-| 1.17 | Detección de máquina duplicada por `reporta` en el panel del encargado (D51): solo es duplicado si el mismo `id_maquina` viene de dos capataces distintos | 🔲 Pendiente (a Claude Code) |
+| 1.17 | Detección de máquina duplicada por `reporta` en el panel del encargado (D51): solo es duplicado si el mismo `id_maquina` viene de dos capataces distintos | ✅ Hecho (encargado.html: agrupa por id_maquina; 1 capataz = reparto D46 con horas muertas = prog − Σ operadas; ≥2 capataces = conflicto con toggle ✓/✕ incluir/descartar) |
 
 ## V2 — Mejoras identificadas (no iniciar sin cerrar V1)
 

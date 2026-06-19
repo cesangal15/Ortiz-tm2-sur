@@ -198,7 +198,7 @@ const MAQUINAS = ['BL005','BL009','CAT320','EXC001','EXC013','EXC014','EXC015','
 const TIPO_EQUIPO = {'BL005':'BULLDOZER','BL009':'BULLDOZER','NH69':'BULLDOZER','CAT320':'EXCAVADORA','EXC001':'EXCAVADORA','EXC013':'EXCAVADORA','EXC014':'EXCAVADORA','EXC015':'EXCAVADORA','MO03':'MOTONIVELADORA','MO04':'MOTONIVELADORA','MO09':'MOTONIVELADORA','MC705':'MOTONIVELADORA','FNG02':'FINISHER','CR019':'VIBROCOMPACTADOR','CR013':'VIBROCOMPACTADOR','CR016':'VIBROCOMPACTADOR','CS78B':'VIBROCOMPACTADOR','NH403':'VIBROCOMPACTADOR','NH404':'VIBROCOMPACTADOR','NH420':'VIBROCOMPACTADOR','CAT900':'VIBROCOMPACTADOR'};
 const HORAS_PROG = {'NH69':5,'CAT320':5,'MC705':5,'CS78B':5,'NH403':5,'NH404':5,'NH420':5,'CAT900':5};
 function progHoras(id){ return HORAS_PROG[id]!==undefined?HORAS_PROG[id]:6.4; }
-const MOTIVOS = ['Mantenimiento','Sin operador','Falla mecánica','Lluvia / clima','Sin frente de trabajo','Esperando material','Abastecimiento de combustible','Traslado / movilización','Otro (especificar)'];
+const MOTIVOS = ['Mantenimiento','Sin operador','Falla mecánica','Lluvia / clima','Sin frente de trabajo','Esperando material','Abastecimiento de combustible','Traslado / movilización','Bloqueo','Otro (especificar)'];
 
 let lineaIdx = 0, eqIdx = 0;
 
