@@ -72,6 +72,15 @@
   .success p{color:var(--muted);font-size:14px;margin-bottom:24px;}
   .success button{padding:12px 28px;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:'Syne',sans-serif;font-weight:700;cursor:pointer;}
   .hidden{display:none;}
+  /* Maquinaria (excavadoras) — D54, mismo look que el bloque de equipos del capataz */
+  .eq-item{background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;}
+  .eq-item label{font-size:10px;}
+  .eq-top{display:flex;gap:8px;align-items:center;margin-bottom:10px;}
+  .eq-top select{flex:1;}
+  .eq-prog{font-size:11px;color:var(--muted);margin:-2px 0 10px;display:none;}
+  .eq-prog b{color:var(--text);font-weight:600;}
+  .eq-diff{font-size:11px;color:var(--accent);margin-top:8px;display:none;}
+  .eq-motivo{margin-top:10px;display:none;}
 </style>
 </head>
 <body>
@@ -89,10 +98,7 @@
 <div id="formMain">
 <div class="container">
   <div class="card">
-    <div class="grid2">
-      <div class="field"><label>Fecha <span class="req">*</span></label><input type="date" id="fecha"></div>
-      <div class="field"><label>m³ por viaje</label><input type="number" step="any" id="m3viaje" value="14" oninput="recalcAll()"></div>
-    </div>
+    <div class="field"><label>Fecha <span class="req">*</span></label><input type="date" id="fecha"></div>
     <div class="field">
       <label>Origen del material <span class="req">*</span></label>
       <select id="origen" onchange="onOrigen()">
@@ -118,6 +124,14 @@
       <span>Total: <b id="totViajes">0</b> viajes</span>
       <span><b id="totM3">0</b> m³</span>
     </div>
+  </div>
+
+  <div class="card">
+    <div class="section-title">Maquinaria (excavadoras) <span class="count" id="cntMaq">0</span></div>
+    <div id="maqContainer"></div>
+    <div class="empty-hint" id="emptyMaq">Agrega las excavadoras que estuvieron a disposición (opcional)</div>
+    <button class="btn-add" onclick="addMaquina()">+ Agregar máquina</button>
+    <div class="bloque-hint" id="maqProdHint" style="display:none;"></div>
   </div>
 </div>
 </div>
@@ -147,7 +161,17 @@ const ORIGENES = {
   'Complementario': {actividad:'Excavación aprovechable (masivo)', item:'Excavaciones en material común APROVECHABLE', cc:'02.05', label:'PK Complementario'},
   'Otro':           {actividad:'Excavación aprovechable (masivo)', item:'Excavaciones en material común APROVECHABLE', cc:'02.05', label:'Otro origen'},
 };
-const TIPOS = ['Terraplén','Puente','ODL','Botadero'];
+const TIPOS = ['Terraplén','Puente','ODL','ODT','Botadero'];
+
+// Maquinaria (D54): mismas listas que el capataz. La chequeadora normalmente reporta excavadoras.
+const MAQUINAS = ['BL005','BL009','CAT320','EXC001','EXC013','EXC014','EXC015','FNG02','MC705','MO03','MO04','MO09','NH69','CR019','CR013','CR016','CS78B','NH403','NH404','NH420','CAT900'];
+const TIPO_EQUIPO = {'BL005':'BULLDOZER','BL009':'BULLDOZER','NH69':'BULLDOZER','CAT320':'EXCAVADORA','EXC001':'EXCAVADORA','EXC013':'EXCAVADORA','EXC014':'EXCAVADORA','EXC015':'EXCAVADORA','MO03':'MOTONIVELADORA','MO04':'MOTONIVELADORA','MO09':'MOTONIVELADORA','MC705':'MOTONIVELADORA','FNG02':'FINISHER','CR019':'VIBROCOMPACTADOR','CR013':'VIBROCOMPACTADOR','CR016':'VIBROCOMPACTADOR','CS78B':'VIBROCOMPACTADOR','NH403':'VIBROCOMPACTADOR','NH404':'VIBROCOMPACTADOR','NH420':'VIBROCOMPACTADOR','CAT900':'VIBROCOMPACTADOR'};
+const HORAS_PROG = {'NH69':5,'CAT320':5,'MC705':5,'CS78B':5,'NH403':5,'NH404':5,'NH420':5,'CAT900':5};
+function progHoras(id){ return HORAS_PROG[id]!==undefined?HORAS_PROG[id]:6.4; }
+const MOTIVOS = ['Mantenimiento','Sin operador','Falla mecánica','Lluvia / clima','Sin frente de trabajo','Esperando material','Abastecimiento de combustible','Traslado / movilización','Bloqueo','Otro (especificar)'];
+function maqOptions(){ return '<option value="">— Máquina —</option>'+MAQUINAS.map(m=>'<option>'+m+'</option>').join(''); }
+function motivoOptions(){ return '<option value="">— Motivo —</option>'+MOTIVOS.map(m=>'<option>'+m+'</option>').join(''); }
+let maqIdx = 0;
 
 let lineaIdx = 0;
 // Cubicaje real por placa (D53): mapa placa→m³/viaje cacheado al cargar. Vacío = todo cae al factor.
@@ -181,7 +205,8 @@ function cubDePlaca(placa){ const c=CUBMAP[normPlaca(placa)]; return (c!=null)?c
 function pkToMeters(pk){ if(!pk) return null; pk=String(pk).trim().replace(/\s/g,''); if(pk.includes('+')){const p=pk.split('+');const km=parseInt(p[0]);const m=parseInt(p[1]||'0');if(isNaN(km))return null;return km*1000+(isNaN(m)?0:m);} const n=parseFloat(pk);return isNaN(n)?null:n*1000; }
 function ufFromPk(pk){ const m=pkToMeters(pk); if(m==null) return ''; return m<=30000?'UF1':'UF2'; }
 function proyectoFromUf(uf){ return uf==='UF1'?'3701':uf==='UF2'?'3702':''; }
-function m3viaje(){ return parseFloat(document.getElementById('m3viaje').value)||14; }
+// Factor fallback fijo: solo se usa para placas que no están en la hoja CUBICAJE (D53 → 14 fijo, D54).
+function m3viaje(){ return 14; }
 
 function onOrigen(){
   const o=document.getElementById('origen').value;
@@ -286,6 +311,68 @@ function onLinea(i){
 }
 function recalcAll(){ document.querySelectorAll('#lineasContainer .linea').forEach((el)=>{ onLinea(el.id.split('_')[1]); }); }
 
+/* ---------- Maquinaria (excavadoras) — D54 ----------
+ * Una vez por reporte: las excavadoras que alimentaron el origen. La producción se asigna
+ * en el backend = total m³ excavado del día DIVIDIDO en partes iguales entre las máquinas. */
+function addMaquina(){
+  const j=maqIdx++;
+  const row=document.createElement('div'); row.className='eq-item'; row.id='maq_'+j;
+  row.innerHTML=
+    '<div class="eq-top"><select class="m-id" onchange="onMaqChange('+j+')">'+maqOptions()+'</select>'
+    +'<button class="btn-del" onclick="delMaquina('+j+')" title="Quitar">✕</button></div>'
+    +'<div class="eq-prog" id="mprog_'+j+'"></div>'
+    +'<div class="grid2">'
+    +'<div class="field" style="margin:0;"><label>Operador <span class="req">*</span></label><input type="text" class="m-op" placeholder="nombre" oninput="refreshMaq()"></div>'
+    +'<div class="field" style="margin:0;"><label>Horas operadas <span class="req">*</span></label><input type="number" step="any" class="m-hrs" placeholder="0" oninput="onMaqChange('+j+')"></div>'
+    +'</div>'
+    +'<div class="eq-diff" id="mdiff_'+j+'"></div>'
+    +'<div class="eq-motivo field" id="mmot_'+j+'" style="margin:0;"><label>Motivo de horas menos <span class="req">*</span></label>'
+    +'<select class="m-mot-sel" onchange="onMaqMot(this);refreshMaq()">'+motivoOptions()+'</select>'
+    +'<input type="text" class="m-mot-otro" placeholder="especifica el motivo" style="display:none;margin-top:8px;" oninput="refreshMaq()"></div>';
+  document.getElementById('maqContainer').appendChild(row);
+  refreshMaq();
+}
+function delMaquina(j){ const el=document.getElementById('maq_'+j); if(el) el.remove(); refreshMaq(); }
+function onMaqMot(sel){ const otro=sel.parentElement.querySelector('.m-mot-otro'); otro.style.display=(sel.value==='Otro (especificar)')?'block':'none'; }
+function onMaqChange(j){ updateMaqProg(j); refreshMaq(); }
+function updateMaqProg(j){
+  const row=document.getElementById('maq_'+j); if(!row) return;
+  const id=row.querySelector('.m-id').value;
+  const prog=document.getElementById('mprog_'+j), diff=document.getElementById('mdiff_'+j), mot=document.getElementById('mmot_'+j);
+  if(!id){ prog.style.display='none'; diff.style.display='none'; mot.style.display='none'; return; }
+  const ph=progHoras(id);
+  prog.style.display='block'; prog.innerHTML='Programadas: <b>'+ph+' h</b> · '+(ph===5?'alquilada':'propia');
+  const op=parseFloat(row.querySelector('.m-hrs').value), falt=(!isNaN(op))?+(ph-op).toFixed(2):0;
+  if(falt>0.01){ diff.style.display='block'; diff.textContent='⚠ Operó '+op+' h · '+falt+' h muertas — indica el motivo'; mot.style.display='block'; }
+  else { diff.style.display='none'; mot.style.display='none'; }
+}
+function maqMotivo(row){ const sel=row.querySelector('.m-mot-sel').value; return sel==='Otro (especificar)'?(row.querySelector('.m-mot-otro').value.trim()||'Otro'):sel; }
+function refreshMaq(){
+  const rows=document.querySelectorAll('#maqContainer .eq-item');
+  document.getElementById('cntMaq').textContent=rows.length;
+  document.getElementById('emptyMaq').style.display=rows.length?'none':'block';
+  // aviso de cómo se reparte la producción (total excavado ÷ nº de máquinas)
+  const n=getMaquinaria().length, hint=document.getElementById('maqProdHint');
+  let tm3=0; document.querySelectorAll('#lineasContainer .linea').forEach(b=>{ tm3+=lineaM3(b); });
+  if(n>0 && tm3>0){ hint.style.display='block';
+    hint.innerHTML='Producción por máquina ≈ <b>'+(tm3/n).toLocaleString('es-CO')+'</b> m³ ('+tm3.toLocaleString('es-CO')+' m³ ÷ '+n+').'; }
+  else { hint.style.display='none'; }
+}
+// Máquinas válidas para el payload (con id elegido). Operador/horas se validan aparte.
+function getMaquinaria(){
+  const out=[];
+  document.querySelectorAll('#maqContainer .eq-item').forEach(row=>{
+    const id=row.querySelector('.m-id').value;
+    if(!id) return;
+    const prog=progHoras(id);
+    const op=parseFloat(row.querySelector('.m-hrs').value)||0;
+    const muertas=+Math.max(0, prog-op).toFixed(2);
+    out.push({ id_maquina:id, tipo_equipo:TIPO_EQUIPO[id]||'', operador:row.querySelector('.m-op').value.trim(),
+      horas_programadas:prog, horas_operadas:op, horas_muertas:muertas, motivo: muertas>0.01?maqMotivo(row):'' });
+  });
+  return out;
+}
+
 function refresh(){
   const lineas=document.querySelectorAll('#lineasContainer .linea');
   document.getElementById('cnt').textContent=lineas.length;
@@ -294,6 +381,7 @@ function refresh(){
   const res=document.getElementById('resumen');
   if(lineas.length){ res.style.display='flex'; document.getElementById('totViajes').textContent=tv; document.getElementById('totM3').textContent=tm3.toLocaleString('es-CO'); }
   else res.style.display='none';
+  refreshMaq(); // el aviso de producción por máquina depende del total de m³
 }
 
 function getCantidades(){
@@ -354,6 +442,15 @@ function validate(){
     if(!pk.value.trim()){ pk.classList.add('field-error'); ok=false; }
     if(!lineaViajes(b)){ bloque.classList.add('field-error'); ok=false; }
   });
+  // maquinaria (opcional): si se eligió una máquina, operador y horas son obligatorios; motivo si hay horas muertas
+  document.querySelectorAll('#maqContainer .eq-item').forEach(row=>{
+    if(!row.querySelector('.m-id').value) return;
+    const opEl=row.querySelector('.m-op'), hEl=row.querySelector('.m-hrs');
+    if(!opEl.value.trim()){ opEl.classList.add('field-error'); ok=false; }
+    if(!(parseFloat(hEl.value)>0)){ hEl.classList.add('field-error'); ok=false; }
+    const motWrap=row.querySelector('.m-mot-sel');
+    if(motWrap && motWrap.parentElement.style.display!=='none' && !motWrap.value){ motWrap.classList.add('field-error'); ok=false; }
+  });
   if(getCantidades().length===0){ if(ok) alert('Agrega al menos un PK con placas válidas y elige el origen.'); return false; }
   return ok;
 }
@@ -367,13 +464,13 @@ async function submitForm(){
   btn.textContent='ENVIANDO...'; btn.disabled=true;
   const data={ fecha:document.getElementById('fecha').value, rol:'chequeadora',
     capataz: sessionStorage.getItem('usuario')||'chequeadora', m3viaje:m3viaje(),
-    cantidades:getCantidades(), volquetas:getVolquetas() };
+    cantidades:getCantidades(), volquetas:getVolquetas(), maquinaria:getMaquinaria() };
   try{
     const resp=await fetch(APPS_SCRIPT_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(data) });
     const res=await resp.json();
     if(!res || !res.ok) throw new Error((res&&res.error)||'Respuesta inesperada del servidor');
     exito=true;
-    document.getElementById('successMsg').textContent='Se registraron '+res.cantidades+' filas (excavación + terraplén)'+(res.volquetas!=null?(' y '+res.volquetas+' placas'):'')+'.';
+    document.getElementById('successMsg').textContent='Se registraron '+res.cantidades+' filas (excavación + terraplén)'+(res.volquetas!=null?(' y '+res.volquetas+' placas'):'')+(res.maquinas?(' y '+res.maquinas+' máquina(s)'):'')+'.';
     document.getElementById('formMain').classList.add('hidden');
     document.getElementById('submitBar').classList.add('hidden');
     document.getElementById('successScreen').classList.add('visible');
@@ -387,6 +484,7 @@ async function submitForm(){
 }
 function resetForm(){
   document.getElementById('lineasContainer').innerHTML='';
+  document.getElementById('maqContainer').innerHTML=''; maqIdx=0;
   lineaIdx=0;
   document.getElementById('successScreen').classList.remove('visible');
   document.getElementById('formMain').classList.remove('hidden');

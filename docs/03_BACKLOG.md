@@ -35,7 +35,7 @@
 | 2.7 | Registro de flota de volquetas (Ortiz vs particulares) | ✅ Resuelto fuera de la app — el cruce placa→empresa/cubicaje vive en la Bitácora de Transporte; la app solo lee cubicaje vía hoja CUBICAJE (D53) |
 | 2.8 | Modo sin conexión Nivel 2 (captura offline + cola + sync) en capataz y chequeadora; encargado fuera. Requiere UUID en cliente para dedupe (toca Codigo.gs) y sesión en localStorage | D49 |
 | 2.9 | Escalamiento a Nivel 3 (service worker / PWA, carga sin señal desde cero) — solo si en pruebas el celular pierde la pestaña en zona muerta | D49 |
-| 2.10 | **Cubicaje real por placa** (primer ítem de V2): hoja CUBICAJE (`placa·cubicaje`), cálculo del volumen por línea en backend = Σ(viajes×cubicaje), fallback al factor del reporte (14) + flag (naranja en la chequeadora + columna `cubicaje_origen` en VOLQUETAS), columnas nuevas en VOLQUETAS (cubicaje, m3_placa, cubicaje_origen), endpoint GET `?action=cubicaje` y lectura en vivo en reporte-chequeadora.html. Empresa fuera (vive en la Bitácora). | D53 |
+| 2.10 | **Cubicaje real por placa** (primer ítem de V2): hoja CUBICAJE (`placa·cubicaje`), cálculo del volumen por línea en backend = Σ(viajes×cubicaje), fallback al factor del reporte (14) + flag (naranja en la chequeadora + columna `cubicaje_origen` en VOLQUETAS), columnas nuevas en VOLQUETAS (cubicaje, m3_placa, cubicaje_origen), endpoint GET `?action=cubicaje` y lectura en vivo en reporte-chequeadora.html. Empresa fuera (vive en la Bitácora). **Ajustes post-prueba (D54):** fallback 14 fijo (se quita el editor de m³/viaje), maquinaria de la chequeadora (excavadoras → MAQUINARIA, producción = total ÷ nº máquinas), tipo de destino ODT. | D53, D54 |
 
 ## V3 — Largo plazo
 
