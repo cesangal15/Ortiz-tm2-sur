@@ -8,6 +8,7 @@
  *   GET  ?action=bandeja&fecha=YYYY-MM-DD[&proyecto=3701]   -> {cantidades:[](crudo), maquinas:[]}
  *   GET  ?action=consolidado&fecha=...   -> {cantidades:[](de DATA, ya enviado)}
  *   GET  ?action=estado&fecha=...        -> {reportadas:[{id_maquina,capataz}]}
+ *   GET  ?action=cubicaje                -> {cubicaje:{PLACA:cubicaje,...}}  (catálogo placa→m³/viaje, D53)
  *   GET  ?action=debug&fecha=...
  *   POST  reporte: {fecha,rol,capataz,cantidades:[{...,equipos:[]}],volquetas:[{origen,destino,tipo_destino,uf,placas:[{placa,viajes}]}]}
  *           -> BANDEJA (+ MAQUINARIA) ; chequeadora además -> VOLQUETAS (una fila por placa)
@@ -95,8 +96,13 @@ function derivarEstado(motivo, muertas){
 const OBS_HEADERS = ['id_registro','timestamp','fecha','reporta','observacion'];
 
 // VOLQUETAS: desglose por placa de la chequeadora (una fila por placa). No toca DATA ni MAQUINARIA.
+// cubicaje·m3_placa·cubicaje_origen añadidos en D53 (2.10): cubicaje real por placa.
 const VOLQUETAS_HEADERS = ['id_registro','timestamp','fecha','reporta','origen','destino',
-  'tipo_destino','uf','placa','viajes'];
+  'tipo_destino','uf','placa','viajes','cubicaje','m3_placa','cubicaje_origen'];
+
+// CUBICAJE: catálogo placa→cubicaje (m³/viaje) que mantiene el usuario como espejo de la
+// Bitácora de Transporte. Lo lee el backend; no va a DATA (D53). `tipo` es opcional/informativo.
+const CUBICAJE_HEADERS = ['placa','cubicaje','tipo'];
 
 /* ---------- helpers ---------- */
 function json(o){ return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
@@ -198,12 +204,43 @@ function lookupElemento(cc, descripcion, pkMeters){
   return { elem:'', revisar:true };
 }
 
+/* ---------- CUBICAJE: cubicaje real por placa (D53 / 2.10) ----------
+ * Hoja CUBICAJE (mismo Sheet): placa · cubicaje [· tipo]. Devuelve un mapa
+ * placa(6 chars normalizada) -> cubicaje (m³/viaje). La placa se normaliza EXACTAMENTE
+ * igual que el parser de D48 (sin espacios ni guion, MAYÚSCULAS, últimos 6 alfanuméricos)
+ * para que el cruce con las placas que teclea la chequeadora calce. Si la hoja no existe,
+ * está vacía o un valor es inválido, esa placa simplemente no entra al mapa (todo cae al
+ * fallback del factor editable, 14 por defecto). */
+function normPlaca(s){ return String(s==null?'':s).replace(/[^A-Za-z0-9]/g,'').toUpperCase().slice(-6); }
+let _cubMap;
+function getCubicajeMap(){
+  if(_cubMap) return _cubMap;
+  _cubMap = {};
+  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('CUBICAJE');
+  if(!sh || sh.getLastRow()<2) return _cubMap;
+  const v=sh.getDataRange().getValues(), h=v[0];
+  // ubica columnas por nombre de cabecera (tolerante); por defecto A=placa, B=cubicaje
+  let pi=0, ci=1;
+  for(let j=0;j<h.length;j++){
+    const k=String(h[j]==null?'':h[j]).toLowerCase().trim();
+    if(k.indexOf('placa')>=0) pi=j;
+    else if(k.indexOf('cubicaje')>=0 || k.indexOf('m3')>=0 || k.indexOf('m³')>=0) ci=j;
+  }
+  for(let i=1;i<v.length;i++){
+    const placa=normPlaca(v[i][pi]);
+    const cub=parseFloat(v[i][ci]);
+    if(placa && !isNaN(cub) && cub>0) _cubMap[placa]=cub;
+  }
+  return _cubMap;
+}
+
 /* ---------- routing ---------- */
 function doGet(e){
   const a=((e.parameter.action)||'').toLowerCase();
   if(a==='bandeja')     return bandeja(e);
   if(a==='consolidado') return consolidado(e);
   if(a==='estado')      return estado(e);
+  if(a==='cubicaje')    return json({ok:true, cubicaje:getCubicajeMap()});
   if(a==='debug')       return debug(e);
   return json({ok:true, msg:'API viva', version:'v8'});
 }
@@ -220,7 +257,32 @@ function guardarReporte(body){
   const fecha=fdate(body.fecha), reporta=body.capataz||'', rol=body.rol||'capataz', ts=new Date();
   const banSh=getSheet('BANDEJA', BANDEJA_HEADERS), maqSh=getSheet('MAQUINARIA', MAQ_HEADERS);
   const banRows=[], maqRows=[];
+  // D53: cubicaje real por placa. Procesamos VOLQUETAS antes que las cantidades para que el
+  // volumen oficial de excavación/terraplén use Σ(viajes_placa × cubicaje_placa) en vez de total×14.
+  // El factor editable del reporte (14 por defecto) es el fallback para placas no catalogadas.
+  const cubMap=getCubicajeMap();
+  const factorReporte=parseFloat(body.m3viaje)>0 ? parseFloat(body.m3viaje) : 14;
+  const lineVol={}; // _linea -> volumen real (m³) calculado desde las placas
+  const volRows=[];
+  (body.volquetas||[]).forEach(line=>{
+    const idV=Utilities.getUuid();
+    let m3line=0;
+    (line.placas||[]).forEach(p=>{
+      const placaN=normPlaca(p.placa);
+      const viajes=Number(p.viajes)||0;
+      const found=Object.prototype.hasOwnProperty.call(cubMap, placaN);
+      const cub=found ? cubMap[placaN] : factorReporte;          // catálogo o fallback
+      const m3p=viajes*cub;
+      m3line+=m3p;
+      volRows.push([idV, ts, fecha, reporta, line.origen||'', line.destino||'', line.tipo_destino||'',
+        line.uf||'', p.placa||'', (p.viajes!=null?p.viajes:''), cub, m3p, found?'catalogo':'default']);
+    });
+    if(line._linea!=null) lineVol[line._linea]=m3line;
+  });
   (body.cantidades||[]).forEach(c=>{
+    // D53: la chequeadora es la fuente del volumen (D06); para sus líneas el largo oficial = m³ real
+    // por placa calculado arriba (excavación y, si aplica, terraplén comparten _linea).
+    if(rol==='chequeadora' && c._linea!=null && lineVol[c._linea]!=null) c.largo=lineVol[c._linea];
     const idC=Utilities.getUuid();
     // todo entra a BANDEJA; cereo (data:false) marcado como 'no_data' para que el encargado lo vea pero no lo envíe a DATA
     banRows.push([idC, ts, fecha, reporta, rol, c.grupo||'', c.capitulo||'', c.actividad||'', c.descripcion||'', c.centro_costo||'',
@@ -265,14 +327,7 @@ function guardarReporte(body){
   if(maqRows.length) maqSh.getRange(maqSh.getLastRow()+1,1,maqRows.length,MAQ_HEADERS.length).setValues(maqRows);
   // chequeadora: desglose por placa -> VOLQUETAS (una fila por placa). No toca DATA ni MAQUINARIA.
   // Un id_registro por línea de PK destino (placas de la misma línea comparten id).
-  const volRows=[];
-  (body.volquetas||[]).forEach(line=>{
-    const idV=Utilities.getUuid();
-    (line.placas||[]).forEach(p=>{
-      volRows.push([idV, ts, fecha, reporta, line.origen||'', line.destino||'', line.tipo_destino||'',
-        line.uf||'', p.placa||'', (p.viajes!=null?p.viajes:'')]);
-    });
-  });
+  // Las filas (con cubicaje·m3_placa·cubicaje_origen) se construyeron arriba junto al cálculo del volumen.
   if(volRows.length){ const volSh=getSheet('VOLQUETAS', VOLQUETAS_HEADERS);
     volSh.getRange(volSh.getLastRow()+1,1,volRows.length,VOLQUETAS_HEADERS.length).setValues(volRows); }
   const obs=(body.observacion_general||'').trim();
