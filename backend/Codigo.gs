@@ -10,8 +10,9 @@
  *   GET  ?action=estado&fecha=...        -> {reportadas:[{id_maquina,capataz}]}
  *   GET  ?action=cubicaje                -> {cubicaje:{PLACA:cubicaje,...}}  (catálogo placa→m³/viaje, D53)
  *   GET  ?action=debug&fecha=...
- *   POST  reporte: {fecha,rol,capataz,cantidades:[{...,equipos:[]}],volquetas:[{origen,destino,tipo_destino,uf,placas:[{placa,viajes}]}]}
+ *   POST  reporte: {fecha,rol,capataz,cantidades:[{...,equipos:[]}],volquetas:[{origen,destino,tipo_destino,uf,placas:[{placa,viajes}]}],maquinaria:[{id_maquina,...}]}
  *           -> BANDEJA (+ MAQUINARIA) ; chequeadora además -> VOLQUETAS (una fila por placa)
+ *           y, si envía maquinaria, sus excavadoras -> MAQUINARIA (producción = total excavado ÷ nº máquinas, D54)
  *   POST  {action:'enviar_data', fecha, cantidades:[...incluidas...]}  -> DATA
  */
 
@@ -323,6 +324,37 @@ function guardarReporte(body){
         m.motivo, uProd, c.actividad, der.aCaptura]);
     });
   });
+  // Maquinaria de la chequeadora (D54): excavadoras que alimentaron el origen. Una vez por reporte.
+  // Producción = total excavado del día (Σ líneas, con cubicaje real) REPARTIDO en partes iguales
+  // entre las máquinas (cada una cumple su papel). Va a MAQUINARIA; el encargado reconcilia si un
+  // capataz reportó la misma máquina (D51). D06: el volumen sigue viniendo de la chequeadora.
+  (function(){
+    const maqList=body.maquinaria||[];
+    if(!maqList.length) return;
+    const totalExc=Object.keys(lineVol).reduce((s,k)=>s+lineVol[k],0);
+    const nProd=maqList.filter(m=>(m.tipo_equipo||'').toUpperCase()!=='VIBROCOMPACTADOR').length || 1;
+    const prodCada=totalExc/nProd;
+    // proyecto y actividad del frente de excavación (todas las líneas comparten origen)
+    let proyMaq='', actMaq='';
+    (body.cantidades||[]).forEach(c=>{ if(!actMaq && String(c.actividad||'').indexOf('Excavaci')>=0){ actMaq=c.actividad; proyMaq=c.proyecto||''; } });
+    if(!proyMaq && (body.cantidades||[]).length) proyMaq=body.cantidades[0].proyecto||'';
+    const der=derivarActividad({actividad:actMaq});
+    maqList.forEach(m=>{
+      const esVibro=(m.tipo_equipo||'').toUpperCase()==='VIBROCOMPACTADOR';
+      const prod=esVibro ? '' : prodCada;          // vibros nunca llevan producción (D44)
+      const uProd=(prod==='') ? '' : 'm3';
+      const esMant=(m.motivo||'').trim().toLowerCase().indexOf('mantenimiento')>=0;
+      const hMant=esMant ? Math.max(0,(parseFloat(m.horas_programadas)||0)-(parseFloat(m.horas_operadas)||0)) : '';
+      const estado=derivarEstado(m.motivo, m.horas_muertas);
+      maqRows.push([
+        '', fecha, '', proyMaq, m.id_maquina, '', m.operador,
+        der.h, der.i, '', '', m.horas_operadas, '',
+        '', hMant, '', '', estado, '',
+        prod, '', '', '', '', '', '', '',
+        Utilities.getUuid(), '', ts, reporta, m.tipo_equipo, m.horas_programadas, m.horas_muertas,
+        m.motivo, uProd, actMaq, der.aCaptura]);
+    });
+  })();
   if(banRows.length) banSh.getRange(banSh.getLastRow()+1,1,banRows.length,BANDEJA_HEADERS.length).setValues(banRows);
   if(maqRows.length) maqSh.getRange(maqSh.getLastRow()+1,1,maqRows.length,MAQ_HEADERS.length).setValues(maqRows);
   // chequeadora: desglose por placa -> VOLQUETAS (una fila por placa). No toca DATA ni MAQUINARIA.
