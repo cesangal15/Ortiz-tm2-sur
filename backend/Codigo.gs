@@ -110,8 +110,17 @@ function fdate(v){
 function toDate(s){ const p=String(s||'').slice(0,10).split('-'); if(p.length<3) return ''; return new Date(Number(p[0]),Number(p[1])-1,Number(p[2])); }
 function getSheet(name, headers){
   const ss=SpreadsheetApp.openById(SHEET_ID); let sh=ss.getSheetByName(name);
-  if(!sh){ sh=ss.insertSheet(name); sh.appendRow(headers); }
-  else if(sh.getLastRow()===0){ sh.appendRow(headers); }
+  if(!sh) sh=ss.insertSheet(name);
+  const need=headers.length;
+  // asegura ancho de grilla suficiente (p. ej. MAQUINARIA pasó de 18 a 38 columnas en D52)
+  if(sh.getMaxColumns()<need) sh.insertColumnsAfter(sh.getMaxColumns(), need-sh.getMaxColumns());
+  if(sh.getLastRow()===0){ sh.getRange(1,1,1,need).setValues([headers]); return sh; }
+  // auto-sana la fila de encabezados si no coincide con el esquema actual del código.
+  // (tras el realineado de MAQUINARIA a Captura_Diaria, las filas con layout viejo quedan
+  // con `fecha` ilegible y el filtro por fecha de la bandeja/estado las descarta solas.)
+  const cur=sh.getRange(1,1,1,need).getValues()[0];
+  let diff=false; for(let i=0;i<need;i++){ if(String(cur[i]||'')!==headers[i]){ diff=true; break; } }
+  if(diff) sh.getRange(1,1,1,need).setValues([headers]);
   return sh;
 }
 function readSheet(name){
@@ -274,6 +283,7 @@ function guardarReporte(body){
 /* ---------- bandeja para el encargado ---------- */
 function bandeja(e){
   const fecha=fdate(e.parameter.fecha), proy=e.parameter.proyecto||'';
+  getSheet('MAQUINARIA', MAQ_HEADERS); // auto-sana encabezados al layout D52 antes de leer
   const cantidades=readSheet('BANDEJA').filter(r=> r.fecha===fecha && (!proy||String(r.proyecto)===proy));
   const maquinas=readSheet('MAQUINARIA').filter(r=> r.fecha===fecha && (!proy||String(r.proyecto)===proy));
   const observaciones=readSheet('OBSERVACIONES').filter(r=>r.fecha===fecha).map(r=>({reporta:r.reporta||'', observacion:r.observacion||''}));
@@ -300,6 +310,7 @@ function consolidado(e){
 /* ---------- estado de maquinaria ---------- */
 function estado(e){
   const fecha=fdate(e.parameter.fecha), proy=e.parameter.proyecto||'';
+  getSheet('MAQUINARIA', MAQ_HEADERS); // auto-sana encabezados al layout D52 antes de leer
   const maquinas=readSheet('MAQUINARIA').filter(r=> r.fecha===fecha && (!proy||String(r.proyecto)===proy));
   const seen={}, reportadas=[];
   maquinas.forEach(m=>{ if(!m.id_maquina||seen[m.id_maquina]) return; seen[m.id_maquina]=1; reportadas.push({id_maquina:m.id_maquina, capataz:m.reporta}); });
