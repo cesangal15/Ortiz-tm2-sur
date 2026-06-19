@@ -28,8 +28,69 @@ const BANDEJA_HEADERS = ['id_registro','timestamp','fecha','reporta','rol','grup
   'actividad','descripcion','centro_costo','unidad','uf','proyecto','elemento',
   'pk_inicial','pk_final','abs_inicial','abs_final','liberacion','largo','observacion','estado'];
 
-const MAQ_HEADERS = ['id_registro','id_cantidad','timestamp','fecha','reporta','id_maquina','tipo_equipo',
-  'operador','actividad','descripcion','uf','proyecto','horas_programadas','horas_operadas','horas_muertas','motivo','produccion','unidad_prod'];
+// MAQUINARIA: layout alineado a Captura_Diaria (fact_produccion, A1:AA) — D52.
+// A→AA = columnas de la tabla Excel (entrada con valor; fórmula/no-captura en BLANCO);
+// internos del app DESPUÉS de AA (trazabilidad y valores reales que en Captura son fórmula).
+// El usuario pega el bloque A:AA (Pegado especial → Omitir blancos) de las filas con a_captura='SI'.
+const MAQ_HEADERS = [
+  // A    B        C      D          E             F             G
+  'id_registro','fecha','dia','proyecto','id_maquina','tipo_equipo','operador',
+  // H        I               J         K                   L                M
+  'actividad','sub_actividad','unidad','horas_programadas','horas_operadas','pct_util',
+  // N             O                    P            Q                  R        S
+  'horas_muertas','horas_mantenimiento','pct_muerto','horas_facturadas','estado','clima',
+  // T          U      V        W             X          Y        Z       AA
+  'produccion','meta','pct_ef','rendimiento','unitario','viajes','costo','observacion',
+  // ---- internos del app (después de AA) ----
+  'app_id_registro','id_cantidad','timestamp','reporta','app_tipo_equipo',
+  'app_horas_programadas','app_horas_muertas','motivo','unidad_prod','cap_actividad','a_captura'];
+
+// Mapa actividad del capataz → [actividad(H), SUB ACTIVIDAD(I)] de Captura_Diaria (05_CATALOGO §1, D52)
+const CAPTURA_ACT_MAP = {
+  'Excavación aprovechable (masivo)':                 ['EXCAVACION COMUN','EXCAVACION APROVECHABLE'],
+  'Excavación no aprovechable':                       ['EXCAVACION COMUN','EXCAVACION NO APROVECHABLE'],
+  'Excavación de préstamo (Diviso)':                  ['EXCAVACION PRESTAMO','EXCAVACION APROVECHABLE'],
+  'Núcleo de terraplén':                              ['TERRAPLEN','NUCLEO DE TERRAPLEN'],
+  'Corona de terraplén':                              ['TERRAPLEN','CORONA DE TERRAPLEN'],
+  'Cereo de corona':                                  ['TERRAPLEN','CEREO CORONA'],
+  'Conformación y disposición de sobrantes (ZODME)':  ['CONFORMACION','ZODME'],
+  'Conformación de subbase':                          ['SUBBASE','CONFORMACION SUBBASE'],
+  'Cereo de subbase':                                 ['SUBBASE','CEREO SUBBASE'],
+  'Base estabilizada con cemento (BTC)':              ['BASE','BTC'],
+  'Desmonte y limpieza en bosque':                    ['DESMONTE','DESMONTE'],
+  'Descapote / zonas no boscosas':                    ['DESMONTE','DESCAPOTE']
+};
+// Apoyo de compactación: hereda H/I del frente que apoya (sub_actividad del catálogo del capataz)
+const CAPTURA_APOYO_MAP = {
+  'COMPACT_TERRAPLEN': ['TERRAPLEN','NUCLEO DE TERRAPLEN'],
+  'COMPACT_SUBBASE':   ['SUBBASE','CONFORMACION SUBBASE'],
+  'COMPACT_BTC':       ['BASE','BTC']
+};
+// Deriva {h, i, aCaptura} de la actividad del capataz (c). Sin par definido → a_captura='NO'
+// (paisajeo, adecuación de caminos, limpieza de derrumbe, MSR, pedraplén).
+function derivarActividad(c){
+  if((c.actividad||'')==='APOYO'){
+    const sub=c.sub_actividad||'';
+    if(CAPTURA_APOYO_MAP[sub]) return {h:CAPTURA_APOYO_MAP[sub][0], i:CAPTURA_APOYO_MAP[sub][1], aCaptura:'SI'};
+    return {h:'', i:'', aCaptura:'NO'}; // paisajeo / adecuación / derrumbe
+  }
+  const par=CAPTURA_ACT_MAP[c.actividad||''];
+  if(par) return {h:par[0], i:par[1], aCaptura:'SI'};
+  return {h:'', i:'', aCaptura:'NO'}; // MSR, pedraplén, sin par
+}
+// Deriva R (ESTADO) del motivo (05_CATALOGO §5, D52). Sin horas muertas → OPERANDO.
+function derivarEstado(motivo, muertas){
+  if(!(parseFloat(muertas)>0.01)) return 'OPERANDO';
+  const m=(motivo||'').trim().toLowerCase();
+  if(!m) return 'OPERANDO';
+  if(m.indexOf('mantenimiento')>=0) return 'MANTENIMIENTO';
+  if(m.indexOf('falla')>=0)         return 'VARADO';
+  if(m.indexOf('sin operador')>=0)  return 'SIN OPERADOR';
+  if(m.indexOf('lluvia')>=0 || m.indexOf('clima')>=0) return 'LLUVIAS';
+  if(m.indexOf('bloqueo')>=0)       return 'BLOQUEO';
+  // Sin frente / Esperando material / Abastecimiento / Traslado/movilización / Otro / texto libre
+  return 'ESPERA';
+}
 
 const OBS_HEADERS = ['id_registro','timestamp','fecha','reporta','observacion'];
 
@@ -164,14 +225,31 @@ function guardarReporte(body){
           proy?(proy+'.02.08'):'', 'm3', c.uf, proy, c.elemento, c.pk_inicial, c.pk_final, c.abs_inicial, c.abs_final,
           c.liberacion, c.largo, 'Auto · secuencial a no aprovechable', 'pendiente']);
     }
-    // equipos -> MAQUINARIA; vibrocompactadores y actividades de apoyo van sin producción
+    // equipos -> MAQUINARIA (layout Captura A→AA + internos del app, D52)
+    const der = derivarActividad(c);
     (c.equipos||[]).forEach(m=>{
-      const esVibro = m.tipo_equipo === 'VIBROCOMPACTADOR';
-      const prod = (!esVibro && c.largo != null) ? c.largo : '';
-      const uProd = (!esVibro && c.largo != null) ? c.unidad : '';
-      maqRows.push([Utilities.getUuid(), idC, ts, fecha, reporta, m.id_maquina, m.tipo_equipo, m.operador,
-        c.actividad, c.descripcion, c.uf, c.proyecto, m.horas_programadas, m.horas_operadas, m.horas_muertas, m.motivo,
-        prod, uProd]);
+      const esVibro = (m.tipo_equipo||'').toUpperCase() === 'VIBROCOMPACTADOR';
+      const esApoyo = (c.actividad||'') === 'APOYO';
+      // T Producción: largo de la actividad EXCEPTO vibros y actividades de apoyo → blanco (D41/D44)
+      const prod  = (esVibro || esApoyo || c.largo == null || c.largo === '') ? '' : c.largo;
+      const uProd = (prod === '') ? '' : (c.unidad || '');
+      // O Horas Mantenimiento: prog−oper solo si motivo=Mantenimiento; en otro caso blanco
+      const esMant = (m.motivo||'').trim().toLowerCase().indexOf('mantenimiento') >= 0;
+      const hMant  = esMant ? Math.max(0, (parseFloat(m.horas_programadas)||0) - (parseFloat(m.horas_operadas)||0)) : '';
+      // R ESTADO derivado del motivo
+      const estado = derivarEstado(m.motivo, m.horas_muertas);
+      maqRows.push([
+        // A vacío (autonumera Captura) · B fecha · C vacío · D proyecto · E id_maquina · F vacío · G operador
+        '', fecha, '', c.proyecto, m.id_maquina, '', m.operador,
+        // H actividad(der) · I sub(der) · J vacío · K vacío(fórmula) · L horas_operadas · M vacío
+        der.h, der.i, '', '', m.horas_operadas, '',
+        // N vacío(fórmula) · O h_mantenimiento · P vacío · Q vacío · R estado · S vacío(clima)
+        '', hMant, '', '', estado, '',
+        // T produccion · U–X vacío · Y vacío(viajes) · Z vacío · AA observacion
+        prod, '', '', '', '', '', '', c.observacion||'',
+        // internos del app
+        Utilities.getUuid(), idC, ts, reporta, m.tipo_equipo, m.horas_programadas, m.horas_muertas,
+        m.motivo, uProd, c.actividad, der.aCaptura]);
     });
   });
   if(banRows.length) banSh.getRange(banSh.getLastRow()+1,1,banRows.length,BANDEJA_HEADERS.length).setValues(banRows);

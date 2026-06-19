@@ -67,11 +67,9 @@
   .linea-item.dupmark{border-color:rgba(245,166,35,0.45);}
   .linea-item.dupmark.hard{border-color:rgba(231,76,60,0.5);}
   .maq-id{font-family:'Syne',sans-serif;font-weight:700;font-size:14px;white-space:nowrap;min-width:60px;flex-shrink:0;}
-  .maq-edit-inline{width:auto;min-width:96px;background:var(--input-bg);border:1px solid rgba(231,76,60,0.5);border-radius:5px;color:var(--text);font-family:'Syne',sans-serif;font-weight:700;font-size:12px;padding:3px 22px 3px 7px;outline:none;text-transform:uppercase;display:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23e74c3c' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 7px center;cursor:pointer;}
-  .maq-edit-inline:focus{border-color:var(--accent);}
-  .maq-edit-inline option{background:#1a1d27;}
-  .maq-pencil{background:none;border:none;cursor:pointer;color:rgba(231,76,60,0.7);font-size:11px;padding:0 2px;vertical-align:middle;}
-  .maq-pencil:hover{color:var(--error);}
+  .maq-conflict{border:1px solid rgba(231,76,60,0.5);border-radius:10px;padding:10px 10px 4px;margin-bottom:8px;background:rgba(231,76,60,0.04);}
+  .maq-conflict-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;}
+  .maq-conflict .linea-item{margin-bottom:6px;}
   .ctrl-tag{font-size:9px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--muted);background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:1px 7px;margin-left:7px;}
   .ofi-tag{font-size:9px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--success);background:rgba(46,204,113,0.08);border:1px solid rgba(46,204,113,0.4);border-radius:10px;padding:1px 7px;margin-left:7px;}
   .linea-item.control{border-style:dashed;border-color:var(--border);}
@@ -125,8 +123,6 @@
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
 const CAPATACES_ESPERADOS = ['albert','ariel','angel','alejo','robinson'];
 const TODAS_MAQUINAS = ['BL005','BL009','CAT320','EXC001','EXC013','EXC014','EXC015','FNG02','MC705','MO03','MO04','MO09','NH69','CR019','CR013','CR016','CS78B','NH403','NH404','NH420','CAT900','PEXC027','CR020','D150B'];
-// Lista completa de IDs conocidos (para el desplegable de corrección de máquina)
-const MAQUINAS_LISTA = ['BL005','BL009','NH69','EXC001','EXC013','EXC014','EXC015','CAT320','MO03','MO04','MO09','MC705','FNG02','CR019','CR013','CR016','PEXC027','NH403','NH404','CS78B','CR020','NH420','CAT900','D150B'];
 // Categorías cuyo volumen es OFICIAL de la chequeadora; el conteo del capataz es solo control.
 const CAT_CONTROL_CAPATAZ = ['Excavación aprovechable','Excavación préstamo','Excavación no aprovechable','Conformación / ZODME','Terraplén'];
 const ACTIVIDADES = [
@@ -243,7 +239,28 @@ function computeDups(){
   });
   return info;
 }
-function maqDupCount(){ const cnt={}; STATE.maquinas.forEach(m=>{const k=(m.id_maquina||'').toUpperCase();cnt[k]=(cnt[k]||0)+1;}); return cnt; }
+function numH(v){ const n=parseFloat(v); return isNaN(n)?0:n; }
+// Agrupa la maquinaria del día por id_maquina (D51). El único discriminante de duplicado
+// es `reporta`: un grupo con un solo capataz = reparto multi-actividad (D46), NO duplicado;
+// con ≥2 capataces = conflicto a conciliar.
+function maqGroups(){
+  const g={}, order=[];
+  STATE.maquinas.forEach((m,idx)=>{
+    const k=(m.id_maquina||'').toUpperCase();
+    if(!g[k]){ g[k]={key:k, id:m.id_maquina, rows:[]}; order.push(k); }
+    g[k].rows.push({m, idx});
+  });
+  return order.map(k=>g[k]);
+}
+// Resumen de horas de un conjunto de filas (mismo capataz, misma máquina): operadas = suma del
+// día; muertas = programadas − operadas (D46). prog/motivo se toman de la primera aparición.
+function maqResumen(rows){
+  const prog=numH(rows[0].m.app_horas_programadas);
+  const oper=rows.reduce((s,r)=>s+numH(r.m.horas_operadas),0);
+  const muertas=Math.max(0, Math.round((prog-oper)*100)/100);
+  const motivo=(rows.map(r=>r.m.motivo).find(x=>x)||'');
+  return {prog, oper, muertas, motivo};
+}
 
 function render(){
   const cont=document.getElementById('resultados');
@@ -370,33 +387,64 @@ function renderAddCard(){
 }
 function renderMaquinas(){
   if(!STATE.maquinas.length) return '<div class="empty-state" style="padding:16px;"><p>Sin maquinaria reportada</p></div>';
-  let html=''; const cnt=maqDupCount();
-  STATE.maquinas.forEach((m,idx)=>{
-    const muertas=parseFloat(m.horas_muertas)||0;
-    const menos= muertas>0 ? ` · <span style="color:var(--error)">${muertas}h menos${m.motivo?(': '+m.motivo):''}</span>`:'';
-    const prod = m.produccion ? ` · ${m.produccion} ${m.unidad_prod||''}` : '';
-    const isDup = (cnt[(m.id_maquina||'').toUpperCase()]||0) > 1;
-    const maqId = (m.id_maquina||'').replace(/"/g,'&quot;');
-    const cur=(m.id_maquina||'').toUpperCase();
-    const lista = MAQUINAS_LISTA.includes(cur)||!cur ? MAQUINAS_LISTA : [cur].concat(MAQUINAS_LISTA);
-    const opts = lista.map(id=>`<option value="${id}"${id===cur?' selected':''}>${id}</option>`).join('');
-    const editBtn = isDup ? `<button class="maq-pencil" title="Corregir máquina (uno se confundió)" onclick="showMaqEdit(this)">✏</button><select class="maq-edit-inline" onchange="editMaquina('${m.id_registro}',${idx},this.value)" onblur="hideMaqEdit(this)">${opts}</select>` : '';
-    const dupBadge = isDup ? `<span class="dup hard" title="Misma máquina reportada por varios capataces — edita el ID si hubo error">⚠ ×${cnt[(m.id_maquina||'').toUpperCase()]}</span>` : '';
-    html+=`<div class="linea-item${isDup?' dupmark hard':''}" style="opacity:1;">
-      <span class="maq-id">${maqId}</span>${editBtn}
-      <div class="li-main"><div class="li-act"><span style="color:var(--muted);font-weight:400;font-size:11px;">${m.tipo_equipo||''}</span>${dupBadge}</div>
-      <div class="li-sub">${m.actividad||'—'} · ${m.operador||'s/op'}${prod} · <span class="src ${m.reporta&&String(m.reporta).indexOf('cheq')===0?'cheq':'cap'}">${m.reporta||'?'}</span></div></div>
-      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;white-space:nowrap;">${m.horas_operadas||0}h${menos}</div></div>`;
+  let html='';
+  maqGroups().forEach(g=>{
+    const reps=[...new Set(g.rows.map(r=>(r.m.reporta||'').trim()).filter(Boolean))];
+    html += (reps.length>=2) ? renderMaqConflict(g, reps) : renderMaqGrupo(g);
   });
   return html;
 }
-function showMaqEdit(btn){
-  const sel=btn.nextElementSibling;
-  btn.style.display='none'; sel.style.display='inline-block'; sel.focus();
+// líneas de actividad de un conjunto de filas (una máquina + un capataz)
+function maqActLines(rows, multi){
+  return rows.map(r=>{
+    const m=r.m;
+    const prod = (m.produccion!==''&&m.produccion!=null) ? ` · ${m.produccion} ${m.unidad_prod||''}` : '';
+    return `${m.cap_actividad||m.actividad||'—'}${prod}${multi?` · ${fmt(numH(m.horas_operadas))}h`:''}`;
+  }).join('<br>');
 }
-function hideMaqEdit(sel){
-  const btn=sel.previousElementSibling;
-  sel.style.display='none'; if(btn) btn.style.display='';
+// Grupo de un solo capataz: NO es duplicado (reparto multi-actividad D46). Horas muertas del
+// día = programadas − suma de operadas del grupo.
+function renderMaqGrupo(g){
+  const first=g.rows[0].m;
+  const r=maqResumen(g.rows);
+  const menos = r.muertas>0 ? ` · <span style="color:var(--error)">${fmt(r.muertas)}h menos${r.motivo?(': '+r.motivo):''}</span>`:'';
+  const maqId=(first.id_maquina||'').replace(/"/g,'&quot;');
+  return `<div class="linea-item" style="opacity:1;">
+    <span class="maq-id">${maqId}</span>
+    <div class="li-main"><div class="li-act"><span style="color:var(--muted);font-weight:400;font-size:11px;">${first.app_tipo_equipo||''}</span></div>
+    <div class="li-sub">${maqActLines(g.rows, g.rows.length>1)} · ${first.operador||'s/op'} · <span class="src ${first.reporta&&String(first.reporta).indexOf('cheq')===0?'cheq':'cap'}">${first.reporta||'?'}</span></div></div>
+    <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;white-space:nowrap;">${fmt(r.oper)}h${menos}</div></div>`;
+}
+// Grupo con ≥2 capataces: conflicto. Muestra la versión de cada capataz con el toggle ✓/✕
+// para incluir una y descartar las demás.
+function renderMaqConflict(g, reps){
+  const maqId=(g.id||'').replace(/"/g,'&quot;');
+  const tipo=g.rows[0].m.app_tipo_equipo||'';
+  let html=`<div class="maq-conflict">
+    <div class="maq-conflict-head"><span class="maq-id">${maqId}</span>
+      <span style="color:var(--muted);font-weight:400;font-size:11px;">${tipo}</span>
+      <span class="dup hard" title="Misma máquina reportada por ${reps.length} capataces distintos — incluye la correcta y descarta las demás">⚠ conflicto · ${reps.length} capataces</span></div>`;
+  reps.forEach(rep=>{
+    const subRows=g.rows.filter(r=>(r.m.reporta||'').trim()===rep);
+    const r=maqResumen(subRows);
+    const inc=subRows.every(x=>x.m._inc!==false);
+    const menos = r.muertas>0 ? ` · <span style="color:var(--error)">${fmt(r.muertas)}h menos${r.motivo?(': '+r.motivo):''}</span>`:'';
+    const op=subRows[0].m.operador||'s/op';
+    html+=`<div class="linea-item${inc?'':' off'}">
+      <button class="tog ${inc?'on':'no'}" onclick="toggleMaqReporter('${g.key}','${rep.replace(/'/g,"\\'")}')">${inc?'✓':'✕'}</button>
+      <div class="li-main"><div class="li-act"><span class="src cap">${rep}</span></div>
+      <div class="li-sub">${maqActLines(subRows, subRows.length>1)} · ${op}</div></div>
+      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;white-space:nowrap;">${fmt(r.oper)}h${menos}</div></div>`;
+  });
+  html+='</div>';
+  return html;
+}
+// Incluye/descarta todas las filas de {máquina, capataz} en un conflicto.
+function toggleMaqReporter(key, rep){
+  const rows=STATE.maquinas.filter(m=>(m.id_maquina||'').toUpperCase()===key && (m.reporta||'').trim()===rep);
+  const inc=rows.every(m=>m._inc!==false);
+  rows.forEach(m=>m._inc=!inc);
+  render();
 }
 
 function toggleObs(){
@@ -407,21 +455,6 @@ function toggleObs(){
   if(b) b.textContent=open?'▸ ver':'▾ ocultar';
 }
 function toggleInc(idx){ STATE.cantidades[idx]._inc=!STATE.cantidades[idx]._inc; render(); }
-async function editMaquina(idReg, idx, val){
-  val=(val||'').trim().toUpperCase();
-  const m=STATE.maquinas[idx]; if(!m) return;
-  const prev=m.id_maquina||'';
-  if(!val || val===prev){ render(); return; }
-  if(!idReg){ alert('No se puede editar: falta id_registro'); render(); return; }
-  m.id_maquina=val;
-  try{
-    const resp=await fetch(APPS_SCRIPT_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body:JSON.stringify({action:'editar_maquina', id_registro:idReg, id_maquina:val})});
-    const res=await resp.json();
-    if(!res||!res.ok) throw new Error((res&&res.error)||'Respuesta inesperada');
-    render(); // re-render recomputes dup count with new ID
-  }catch(err){ m.id_maquina=prev; alert('⚠ No se pudo cambiar la máquina: '+err.message); render(); }
-}
 function editLargo(idx,val){ STATE.cantidades[idx].largo=parseFloat(val)||0; refreshTot(); }
 function refreshTot(){ const tot=calcTotales(); const box=document.querySelector('.totales'); if(!box)return;
   let html='',any=false;
@@ -466,8 +499,15 @@ function generarMensaje(){
     msg+=head+'\n';
     byCat[cat].forEach(c=>{ const pk=c.pk_inicial+(c.pk_final?(' - '+c.pk_final):''); msg+=`${pk||'—'}  ${fmt(c.largo)} ${c.unidad}\n`; });
   });
-  if(STATE.maquinas.length){ msg+='\n*Equipos:*\n';
-    STATE.maquinas.forEach(m=>{ msg+=`- ${m.id_maquina} (${m.operador||'s/op'}) ${m.horas_operadas||0}h`+((m.horas_muertas>0)?` · ${m.horas_muertas}h menos: ${m.motivo||''}`:'')+'\n'; }); }
+  // Equipos: una línea por {máquina, capataz}, agregando sus apariciones del día (D46/D51).
+  // En conflicto (≥2 capataces) solo entran las versiones incluidas (_inc) por el encargado.
+  const maqInc=STATE.maquinas.filter(m=>m._inc!==false);
+  if(maqInc.length){ msg+='\n*Equipos:*\n';
+    const mg={}, mo=[];
+    maqInc.forEach(m=>{ const k=(m.id_maquina||'').toUpperCase()+'|'+(m.reporta||'').trim();
+      if(!mg[k]){ mg[k]={id:m.id_maquina, op:m.operador, rows:[]}; mo.push(k); } mg[k].rows.push({m}); });
+    mo.forEach(k=>{ const grp=mg[k], r=maqResumen(grp.rows);
+      msg+=`- ${grp.id} (${grp.op||'s/op'}) ${fmt(r.oper)}h`+(r.muertas>0?` · ${fmt(r.muertas)}h menos: ${r.motivo||''}`:'')+'\n'; }); }
   const obsArr=(STATE.observaciones||[]).filter(o=>o.observacion);
   if(obsArr.length){ msg+='\n*OBSERVACIONES:*\n'; obsArr.forEach(o=>{ msg+=`${o.reporta||'?'}: ${o.observacion}\n`; }); }
   const inop=(document.getElementById('inoperativos').value||'').trim();
