@@ -21,7 +21,7 @@
 | 1.15 | Desglose por placa en reporte de chequeadora (textarea + parser, hoja VOLQUETAS) | ✅ Hecho (validado con datos reales, jun-2026) |
 | 1.16 | Confirmación de envío en reporte-chequeadora.html (cuenta de filas del servidor, igual que capataz, D30). Detectado al validar 1.15. | ✅ Hecho |
 | 1.17 | Detección de máquina duplicada por `reporta` en el panel del encargado (D51): solo es duplicado si el mismo `id_maquina` viene de dos capataces distintos | ✅ Hecho (encargado.html: agrupa por id_maquina; 1 capataz = reparto D46 con horas muertas = prog − Σ operadas; ≥2 capataces = conflicto con toggle ✓/✕ incluir/descartar) |
-| 1.18 | Carga de minicargador (NH421, DINISSAN, alquilada 5h) y minibuldózer (CR026, ORTIZ, propia 6.4h) — ambos sin producción (igual a vibrocompactadores; IDs reasignados desde la lista de vibros descartada por D35). **+ limpieza de catálogo:** eliminar la pajarita PEXC027 del listado de máquinas en código; en reporte-chequeadora.html el selector de máquina muestra **solo excavadoras** (no el resto de tipos). | ✅ Definido — pendiente implementar |
+| 1.18 | Carga de minicargador (NH421, DINISSAN, alquilada 5h) y minibuldózer (CR026, ORTIZ, propia 6.4h) — ambos sin producción (igual a vibrocompactadores; IDs reasignados desde la lista de vibros descartada por D35). **+ limpieza de catálogo:** eliminar la pajarita PEXC027 del listado de máquinas en código; en reporte-chequeadora.html el selector de máquina muestra **solo excavadoras** (no el resto de tipos). | ✅ Hecho — pendiente redeploy (Pages + nueva versión Apps Script) |
 
 ## V2 — Mejoras identificadas (no iniciar sin cerrar V1)
 
