@@ -93,6 +93,12 @@ function derivarEstado(motivo, muertas){
   // Sin frente / Esperando material / Abastecimiento / Traslado/movilización / Otro / texto libre
   return 'ESPERA';
 }
+// Tipos cuya producción (T) es SIEMPRE nula: vibrocompactadores + minicargador/minibuldozer (D41/D44).
+// Estas máquinas compactan/apoyan frentes de otras; no generan producción propia.
+function esTipoSinProduccion(tipo){
+  const t=(tipo||'').toUpperCase();
+  return t==='VIBROCOMPACTADOR' || t==='MINICARGADOR' || t==='MINIBULDOZER';
+}
 
 const OBS_HEADERS = ['id_registro','timestamp','fecha','reporta','observacion'];
 
@@ -300,9 +306,9 @@ function guardarReporte(body){
     // equipos -> MAQUINARIA (layout Captura A→AA + internos del app, D52)
     const der = derivarActividad(c);
     (c.equipos||[]).forEach(m=>{
-      const esVibro = (m.tipo_equipo||'').toUpperCase() === 'VIBROCOMPACTADOR';
+      const esVibro = esTipoSinProduccion(m.tipo_equipo);
       const esApoyo = (c.actividad||'') === 'APOYO';
-      // T Producción: largo de la actividad EXCEPTO vibros y actividades de apoyo → blanco (D41/D44)
+      // T Producción: largo de la actividad EXCEPTO vibros/minis y actividades de apoyo → blanco (D41/D44)
       const prod  = (esVibro || esApoyo || c.largo == null || c.largo === '') ? '' : c.largo;
       const uProd = (prod === '') ? '' : (c.unidad || '');
       // O Horas Mantenimiento: prog−oper solo si motivo=Mantenimiento; en otro caso blanco
@@ -332,7 +338,7 @@ function guardarReporte(body){
     const maqList=body.maquinaria||[];
     if(!maqList.length) return;
     const totalExc=Object.keys(lineVol).reduce((s,k)=>s+lineVol[k],0);
-    const nProd=maqList.filter(m=>(m.tipo_equipo||'').toUpperCase()!=='VIBROCOMPACTADOR').length || 1;
+    const nProd=maqList.filter(m=>!esTipoSinProduccion(m.tipo_equipo)).length || 1;
     const prodCada=totalExc/nProd;
     // proyecto y actividad del frente de excavación (todas las líneas comparten origen)
     let proyMaq='', actMaq='';
@@ -340,8 +346,8 @@ function guardarReporte(body){
     if(!proyMaq && (body.cantidades||[]).length) proyMaq=body.cantidades[0].proyecto||'';
     const der=derivarActividad({actividad:actMaq});
     maqList.forEach(m=>{
-      const esVibro=(m.tipo_equipo||'').toUpperCase()==='VIBROCOMPACTADOR';
-      const prod=esVibro ? '' : prodCada;          // vibros nunca llevan producción (D44)
+      const esVibro=esTipoSinProduccion(m.tipo_equipo);
+      const prod=esVibro ? '' : prodCada;          // vibros/minis nunca llevan producción (D44)
       const uProd=(prod==='') ? '' : 'm3';
       const esMant=(m.motivo||'').trim().toLowerCase().indexOf('mantenimiento')>=0;
       const hMant=esMant ? Math.max(0,(parseFloat(m.horas_programadas)||0)-(parseFloat(m.horas_operadas)||0)) : '';
