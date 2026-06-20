@@ -40,7 +40,7 @@ Formato: actividad de campo → ítem contractual | unidad | CC | medición | ¿
 - Tubería PVC 4" perforada | M | 05.03 | directo | Sí
 
 ### Actividades de apoyo (sin producción) — CONFIRMADO
-Aplican a excavadoras, motoniveladoras, bulldozer, pajarita. Estado `no_data`; no van a DATA; sí a MAQUINARIA con producción nula.
+Aplican a excavadoras, motoniveladoras, bulldozer. Estado `no_data`; no van a DATA; sí a MAQUINARIA con producción nula.
 - Compactación de terraplén
 - Compactación de subbase
 - Compactación de BTC
@@ -90,14 +90,16 @@ Terraplén (genera fila de terraplén) · Puente · ODL · Botadero (solo excava
 | MO03, MO04, MO09 | MOTONIVELADORA | 6.4 | Propias |
 | MC705 | MOTONIVELADORA | 5 | Alquilada |
 | FNG02 | FINISHER | 6.4 | Propia |
-| PEXC027 | PAJARITA (retro de llantas) | 6.4 | Propia |
 | CR019, CR013, CR016 | VIBROCOMPACTADOR | 6.4 | ORTIZ (propios) |
 | CS78B | VIBROCOMPACTADOR | 5 | GEOEXCON (alquilada) |
 | NH403, NH404, NH420 | VIBROCOMPACTADOR | 5 | DINISSAN (alquilados) |
 | CAT900 | VIBROCOMPACTADOR | 5 | SK RENTAL (alquilada) |
+| NH421 | MINICARGADOR | 5 | DINISSAN (alquilada) |
+| CR026 | MINIBULDOZER | 6.4 | ORTIZ (propia) |
 
 **Regla de producción por tipo:**
 - VIBROCOMPACTADOR: producción siempre nula — compactan frentes ejecutados por otras máquinas; el campo producción no se muestra ni se guarda.
+- MINICARGADOR y MINIBULDOZER (NH421, CR026): producción siempre nula — mismo tratamiento que los vibrocompactadores en cuanto al campo `produccion`.
 - Actividades de apoyo (Compactación terraplén/subbase/BTC · Paisajeo / Adecuación de caminos / Limpieza de derrumbe): producción nula para cualquier tipo de máquina.
 - Todos los demás tipos + actividades productivas: producción = largo de la línea de la actividad.
 
