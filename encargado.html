@@ -494,10 +494,28 @@ function generarMensaje(){
   let msg=`*Reporte de actividades de movimiento de Tierras ${dd}/${mm}/${yy}*\n——————————\n`;
   const byCat={}; STATE.cantidades.forEach(c=>{ if(!c._inc) return; const cat=categoria(c);(byCat[cat]=byCat[cat]||[]).push(c);});
   ORDEN_CAT.forEach(cat=>{ if(!byCat[cat])return; const o=tot[cat];
-    let head=`\n* *${cat}: ${fmt(o.total)} ${o.uni}`;
-    if(SPLIT_UF.includes(cat)&&(o.uf1||o.uf2)) head+=`  (UF1: ${fmt(o.uf1)} / UF2: ${fmt(o.uf2)})`;
-    msg+=head+'\n';
-    byCat[cat].forEach(c=>{ const pk=c.pk_inicial+(c.pk_final?(' - '+c.pk_final):''); msg+=`${pk||'—'}  ${fmt(c.largo)} ${c.unidad}\n`; });
+    if(cat==='Estructuras / MSR'){
+      // Cambio 1: sin total en el encabezado (las actividades MSR mezclan unidades: M3/M2/UND/M).
+      // Cambio 2: cada línea muestra el nombre de la actividad con su unidad propia, no el PK.
+      msg+=`\n* *${cat}:\n`;
+      byCat[cat].forEach(c=>{ msg+=`${c.actividad||c.descripcion||'—'}  ${fmt(c.largo)} ${c.unidad}\n`; });
+    } else if(cat==='Excavación aprovechable'){
+      // Cambio 3: total general en el encabezado + subtotales agrupados por origen (D56).
+      msg+=`\n* *${cat}: ${fmt(o.total)} ${o.uni}\n`;
+      const byOrigen={}, origenOrder=[];
+      byCat[cat].forEach(c=>{ const orig=(c.origen||'').trim()||'—';
+        if(!byOrigen[orig]){ byOrigen[orig]=[]; origenOrder.push(orig); } byOrigen[orig].push(c); });
+      origenOrder.forEach(orig=>{ const lines=byOrigen[orig];
+        const sub=lines.reduce((s,c)=>s+c.largo,0);
+        msg+=`  ${orig}: ${fmt(sub)} ${o.uni}\n`;
+        lines.forEach(c=>{ const pk=c.pk_inicial+(c.pk_final?(' - '+c.pk_final):'');
+          msg+=`    ${pk||'—'}  ${fmt(c.largo)} ${c.unidad}\n`; }); });
+    } else {
+      let head=`\n* *${cat}: ${fmt(o.total)} ${o.uni}`;
+      if(SPLIT_UF.includes(cat)&&(o.uf1||o.uf2)) head+=`  (UF1: ${fmt(o.uf1)} / UF2: ${fmt(o.uf2)})`;
+      msg+=head+'\n';
+      byCat[cat].forEach(c=>{ const pk=c.pk_inicial+(c.pk_final?(' - '+c.pk_final):''); msg+=`${pk||'—'}  ${fmt(c.largo)} ${c.unidad}\n`; });
+    }
   });
   // Equipos: una línea por {máquina, capataz}, agregando sus apariciones del día (D46/D51).
   // En conflicto (≥2 capataces) solo entran las versiones incluidas (_inc) por el encargado.

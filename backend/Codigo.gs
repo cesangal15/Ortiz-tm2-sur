@@ -26,9 +26,11 @@ const DATA_HEADERS = ['FECHA','ORDEN','GRUPO','CENTRO DE COSTO','CAPITULO','DESC
 const C = { FECHA:0, LARGO:14, OBS:18 };
 
 // BANDEJA: llaves limpias (lo crudo que reportan)
+// col 23 `origen`: banco de material (Masivo 1, Masivo 2, Complementario, Otro) para filas de
+// excavación aprovechable de la chequeadora; vacío para capataz/encargado (D56).
 const BANDEJA_HEADERS = ['id_registro','timestamp','fecha','reporta','rol','grupo','capitulo',
   'actividad','descripcion','centro_costo','unidad','uf','proyecto','elemento',
-  'pk_inicial','pk_final','abs_inicial','abs_final','liberacion','largo','observacion','estado'];
+  'pk_inicial','pk_final','abs_inicial','abs_final','liberacion','largo','observacion','estado','origen'];
 
 // MAQUINARIA: layout alineado a Captura_Diaria (fact_produccion, A1:AA) — D52.
 // A→AA = columnas de la tabla Excel (entrada con valor; fórmula/no-captura en BLANCO);
@@ -270,6 +272,7 @@ function guardarReporte(body){
   const cubMap=getCubicajeMap();
   const factorReporte=parseFloat(body.m3viaje)>0 ? parseFloat(body.m3viaje) : 14;
   const lineVol={}; // _linea -> volumen real (m³) calculado desde las placas
+  const lineOrigen={}; // _linea -> origen (Masivo 1, Masivo 2, etc.) para escribir en BANDEJA (D56)
   const volRows=[];
   (body.volquetas||[]).forEach(line=>{
     const idV=Utilities.getUuid();
@@ -284,24 +287,26 @@ function guardarReporte(body){
       volRows.push([idV, ts, fecha, reporta, line.origen||'', line.destino||'', line.tipo_destino||'',
         line.uf||'', p.placa||'', (p.viajes!=null?p.viajes:''), cub, m3p, found?'catalogo':'default']);
     });
-    if(line._linea!=null) lineVol[line._linea]=m3line;
+    if(line._linea!=null){ lineVol[line._linea]=m3line; lineOrigen[line._linea]=line.origen||''; }
   });
   (body.cantidades||[]).forEach(c=>{
     // D53: la chequeadora es la fuente del volumen (D06); para sus líneas el largo oficial = m³ real
     // por placa calculado arriba (excavación y, si aplica, terraplén comparten _linea).
     if(rol==='chequeadora' && c._linea!=null && lineVol[c._linea]!=null) c.largo=lineVol[c._linea];
     const idC=Utilities.getUuid();
+    // D56: origen del banco de material para filas de excavación de la chequeadora (Masivo 1/2/etc.)
+    const origenBandeja = (rol==='chequeadora' && c._linea!=null) ? (lineOrigen[c._linea]||'') : '';
     // todo entra a BANDEJA; cereo (data:false) marcado como 'no_data' para que el encargado lo vea pero no lo envíe a DATA
     banRows.push([idC, ts, fecha, reporta, rol, c.grupo||'', c.capitulo||'', c.actividad||'', c.descripcion||'', c.centro_costo||'',
       c.unidad||'', c.uf||'', c.proyecto||'', c.elemento||'', c.pk_inicial||'', c.pk_final||'', c.abs_inicial||'', c.abs_final||'', c.liberacion||'CAMPO',
-      c.largo||0, c.observacion||'', (c.data===false)?'no_data':'pendiente']);
-    // ZODME automático tras excavación no aprovechable
+      c.largo||0, c.observacion||'', (c.data===false)?'no_data':'pendiente', origenBandeja]);
+    // ZODME automático tras excavación no aprovechable (origen vacío: no es excavación aprovechable)
     if(c.data!==false && String(c.descripcion||'').toUpperCase().indexOf('NO APROVECHABLE')>=0){
         const proy=c.proyecto||'';
         banRows.push([Utilities.getUuid(), ts, fecha, reporta, rol, 'TIERRAS', 'EXPLANACIONES',
           'Conformación y disposición de sobrantes (ZODME)', 'Conformación y disposición de sobrantes',
           proy?(proy+'.02.08'):'', 'm3', c.uf, proy, c.elemento, c.pk_inicial, c.pk_final, c.abs_inicial, c.abs_final,
-          c.liberacion, c.largo, 'Auto · secuencial a no aprovechable', 'pendiente']);
+          c.liberacion, c.largo, 'Auto · secuencial a no aprovechable', 'pendiente', '']);
     }
     // equipos -> MAQUINARIA (layout Captura A→AA + internos del app, D52)
     const der = derivarActividad(c);
