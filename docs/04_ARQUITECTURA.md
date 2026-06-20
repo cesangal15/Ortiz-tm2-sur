@@ -26,7 +26,9 @@
 └────────────────────────────────────┬─────────────────────────────────────────────────--┘
                                      ▼
 ┌──────────────────────────── GOOGLE SHEETS (almacenamiento) ─────────────────────────────┐
-│  BANDEJA     crudo con estado (pendiente/incluido/descartado/no_data)                   │
+│  BANDEJA     crudo con estado (pendiente/incluido/descartado/no_data) · 23 cols          │
+│              +`origen` (col 23): banco de material de la chequeadora para excavación     │
+│              aprovechable (Masivo 1/2/Complementario/Otro); vacío capataz/enc (D56)      │
 │  MAQUINARIA  equipos con producción individual (directo, sin aprobación)                │
 │  VOLQUETAS   desglose por placa de la chequeadora (1 fila/placa, informativo; no a DATA) │
 │  CUBICAJE    catálogo placa→cubicaje (lo lee el backend; lo mantiene el usuario; D53/2.10)│
