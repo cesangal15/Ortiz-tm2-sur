@@ -133,7 +133,8 @@ MEDIA JORNADA y NO PROGRAMADO **no salen del app**; son ajuste manual del encarg
 | Chequeadora Diviso (foto, externa) | viajes del diviso | Préstamo — sin digitalizar (V3) |
 
 ## 7. Usuarios — CONFIRMADO (contraseñas de encargado/chequeadoras = placeholder)
-admin/venganza753 → menu · encargado/enc1-2 → encargado · capataz1-5/uf1-2 → reporte-capataz · chequeadora1-3/cheq1-2 → reporte-chequeadora.
+admin/venganza753 → menu · encargado/enc1-2 → encargado · residente/Ortiz2026 → residente · capataz1-5/uf1-2 → reporte-capataz · chequeadora1-3/cheq1-2 → reporte-chequeadora.
+**Residente** (rol `residente`, D57): entra a `residente.html` (panel de selección) → tile activo al Panel del Encargado (guard de `encargado.html` extendido para aceptar el rol) y tile "Resumen General" en placeholder ("Próximamente"). Resumen general post-DATA: pendiente (V2).
 
 ## 8. Reglas de reconciliación automática (encargado) — CONFIRMADO
 
