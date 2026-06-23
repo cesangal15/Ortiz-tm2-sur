@@ -203,12 +203,16 @@ function srcClass(c){ return c.rol==='chequeadora'?'cheq':c.rol==='encargado'?'e
 // Al cargar: si una categoría de volumen (excavación/terraplén) la reportó la chequeadora (oficial)
 // Y también un capataz (control), apaga las filas del capataz por defecto y las marca como control.
 // El encargado puede volver a prenderlas manualmente si hace falta.
+// D58: la no aprovechable / ZODME nacidas de descapote/desmonte llevan el sello 'orig:descapote/desmonte'
+// en su observación. El capataz es la única fuente de estos datos (la chequeadora no los maneja), así que
+// NO deben apagarse por una no aprovechable de chequeadora de otro frente.
+function esDerivadaDescapote(c){ return /orig:descapote\/desmonte/i.test(c.observacion||''); }
 function autoReconcile(){
   const rolesPorCat={};
-  STATE.cantidades.forEach(c=>{ if(c._nodata) return;
+  STATE.cantidades.forEach(c=>{ if(c._nodata || esDerivadaDescapote(c)) return;
     const cat=categoria(c); (rolesPorCat[cat]=rolesPorCat[cat]||new Set()).add(c.rol);
   });
-  STATE.cantidades.forEach(c=>{ if(c._nodata) return;
+  STATE.cantidades.forEach(c=>{ if(c._nodata || esDerivadaDescapote(c)) return;
     const cat=categoria(c);
     const hayCheq=(rolesPorCat[cat]||new Set()).has('chequeadora');
     if(c.rol==='capataz' && hayCheq && CAT_CONTROL_CAPATAZ.includes(cat)){
@@ -221,13 +225,13 @@ function autoReconcile(){
 // "hard" = además coincide el PK inicial exacto entre roles distintos.
 function computeDups(){
   const catRoles={}, catIdx={};
-  STATE.cantidades.forEach((c,idx)=>{ if(c._nodata||!c._inc) return;
+  STATE.cantidades.forEach((c,idx)=>{ if(c._nodata||!c._inc||esDerivadaDescapote(c)) return;
     const cat=categoria(c);
     (catIdx[cat]=catIdx[cat]||[]).push(idx);
     (catRoles[cat]=catRoles[cat]||new Set()).add(c.rol);
   });
   const info={};
-  STATE.cantidades.forEach((c,idx)=>{ if(c._nodata||!c._inc) return;
+  STATE.cantidades.forEach((c,idx)=>{ if(c._nodata||!c._inc||esDerivadaDescapote(c)) return;
     const cat=categoria(c), roles=catRoles[cat]||new Set();
     const crossRole = roles.has('chequeadora') && roles.has('capataz');
     if(!crossRole) return;
