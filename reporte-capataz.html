@@ -171,8 +171,8 @@ const ACTIVIDADES = [
   {g:'Subbase', a:'Cereo de subbase', item:'Cereo de subbase', uni:'m2', cc:'', medida:'m2_via', data:false},
   {g:'Base', a:'Base estabilizada con cemento (BTC)', item:'Base granular estabilizada con cemento', uni:'m3', cc:'03.03', medida:'m3', data:true},
   {g:'Pedraplén', a:'Pedraplén compacto', item:'Pedraplén compacto', uni:'m3', cc:'02.07', medida:'m3', data:true},
-  {g:'Desmonte', a:'Desmonte y limpieza en bosque', item:'Desmonte y limpieza en bosque', uni:'Ha', cc:'02.01', medida:'ha', data:true},
-  {g:'Desmonte', a:'Descapote / zonas no boscosas', item:'Desmonte y limpieza en zonas no boscosas', uni:'Ha', cc:'02.03', medida:'ha', data:true},
+  {g:'Desmonte', a:'Desmonte y limpieza en bosque', item:'Desmonte y limpieza en bosque', uni:'Ha', cc:'02.01', medida:'m2_desmonte', data:true, maqUnidad:'m2'},
+  {g:'Desmonte', a:'Descapote / zonas no boscosas', item:'Desmonte y limpieza en zonas no boscosas', uni:'Ha', cc:'02.03', medida:'m2_desmonte', data:true, maqUnidad:'m3'},
   {g:'Actividades de apoyo', a:'Compactación de terraplén', item:'Compactación de terraplén', uni:'', cc:'', medida:'apoyo', data:false, sub:'COMPACT_TERRAPLEN'},
   {g:'Actividades de apoyo', a:'Compactación de subbase', item:'Compactación de subbase', uni:'', cc:'', medida:'apoyo', data:false, sub:'COMPACT_SUBBASE'},
   {g:'Actividades de apoyo', a:'Compactación de BTC', item:'Compactación de BTC', uni:'', cc:'', medida:'apoyo', data:false, sub:'COMPACT_BTC'},
@@ -191,6 +191,20 @@ const ACTIVIDADES = [
   {g:'Estructuras / MSR', a:'Tubería PVC 4" perforada', item:'Tubería PVC d=4" para drenaje perforada MSR', uni:'M', cc:'05.03', medida:'directo', data:true},
 ];
 const ACT_IDX = {}; ACTIVIDADES.forEach(x=>ACT_IDX[x.a]=x);
+// D58: sello en la observación de las filas no aprovechable/ZODME nacidas de descapote/desmonte,
+// para que la reconciliación del encargado no las apague por una no aprovechable de chequeadora.
+const DESM_TAG = 'orig:descapote/desmonte';
+// Deriva las salidas del m² capturado en desmonte/descapote (D58): Ha contractual (÷10 000),
+// m³ no aprovechable (m²×espesor) y producción de la máquina (m² desmonte / m³ descapote).
+function desmonteVals(b, x){
+  const m2=parseFloat(b.querySelector('.l-m2').value)||0;
+  const espEl=b.querySelector('.l-espesor');
+  let esp=(espEl && espEl.value!=='')?parseFloat(espEl.value):0.2; if(isNaN(esp)) esp=0.2;
+  const ha=Math.round((m2/10000)*1e6)/1e6;
+  const m3=Math.round((m2*esp)*100)/100;
+  const prodMaq=(x.maqUnidad==='m2')?m2:m3;
+  return {m2, esp, ha, m3, prodMaq, maqU:(x.maqUnidad==='m2'?'m²':'m³')};
+}
 function capFromCc(cc){ if(!cc) return ''; const p=cc.split('.')[0]; return p==='02'?'EXPLANACIONES':p==='03'?'BASES, SUBBASES Y AFIRMADOS':'ESTRUCTURAS'; }
 function grupoFromCc(cc){ if(!cc) return 'TIERRAS'; return cc.split('.')[0]==='05'?'DRENAJES Y ESTRUCTURAS':'TIERRAS'; }
 
@@ -274,6 +288,14 @@ function renderProd(i, x){
       +'</div>'
       +'<div style="font-size:11px;color:var(--muted);margin-top:6px;">= (PK final − PK inicial) × ancho. No va a DATA; queda en la producción de la máquina.</div>';
     recalcM2(i);
+  } else if(x.medida==='m2_desmonte'){
+    // D58: captura directa en m² (no se calcula del PK). Genera Ha contractual + no aprovechable + ZODME.
+    cont.innerHTML=
+      '<div class="grid2">'
+      +'<div class="field" style="margin:0;"><label>Producción (m²) <span class="req">*</span></label><div class="largo-wrap"><input type="number" step="any" class="l-m2" placeholder="0" oninput="refreshAll()"><span class="largo-unit">m²</span></div></div>'
+      +'<div class="field" style="margin:0;"><label>Espesor (m)</label><input type="number" step="any" class="l-espesor" value="0.2" oninput="refreshAll()"></div>'
+      +'</div>'
+      +'<div class="item-hint" id="desmDeriv_'+i+'" style="display:block;font-size:11px;color:var(--muted);margin-top:6px;"></div>';
   } else {
     const lbl = x.medida==='ha' ? 'Producción (Ha)' : (x.medida==='directo' ? ('Cantidad ('+x.uni+')') : 'Producción (m³)');
     cont.innerHTML=
@@ -306,7 +328,7 @@ function onActChange(i){
   }
   meta.style.display='flex';
   hint.innerHTML = x.data ? ('→ ítem: <b>'+x.item+'</b>') : '→ <b>'+x.item+'</b> · solo maquinaria (no va a DATA)';
-  const uniB=document.getElementById('uniBadge_'+i); uniB.textContent=x.uni; uniB.className='badge unidad';
+  const uniB=document.getElementById('uniBadge_'+i); uniB.textContent=(x.medida==='m2_desmonte')?'m² → Ha':x.uni; uniB.className='badge unidad';
   pkfOpt.textContent = (x.medida==='m2_via') ? '(requerido)' : '(opcional)';
   renderProd(i, x);
   onPkChange(i);
@@ -394,7 +416,22 @@ function refreshDuplicates(){
 }
 function refreshAll(){
   refreshDuplicates();
+  updateDesmHints();
   updateResumen();
+}
+/* D58 — pinta bajo el m² capturado lo que la app va a generar (Ha · no aprovechable · ZODME · máquina). */
+function updateDesmHints(){
+  document.querySelectorAll('#cantidadesContainer .linea').forEach(b=>{
+    const a=b.querySelector('.l-act').value; if(!a) return;
+    const x=ACT_IDX[a]; if(!x || x.medida!=='m2_desmonte') return;
+    const div=document.getElementById('desmDeriv_'+b.id.split('_')[1]); if(!div) return;
+    const v=desmonteVals(b, x);
+    if(v.m2>0){
+      div.innerHTML='→ DATA: <b>'+fmtNum(v.ha)+' Ha</b> (m²÷10 000) · no aprovechable <b>'+fmtNum(v.m3)+' m³</b> (×'+v.esp+') → ZODME auto <b>'+fmtNum(v.m3)+' m³</b> · máquina '+fmtNum(v.prodMaq)+' '+v.maqU;
+    } else {
+      div.innerHTML='= m²÷10 000 a DATA (Ha) · m²×espesor a no aprovechable (m³) → ZODME auto · máquina '+(x.maqUnidad==='m2'?'m²':'m³');
+    }
+  });
 }
 
 function refreshCounts(){
@@ -423,6 +460,7 @@ function lineaProd(li){
     const ai=pkToMeters(b.querySelector('.l-pki').value), af=pkToMeters(b.querySelector('.l-pkf').value), an=parseFloat(b.querySelector('.l-ancho').value)||0;
     return (ai!=null&&af!=null&&an>0)?Math.round(Math.abs(af-ai)*an*100)/100:null;
   }
+  if(x.medida==='m2_desmonte'){ const v=desmonteVals(b, x); return v.prodMaq>0?v.prodMaq:null; } // producción real de la máquina (m²/m³)
   const prodEl=b.querySelector('.l-prod'); const v=prodEl?parseFloat(prodEl.value):NaN;
   return isNaN(v)?null:v;
 }
@@ -454,7 +492,8 @@ function gatherMachineGroups(){
         motivo:eqMotivo(eq), muertasTotal:0, appearances:[] };
       order.push(id);
     }
-    map[id].appearances.push({ eqId:eq.id, lineaId:li, actLabel:(a||'(sin actividad)'), pkTxt, prod:lineaProd(li), unidad:(x?x.uni:'') });
+    const apUni = (x && x.medida==='m2_desmonte') ? (x.maqUnidad==='m2'?'m²':'m³') : (x?x.uni:'');
+    map[id].appearances.push({ eqId:eq.id, lineaId:li, actLabel:(a||'(sin actividad)'), pkTxt, prod:lineaProd(li), unidad:apUni });
   });
   order.forEach(id=>{
     const g=map[id], n=g.appearances.length;
@@ -493,6 +532,12 @@ function updateResumen(){
     } else if(x.medida==='m2_via'){
       const m2=b.querySelector('.l-m2disp'); const val=m2?m2.value:'';
       prodHtml=val?'<div class="resumen-prod">'+val+' m²</div>':'';
+    } else if(x.medida==='m2_desmonte'){
+      const m2El=b.querySelector('.l-m2');
+      if(m2El && m2El.value){ const v=desmonteVals(b, x);
+        prodHtml='<div class="resumen-prod">'+fmtNum(v.m2)+' m² → '+fmtNum(v.ha)+' Ha (DATA)</div>'
+          +'<div class="resumen-pk" style="color:var(--muted)">+ no aprovechable '+fmtNum(v.m3)+' m³ → ZODME '+fmtNum(v.m3)+' m³ · máquina '+fmtNum(v.prodMaq)+' '+v.maqU+'</div>';
+      } else { prodHtml='<div class="resumen-warn">⚠ sin producción</div>'; warnings++; sinProd=true; }
     } else if(prodEl && prodEl.value){
       prodHtml='<div class="resumen-prod">'+prodEl.value+' '+x.uni+'</div>';
     } else {
@@ -556,6 +601,28 @@ function getCantidades(){
     const x=ACT_IDX[a];
     const pki=b.querySelector('.l-pki').value.trim(), pkf=b.querySelector('.l-pkf').value.trim();
     const uf=ufFromPk(pki), proy=proyectoFromUf(uf);
+    // D58 — desmonte (02.01) / descapote (02.03): captura en m² → genera 3 filas a DATA.
+    if(x.medida==='m2_desmonte'){
+      const v=desmonteVals(b, x);
+      const obs=b.querySelector('.l-obs').value.trim();
+      // la máquina vive en la actividad de desmonte/descapote (D20): su producción = m²(desmonte)/m³(descapote)
+      const equiposD=[];
+      b.querySelectorAll('.eq-item').forEach(r=>{ const e=byEq[r.id]; if(e) equiposD.push({...e, produccion:TIPOS_SIN_PRODUCCION.includes(e.tipo_equipo)?null:v.prodMaq}); });
+      // Fila A — contractual a DATA en Ha (m²÷10 000); lleva la máquina con prod_maquina en m²/m³
+      rows.push({ grupo:grupoFromCc(x.cc), capitulo:capFromCc(x.cc), actividad:a, descripcion:x.item, sub_actividad:'',
+        centro_costo: proy?(proy+'.'+x.cc):'', unidad:x.uni, data:true, uf:uf||'', proyecto:proy,
+        elemento:buildElemento(pki,pkf), pk_inicial:pki, pk_final:pkf, abs_inicial:pkToMeters(pki), abs_final:pkToMeters(pkf),
+        liberacion:'CAMPO', largo:v.ha, observacion:obs, equipos:equiposD,
+        prod_maquina:v.prodMaq, unidad_maquina:v.maqU });
+      // Fila B — excavación no aprovechable (m²×espesor) en m³; hereda PK/UF (D04); CC=proy.02.05.
+      // El backend encadena la ZODME (Fila C, 02.08) por la ruta existente de D17. Sin máquina propia.
+      rows.push({ grupo:'TIERRAS', capitulo:'EXPLANACIONES', actividad:'Excavación no aprovechable',
+        descripcion:'Excavaciones en material común NO APROVECHABLE', sub_actividad:'',
+        centro_costo: proy?(proy+'.02.05'):'', unidad:'m3', data:true, uf:uf||'', proyecto:proy,
+        elemento:buildElemento(pki,pkf), pk_inicial:pki, pk_final:pkf, abs_inicial:pkToMeters(pki), abs_final:pkToMeters(pkf),
+        liberacion:'CAMPO', largo:v.m3, observacion:(obs?obs+' · ':'')+DESM_TAG, equipos:[], derivada:'descapote_desmonte' });
+      return;
+    }
     let largo;
     const lineaI = b.id.split('_')[1];
     if(x.medida==='m2_via'){ const ai=pkToMeters(pki), af=pkToMeters(pkf), an=parseFloat(b.querySelector('.l-ancho').value)||0; largo=(ai!=null&&af!=null&&an>0)?Math.round(Math.abs(af-ai)*an*100)/100:0; }
@@ -587,6 +654,7 @@ function validate(){
     const lineaI=b.id.split('_')[1];
     if(!pki.value.trim() && x.medida!=='apoyo'){ pki.classList.add('field-error'); ok=false; }
     if(x.medida==='m2_via'){ if(!pkf.value.trim()){ pkf.classList.add('field-error'); ok=false; } }
+    else if(x.medida==='m2_desmonte'){ const m2=b.querySelector('.l-m2'); if(m2 && !m2.value){ m2.classList.add('field-error'); ok=false; } }
     else if(x.medida!=='apoyo'){
       const prodDiv=document.getElementById('prod_'+lineaI);
       const prod=b.querySelector('.l-prod');

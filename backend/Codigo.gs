@@ -300,22 +300,31 @@ function guardarReporte(body){
     banRows.push([idC, ts, fecha, reporta, rol, c.grupo||'', c.capitulo||'', c.actividad||'', c.descripcion||'', c.centro_costo||'',
       c.unidad||'', c.uf||'', c.proyecto||'', c.elemento||'', c.pk_inicial||'', c.pk_final||'', c.abs_inicial||'', c.abs_final||'', c.liberacion||'CAMPO',
       c.largo||0, c.observacion||'', (c.data===false)?'no_data':'pendiente', origenBandeja]);
-    // ZODME automático tras excavación no aprovechable (origen vacío: no es excavación aprovechable)
+    // ZODME automático tras excavación no aprovechable (origen vacío: no es excavación aprovechable).
+    // D58: si la no aprovechable nació de descapote/desmonte (c.derivada), el ZODME hereda el sello
+    // 'orig:descapote/desmonte' en su observación para que la reconciliación del encargado no lo apague
+    // por una no aprovechable de chequeadora de otro frente.
     if(c.data!==false && String(c.descripcion||'').toUpperCase().indexOf('NO APROVECHABLE')>=0){
         const proy=c.proyecto||'';
+        const obsZodme = c.derivada ? 'Auto · ZODME de descapote/desmonte · orig:descapote/desmonte'
+                                    : 'Auto · secuencial a no aprovechable';
         banRows.push([Utilities.getUuid(), ts, fecha, reporta, rol, 'TIERRAS', 'EXPLANACIONES',
           'Conformación y disposición de sobrantes (ZODME)', 'Conformación y disposición de sobrantes',
           proy?(proy+'.02.08'):'', 'm3', c.uf, proy, c.elemento, c.pk_inicial, c.pk_final, c.abs_inicial, c.abs_final,
-          c.liberacion, c.largo, 'Auto · secuencial a no aprovechable', 'pendiente', '']);
+          c.liberacion, c.largo, obsZodme, 'pendiente', '']);
     }
     // equipos -> MAQUINARIA (layout Captura A→AA + internos del app, D52)
     const der = derivarActividad(c);
     (c.equipos||[]).forEach(m=>{
       const esVibro = esTipoSinProduccion(m.tipo_equipo);
       const esApoyo = (c.actividad||'') === 'APOYO';
-      // T Producción: largo de la actividad EXCEPTO vibros/minis y actividades de apoyo → blanco (D41/D44)
-      const prod  = (esVibro || esApoyo || c.largo == null || c.largo === '') ? '' : c.largo;
-      const uProd = (prod === '') ? '' : (c.unidad || '');
+      // T Producción: largo de la actividad EXCEPTO vibros/minis y actividades de apoyo → blanco (D41/D44).
+      // D58: desmonte/descapote llevan la producción de la máquina aparte (m²/m³), distinta del largo
+      // contractual de la fila (Ha). Si la fila trae prod_maquina, ese valor (y su unidad) manda en T.
+      const tieneProdMaq = (c.prod_maquina != null && c.prod_maquina !== '');
+      const baseProd = tieneProdMaq ? c.prod_maquina : c.largo;
+      const prod  = (esVibro || esApoyo || baseProd == null || baseProd === '') ? '' : baseProd;
+      const uProd = (prod === '') ? '' : (tieneProdMaq ? (c.unidad_maquina || '') : (c.unidad || ''));
       // O Horas Mantenimiento: prog−oper solo si motivo=Mantenimiento; en otro caso blanco
       const esMant = (m.motivo||'').trim().toLowerCase().indexOf('mantenimiento') >= 0;
       const hMant  = esMant ? Math.max(0, (parseFloat(m.horas_programadas)||0) - (parseFloat(m.horas_operadas)||0)) : '';

@@ -24,8 +24,10 @@ Formato: actividad de campo → ítem contractual | unidad | CC | medición | ¿
 - Base estabilizada con cemento (BTC) → Base granular estabilizada con cemento | m3 | 03.03 | m³ directo | Sí
 
 ### Desmonte
-- Desmonte y limpieza en bosque → ídem | Ha | 02.01 | Ha | Sí
-- Descapote / zonas no boscosas → Desmonte y limpieza en zonas no boscosas | Ha | 02.03 | Ha | Sí
+- Desmonte y limpieza en bosque → ídem | captura m² → DATA en Ha (÷10 000) | 02.01 | + genera no aprovechable (02.05, m²×espesor) → ZODME (02.08) | Sí. Máquina: producción en m².
+- Descapote / zonas no boscosas → Desmonte y limpieza en zonas no boscosas | captura m² → DATA en Ha (÷10 000) | 02.03 | + genera no aprovechable (02.05, m²×espesor) → ZODME (02.08) | Sí. Máquina: producción en m³ (m²×espesor).
+
+(Nota: espesor editable, default 0.2 — D58.)
 
 ### Estructuras / MSR
 - Relleno para muros de tierra MSR | M3 | 05.04 | directo | Sí
