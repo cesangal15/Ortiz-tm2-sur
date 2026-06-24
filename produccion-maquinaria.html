@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Producción de Maquinaria</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--success:#2ecc71;--error:#e74c3c;--input-bg:#12151f;--uf1:#3a9bdc;--uf2:#9b59b6;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:0 0 40px;}
+  .header{background:linear-gradient(135deg,#1a1d27 0%,#0f1117 100%);border-bottom:3px solid var(--accent);padding:20px 24px;display:flex;align-items:center;justify-content:space-between;}
+  .header-left .label{font-family:'Syne',sans-serif;font-size:10px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;}
+  .header-left h1{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;}
+  .header-user{font-size:12px;color:var(--muted);text-align:right;}
+  .header-user span{display:block;color:var(--accent);font-weight:600;}
+  .logout-btn{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:4px 10px;cursor:pointer;margin-top:4px;font-family:'DM Sans',sans-serif;}
+  .logout-btn:hover{border-color:var(--error);color:var(--error);}
+  .container{max-width:720px;margin:0 auto;padding:24px 16px;}
+  .filtro-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px;}
+  .filtro-row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;}
+  .field{flex:1;min-width:130px;}
+  label{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-bottom:5px;letter-spacing:0.5px;text-transform:uppercase;}
+  input[type="date"],input[type="number"],select{width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 14px;outline:none;transition:border-color 0.2s;appearance:none;color-scheme:dark;}
+  input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,0.1);}
+  .btn-consultar{padding:10px 18px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:8px;color:#0f1117;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;}
+  .btn-consultar:hover{transform:translateY(-1px);}
+  .nota{background:rgba(58,155,220,0.07);border:1px solid rgba(58,155,220,0.3);border-radius:10px;padding:11px 13px;font-size:12px;color:var(--text);line-height:1.5;margin-bottom:16px;}
+  .nota b{color:var(--uf1);}
+  .frente{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:14px;}
+  .frente-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--border);}
+  .frente-cc{font-family:'Syne',sans-serif;font-size:13px;font-weight:800;color:var(--accent);}
+  .badge{font-size:10px;font-weight:600;padding:1px 8px;border-radius:12px;border:1px solid var(--border);}
+  .badge.uf1{border-color:rgba(58,155,220,0.4);color:var(--uf1);} .badge.uf2{border-color:rgba(155,89,182,0.4);color:var(--uf2);}
+  .frente-ofi{margin-left:auto;font-size:12px;color:var(--muted);text-align:right;}
+  .frente-ofi b{font-family:'Syne',sans-serif;color:var(--success);font-size:14px;}
+  .maq-row{display:grid;grid-template-columns:64px 1fr auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);}
+  .maq-row:last-child{border-bottom:none;}
+  .maq-id{font-family:'Syne',sans-serif;font-weight:700;font-size:14px;white-space:nowrap;}
+  .maq-info{min-width:0;}
+  .maq-act{font-size:12.5px;font-weight:600;}
+  .maq-sub{font-size:11px;color:var(--muted);margin-top:2px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+  .pill{font-size:10px;font-weight:600;padding:1px 7px;border-radius:12px;border:1px solid var(--border);color:var(--muted);}
+  .pill.orig{border-color:rgba(245,166,35,0.5);color:var(--accent);background:rgba(245,166,35,0.07);}
+  .maq-edit{width:108px;}
+  .maq-edit label{font-size:9px;margin-bottom:3px;}
+  .maq-edit input{padding:8px 10px;font-size:13px;text-align:right;}
+  .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+  .btn-action{flex:1;min-width:160px;padding:14px;border-radius:10px;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:0.5px;border:1px solid var(--border);background:var(--surface);color:var(--text);}
+  .btn-action.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#0f1117;border:none;}
+  .btn-action:hover{transform:translateY(-1px);}
+  .btn-action:disabled{opacity:0.5;cursor:not-allowed;transform:none;}
+  .msg-box{margin-top:16px;border-radius:10px;padding:13px;font-size:13px;line-height:1.5;display:none;}
+  .msg-box.ok{background:rgba(46,204,113,0.08);border:1px solid rgba(46,204,113,0.4);color:var(--success);}
+  .msg-box.err{background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.45);color:var(--error);}
+  .empty-state{text-align:center;padding:40px 20px;color:var(--muted);}
+  .empty-state .icon{font-size:40px;margin-bottom:12px;}
+  .loading{text-align:center;padding:30px;color:var(--muted);font-size:14px;}
+  @media(max-width:480px){.maq-row{grid-template-columns:54px 1fr;}.maq-edit{grid-column:1/-1;width:140px;justify-self:end;}}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <div class="label">Maquinaria · Admin</div>
+    <h1>⚙️ Producción de Maquinaria</h1>
+  </div>
+  <div class="header-user">
+    <span id="userDisplay">—</span>
+    <button class="logout-btn" onclick="logout()">Salir</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="filtro-card">
+    <div class="filtro-row">
+      <div class="field"><label>Fecha</label><input type="date" id="fecha"></div>
+      <button class="btn-consultar" onclick="consultar()">CONSULTAR →</button>
+    </div>
+  </div>
+  <div id="resultados">
+    <div class="empty-state"><div class="icon">⚙️</div><p>Selecciona una fecha para ajustar la producción de las máquinas de excavación / terraplén.</p></div>
+  </div>
+</div>
+
+<script>
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
+const CC_LABEL = {'02.05':'Excavación común','02.06':'Excavación préstamo','02.07':'Terraplén','02.08':'Conformación / ZODME'};
+let STATE = { fecha:'', filas:[] };
+
+window.onload = function(){
+  const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
+  if(!rol || rol!=='admin'){ window.location.href='index.html'; return; }
+  document.getElementById('userDisplay').textContent=usuario||'admin';
+  document.getElementById('fecha').value=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
+};
+function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
+function fmt(n){ return (Math.round((parseFloat(n)||0)*100)/100).toLocaleString('es-CO'); }
+function ufLabel(proy){ return proy==='3701'?'UF1':proy==='3702'?'UF2':(proy||''); }
+
+async function consultar(){
+  const fecha=document.getElementById('fecha').value;
+  if(!fecha){ alert('Selecciona una fecha'); return; }
+  document.getElementById('resultados').innerHTML='<div class="loading">⏳ Cargando producción de maquinaria...</div>';
+  try{
+    const resp=await fetch(`${APPS_SCRIPT_URL}?action=maquinaria_produccion&fecha=${fecha}`);
+    const data=await resp.json();
+    STATE.fecha=fecha;
+    STATE.filas=data.filas||[];
+    render();
+  }catch(err){
+    document.getElementById('resultados').innerHTML='<div class="empty-state"><div class="icon">⚠️</div><p>No se pudo consultar. Revisa el Apps Script o la conexión.</p></div>';
+  }
+}
+
+function render(){
+  const cont=document.getElementById('resultados');
+  if(!STATE.filas.length){
+    cont.innerHTML='<div class="empty-state"><div class="icon">🗓️</div><p>No hay máquinas de excavación / terraplén / ZODME reportadas para esta fecha.</p></div>';
+    return;
+  }
+  // Agrupar por frente: proyecto|CC (mismo orden que llegó del backend)
+  const grupos={}, orden=[];
+  STATE.filas.forEach((f,i)=>{
+    const k=(f.proyecto||'')+'|'+f.cc;
+    if(!grupos[k]){ grupos[k]={proyecto:f.proyecto, cc:f.cc, oficial:f.volumen_oficial, n:f.n_maquinas, filas:[]}; orden.push(k); }
+    grupos[k].filas.push({...f, _idx:i});
+  });
+  let html='<div class="nota">Este panel <b>lee DATA</b> (volumen oficial de la chequeadora) y <b>lee/escribe MAQUINARIA</b>. '+
+    'Nunca modifica DATA. Excavación viene prellenada (oficial ÷ nº de máquinas); terraplén / ZODME se reparte a mano.</div>';
+  orden.forEach(k=>{
+    const g=grupos[k];
+    html+='<div class="frente">';
+    html+='<div class="frente-head">'+
+            '<span class="frente-cc">'+g.cc+'</span>'+
+            '<span class="badge '+(g.proyecto==='3701'?'uf1':'uf2')+'">'+ufLabel(g.proyecto)+'</span>'+
+            '<span style="font-size:12px;color:var(--muted);">'+(CC_LABEL[g.cc]||'')+'</span>'+
+            '<span class="frente-ofi">Oficial DATA<br><b>'+fmt(g.oficial)+'</b> m³ · '+g.n+' máq.</span>'+
+          '</div>';
+    g.filas.forEach(f=>{
+      const orig=(f.produccion_orig!==''&&f.produccion_orig!=null);
+      html+='<div class="maq-row">'+
+              '<div class="maq-id">'+f.id_maquina+'</div>'+
+              '<div class="maq-info">'+
+                '<div class="maq-act">'+f.actividad+'</div>'+
+                '<div class="maq-sub">'+
+                  '<span class="pill">actual: '+(f.produccion_actual===''?'—':fmt(f.produccion_actual))+'</span>'+
+                  (orig?'<span class="pill orig">orig. capataz: '+fmt(f.produccion_orig)+'</span>':'')+
+                '</div>'+
+              '</div>'+
+              '<div class="maq-edit"><label>Producción</label>'+
+                '<input type="number" step="0.01" inputmode="decimal" data-idx="'+f._idx+'" value="'+(f.prefill===''?'':f.prefill)+'" placeholder="'+(f.tipo==='terraplen'?'reparto':'')+'"></div>'+
+            '</div>';
+    });
+    html+='</div>';
+  });
+  html+='<div class="actions"><button class="btn-action primary" id="btnGuardar" onclick="guardar()">💾 GUARDAR PRODUCCIÓN</button></div>';
+  html+='<div class="msg-box" id="msg"></div>';
+  cont.innerHTML=html;
+}
+
+async function guardar(){
+  const ajustes=[];
+  document.querySelectorAll('#resultados input[data-idx]').forEach(inp=>{
+    const val=inp.value.trim();
+    if(val===''){ return; } // en blanco = no se parcha (terraplén pendiente de reparto)
+    const f=STATE.filas[parseInt(inp.dataset.idx,10)];
+    if(!f || !f.id_registro) return;
+    ajustes.push({ id_registro:f.id_registro, produccion:parseFloat(val) });
+  });
+  const msg=document.getElementById('msg');
+  if(!ajustes.length){ msg.className='msg-box err'; msg.style.display='block'; msg.textContent='No hay producciones para guardar (todos los campos están en blanco).'; return; }
+  const btn=document.getElementById('btnGuardar'); btn.disabled=true; btn.textContent='Guardando...';
+  try{
+    const resp=await fetch(APPS_SCRIPT_URL, {
+      method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify({ action:'maquinaria_produccion', fecha:STATE.fecha, ajustes })
+    });
+    const data=await resp.json();
+    if(data && data.ok){
+      await consultar(); // recarga para reflejar el original guardado y los nuevos valores
+      const m2=document.getElementById('msg');
+      if(m2){ m2.className='msg-box ok'; m2.style.display='block';
+        m2.textContent='✓ Producción actualizada en MAQUINARIA: '+(data.actualizadas||0)+' fila(s). DATA quedó intacta.'; }
+    }else{
+      msg.className='msg-box err'; msg.style.display='block';
+      msg.textContent='Error al guardar: '+((data&&data.error)||'respuesta inesperada');
+    }
+  }catch(err){
+    msg.className='msg-box err'; msg.style.display='block';
+    msg.textContent='No se pudo guardar. Revisa el Apps Script o la conexión.';
+  }finally{
+    const b=document.getElementById('btnGuardar'); if(b){ b.disabled=false; b.textContent='💾 GUARDAR PRODUCCIÓN'; }
+  }
+}
+</script>
+</body>
+</html>
