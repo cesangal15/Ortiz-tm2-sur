@@ -605,22 +605,34 @@ function getCantidades(){
     if(x.medida==='m2_desmonte'){
       const v=desmonteVals(b, x);
       const obs=b.querySelector('.l-obs').value.trim();
-      // la máquina vive en la actividad de desmonte/descapote (D20): su producción = m²(desmonte)/m³(descapote)
-      const equiposD=[];
-      b.querySelectorAll('.eq-item').forEach(r=>{ const e=byEq[r.id]; if(e) equiposD.push({...e, produccion:TIPOS_SIN_PRODUCCION.includes(e.tipo_equipo)?null:v.prodMaq}); });
-      // Fila A — contractual a DATA en Ha (m²÷10 000); lleva la máquina con prod_maquina en m²/m³
+      // La máquina del frente (D20) va a DOS filas de MAQUINARIA: la contractual (desmonte/descapote,
+      // producción m²/m³) y la no aprovechable (producción m³). Es una sola operación física, así que
+      // las horas operadas se reparten por igual entre ambas (suma = horas reales, espíritu de D46);
+      // las programadas/muertas/motivo quedan en la fila A para que el encargado calcule bien las
+      // muertas (prog − Σoper). La ZODME (Fila C) NO lleva máquina.
+      const equiposA=[], equiposB=[];
+      b.querySelectorAll('.eq-item').forEach(r=>{
+        const e=byEq[r.id]; if(!e) return;
+        const sinProd=TIPOS_SIN_PRODUCCION.includes(e.tipo_equipo);
+        const opAll=parseFloat(e.horas_operadas)||0;
+        const opA=Math.round((opAll/2)*100)/100, opB=Math.round((opAll-opA)*100)/100;
+        equiposA.push({...e, horas_operadas:opA, produccion:sinProd?null:v.prodMaq});
+        equiposB.push({...e, horas_operadas:opB, horas_programadas:0, horas_muertas:0, motivo:'', produccion:sinProd?null:v.m3});
+      });
+      // Fila A — contractual a DATA en Ha (m²÷10 000); máquina con prod_maquina en m²/m³
       rows.push({ grupo:grupoFromCc(x.cc), capitulo:capFromCc(x.cc), actividad:a, descripcion:x.item, sub_actividad:'',
         centro_costo: proy?(proy+'.'+x.cc):'', unidad:x.uni, data:true, uf:uf||'', proyecto:proy,
         elemento:buildElemento(pki,pkf), pk_inicial:pki, pk_final:pkf, abs_inicial:pkToMeters(pki), abs_final:pkToMeters(pkf),
-        liberacion:'CAMPO', largo:v.ha, observacion:obs, equipos:equiposD,
+        liberacion:'CAMPO', largo:v.ha, observacion:obs, equipos:equiposA,
         prod_maquina:v.prodMaq, unidad_maquina:v.maqU });
       // Fila B — excavación no aprovechable (m²×espesor) en m³; hereda PK/UF (D04); CC=proy.02.05.
-      // El backend encadena la ZODME (Fila C, 02.08) por la ruta existente de D17. Sin máquina propia.
+      // Lleva la misma máquina (mitad de horas, producción m³ vía su largo). El backend encadena la
+      // ZODME (Fila C, 02.08) por la ruta existente de D17 — esa sí sin máquina.
       rows.push({ grupo:'TIERRAS', capitulo:'EXPLANACIONES', actividad:'Excavación no aprovechable',
         descripcion:'Excavaciones en material común NO APROVECHABLE', sub_actividad:'',
         centro_costo: proy?(proy+'.02.05'):'', unidad:'m3', data:true, uf:uf||'', proyecto:proy,
         elemento:buildElemento(pki,pkf), pk_inicial:pki, pk_final:pkf, abs_inicial:pkToMeters(pki), abs_final:pkToMeters(pkf),
-        liberacion:'CAMPO', largo:v.m3, observacion:(obs?obs+' · ':'')+DESM_TAG, equipos:[], derivada:'descapote_desmonte' });
+        liberacion:'CAMPO', largo:v.m3, observacion:(obs?obs+' · ':'')+DESM_TAG, equipos:equiposB, derivada:'descapote_desmonte' });
       return;
     }
     let largo;

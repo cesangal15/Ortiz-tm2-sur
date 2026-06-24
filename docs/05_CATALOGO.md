@@ -27,7 +27,7 @@ Formato: actividad de campo → ítem contractual | unidad | CC | medición | ¿
 - Desmonte y limpieza en bosque → ídem | captura m² → DATA en Ha (÷10 000) | 02.01 | + genera no aprovechable (02.05, m²×espesor) → ZODME (02.08) | Sí. Máquina: producción en m².
 - Descapote / zonas no boscosas → Desmonte y limpieza en zonas no boscosas | captura m² → DATA en Ha (÷10 000) | 02.03 | + genera no aprovechable (02.05, m²×espesor) → ZODME (02.08) | Sí. Máquina: producción en m³ (m²×espesor).
 
-(Nota: espesor editable, default 0.2 — D58.)
+(Nota: espesor editable, default 0.2. La máquina del frente se atribuye a DOS filas de MAQUINARIA —la contractual con producción m²/m³ y la no aprovechable con producción m³— repartiendo las horas operadas por igual; la ZODME no lleva máquina. D58.)
 
 ### Estructuras / MSR
 - Relleno para muros de tierra MSR | M3 | 05.04 | directo | Sí
