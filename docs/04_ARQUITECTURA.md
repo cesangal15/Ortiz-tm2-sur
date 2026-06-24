@@ -8,7 +8,8 @@
 │                        ├── encargado.html      (encargado, admin)                       │
 │                        ├── reporte-capataz.html (capataz, encargado, admin)             │
 │                        ├── reporte-chequeadora.html (chequeadora, admin)                │
-│                        └── estado.html          (admin)                                 │
+│                        ├── estado.html          (admin)                                 │
+│                        └── produccion-maquinaria.html (admin · ajuste de producción)    │
 │  Sesión: sessionStorage {usuario, rol}. Credenciales hardcoded en index.html.           │
 └────────────────────────────────────┬─────────────────────────────────────────────────--┘
                                      │ fetch GET/POST (Content-Type: text/plain)
@@ -19,8 +20,10 @@
 │  GET  ?action=estado&fecha=…                 → máquinas reportadas (estado.html)        │
 │  GET  ?action=debug&fecha=…                  → diagnóstico                              │
 │  GET  ?action=cubicaje                        → mapa placa→cubicaje (frontend, D53/2.10) │
+│  GET  ?action=maquinaria_produccion&fecha=…  → cruce MAQUINARIA(CC 02.05-08)×oficial DATA│
 │  POST {reporte}                              → escribe BANDEJA + MAQUINARIA (+VOLQUETAS)  │
 │  POST {action:enviar_data}                   → pisa DATA del día + marca bandeja        │
+│  POST {action:maquinaria_produccion}         → parcha SOLO col T de MAQUINARIA (2.4/D59) │
 │  Regla técnica: fechas por duck-typing (getFullYear), nunca instanceof Date.            │
 │  Redespliegue: Administrar implementaciones → editar → Nueva versión (misma URL).       │
 └────────────────────────────────────┬─────────────────────────────────────────────────--┘
@@ -73,3 +76,4 @@ Captura_Diaria es una **tabla de Excel** (`fact_produccion`, A1:AA). Se pegan SO
 - **En blanco aunque sean editables:** S CLIMA (pospuesto, D37) · Y Viajes (no aplica a maquinaria).
 - **Derivaciones del app:** H/I desde la actividad del capataz (05_CATALOGO §1) · R ESTADO desde el motivo (05_CATALOGO §5) · O = prog−oper solo si motivo=Mantenimiento · T en blanco para vibros y actividades de apoyo (D41/D44).
 - La hoja MAQUINARIA del Sheets se reordena a este layout A→AA; los internos del app (id_registro, timestamp, reporta, motivo, unidad_prod, etc.) quedan **después de AA** para trazabilidad.
+- El panel de producción (2.4/D59) añade un interno más tras AA, `produccion_capataz_orig`, donde guarda el estimado geométrico del capataz (col T original) la primera vez que sustituye la producción por el volumen oficial. El panel parcha **solo** la col T (Producción) de MAQUINARIA; nunca toca DATA ni BANDEJA.
