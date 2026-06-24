@@ -9,6 +9,8 @@
  *   GET  ?action=consolidado&fecha=...   -> {cantidades:[](de DATA, ya enviado)}
  *   GET  ?action=estado&fecha=...        -> {reportadas:[{id_maquina,capataz}]}
  *   GET  ?action=cubicaje                -> {cubicaje:{PLACA:cubicaje,...}}  (catálogo placa→m³/viaje, D53)
+ *   GET  ?action=maquinaria_produccion&fecha=...  -> cruce MAQUINARIA(CC 02.05-08) × volumen oficial DATA (2.4/D55)
+ *   POST {action:'maquinaria_produccion', fecha, ajustes:[{id_registro,produccion}]} -> parcha SOLO col T de MAQUINARIA
  *   GET  ?action=debug&fecha=...
  *   POST  reporte: {fecha,rol,capataz,cantidades:[{...,equipos:[]}],volquetas:[{origen,destino,tipo_destino,uf,placas:[{placa,viajes}]}],maquinaria:[{id_maquina,...}]}
  *           -> BANDEJA (+ MAQUINARIA) ; chequeadora además -> VOLQUETAS (una fila por placa)
@@ -47,7 +49,11 @@ const MAQ_HEADERS = [
   'produccion','meta','pct_ef','rendimiento','unitario','viajes','costo','observacion',
   // ---- internos del app (después de AA) ----
   'app_id_registro','id_cantidad','timestamp','reporta','app_tipo_equipo',
-  'app_horas_programadas','app_horas_muertas','motivo','unidad_prod','cap_actividad','a_captura'];
+  'app_horas_programadas','app_horas_muertas','motivo','unidad_prod','cap_actividad','a_captura',
+  // produccion_capataz_orig: estimado geométrico original del capataz (largo, D20) que el panel
+  // produccion-maquinaria.html (2.4/D55) sustituye por el volumen oficial de la chequeadora.
+  // Se escribe SOLO la primera vez que se ajusta la fila, para conservar el estimado original.
+  'produccion_capataz_orig'];
 
 // Mapa actividad del capataz → [actividad(H), SUB ACTIVIDAD(I)] de Captura_Diaria (05_CATALOGO §1, D52)
 const CAPTURA_ACT_MAP = {
@@ -250,13 +256,15 @@ function doGet(e){
   if(a==='consolidado') return consolidado(e);
   if(a==='estado')      return estado(e);
   if(a==='cubicaje')    return json({ok:true, cubicaje:getCubicajeMap()});
+  if(a==='maquinaria_produccion') return maquinariaProduccion(e);
   if(a==='debug')       return debug(e);
-  return json({ok:true, msg:'API viva', version:'v8'});
+  return json({ok:true, msg:'API viva', version:'v9'});
 }
 function doPost(e){
   try{
     const body=JSON.parse(e.postData.contents);
     if(body.action==='enviar_data') return enviarData(body);
+    if(body.action==='maquinaria_produccion') return maquinariaProduccionGuardar(body);
     return guardarReporte(body);
   }catch(err){ return json({ok:false, error:String(err)}); }
 }
@@ -424,6 +432,103 @@ function estado(e){
   return json({reportadas});
 }
 
+/* ---------- ajuste de producción de maquinaria (2.4 / D55) ----------
+ * Sustituye el estimado geométrico del capataz (largo, D20) por el volumen OFICIAL de la
+ * chequeadora (D06) en la fila de MAQUINARIA, SOLO para los frentes de excavación/terraplén/
+ * ZODME (CC 02.05/02.06/02.07/02.08). LEE DATA y MAQUINARIA; ESCRIBE SOLO MAQUINARIA.
+ * NUNCA escribe en DATA ni en BANDEJA. */
+const MAQ_PROD_CC = {'02.05':1,'02.06':1,'02.07':1,'02.08':1};
+// CC del frente a partir de la actividad (H) derivada en la fila de MAQUINARIA (CAPTURA_ACT_MAP).
+function ccDeMaqRow(r){
+  const h=String(r.actividad||'').toUpperCase();
+  if(h.indexOf('EXCAVACION COMUN')>=0)    return '02.05';
+  if(h.indexOf('EXCAVACION PRESTAMO')>=0) return '02.06';
+  if(h.indexOf('TERRAPLEN')>=0)           return '02.07';
+  if(h.indexOf('CONFORMACION')>=0)        return '02.08';
+  return '';
+}
+// CC corto (NN.NN) desde el centro de costo de DATA (formato "3701.02.05" o "02.05").
+function ccCorto(centroCosto){ const m=String(centroCosto==null?'':centroCosto).match(/(\d{2}\.\d{2})\s*$/); return m?m[1]:''; }
+
+// GET: cruce de las filas de MAQUINARIA del día (CC objetivo, sin vibros/apoyo) con el volumen
+// oficial de DATA por proyecto+CC. Devuelve id_registro (interno, app_id_registro) para parchar.
+function maquinariaProduccion(e){
+  const fecha=fdate(e.parameter.fecha);
+  getSheet('MAQUINARIA', MAQ_HEADERS); // auto-sana encabezados al layout D52 (+ produccion_capataz_orig)
+  // Volúmenes oficiales de DATA por proyecto|CC (solo LECTURA; jamás se escribe DATA aquí)
+  const dataVol={};
+  const ss=SpreadsheetApp.openById(SHEET_ID), dsh=ss.getSheetByName('DATA');
+  if(dsh && dsh.getLastRow()>1){
+    const v=dsh.getDataRange().getValues();
+    for(let i=1;i<v.length;i++){
+      if(fdate(v[i][C.FECHA])!==fecha) continue;
+      const cc=ccCorto(v[i][3]); if(!MAQ_PROD_CC[cc]) continue;
+      const key=String(v[i][7]||'')+'|'+cc;
+      dataVol[key]=(dataVol[key]||0)+(parseFloat(v[i][C.LARGO])||0);
+    }
+  }
+  // Filas de MAQUINARIA del día con CC objetivo; excluye vibros/minis (prod nula) y apoyo.
+  const elegibles=readSheet('MAQUINARIA').filter(r=>{
+    if(r.fecha!==fecha) return false;
+    if(esTipoSinProduccion(r.app_tipo_equipo)) return false;
+    if(String(r.cap_actividad||'')==='APOYO') return false;
+    return !!MAQ_PROD_CC[ccDeMaqRow(r)];
+  });
+  // nº de máquinas por frente (proyecto|CC) para el reparto de excavación (D54)
+  const nFrente={};
+  elegibles.forEach(r=>{ const k=String(r.proyecto||'')+'|'+ccDeMaqRow(r); nFrente[k]=(nFrente[k]||0)+1; });
+  const filas=elegibles.map(r=>{
+    const cc=ccDeMaqRow(r), key=String(r.proyecto||'')+'|'+cc;
+    const oficial=dataVol[key]||0, n=nFrente[key]||1;
+    const esExc=(cc==='02.05'||cc==='02.06');
+    // Excavación (02.05/02.06): prellena oficial÷nº máquinas (D54). Terraplén/ZODME (02.07/02.08):
+    // en blanco para reparto manual.
+    const prefill=esExc ? Math.round((oficial/n)*100)/100 : '';
+    const orig=r.produccion_capataz_orig;
+    return {
+      id_registro: String(r.app_id_registro||''),
+      id_maquina:  r.id_maquina||'',
+      actividad:   r.cap_actividad||r.actividad||'',
+      cc:          cc,
+      proyecto:    String(r.proyecto||''),
+      tipo:        esExc?'excavacion':'terraplen',
+      produccion_actual: (r.produccion===''||r.produccion==null)?'':r.produccion,
+      produccion_orig:   (orig===''||orig==null)?'':orig,
+      volumen_oficial:   oficial,
+      n_maquinas:        n,
+      prefill:           prefill
+    };
+  });
+  return json({ok:true, fecha, filas});
+}
+
+// POST: parcha SOLO la columna T (produccion) de las filas indicadas en MAQUINARIA.
+// Guarda el estimado original del capataz en produccion_capataz_orig la PRIMERA vez (no lo pisa
+// si ya existe). No toca ninguna otra columna, ni DATA, ni BANDEJA.
+function maquinariaProduccionGuardar(body){
+  const fecha=fdate(body.fecha), ajustes=body.ajustes||[];
+  const sh=getSheet('MAQUINARIA', MAQ_HEADERS);
+  const v=sh.getDataRange().getValues(), h=v[0];
+  const idCol=h.indexOf('app_id_registro'), fCol=h.indexOf('fecha');
+  const prodCol=h.indexOf('produccion'), origCol=h.indexOf('produccion_capataz_orig');
+  if(idCol<0 || prodCol<0 || origCol<0) return json({ok:false, error:'Columnas de MAQUINARIA no encontradas'});
+  const map={}; ajustes.forEach(a=>{ if(a && a.id_registro!=null && a.id_registro!=='') map[String(a.id_registro)]=a; });
+  let n=0;
+  for(let i=1;i<v.length;i++){
+    const id=String(v[i][idCol]||''); if(!id || !map[id]) continue;
+    if(fecha && fCol>=0 && fdate(v[i][fCol])!==fecha) continue; // guard: solo filas del día
+    const a=map[id];
+    const pf=parseFloat(a.produccion);
+    const prod=isNaN(pf) ? (a.produccion==null?'':a.produccion) : pf;
+    // estimado original del capataz: solo la primera vez (no pisar si ya existe)
+    const orig=v[i][origCol];
+    if(orig==='' || orig==null) sh.getRange(i+1, origCol+1).setValue(v[i][prodCol]);
+    sh.getRange(i+1, prodCol+1).setValue(prod);
+    n++;
+  }
+  return json({ok:true, actualizadas:n});
+}
+
 /* ---------- enviar lo aprobado a DATA ---------- */
 function enviarData(body){
   const fecha=fdate(body.fecha), incluidas=body.cantidades||[], ts=new Date();
@@ -449,6 +554,6 @@ function debug(e){
   const fechaQ=fdate(e.parameter.fecha||'');
   const ban=readSheet('BANDEJA').filter(r=>r.fecha===fechaQ);
   const data=readSheet('DATA') ? '' : '';
-  return json({version:'v8', sheetTZ:shTZ(), queryFecha:fechaQ, bandejaFilas:ban.length,
+  return json({version:'v9', sheetTZ:shTZ(), queryFecha:fechaQ, bandejaFilas:ban.length,
     muestra: ban.slice(0,5).map(r=>({reporta:r.reporta, rol:r.rol, actividad:r.actividad, pk:r.pk_inicial, largo:r.largo, estado:r.estado})) });
 }
