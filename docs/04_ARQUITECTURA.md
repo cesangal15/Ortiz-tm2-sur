@@ -23,7 +23,7 @@
 │  GET  ?action=maquinaria_produccion&fecha=…  → cruce MAQUINARIA(CC 02.05-08)×oficial DATA│
 │  POST {reporte}                              → escribe BANDEJA + MAQUINARIA (+VOLQUETAS)  │
 │  POST {action:enviar_data}                   → pisa DATA del día + marca bandeja        │
-│  POST {action:maquinaria_produccion}         → parcha SOLO col T de MAQUINARIA (2.4/D59) │
+│  POST {action:maquinaria_produccion}         → parcha col T + crea filas redirigidas (D60) │
 │  Regla técnica: fechas por duck-typing (getFullYear), nunca instanceof Date.            │
 │  Redespliegue: Administrar implementaciones → editar → Nueva versión (misma URL).       │
 └────────────────────────────────────┬─────────────────────────────────────────────────--┘
@@ -76,4 +76,4 @@ Captura_Diaria es una **tabla de Excel** (`fact_produccion`, A1:AA). Se pegan SO
 - **En blanco aunque sean editables:** S CLIMA (pospuesto, D37) · Y Viajes (no aplica a maquinaria).
 - **Derivaciones del app:** H/I desde la actividad del capataz (05_CATALOGO §1) · R ESTADO desde el motivo (05_CATALOGO §5) · O = prog−oper solo si motivo=Mantenimiento · T en blanco para vibros y actividades de apoyo (D41/D44).
 - La hoja MAQUINARIA del Sheets se reordena a este layout A→AA; los internos del app (id_registro, timestamp, reporta, motivo, unidad_prod, etc.) quedan **después de AA** para trazabilidad.
-- El panel de producción (2.4/D59) añade un interno más tras AA, `produccion_capataz_orig`, donde guarda el estimado geométrico del capataz (col T original) la primera vez que sustituye la producción por el volumen oficial. El panel parcha **solo** la col T (Producción) de MAQUINARIA; nunca toca DATA ni BANDEJA.
+- El panel de producción (2.4/D59-D60) añade un interno más tras AA, `produccion_capataz_orig`, donde guarda el estimado geométrico del capataz (col T original) la primera vez que sustituye la producción por el volumen oficial. El panel parcha la col T (Producción) de filas existentes y, para redirigir producción huérfana (ZODME, no aprovechable), **crea filas nuevas** en MAQUINARIA con el layout A→AA + internos (D52); nunca toca DATA ni BANDEJA.
