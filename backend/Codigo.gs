@@ -450,6 +450,18 @@ const MAQ_BUCKETS = {
   TERRAPLEN:   {cc:'02.07', h:'TERRAPLEN',           i:'NUCLEO DE TERRAPLEN',        label:'Terraplén',                  tipo:'terraplen'},
   ZODME:       {cc:'02.08', h:'CONFORMACION',        i:'ZODME',                      label:'Conformación / ZODME',       tipo:'terraplen'}
 };
+// Actividades complementarias SIN producción que el panel puede asignar a una máquina faltante (D62):
+// cereo y apoyos. Llevan par H/I (a_captura=SI) salvo paisajeo/adecuación/derrumbe (sin par, NO a Captura).
+const MAQ_COMPLEM = {
+  CEREO_CORONA:      {h:'TERRAPLEN', i:'CEREO CORONA',        label:'Cereo de corona',           aCaptura:'SI'},
+  CEREO_SUBBASE:     {h:'SUBBASE',   i:'CEREO SUBBASE',       label:'Cereo de subbase',          aCaptura:'SI'},
+  COMPACT_TERRAPLEN: {h:'TERRAPLEN', i:'NUCLEO DE TERRAPLEN', label:'Compactación de terraplén', aCaptura:'SI'},
+  COMPACT_SUBBASE:   {h:'SUBBASE',   i:'CONFORMACION SUBBASE',label:'Compactación de subbase',   aCaptura:'SI'},
+  COMPACT_BTC:       {h:'BASE',      i:'BTC',                 label:'Compactación de BTC',       aCaptura:'SI'},
+  PAISAJEO:          {h:'',          i:'',                    label:'Paisajeo / ornato',         aCaptura:'NO'},
+  ADECUACION:        {h:'',          i:'',                    label:'Adecuación de caminos',     aCaptura:'NO'},
+  DERRUMBE:          {h:'',          i:'',                    label:'Limpieza de derrumbe',      aCaptura:'NO'}
+};
 // Catálogo de máquinas (05_CATALOGO §4): tipo + horas programadas. Para crear filas y poblar el
 // selector de "redirigir producción" (solo las que generan producción; vibros/minis fuera).
 const MAQ_CATALOGO = {
@@ -556,7 +568,7 @@ function maquinariaProduccion(e){
       oficial:f.oficial, n_maquinas:n, pk_oficial:(dataPk[k]||[]), filas:filas };
   });
   const flota_produccion=Object.keys(MAQ_CATALOGO).filter(id=>!esTipoSinProduccion(MAQ_CATALOGO[id].tipo))
-    .map(id=>({ id_maquina:id, tipo:MAQ_CATALOGO[id].tipo, reportada: !!presentes[id] }));
+    .map(id=>({ id_maquina:id, tipo:MAQ_CATALOGO[id].tipo, prog:MAQ_CATALOGO[id].prog, reportada: !!presentes[id] }));
   const faltantes=MAQ_FLOTA_ESPERADA.filter(id=>!presentes[id])
     .map(id=>({ id_maquina:id, tipo:(MAQ_CATALOGO[id]||{}).tipo||'', prog:(MAQ_CATALOGO[id]||{}).prog||'' }));
   return json({ok:true, fecha, frentes, otras, flota_produccion, faltantes});
@@ -586,38 +598,47 @@ function maquinariaProduccionGuardar(body){
     sh.getRange(i+1, prodCol+1).setValue(prod);
     upd++;
   }
-  // 2) crear filas nuevas. Dos formas (layout Captura A→AA + internos, D52):
-  //    - con bucket: producción redirigida a una máquina (D60), con horas opcionales.
-  //    - sin bucket: registro de horas de una máquina no reportada por ningún medio (D61).
+  // 2) crear filas nuevas. Tres formas (layout Captura A→AA + internos, D52):
+  //    - con bucket: producción redirigida a una máquina (D60), con horas/motivo opcionales.
+  //    - con complem: actividad complementaria SIN producción (cereo/apoyo) para una faltante (D62).
+  //    - solo horas: registro de horas de una máquina sin reporte por ningún medio (D61).
+  // Si trabajó menos que lo programado, el motivo deriva las horas muertas y el ESTADO (D12/D13).
   const ts=new Date(), reporta=body.usuario||'(ajuste-prod)';
   const maqRows=[];
   nuevas.forEach(nv=>{
     const idM=String(nv.id_maquina||'').toUpperCase(); if(!idM) return;
     const cat=MAQ_CATALOGO[idM]; if(!cat) return;               // máquina fuera de catálogo: se ignora
-    const b = nv.bucket ? MAQ_BUCKETS[nv.bucket] : null;
-    if(nv.bucket && !b) return;                                 // bucket inválido
-    // producción: solo si hay frente y la máquina genera producción (vibros/minis nunca, D41/D44)
+    const b  = nv.bucket  ? MAQ_BUCKETS[nv.bucket]   : null;  if(nv.bucket  && !b)  return;
+    const cx = nv.complem ? MAQ_COMPLEM[nv.complem]  : null;  if(nv.complem && !cx) return;
+    // actividad de la fila
+    const H = b?b.h:(cx?cx.h:''), I = b?b.i:(cx?cx.i:'');
+    const aCap = b?'SI':(cx?cx.aCaptura:'NO'), capLabel = b?b.label:(cx?cx.label:'');
+    // producción: solo en frente y si la máquina genera producción (vibros/minis nunca, D41/D44)
     let prod='';
     if(b && !esTipoSinProduccion(cat.tipo)){ const pf=parseFloat(nv.produccion); prod=isNaN(pf)?'':pf; }
-    // horas operadas (opcional): deriva muertas = prog − operadas y ESTADO
+    // horas operadas (opcional) + motivo: deriva muertas = prog − operadas y ESTADO (D13)
     const ho=parseFloat(nv.horas);
     const horasOper = isNaN(ho) ? '' : ho;
+    const motivo = String(nv.motivo||'');
     const muertas = (horasOper==='') ? '' : Math.round(Math.max(0, (parseFloat(cat.prog)||0) - horasOper)*100)/100;
-    const estado  = (horasOper==='') ? 'OPERANDO' : derivarEstado('', muertas);
-    if(!b && horasOper==='') return;                            // nada que registrar
+    const estado  = (horasOper==='') ? 'OPERANDO' : derivarEstado(motivo, muertas);
+    const esMant  = motivo.trim().toLowerCase().indexOf('mantenimiento')>=0;
+    const hMant   = (esMant && horasOper!=='') ? muertas : '';   // O horas_mantenimiento (D52)
+    if(!b && !cx && horasOper==='') return;                      // nada que registrar
+    const obs = b ? 'Producción redirigida (panel)' : cx ? ('Complementaria: '+capLabel+' (panel)') : 'Horas registradas (panel)';
     maqRows.push([
       // A vacío · B fecha · C vacío · D proyecto · E id_maquina · F vacío · G operador
       '', fecha, '', String(nv.proyecto||''), idM, '', (nv.operador||''),
       // H actividad · I sub · J-K vacío · L horas_operadas · M vacío
-      (b?b.h:''), (b?b.i:''), '', '', horasOper, '',
-      // N-Q vacío · R estado · S vacío
-      '', '', '', '', estado, '',
+      H, I, '', '', horasOper, '',
+      // N vacío · O h_mantenimiento · P-Q vacío · R estado · S vacío
+      '', hMant, '', '', estado, '',
       // T produccion · U-Z vacío · AA observacion
-      prod, '', '', '', '', '', '', (b?'Producción redirigida (panel)':'Horas registradas (panel)'),
+      prod, '', '', '', '', '', '', obs,
       // internos: app_id · id_cantidad · ts · reporta · app_tipo · app_hprog · app_hmuertas
       Utilities.getUuid(), '', ts, reporta, cat.tipo, cat.prog, muertas,
       // motivo · unidad_prod · cap_actividad · a_captura · produccion_capataz_orig
-      '', (prod===''?'':'m3'), (b?b.label:''), (b?'SI':'NO'), '']);
+      motivo, (prod===''?'':'m3'), capLabel, aCap, '']);
   });
   if(maqRows.length) sh.getRange(sh.getLastRow()+1,1,maqRows.length,MAQ_HEADERS.length).setValues(maqRows);
   return json({ok:true, actualizadas:upd, creadas:maqRows.length});
