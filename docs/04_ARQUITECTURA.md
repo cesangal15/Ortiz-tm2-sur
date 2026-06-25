@@ -20,10 +20,10 @@
 │  GET  ?action=estado&fecha=…                 → máquinas reportadas (estado.html)        │
 │  GET  ?action=debug&fecha=…                  → diagnóstico                              │
 │  GET  ?action=cubicaje                        → mapa placa→cubicaje (frontend, D53/2.10) │
-│  GET  ?action=maquinaria_produccion&fecha=…  → cruce MAQUINARIA(CC 02.05-08)×oficial DATA│
+│  GET  ?action=maquinaria_produccion&fecha=…  → frentes×oficial DATA + PK/horas/faltantes  │
 │  POST {reporte}                              → escribe BANDEJA + MAQUINARIA (+VOLQUETAS)  │
 │  POST {action:enviar_data}                   → pisa DATA del día + marca bandeja        │
-│  POST {action:maquinaria_produccion}         → parcha col T + crea filas redirigidas (D60) │
+│  POST {action:maquinaria_produccion}         → parcha col T + crea filas (redir/horas, D60-61)│
 │  Regla técnica: fechas por duck-typing (getFullYear), nunca instanceof Date.            │
 │  Redespliegue: Administrar implementaciones → editar → Nueva versión (misma URL).       │
 └────────────────────────────────────┬─────────────────────────────────────────────────--┘

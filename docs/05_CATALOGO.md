@@ -88,9 +88,7 @@ Terraplén (genera fila de terraplén) · Puente · ODL · Botadero (solo excava
 | BL005, BL009 | BULLDOZER | 6.4 | Propias |
 | NH69 | BULLDOZER | 5 | Alquilada |
 | EXC001, EXC013, EXC014, EXC015 | EXCAVADORA | 6.4 | Propias |
-| CAT320 | EXCAVADORA | 5 | Alquilada |
 | MO03, MO04, MO09 | MOTONIVELADORA | 6.4 | Propias |
-| MC705 | MOTONIVELADORA | 5 | Alquilada |
 | FNG02 | FINISHER | 6.4 | Propia |
 | CR019, CR013, CR016 | VIBROCOMPACTADOR | 6.4 | ORTIZ (propios) |
 | CS78B | VIBROCOMPACTADOR | 5 | GEOEXCON (alquilada) |
@@ -98,6 +96,8 @@ Terraplén (genera fila de terraplén) · Puente · ODL · Botadero (solo excava
 | CAT900 | VIBROCOMPACTADOR | 5 | SK RENTAL (alquilada) |
 | NH421 | MINICARGADOR | 5 | DINISSAN (alquilada) |
 | CR026 | MINIBULDOZER | 6.4 | ORTIZ (propia) |
+
+**Retiradas de la obra (jun-2026, D61):** CAT320 (excavadora alquilada) y MC705 (motoniveladora alquilada). Ya no aparecen en los desplegables de capataz/chequeadora, ni en el panel de producción, ni en el estado de máquinas faltantes.
 
 **Regla de producción por tipo:**
 - VIBROCOMPACTADOR: producción siempre nula — compactan frentes ejecutados por otras máquinas; el campo producción no se muestra ni se guarda.
