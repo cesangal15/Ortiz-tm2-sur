@@ -24,7 +24,7 @@
   input[type="date"],input[type="number"],select{width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 14px;outline:none;transition:border-color 0.2s;appearance:none;color-scheme:dark;}
   select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a80a0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px;cursor:pointer;}
   input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,0.1);}
-  select option{background:#1a1d27;}
+  select option,optgroup{background:#1a1d27;}
   .btn-consultar{padding:10px 18px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:8px;color:#0f1117;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;}
   .btn-consultar:hover{transform:translateY(-1px);}
   .nota{background:rgba(58,155,220,0.07);border:1px solid rgba(58,155,220,0.3);border-radius:10px;padding:11px 13px;font-size:12px;color:var(--text);line-height:1.5;margin-bottom:16px;}
@@ -55,16 +55,19 @@
   .pill.pk{border-color:rgba(58,155,220,0.45);color:var(--uf1);}
   .pill.h{border-color:rgba(46,204,113,0.45);color:var(--success);}
   .pill.new{border-color:rgba(245,166,35,0.5);color:var(--accent);}
-  .edits{display:flex;gap:6px;align-items:flex-end;}
+  .edits{display:flex;gap:6px;align-items:flex-end;flex-wrap:wrap;justify-content:flex-end;}
   .mini{width:74px;}
+  .mini.wide{width:122px;}
   .mini label{font-size:9px;margin-bottom:3px;}
-  .mini input{padding:8px 8px;font-size:13px;text-align:right;}
-  .rm{background:none;border:1px solid var(--border);border-radius:7px;color:var(--muted);width:30px;height:30px;font-size:14px;cursor:pointer;flex-shrink:0;align-self:center;}
+  .mini input,.mini select{padding:8px 8px;font-size:13px;}
+  .mini input{text-align:right;}
+  .mini select{padding-right:24px;background-position:right 8px center;}
+  .rm{background:none;border:1px solid var(--border);border-radius:7px;color:var(--muted);width:30px;height:36px;font-size:14px;cursor:pointer;flex-shrink:0;align-self:flex-end;}
   .rm:hover{border-color:var(--error);color:var(--error);}
   .add-wrap{margin-top:11px;padding-top:11px;border-top:1px dashed var(--border);}
   .add-wrap .alabel{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;}
   .add-inputs{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;}
-  .add-inputs select{flex:1;min-width:150px;}
+  .add-inputs .sel-main{flex:1;min-width:150px;}
   .btn-add{padding:9px 12px;background:var(--input-bg);border:1px solid var(--accent);border-radius:8px;color:var(--accent);font-family:'Syne',sans-serif;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:0.5px;white-space:nowrap;height:36px;}
   .otras-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:6px 14px;}
   .otra-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);font-size:12.5px;flex-wrap:wrap;}
@@ -73,11 +76,18 @@
   .otra-row .o-act{flex:1;min-width:0;}
   .otra-row .o-prod{font-family:'Syne',sans-serif;font-weight:700;white-space:nowrap;}
   .lectura-tag{font-size:9px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--muted);background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:1px 7px;}
-  .falt-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:6px 14px;}
-  .falt-row{display:grid;grid-template-columns:62px 1fr auto auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);}
-  .falt-row:last-child{border-bottom:none;}
+  .falt-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:8px 14px;}
+  .falt-item{padding:11px 0;border-bottom:1px solid var(--border);}
+  .falt-item:last-child{border-bottom:none;}
+  .falt-head{display:flex;align-items:center;gap:9px;margin-bottom:8px;}
   .falt-tipo{font-size:11px;color:var(--muted);}
   .badge.falta{border-color:rgba(231,76,60,0.45);color:var(--error);background:rgba(231,76,60,0.07);}
+  .falt-ctrls{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;}
+  .falt-ctrls .sel-dst{flex:1;min-width:170px;}
+  .asig-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12.5px;}
+  .asig-row:last-child{border-bottom:none;}
+  .asig-row .a-main{flex:1;min-width:0;}
+  .asig-tag{font-size:9px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;color:var(--success);background:rgba(46,204,113,0.08);border:1px solid rgba(46,204,113,0.4);border-radius:10px;padding:1px 7px;}
   .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
   .btn-action{flex:1;min-width:160px;padding:14px;border-radius:10px;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:0.5px;border:1px solid var(--border);background:var(--surface);color:var(--text);}
   .btn-action.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#0f1117;border:none;}
@@ -89,7 +99,7 @@
   .empty-state{text-align:center;padding:40px 20px;color:var(--muted);}
   .empty-state .icon{font-size:40px;margin-bottom:12px;}
   .loading{text-align:center;padding:30px;color:var(--muted);font-size:14px;}
-  @media(max-width:480px){.maq-row{grid-template-columns:52px 1fr;}.edits{grid-column:1/-1;justify-content:flex-end;}.falt-row{grid-template-columns:52px 1fr auto;}}
+  @media(max-width:480px){.maq-row{grid-template-columns:52px 1fr;}.edits{grid-column:1/-1;}}
 </style>
 </head>
 <body>
@@ -118,7 +128,17 @@
 
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
-let STATE = { fecha:'', frentes:[], otras:[], flota:[], faltantes:[], nuevas:[], horasFaltantes:{} };
+// Motivos de horas menos (D12); '' = trabajó completo (estado OPERANDO).
+const MOTIVOS=['','Mantenimiento','Sin operador','Falla mecánica','Lluvia/clima','Sin frente de trabajo','Esperando material','Abastecimiento de combustible','Traslado/movilización','Bloqueo','Otro'];
+// Actividades complementarias sin producción (cereo + apoyo) que se pueden asignar a una faltante.
+const COMPLEM=[
+  {c:'CEREO_CORONA',l:'Cereo de corona'},{c:'CEREO_SUBBASE',l:'Cereo de subbase'},
+  {c:'COMPACT_TERRAPLEN',l:'Compactación de terraplén'},{c:'COMPACT_SUBBASE',l:'Compactación de subbase'},
+  {c:'COMPACT_BTC',l:'Compactación de BTC'},{c:'PAISAJEO',l:'Paisajeo / ornato'},
+  {c:'ADECUACION',l:'Adecuación de caminos'},{c:'DERRUMBE',l:'Limpieza de derrumbe'}
+];
+const COMPLEM_LBL={}; COMPLEM.forEach(x=>COMPLEM_LBL[x.c]=x.l);
+let STATE = { fecha:'', frentes:[], otras:[], flota:[], faltantes:[], nuevas:[] };
 
 window.onload = function(){
   const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
@@ -130,6 +150,7 @@ function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
 function fmt(n){ return (Math.round((parseFloat(n)||0)*100)/100).toLocaleString('es-CO'); }
 function ufLabel(p){ return p==='3701'?'UF1':p==='3702'?'UF2':(p||'—'); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function motivoOpts(sel){ return MOTIVOS.map(m=>'<option value="'+esc(m)+'"'+(m===sel?' selected':'')+'>'+(m===''?'— motivo —':esc(m))+'</option>').join(''); }
 
 async function consultar(){
   const fecha=document.getElementById('fecha').value;
@@ -143,7 +164,7 @@ async function consultar(){
     STATE.otras=data.otras||[];
     STATE.flota=data.flota_produccion||[];
     STATE.faltantes=data.faltantes||[];
-    STATE.nuevas=[]; STATE.horasFaltantes={};
+    STATE.nuevas=[];
     STATE.frentes.forEach(f=> f.filas.forEach(r=>{ r._val = (r.prefill===''||r.prefill==null) ? '' : String(r.prefill); }));
     render();
   }catch(err){
@@ -155,14 +176,30 @@ function frenteKey(f){ return f.proyecto+'|'+f.bucket; }
 function findFila(id){ for(const f of STATE.frentes){ for(const r of f.filas){ if(r.id_registro===id) return r; } } return null; }
 function setFila(id,val){ const r=findFila(id); if(r) r._val=val; }
 function setNueva(idx,field,val){ if(STATE.nuevas[idx]) STATE.nuevas[idx][field]=val; }
-function setHorasFalt(id,val){ STATE.horasFaltantes[id]=val; }
+function asignadas(){ const s={}; STATE.nuevas.forEach(n=>{ if(n.id_maquina) s[n.id_maquina]=1; }); return s; }
 
+// redirigir una máquina (de la flota) a un frente con producción
 function addMaquina(key){
-  const sel=document.getElementById('sel_'+key), np=document.getElementById('np_'+key), nh=document.getElementById('nh_'+key);
+  const sel=document.getElementById('sel_'+key), np=document.getElementById('np_'+key), nh=document.getElementById('nh_'+key), nm=document.getElementById('nm_'+key);
   const id_maquina=sel?sel.value:''; if(!id_maquina){ alert('Elige una máquina'); return; }
   const f=STATE.frentes.find(x=>frenteKey(x)===key); if(!f) return;
   STATE.nuevas.push({ frenteKey:key, proyecto:f.proyecto, bucket:f.bucket, id_maquina,
-    produccion: np?np.value.trim():'', horas: nh?nh.value.trim():'' });
+    produccion: np?np.value.trim():'', horas: nh?nh.value.trim():'', motivo: nm?nm.value:'' });
+  render();
+}
+// asignar una máquina FALTANTE a un destino (frente / complementaria / solo horas)
+function addFaltante(id){
+  const dst=document.getElementById('dst_'+id).value;
+  if(!dst){ alert('Elige un destino para '+id); return; }
+  const horas=(document.getElementById('hf_'+id)||{}).value||'';
+  const motivo=(document.getElementById('mf_'+id)||{}).value||'';
+  const prod=(document.getElementById('pf_'+id)||{}).value||'';
+  const it={ id_maquina:id, _faltante:true, horas:horas.trim(), motivo:motivo };
+  if(dst.charAt(0)==='F'){ const f=STATE.frentes.find(x=>frenteKey(x)===dst.slice(2)); if(!f) return;
+    it.proyecto=f.proyecto; it.bucket=f.bucket; it.produccion=prod.trim(); it._destLabel=f.cc+' '+f.label+' '+ufLabel(f.proyecto); }
+  else if(dst.charAt(0)==='A'){ const c=dst.slice(2); it.complem=c; it._destLabel=COMPLEM_LBL[c]+' (sin producción)'; }
+  else { it._destLabel='Solo horas'; }
+  STATE.nuevas.push(it);
   render();
 }
 function removeNueva(idx){ STATE.nuevas.splice(idx,1); render(); }
@@ -173,16 +210,15 @@ function render(){
     cont.innerHTML='<div class="empty-state"><div class="icon">🗓️</div><p>No hay producción de maquinaria para esta fecha.</p></div>';
     return;
   }
-  let html='<div class="nota">Este panel <b>lee DATA</b> (volumen y PK oficial de la chequeadora) y <b>lee/escribe MAQUINARIA</b>. '+
-    'Nunca modifica DATA. Cada frente muestra su <b>PK oficial</b> y cada máquina el <b>PK del capataz</b> y sus horas, para cruzar y validar. '+
-    'Puedes redirigir producción a cualquier máquina y registrar horas de máquinas sin reporte.</div>';
+  let html='<div class="nota">Este panel <b>lee DATA</b> (volumen y PK oficial) y <b>lee/escribe MAQUINARIA</b>. Nunca modifica DATA. '+
+    'Cada frente muestra su <b>PK oficial</b> y cada máquina su <b>PK</b> y horas. Si una máquina trabajó menos que lo programado, indica el <b>motivo</b>.</div>';
 
   // ---- frentes ajustables ----
   if(STATE.frentes.length){
     html+='<div class="section-title">Frentes ajustables (excavación · terraplén · ZODME)</div>';
     STATE.frentes.forEach(f=>{
       const key=frenteKey(f);
-      const pend=STATE.nuevas.map((n,i)=>({n,i})).filter(o=>o.n.frenteKey===key);
+      const pend=STATE.nuevas.map((n,i)=>({n,i})).filter(o=>o.n.frenteKey===key && !o.n._faltante);
       const orphan=(f.n_maquinas===0 && pend.length===0);
       const pkOfi=(f.pk_oficial&&f.pk_oficial.length)?('<span class="pkofi">PK ofi: '+f.pk_oficial.map(esc).join(' · ')+'</span>'):'';
       html+='<div class="frente'+(orphan?' orphan':'')+'">';
@@ -216,6 +252,7 @@ function render(){
                 '<div class="edits">'+
                   '<div class="mini"><label>Producción</label><input type="number" step="0.01" value="'+esc(o.n.produccion)+'" oninput="setNueva('+o.i+',\'produccion\',this.value)"></div>'+
                   '<div class="mini"><label>Horas</label><input type="number" step="0.1" value="'+esc(o.n.horas)+'" oninput="setNueva('+o.i+',\'horas\',this.value)"></div>'+
+                  '<div class="mini wide"><label>Motivo (menos h)</label><select onchange="setNueva('+o.i+',\'motivo\',this.value)">'+motivoOpts(o.n.motivo||'')+'</select></div>'+
                   '<button class="rm" title="Quitar" onclick="removeNueva('+o.i+')">✕</button>'+
                 '</div>'+
               '</div>';
@@ -225,9 +262,10 @@ function render(){
       const npDef=(f.tipo==='excavacion'&&f.n_maquinas===0)?String(Math.round((parseFloat(f.oficial)||0)*100)/100):'';
       html+='<div class="add-wrap"><div class="alabel">Redirigir producción a una máquina (crea su fila)</div>'+
               '<div class="add-inputs">'+
-                '<select id="sel_'+key+'">'+opts+'</select>'+
+                '<select class="sel-main" id="sel_'+key+'">'+opts+'</select>'+
                 '<div class="mini"><label>Producción</label><input type="number" step="0.01" id="np_'+key+'" value="'+npDef+'"></div>'+
                 '<div class="mini"><label>Horas</label><input type="number" step="0.1" id="nh_'+key+'"></div>'+
+                '<div class="mini wide"><label>Motivo (menos h)</label><select id="nm_'+key+'">'+motivoOpts('')+'</select></div>'+
                 '<button class="btn-add" onclick="addMaquina(\''+key+'\')">➕ Añadir</button>'+
               '</div></div>';
       html+='</div>';
@@ -250,18 +288,44 @@ function render(){
     html+='</div>';
   }
 
-  // ---- máquinas faltantes (sin reporte) + registro de horas ----
+  // ---- máquinas faltantes (sin reporte) ----
+  const asig=asignadas();
+  const faltanReal=STATE.faltantes.filter(m=>!asig[m.id_maquina]);
+  const pendFalt=STATE.nuevas.map((n,i)=>({n,i})).filter(o=>o.n._faltante);
   if(STATE.faltantes.length){
-    html+='<div class="section-title">Máquinas faltantes · registra sus horas</div><div class="falt-card">';
-    STATE.faltantes.forEach(m=>{
-      const val=STATE.horasFaltantes[m.id_maquina]||'';
-      html+='<div class="falt-row">'+
-              '<span class="maq-id">'+esc(m.id_maquina)+'</span>'+
-              '<span class="falt-tipo">'+esc(m.tipo||'')+' · prog '+esc(m.prog)+' h</span>'+
-              '<span class="badge falta">FALTA</span>'+
-              '<div class="mini"><label>Horas oper.</label><input type="number" step="0.1" value="'+esc(val)+'" oninput="setHorasFalt(\''+esc(m.id_maquina)+'\',this.value)"></div>'+
+    html+='<div class="section-title">Máquinas faltantes · asígnalas o registra horas</div><div class="falt-card">';
+    // opciones de destino: frentes del día + complementarias + solo horas
+    let dstFrentes=''; STATE.frentes.forEach(f=>{ dstFrentes+='<option value="F|'+frenteKey(f)+'">'+f.cc+' · '+esc(f.label)+' · '+ufLabel(f.proyecto)+'</option>'; });
+    let dstComplem=COMPLEM.map(x=>'<option value="A|'+x.c+'">'+esc(x.l)+'</option>').join('');
+    const dstOpts='<option value="">— elegir destino —</option>'+
+      (dstFrentes?('<optgroup label="Frentes del día (con producción)">'+dstFrentes+'</optgroup>'):'')+
+      '<optgroup label="Complementaria (sin producción)">'+dstComplem+'</optgroup>'+
+      '<option value="H">Solo registrar horas</option>';
+    faltanReal.forEach(m=>{
+      html+='<div class="falt-item">'+
+              '<div class="falt-head"><span class="maq-id">'+esc(m.id_maquina)+'</span>'+
+                '<span class="falt-tipo">'+esc(m.tipo||'')+' · prog '+esc(m.prog)+' h</span><span class="badge falta">FALTA</span></div>'+
+              '<div class="falt-ctrls">'+
+                '<select class="sel-dst" id="dst_'+m.id_maquina+'">'+dstOpts+'</select>'+
+                '<div class="mini"><label>Horas oper.</label><input type="number" step="0.1" id="hf_'+m.id_maquina+'"></div>'+
+                '<div class="mini wide"><label>Motivo (menos h)</label><select id="mf_'+m.id_maquina+'">'+motivoOpts('')+'</select></div>'+
+                '<div class="mini"><label>Prod. (si frente)</label><input type="number" step="0.01" id="pf_'+m.id_maquina+'"></div>'+
+                '<button class="btn-add" onclick="addFaltante(\''+esc(m.id_maquina)+'\')">➕ Asignar</button>'+
+              '</div>'+
             '</div>';
     });
+    if(pendFalt.length){
+      html+='<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);">';
+      pendFalt.forEach(o=>{
+        const det=[]; if(o.n.horas) det.push(fmt(o.n.horas)+' h'); if(o.n.motivo) det.push(esc(o.n.motivo)); if(o.n.produccion) det.push('prod '+fmt(o.n.produccion));
+        html+='<div class="asig-row">'+
+                '<span class="maq-id">'+esc(o.n.id_maquina)+'</span>'+
+                '<span class="a-main">→ '+esc(o.n._destLabel||'')+(det.length?(' · '+det.join(' · ')):'')+' <span class="asig-tag">asignada</span></span>'+
+                '<button class="rm" title="Quitar" onclick="removeNueva('+o.i+')">✕</button>'+
+              '</div>';
+      });
+      html+='</div>';
+    }
     html+='</div>';
   }
 
@@ -278,20 +342,18 @@ async function guardar(){
     ajustes.push({ id_registro:r.id_registro, produccion:num });
   }));
   const nuevas=[];
-  // redirección de producción (con horas opcionales)
   STATE.nuevas.forEach(n=>{
-    const p=String(n.produccion==null?'':n.produccion).trim(), h=String(n.horas==null?'':n.horas).trim();
-    if(!n.id_maquina || (p==='' && h==='')) return;
-    const it={ id_maquina:n.id_maquina, proyecto:n.proyecto, bucket:n.bucket };
-    if(p!=='' && !isNaN(parseFloat(p))) it.produccion=parseFloat(p);
-    if(h!=='' && !isNaN(parseFloat(h))) it.horas=parseFloat(h);
+    const it={ id_maquina:n.id_maquina };
+    if(n.bucket) it.bucket=n.bucket;
+    if(n.complem) it.complem=n.complem;
+    if(n.proyecto) it.proyecto=n.proyecto;
+    const p=String(n.produccion==null?'':n.produccion).trim(); if(p!==''&&!isNaN(parseFloat(p))) it.produccion=parseFloat(p);
+    const h=String(n.horas==null?'':n.horas).trim();           if(h!==''&&!isNaN(parseFloat(h))) it.horas=parseFloat(h);
+    if(n.motivo) it.motivo=n.motivo;
+    // descarta lo vacío: frente sin prod ni horas, o "solo horas" sin horas
+    if(!it.bucket && !it.complem && it.horas===undefined) return;
+    if(it.bucket && it.produccion===undefined && it.horas===undefined) return;
     nuevas.push(it);
-  });
-  // registro de horas de máquinas faltantes (sin actividad)
-  Object.keys(STATE.horasFaltantes).forEach(id=>{
-    const h=String(STATE.horasFaltantes[id]==null?'':STATE.horasFaltantes[id]).trim();
-    if(h==='' || isNaN(parseFloat(h))) return;
-    nuevas.push({ id_maquina:id, horas:parseFloat(h) });
   });
   const msg=document.getElementById('msg');
   if(!ajustes.length && !nuevas.length){ msg.className='msg-box err'; msg.style.display='block'; msg.textContent='No hay nada para guardar (todos los campos están en blanco).'; return; }
