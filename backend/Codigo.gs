@@ -454,13 +454,17 @@ const MAQ_BUCKETS = {
 // selector de "redirigir producción" (solo las que generan producción; vibros/minis fuera).
 const MAQ_CATALOGO = {
   BL005:{tipo:'BULLDOZER',prog:6.4}, BL009:{tipo:'BULLDOZER',prog:6.4}, NH69:{tipo:'BULLDOZER',prog:5},
-  EXC001:{tipo:'EXCAVADORA',prog:6.4}, EXC013:{tipo:'EXCAVADORA',prog:6.4}, EXC014:{tipo:'EXCAVADORA',prog:6.4}, EXC015:{tipo:'EXCAVADORA',prog:6.4}, CAT320:{tipo:'EXCAVADORA',prog:5},
-  MO03:{tipo:'MOTONIVELADORA',prog:6.4}, MO04:{tipo:'MOTONIVELADORA',prog:6.4}, MO09:{tipo:'MOTONIVELADORA',prog:6.4}, MC705:{tipo:'MOTONIVELADORA',prog:5},
+  EXC001:{tipo:'EXCAVADORA',prog:6.4}, EXC013:{tipo:'EXCAVADORA',prog:6.4}, EXC014:{tipo:'EXCAVADORA',prog:6.4}, EXC015:{tipo:'EXCAVADORA',prog:6.4},
+  MO03:{tipo:'MOTONIVELADORA',prog:6.4}, MO04:{tipo:'MOTONIVELADORA',prog:6.4}, MO09:{tipo:'MOTONIVELADORA',prog:6.4},
   FNG02:{tipo:'FINISHER',prog:6.4},
   CR019:{tipo:'VIBROCOMPACTADOR',prog:6.4}, CR013:{tipo:'VIBROCOMPACTADOR',prog:6.4}, CR016:{tipo:'VIBROCOMPACTADOR',prog:6.4},
   CS78B:{tipo:'VIBROCOMPACTADOR',prog:5}, NH403:{tipo:'VIBROCOMPACTADOR',prog:5}, NH404:{tipo:'VIBROCOMPACTADOR',prog:5}, NH420:{tipo:'VIBROCOMPACTADOR',prog:5}, CAT900:{tipo:'VIBROCOMPACTADOR',prog:5},
   NH421:{tipo:'MINICARGADOR',prog:5}, CR026:{tipo:'MINIBULDOZER',prog:6.4}
 };
+// Flota "requerida" diaria (mismo conjunto que estado.html): máquinas productivas cuya presencia se
+// espera cada día. El panel la usa para mostrar las FALTANTES (sin reporte) y permitir registrar sus
+// horas manualmente (D61). CAT320 y MC705 retiradas de la obra (jun-2026).
+const MAQ_FLOTA_ESPERADA = ['BL005','BL009','EXC001','EXC013','EXC014','EXC015','MO03','MO04','MO09','NH69'];
 // Bucket de una fila de MAQUINARIA a partir de su par H/I derivado (CAPTURA_ACT_MAP). '' = no editable.
 function bucketDeMaqRow(r){
   const h=String(r.actividad||'').toUpperCase(), i=String(r.sub_actividad||'').toUpperCase();
@@ -484,15 +488,19 @@ function ccCorto(centroCosto){ const m=String(centroCosto==null?'':centroCosto).
 
 // GET: panorama del día. Cruza el volumen oficial de DATA (por proyecto+bucket) con las filas de
 // MAQUINARIA del día. Devuelve:
-//  - frentes[]: buckets ajustables (02.05-08) con su oficial, sus máquinas (id_registro interno
-//    para parchar) y el indicador multi-actividad; aparecen aunque NO tengan máquina (oficial>0).
+//  - frentes[]: buckets ajustables (02.05-08) con su oficial, los PK oficiales de DATA, sus máquinas
+//    (id_registro interno, PK del capataz y horas) y el indicador multi-actividad; aparecen aunque NO
+//    tengan máquina (oficial>0).
 //  - otras[]: máquinas productivas en CC no ajustables (subbase/base/BTC/MSR/desmonte) en LECTURA.
-//  - catalogo[]: máquinas que generan producción (para redirigir producción huérfana, D60).
+//  - flota_produccion[]: máquinas que generan producción (para redirigir producción huérfana, D60).
+//  - faltantes[]: flota requerida sin reporte ese día, para registrar sus horas manualmente (D61).
 function maquinariaProduccion(e){
   const fecha=fdate(e.parameter.fecha);
   getSheet('MAQUINARIA', MAQ_HEADERS); // auto-sana encabezados al layout D52 (+ produccion_capataz_orig)
-  // Volúmenes oficiales de DATA por proyecto|bucket (solo LECTURA; jamás se escribe DATA aquí)
-  const dataVol={};
+  function pkRange(pki,pkf){ const a=String(pki==null?'':pki).trim(), b=String(pkf==null?'':pkf).trim();
+    if(a&&b&&b!==a) return a+'–'+b; return a||b||''; }
+  // Volúmenes y PK oficiales de DATA por proyecto|bucket (solo LECTURA; jamás se escribe DATA aquí)
+  const dataVol={}, dataPk={};
   const ss=SpreadsheetApp.openById(SHEET_ID), dsh=ss.getSheetByName('DATA');
   if(dsh && dsh.getLastRow()>1){
     const v=dsh.getDataRange().getValues();
@@ -502,12 +510,19 @@ function maquinariaProduccion(e){
       const b=bucketDeData(cc, v[i][5]); if(!b) continue;       // col F = DESCRIPCION
       const key=String(v[i][7]||'')+'|'+b;                      // col H = PROYECTO
       dataVol[key]=(dataVol[key]||0)+(parseFloat(v[i][C.LARGO])||0);
+      const pk=pkRange(v[i][25], v[i][26]);                     // cols Z/AA internas = pk_inicial/pk_final
+      if(pk){ (dataPk[key]=dataPk[key]||[]); if(dataPk[key].indexOf(pk)<0) dataPk[key].push(pk); }
     }
   }
-  // Máquinas que generan producción ese día (excluye vibros/minis y actividades de apoyo)
-  const producen=readSheet('MAQUINARIA').filter(r=> r.fecha===fecha
-    && !esTipoSinProduccion(r.app_tipo_equipo) && String(r.cap_actividad||'')!=='APOYO');
+  // PK del capataz por id de cantidad (BANDEJA): la fila de MAQUINARIA enlaza con id_cantidad.
+  const banPk={};
+  readSheet('BANDEJA').filter(r=>r.fecha===fecha).forEach(r=>{ banPk[String(r.id_registro||'')]=pkRange(r.pk_inicial, r.pk_final); });
+  // Todas las filas de MAQUINARIA del día (para presentes/faltantes) y las que generan producción.
+  const todas=readSheet('MAQUINARIA').filter(r=> r.fecha===fecha);
+  const presentes={}; todas.forEach(r=>{ if(r.id_maquina) presentes[r.id_maquina]=1; });
+  const producen=todas.filter(r=> !esTipoSinProduccion(r.app_tipo_equipo) && String(r.cap_actividad||'')!=='APOYO');
   function rowLabel(r){ const b=bucketDeMaqRow(r); return b?MAQ_BUCKETS[b].label:(r.cap_actividad||r.actividad||'—'); }
+  function rowHoras(r){ const ho=r.horas_operadas; return (ho===''||ho==null)?'':ho; }
   // multi-actividad (D46): todas las actividades del día por id_maquina
   const actsPorMaq={};
   producen.forEach(r=>{ const id=r.id_maquina||''; (actsPorMaq[id]=actsPorMaq[id]||[]).push(rowLabel(r)); });
@@ -522,7 +537,8 @@ function maquinariaProduccion(e){
     const b=bucketDeMaqRow(r);
     if(b){ ensureF(String(r.proyecto||''),b)._filas.push(r); }
     else { otras.push({ id_maquina:r.id_maquina||'', actividad:r.cap_actividad||r.actividad||'—',
-      produccion_actual:(r.produccion===''||r.produccion==null)?'':r.produccion, unidad:r.unidad_prod||'', reporta:r.reporta||'' }); }
+      produccion_actual:(r.produccion===''||r.produccion==null)?'':r.produccion, unidad:r.unidad_prod||'',
+      reporta:r.reporta||'', pk:banPk[String(r.id_cantidad||'')]||'', horas:rowHoras(r) }); }
   });
   const frentes=fOrder.map(k=>{
     const f=fMap[k], n=f._filas.length;
@@ -533,14 +549,17 @@ function maquinariaProduccion(e){
       return { id_registro:String(r.app_id_registro||''), id_maquina:r.id_maquina||'',
         actividad:r.cap_actividad||r.actividad||f.label, tipo_equipo:r.app_tipo_equipo||'',
         produccion_actual:(r.produccion===''||r.produccion==null)?'':r.produccion,
-        produccion_orig:(orig===''||orig==null)?'':orig, prefill:prefill, otras_actividades:otrasAct };
+        produccion_orig:(orig===''||orig==null)?'':orig, prefill:prefill, otras_actividades:otrasAct,
+        pk:banPk[String(r.id_cantidad||'')]||'', horas:rowHoras(r) };
     });
     return { proyecto:f.proyecto, bucket:f.bucket, cc:f.cc, label:f.label, tipo:f.tipo,
-      oficial:f.oficial, n_maquinas:n, filas:filas };
+      oficial:f.oficial, n_maquinas:n, pk_oficial:(dataPk[k]||[]), filas:filas };
   });
-  const catalogo=Object.keys(MAQ_CATALOGO).filter(id=>!esTipoSinProduccion(MAQ_CATALOGO[id].tipo))
-    .map(id=>({ id_maquina:id, tipo:MAQ_CATALOGO[id].tipo, reportada: !!actsPorMaq[id] }));
-  return json({ok:true, fecha, frentes, otras, catalogo});
+  const flota_produccion=Object.keys(MAQ_CATALOGO).filter(id=>!esTipoSinProduccion(MAQ_CATALOGO[id].tipo))
+    .map(id=>({ id_maquina:id, tipo:MAQ_CATALOGO[id].tipo, reportada: !!presentes[id] }));
+  const faltantes=MAQ_FLOTA_ESPERADA.filter(id=>!presentes[id])
+    .map(id=>({ id_maquina:id, tipo:(MAQ_CATALOGO[id]||{}).tipo||'', prog:(MAQ_CATALOGO[id]||{}).prog||'' }));
+  return json({ok:true, fecha, frentes, otras, flota_produccion, faltantes});
 }
 
 // POST: (1) parcha la col T (producción) de filas existentes (ajustes[]) guardando el estimado
@@ -567,28 +586,38 @@ function maquinariaProduccionGuardar(body){
     sh.getRange(i+1, prodCol+1).setValue(prod);
     upd++;
   }
-  // 2) crear filas nuevas (producción redirigida a una máquina). Layout Captura A→AA + internos (D52).
+  // 2) crear filas nuevas. Dos formas (layout Captura A→AA + internos, D52):
+  //    - con bucket: producción redirigida a una máquina (D60), con horas opcionales.
+  //    - sin bucket: registro de horas de una máquina no reportada por ningún medio (D61).
   const ts=new Date(), reporta=body.usuario||'(ajuste-prod)';
   const maqRows=[];
   nuevas.forEach(nv=>{
-    const b=MAQ_BUCKETS[nv.bucket]; if(!b) return;
     const idM=String(nv.id_maquina||'').toUpperCase(); if(!idM) return;
-    const cat=MAQ_CATALOGO[idM]||{tipo:'',prog:''};
-    if(esTipoSinProduccion(cat.tipo)) return;                   // nunca a vibros/minis (D41/D44)
-    const pf=parseFloat(nv.produccion); const prod=isNaN(pf) ? '' : pf;
+    const cat=MAQ_CATALOGO[idM]; if(!cat) return;               // máquina fuera de catálogo: se ignora
+    const b = nv.bucket ? MAQ_BUCKETS[nv.bucket] : null;
+    if(nv.bucket && !b) return;                                 // bucket inválido
+    // producción: solo si hay frente y la máquina genera producción (vibros/minis nunca, D41/D44)
+    let prod='';
+    if(b && !esTipoSinProduccion(cat.tipo)){ const pf=parseFloat(nv.produccion); prod=isNaN(pf)?'':pf; }
+    // horas operadas (opcional): deriva muertas = prog − operadas y ESTADO
+    const ho=parseFloat(nv.horas);
+    const horasOper = isNaN(ho) ? '' : ho;
+    const muertas = (horasOper==='') ? '' : Math.round(Math.max(0, (parseFloat(cat.prog)||0) - horasOper)*100)/100;
+    const estado  = (horasOper==='') ? 'OPERANDO' : derivarEstado('', muertas);
+    if(!b && horasOper==='') return;                            // nada que registrar
     maqRows.push([
       // A vacío · B fecha · C vacío · D proyecto · E id_maquina · F vacío · G operador
       '', fecha, '', String(nv.proyecto||''), idM, '', (nv.operador||''),
-      // H actividad · I sub · J-K vacío · L horas_operadas(vacío) · M vacío
-      b.h, b.i, '', '', '', '',
-      // N-Q vacío · R estado(OPERANDO) · S vacío
-      '', '', '', '', 'OPERANDO', '',
+      // H actividad · I sub · J-K vacío · L horas_operadas · M vacío
+      (b?b.h:''), (b?b.i:''), '', '', horasOper, '',
+      // N-Q vacío · R estado · S vacío
+      '', '', '', '', estado, '',
       // T produccion · U-Z vacío · AA observacion
-      prod, '', '', '', '', '', '', 'Producción redirigida (panel)',
+      prod, '', '', '', '', '', '', (b?'Producción redirigida (panel)':'Horas registradas (panel)'),
       // internos: app_id · id_cantidad · ts · reporta · app_tipo · app_hprog · app_hmuertas
-      Utilities.getUuid(), '', ts, reporta, cat.tipo, cat.prog, '',
+      Utilities.getUuid(), '', ts, reporta, cat.tipo, cat.prog, muertas,
       // motivo · unidad_prod · cap_actividad · a_captura · produccion_capataz_orig
-      '', 'm3', b.label, 'SI', '']);
+      '', (prod===''?'':'m3'), (b?b.label:''), (b?'SI':'NO'), '']);
   });
   if(maqRows.length) sh.getRange(sh.getLastRow()+1,1,maqRows.length,MAQ_HEADERS.length).setValues(maqRows);
   return json({ok:true, actualizadas:upd, creadas:maqRows.length});

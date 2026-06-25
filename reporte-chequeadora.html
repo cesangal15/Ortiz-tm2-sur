@@ -165,9 +165,9 @@ const TIPOS = ['Terraplén','Puente','ODL','ODT','Botadero'];
 
 // Maquinaria (D54): la chequeadora SOLO registra las excavadoras del origen.
 // El selector se limita a las 5 excavadoras; el resto de la flota (bulldozers, motos, vibros, minis…) no aplica aquí.
-const MAQUINAS = ['EXC001','EXC013','EXC014','EXC015','CAT320'];
-const TIPO_EQUIPO = {'CAT320':'EXCAVADORA','EXC001':'EXCAVADORA','EXC013':'EXCAVADORA','EXC014':'EXCAVADORA','EXC015':'EXCAVADORA'};
-const HORAS_PROG = {'CAT320':5};
+const MAQUINAS = ['EXC001','EXC013','EXC014','EXC015'];
+const TIPO_EQUIPO = {'EXC001':'EXCAVADORA','EXC013':'EXCAVADORA','EXC014':'EXCAVADORA','EXC015':'EXCAVADORA'};
+const HORAS_PROG = {};
 function progHoras(id){ return HORAS_PROG[id]!==undefined?HORAS_PROG[id]:6.4; }
 const MOTIVOS = ['Mantenimiento','Sin operador','Falla mecánica','Lluvia / clima','Sin frente de trabajo','Esperando material','Abastecimiento de combustible','Traslado / movilización','Bloqueo','Otro (especificar)'];
 function maqOptions(){ return '<option value="">— Máquina —</option>'+MAQUINAS.map(m=>'<option>'+m+'</option>').join(''); }
