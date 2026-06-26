@@ -110,8 +110,8 @@
         <option value="Otro">Otro origen</option>
       </select>
     <div class="field" id="origenTextoWrap" style="display:none;">
-      <label>Especifica el origen</label>
-      <input type="text" id="origenTexto" placeholder="ej. PK 22+100">
+      <label>PK del origen (donde se hizo el corte)</label>
+      <input type="text" id="origenTexto" placeholder="ej. 22+100">
     </div>
   </div>
 
@@ -162,6 +162,10 @@ const ORIGENES = {
   'Otro':           {actividad:'Excavación aprovechable (masivo)', item:'Excavaciones en material común APROVECHABLE', cc:'02.05', label:'Otro origen'},
 };
 const TIPOS = ['Terraplén','Puente','ODL','ODT','Botadero'];
+// PK fijo de cada origen (Problema 2.12): la EXCAVACIÓN se registra DONDE SE HIZO EL CORTE = el origen.
+// Masivo 1/2 y Diviso tienen PK confirmado (todos ≤30 → UF1/3701). Complementario/Otro usan el PK que
+// teclea la chequeadora en "Especifica el origen" (origenTexto).
+const ORIGEN_PK = { 'Masivo2':'19+800', 'Masivo1':'14+400', 'Diviso':'21+500' };
 
 // Maquinaria (D54): la chequeadora SOLO registra las excavadoras del origen.
 // El selector se limita a las 5 excavadoras; el resto de la flota (bulldozers, motos, vibros, minis…) no aplica aquí.
@@ -203,9 +207,17 @@ function normPlaca(s){ return String(s==null?'':s).replace(/[^A-Za-z0-9]/g,'').t
 // Cubicaje de una placa válida: del catálogo si existe, si no el factor del reporte (fallback 14).
 function cubDePlaca(placa){ const c=CUBMAP[normPlaca(placa)]; return (c!=null)?c:m3viaje(); }
 
-function pkToMeters(pk){ if(!pk) return null; pk=String(pk).trim().replace(/\s/g,''); if(pk.includes('+')){const p=pk.split('+');const km=parseInt(p[0]);const m=parseInt(p[1]||'0');if(isNaN(km))return null;return km*1000+(isNaN(m)?0:m);} const n=parseFloat(pk);return isNaN(n)?null:n*1000; }
+function pkToMeters(pk){ if(!pk) return null; pk=String(pk).toLowerCase().replace(/pk/g,'').trim().replace(/\s/g,''); if(pk.includes('+')){const p=pk.split('+');const km=parseInt(p[0]);const m=parseInt(p[1]||'0');if(isNaN(km))return null;return km*1000+(isNaN(m)?0:m);} const n=parseFloat(pk);return isNaN(n)?null:n*1000; }
 function ufFromPk(pk){ const m=pkToMeters(pk); if(m==null) return ''; return m<=30000?'UF1':'UF2'; }
 function proyectoFromUf(uf){ return uf==='UF1'?'3701':uf==='UF2'?'3702':''; }
+// ELEMENTO unificado (Problema 2.12): "tm2 pk NN+NNN"; normaliza el PK y no duplica el token "pk".
+function pkNorm(s){ const m=pkToMeters(s); if(m==null) return ''; const km=Math.floor(m/1000), r=Math.round(m-km*1000); return km+'+'+('00'+r).slice(-3); }
+function buildElemento(pki,pkf){
+  let ini=pki, fin=pkf;
+  if((fin==null||fin==='') && pki!=null){ const p=String(pki).split(/\s*-\s*/); if(p.length>=2){ ini=p[0]; fin=p.slice(1).join(' - '); } }
+  const a=pkNorm(ini); if(!a) return '';
+  const b=pkNorm(fin); return b? ('tm2 pk '+a+' - '+b) : ('tm2 pk '+a);
+}
 // Factor fallback fijo: solo se usa para placas que no están en la hoja CUBICAJE (D53 → 14 fijo, D54).
 function m3viaje(){ return 14; }
 
@@ -217,7 +229,9 @@ function onOrigen(){
   const needsText=(o==='Complementario'||o==='Otro');
   textoWrap.style.display=needsText?'block':'none';
   pill.style.display='block';
-  pill.innerHTML='→ genera: <b>'+ORIGENES[o].item+'</b>';
+  // La excavación se acumula al PK del origen (Problema 2.12); para Masivo/Diviso es fijo.
+  const pkFijo=ORIGEN_PK[o];
+  pill.innerHTML='→ genera: <b>'+ORIGENES[o].item+'</b>'+(pkFijo?(' · excavación al <b>pk '+pkFijo+'</b>'):' · excavación al PK que teclees');
 }
 
 function tipoOptions(){ return TIPOS.map(t=>'<option>'+t+'</option>').join(''); }
@@ -389,8 +403,14 @@ function getCantidades(){
   const origen=document.getElementById('origen').value;
   if(!origen) return [];
   const exc=ORIGENES[origen];
-  const origenLabel=(origen==='Complementario'||origen==='Otro')?(document.getElementById('origenTexto').value.trim()||exc.label):exc.label;
+  const origenTexto=(document.getElementById('origenTexto').value||'').trim();
+  const origenLabel=(origen==='Complementario'||origen==='Otro')?(origenTexto||exc.label):exc.label;
+  // PK del ORIGEN (Problema 2.12): fijo para Masivo/Diviso; el que teclea la chequeadora para Compl/Otro.
+  const origenPk=ORIGEN_PK[origen]||origenTexto;
+  const ufO=ufFromPk(origenPk), proyO=proyectoFromUf(ufO);
   const rows=[];
+  let totalM3=0, totalViajes=0, nDest=0;
+  // TERRAPLÉN: NO cambia. 1 fila por línea, al PK DESTINO (el lleno se construye allá). D06/D26.
   document.querySelectorAll('#lineasContainer .linea').forEach(b=>{
     const pk=b.querySelector('.l-pk').value.trim();
     const viajes=lineaViajes(b); // total calculado = suma de placas válidas
@@ -398,20 +418,27 @@ function getCantidades(){
     if(!pk || !viajes) return;
     const m3=lineaM3(b); // volumen real con cubicaje por placa (D53); el backend lo recalcula como fuente
     const lineId=Number(b.id.split('_')[1]); // correlación con la línea de VOLQUETAS para el backend
-    const uf=ufFromPk(pk), proy=proyectoFromUf(uf);
-    const grupo=exc.cc==='02.06'?'TIERRAS':'TIERRAS';
-    const base={ grupo, capitulo:'EXPLANACIONES', uf, proyecto:proy,
-      elemento:'tm2 pk '+pk, pk_inicial:pk, pk_final:'', abs_inicial:pkToMeters(pk), abs_final:null,
-      liberacion:'CAMPO', largo:m3, _linea:lineId, equipos:[], data:true };
-    rows.push(Object.assign({}, base, { actividad:exc.actividad, descripcion:exc.item,
-      centro_costo: proy?(proy+'.'+exc.cc):'', unidad:'m3',
-      observacion: origenLabel+' · '+viajes+' viajes'+(tipo!=='Terraplén'?(' ('+tipo+')'):'') }));
+    totalM3+=m3; totalViajes+=viajes; nDest++;
     if(tipo==='Terraplén'){
-      rows.push(Object.assign({}, base, { actividad:'Terraplén (conformación)', descripcion:'Terraplenes (solo conformación)',
-        centro_costo: proy?(proy+'.02.07'):'', unidad:'m3',
-        observacion: origenLabel+' · '+viajes+' viajes' }));
+      const ufD=ufFromPk(pk), proyD=proyectoFromUf(ufD);
+      rows.push({ grupo:'TIERRAS', capitulo:'EXPLANACIONES', actividad:'Terraplén (conformación)',
+        descripcion:'Terraplenes (solo conformación)', centro_costo: proyD?(proyD+'.02.07'):'', unidad:'m3',
+        uf:ufD, proyecto:proyD, elemento:buildElemento(pk,''), pk_inicial:pk, pk_final:'',
+        abs_inicial:pkToMeters(pk), abs_final:null, liberacion:'CAMPO', largo:m3, _linea:lineId,
+        equipos:[], data:true, observacion: origenLabel+' · '+viajes+' viajes' });
     }
   });
+  // EXCAVACIÓN: UNA sola fila ACUMULADA al PK del ORIGEN = Σ de todas las líneas (Problema 2.12).
+  // PK/ELEMENTO/ABS/UF/PROYECTO/CC derivan del ORIGEN (donde se hizo el corte), no del destino. El
+  // backend recalcula el volumen (Σ líneas) como fuente (D06/D53); aquí va el preview.
+  if(totalViajes>0){
+    rows.unshift({ grupo:'TIERRAS', capitulo:'EXPLANACIONES', actividad:exc.actividad, descripcion:exc.item,
+      centro_costo: proyO?(proyO+'.'+exc.cc):'', unidad:'m3', uf:ufO, proyecto:proyO,
+      elemento:buildElemento(origenPk,''), pk_inicial:origenPk, pk_final:'',
+      abs_inicial:pkToMeters(origenPk), abs_final:null, liberacion:'CAMPO', largo:totalM3,
+      _acumOrigen:true, origen:origenLabel, equipos:[], data:true,
+      observacion: origenLabel+' · '+totalViajes+' viajes · Σ '+nDest+' destino'+(nDest===1?'':'s') });
+  }
   return rows;
 }
 // Desglose por placa para la hoja VOLQUETAS (no altera el flujo a BANDEJA).
@@ -438,6 +465,12 @@ function validate(){
   const fecha=document.getElementById('fecha'), origen=document.getElementById('origen');
   if(!fecha.value){ fecha.classList.add('field-error'); ok=false; }
   if(!origen.value){ origen.classList.add('field-error'); ok=false; }
+  // Problema 2.12: para Complementario/Otro el PK del origen es el que se teclea; debe ser un PK válido
+  // (de ahí salen ELEMENTO/ABS/UF de la excavación acumulada).
+  if(origen.value==='Complementario'||origen.value==='Otro'){
+    const ot=document.getElementById('origenTexto');
+    if(pkToMeters(ot.value)==null){ ot.classList.add('field-error'); ok=false; }
+  }
   document.querySelectorAll('#lineasContainer .linea').forEach(b=>{
     const pk=b.querySelector('.l-pk'), bloque=b.querySelector('.l-bloque');
     if(!pk.value.trim()){ pk.classList.add('field-error'); ok=false; }

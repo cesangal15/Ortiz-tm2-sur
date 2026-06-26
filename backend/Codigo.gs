@@ -152,30 +152,93 @@ function readSheet(name){
   return out;
 }
 function buildDataRow(c, fecha, ts, reporta, rol, idC){
-  // ELEMENTO oficial: se busca en la hoja BASE por CC + descripción + abscisa (no se construye a mano).
-  const lk = lookupElemento(c.centro_costo, c.descripcion, c.abs_inicial);
-  const elemento = lk.elem ? lk.elem
-                 : lk.revisar ? ('REVISAR · ' + (c.elemento || ('pk ' + (c.pk_inicial||''))))
-                 : (c.elemento||''); // BASE vacía / sin candidato -> respaldo al texto previo
-  return [ toDate(fecha), '', c.grupo||'', c.centro_costo||'', c.capitulo||'', c.descripcion||'',
-    c.uf||'', c.proyecto||'', elemento, (c.abs_inicial!=null?c.abs_inicial:''), (c.abs_final!=null?c.abs_final:''),
+  // Ubicación (UF/PROYECTO/CC/ABS) derivada del PK con el helper único (Problema 2.12, D04).
+  const mi = pkMeters(c.pk_inicial), mf = pkMeters(c.pk_final);
+  let uf = c.uf||'', proy = c.proyecto||'', cc = c.centro_costo||'';
+  if(mi != null){                                   // D04: PK≤30→UF1/3701; >30→UF2/3702
+    uf   = mi <= 30000 ? 'UF1' : 'UF2';
+    proy = uf === 'UF1' ? '3701' : '3702';
+    const cod = ccCorto(c.centro_costo);            // "02.05" -> reancla el proyecto correcto al CC
+    cc = cod ? (proy + '.' + cod) : cc;
+  }
+  // ELEMENTO oficial desde la hoja BASE (catálogo de elementos por CC + descripción + abscisa); el
+  // PK válido debe caer dentro de un tramo de la BASE y devolver su elemento limpio (D63). Si la BASE
+  // no tiene candidato para esa actividad, se arma desde el PK con el helper único (sin "Pk Pk").
+  // REVISAR queda SÓLO para el caso legítimo: hay candidatos en la BASE pero el PK no cae en ninguno
+  // (no se inventan elementos nuevos — el elemento se basa en lo que existe en la BASE).
+  const lk = lookupElemento(cc, c.descripcion, mi);
+  const pkElem = buildElemento(c.pk_inicial, c.pk_final);
+  const elem = lk.elem ? lk.elem
+             : lk.revisar ? ('REVISAR · ' + (pkElem || c.elemento || ('pk ' + (c.pk_inicial||''))))
+             : (pkElem || c.elemento || '');
+  const absIni = mi != null ? mi : (c.abs_inicial!=null ? c.abs_inicial : '');
+  const absFin = mf != null ? mf : (c.abs_final!=null ? c.abs_final : '');
+  return [ toDate(fecha), '', c.grupo||'', cc, c.capitulo||'', c.descripcion||'',
+    uf, proy, elem, absIni, absFin,
     c.liberacion||'CAMPO', '', c.unidad||'', (c.largo!=null?c.largo:''), '', '', '', c.observacion||'', '',
     idC, ts, reporta||'', rol||'', c.actividad||'', c.pk_inicial||'', c.pk_final||'' ];
 }
 
-/* ---------- BASE: ELEMENTO fijo por CC + descripción + abscisa ----------
- * La hoja BASE (mismo Sheet) es la fuente del ELEMENTO oficial.
- * Columnas usadas: A=CC, F=DESCRIPCION, J=ELEMENTO, K=ABSCISA INICIO(m), L=ABSCISA FIN(m).
- * Cruce: misma actividad (CC, y descripción si está) + el PK reportado dentro del rango [K,L].
- * Error humano: si el PK cae justo fuera de un tramo pero a <= BASE_TOL_M metros, se ajusta
- * al tramo más cercano de esa actividad; si está más lejos, se marca REVISAR (visible en DATA
- * antes de pegar al maestro) en vez de inventar un elemento. */
-const BASE_TOL_M = 30; // metros de tolerancia para ajustar un PK cercano (editable)
+/* ---------- ELEMENTO + PK: helper único (Problema 2.12) ----------
+ * Un solo lugar arma el ELEMENTO y normaliza el PK (misma lógica en backend y en los HTML).
+ *   - un solo PK:  "tm2 pk NN+NNN"
+ *   - con final:   "tm2 pk NN+NNN - NN+NNN"
+ * Nunca duplica el token "pk"/"Pk": lo quita antes de anteponer "tm2 pk". Si el PK final viene
+ * embebido en el campo inicial ("20+830 - 20+800") lo separa. Devuelve '' si no hay PK legible.
+ * pkMeters() tolera "20+875", "Pk 20+875", espacios y el prefijo pk; un número suelto = kilómetro. */
+function pkMeters(s){
+  if(s==null) return null;
+  const t=String(s).toLowerCase().replace(/pk/g,'').replace(/\s+/g,'');
+  const m=t.match(/(\d+)\+(\d+)/);
+  if(m) return parseInt(m[1],10)*1000 + parseInt(m[2],10);
+  const n=parseFloat(t);
+  return isNaN(n) ? null : n*1000;
+}
+function pkFmt(meters){
+  if(meters==null || isNaN(meters)) return '';
+  const km=Math.floor(meters/1000), r=Math.round(meters-km*1000);
+  return km + '+' + ('00'+r).slice(-3);
+}
+function pkNorm(s){ return pkFmt(pkMeters(s)); }
+function buildElemento(pkIni, pkFin){
+  let ini=pkIni, fin=pkFin;
+  if((fin==null||fin==='') && pkIni!=null){           // rango tecleado en un solo campo
+    const p=String(pkIni).split(/\s*-\s*/);
+    if(p.length>=2){ ini=p[0]; fin=p.slice(1).join(' - '); }
+  }
+  const a=pkNorm(ini);
+  if(!a) return '';                                    // sin PK válido: el llamador decide
+  const b=pkNorm(fin);
+  return b ? ('tm2 pk '+a+' - '+b) : ('tm2 pk '+a);
+}
+
+/* ---------- BASE: ELEMENTO oficial por CC + descripción + abscisa (D63) ----------
+ * La hoja BASE (mismo Sheet) es el CATÁLOGO de elementos: el ELEMENTO de DATA se toma de ahí, no se
+ * inventa. Columnas: A=CC, F=DESCRIPCION, J=ELEMENTO, K=ABSCISA INICIO, L=ABSCISA FIN.
+ * Cruce: misma actividad (CC y/o descripción) + el PK reportado dentro del rango [K,L].
+ *
+ * Arreglo del "REVISAR casi siempre" (D63):
+ *   1) CC se compara por su código corto NN.NN en AMBOS lados (`ccCorto`): antes "3701.02.05"
+ *      (DATA) nunca casaba con "02.05" (BASE), así que el cruce caía a sólo-descripción.
+ *   2) La abscisa de la BASE se lee con `baseAbs`: acepta metros numéricos Y PK en texto ("20+875");
+ *      antes `Number("20+875")`=NaN dejaba los rangos nulos y todo candidato terminaba en REVISAR.
+ * Con eso, un PK válido que cae en un tramo de la BASE devuelve su elemento limpio; REVISAR queda
+ * sólo para el PK que de verdad no pertenece a ningún tramo de esa actividad. */
+const BASE_TOL_M = 30; // metros de tolerancia para ajustar un PK cercano a un tramo (error humano)
 let _baseRows;
 function normKey(s){
   return String(s==null?'':s).toUpperCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // sin acentos
+    .normalize('NFD').replace(/[̀-ͯ]/g,'') // sin acentos
     .replace(/\s+/g,' ').trim();
+}
+// Abscisa de la BASE a metros: número = metros tal cual; texto con '+' = PK ("20+875"→20875).
+function baseAbs(v){
+  if(v===''||v==null) return null;
+  if(typeof v==='number') return isNaN(v)?null:v;
+  const s=String(v).trim();
+  if(s.indexOf('+')>=0) return pkMeters(s);
+  const n=Number(s);
+  return isNaN(n)?null:n;
 }
 function getBaseRows(){
   if(_baseRows) return _baseRows;
@@ -186,20 +249,19 @@ function getBaseRows(){
   for(let i=1;i<v.length;i++){
     const cc=v[i][0], desc=v[i][5], elem=v[i][9];
     if(elem==='' || elem==null) continue;
-    let ini=Number(v[i][10]), fin=Number(v[i][11]);
-    if(isNaN(ini)) ini=null;
-    if(isNaN(fin)) fin=(ini!=null?ini:null);
+    let ini=baseAbs(v[i][10]), fin=baseAbs(v[i][11]);
+    if(fin==null) fin=ini;
     if(ini!=null && fin!=null && fin<ini){ const t=ini; ini=fin; fin=t; }
-    _baseRows.push({ cc:normKey(cc), desc:normKey(desc), elem:String(elem), ini:ini, fin:fin });
+    _baseRows.push({ cc:ccCorto(cc)||normKey(cc), desc:normKey(desc), elem:String(elem), ini:ini, fin:fin });
   }
   return _baseRows;
 }
 // -> { elem:'<ELEMENTO>'|'' , revisar:true|false }
-function lookupElemento(cc, descripcion, pkMeters){
+function lookupElemento(cc, descripcion, pkMetersIn){
   const rows=getBaseRows();
   if(!rows.length) return { elem:'', revisar:false };
-  const nCC=normKey(cc), nDesc=normKey(descripcion);
-  const pk=(pkMeters===''||pkMeters==null||isNaN(Number(pkMeters)))?null:Number(pkMeters);
+  const nCC=ccCorto(cc)||normKey(cc), nDesc=normKey(descripcion);
+  const pk=(pkMetersIn===''||pkMetersIn==null||isNaN(Number(pkMetersIn)))?null:Number(pkMetersIn);
   // candidatos: 1º CC+descripción, 2º solo CC, 3º solo descripción
   let cand = (nCC&&nDesc) ? rows.filter(r=>r.cc===nCC && r.desc===nDesc) : [];
   if(!cand.length && nCC)   cand = rows.filter(r=>r.cc===nCC);
@@ -215,7 +277,7 @@ function lookupElemento(cc, descripcion, pkMeters){
     const d = pk<r.ini ? (r.ini-pk) : (pk-r.fin);
     if(d<bestD){ bestD=d; best=r; } });
   if(best && bestD<=BASE_TOL_M) return { elem:best.elem, revisar:false };
-  // 3) sin coincidencia razonable -> marcar para revisión del encargado
+  // 3) hay candidatos para esa actividad pero el PK no pertenece a ningún tramo -> revisión humana
   return { elem:'', revisar:true };
 }
 
@@ -280,7 +342,6 @@ function guardarReporte(body){
   const cubMap=getCubicajeMap();
   const factorReporte=parseFloat(body.m3viaje)>0 ? parseFloat(body.m3viaje) : 14;
   const lineVol={}; // _linea -> volumen real (m³) calculado desde las placas
-  const lineOrigen={}; // _linea -> origen (Masivo 1, Masivo 2, etc.) para escribir en BANDEJA (D56)
   const volRows=[];
   (body.volquetas||[]).forEach(line=>{
     const idV=Utilities.getUuid();
@@ -295,15 +356,21 @@ function guardarReporte(body){
       volRows.push([idV, ts, fecha, reporta, line.origen||'', line.destino||'', line.tipo_destino||'',
         line.uf||'', p.placa||'', (p.viajes!=null?p.viajes:''), cub, m3p, found?'catalogo':'default']);
     });
-    if(line._linea!=null){ lineVol[line._linea]=m3line; lineOrigen[line._linea]=line.origen||''; }
+    if(line._linea!=null) lineVol[line._linea]=m3line;
   });
+  // Problema 2.12: la EXCAVACIÓN de la chequeadora se acumula al ORIGEN (una sola fila por reporte =
+  // Σ de todas las líneas, al PK del origen). El TERRAPLÉN no cambia: sigue 1 fila por línea al PK
+  // destino. D06: el volumen sigue viniendo de la chequeadora (cubicaje real por placa, D53).
+  const totalExc=Object.keys(lineVol).reduce((s,k)=>s+(lineVol[k]||0),0);
   (body.cantidades||[]).forEach(c=>{
-    // D53: la chequeadora es la fuente del volumen (D06); para sus líneas el largo oficial = m³ real
-    // por placa calculado arriba (excavación y, si aplica, terraplén comparten _linea).
-    if(rol==='chequeadora' && c._linea!=null && lineVol[c._linea]!=null) c.largo=lineVol[c._linea];
+    if(rol==='chequeadora'){
+      if(c._acumOrigen) c.largo=totalExc;                                  // excavación acumulada al origen
+      else if(c._linea!=null && lineVol[c._linea]!=null) c.largo=lineVol[c._linea]; // terraplén por línea
+    }
     const idC=Utilities.getUuid();
-    // D56: origen del banco de material para filas de excavación de la chequeadora (Masivo 1/2/etc.)
-    const origenBandeja = (rol==='chequeadora' && c._linea!=null) ? (lineOrigen[c._linea]||'') : '';
+    // D56: origen del banco de material para la fila de excavación acumulada de la chequeadora; la
+    // chequeadora lo manda en c.origen (la fila acumulada ya no tiene un _linea único).
+    const origenBandeja = (rol==='chequeadora') ? (c.origen||'') : '';
     // todo entra a BANDEJA; cereo (data:false) marcado como 'no_data' para que el encargado lo vea pero no lo envíe a DATA
     banRows.push([idC, ts, fecha, reporta, rol, c.grupo||'', c.capitulo||'', c.actividad||'', c.descripcion||'', c.centro_costo||'',
       c.unidad||'', c.uf||'', c.proyecto||'', c.elemento||'', c.pk_inicial||'', c.pk_final||'', c.abs_inicial||'', c.abs_final||'', c.liberacion||'CAMPO',
@@ -359,7 +426,7 @@ function guardarReporte(body){
   (function(){
     const maqList=body.maquinaria||[];
     if(!maqList.length) return;
-    const totalExc=Object.keys(lineVol).reduce((s,k)=>s+lineVol[k],0);
+    // totalExc (Σ líneas) ya calculado arriba para la excavación acumulada al origen (Problema 2.12).
     const nProd=maqList.filter(m=>!esTipoSinProduccion(m.tipo_equipo)).length || 1;
     const prodCada=totalExc/nProd;
     // proyecto y actividad del frente de excavación (todas las líneas comparten origen)
