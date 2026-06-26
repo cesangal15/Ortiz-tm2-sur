@@ -554,8 +554,13 @@ function maquinariaProduccion(e){
   });
   const frentes=fOrder.map(k=>{
     const f=fMap[k], n=f._filas.length;
+    // Prellenado proporcional a lo que cada máquina reportó (D62): como multi-máquina muestra el
+    // TOTAL de la actividad (D36), repartir por reportado equivale a partes iguales (oficial÷n) cuando
+    // todas marcan lo mismo, y al 100% si es una sola. Respaldo a partes iguales si no hay reportado.
+    const sumRep=f._filas.reduce((s,r)=> s+(parseFloat(r.produccion)||0), 0);
     const filas=f._filas.map(r=>{
-      const prefill = f.tipo==='excavacion' ? Math.round((f.oficial/(n||1))*100)/100 : '';
+      const rep=parseFloat(r.produccion)||0;
+      const prefill = sumRep>0 ? Math.round(f.oficial*rep/sumRep*100)/100 : Math.round((f.oficial/(n||1))*100)/100;
       const orig=r.produccion_capataz_orig;
       const otrasAct=(actsPorMaq[r.id_maquina]||[]).filter(x=>x!==f.label);
       return { id_registro:String(r.app_id_registro||''), id_maquina:r.id_maquina||'',
