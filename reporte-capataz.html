@@ -232,7 +232,7 @@ function logout(){
   sessionStorage.clear(); window.location.href='index.html';
 }
 
-function pkToMeters(pk){ if(!pk) return null; pk=String(pk).trim().replace(/\s/g,''); if(pk.includes('+')){const p=pk.split('+');const km=parseInt(p[0]);const m=parseInt(p[1]||'0');if(isNaN(km))return null;return km*1000+(isNaN(m)?0:m);} const n=parseFloat(pk);return isNaN(n)?null:n*1000; }
+function pkToMeters(pk){ if(!pk) return null; pk=String(pk).toLowerCase().replace(/pk/g,'').trim().replace(/\s/g,''); if(pk.includes('+')){const p=pk.split('+');const km=parseInt(p[0]);const m=parseInt(p[1]||'0');if(isNaN(km))return null;return km*1000+(isNaN(m)?0:m);} const n=parseFloat(pk);return isNaN(n)?null:n*1000; }
 function ufFromPk(pk){ const m=pkToMeters(pk); if(m==null) return ''; return m<=30000?'UF1':'UF2'; }
 function proyectoFromUf(uf){ return uf==='UF1'?'3701':uf==='UF2'?'3702':''; }
 
@@ -584,7 +584,15 @@ function updateResumen(){
   body.innerHTML=html;
   card.style.display='block';
 }
-function buildElemento(pki,pkf){ if(!pki) return ''; return pkf? ('tm2 pk '+pki+' - '+pkf) : ('tm2 pk '+pki); }
+// ELEMENTO unificado (Problema 2.12): "tm2 pk NN+NNN" o "tm2 pk NN+NNN - NN+NNN". Normaliza el PK y
+// nunca duplica el token "pk"/"Pk" (pkToMeters lo quita). Misma lógica en backend y en los HTML.
+function pkNorm(s){ const m=pkToMeters(s); if(m==null) return ''; const km=Math.floor(m/1000), r=Math.round(m-km*1000); return km+'+'+('00'+r).slice(-3); }
+function buildElemento(pki,pkf){
+  let ini=pki, fin=pkf;
+  if((fin==null||fin==='') && pki!=null){ const p=String(pki).split(/\s*-\s*/); if(p.length>=2){ ini=p[0]; fin=p.slice(1).join(' - '); } }
+  const a=pkNorm(ini); if(!a) return '';
+  const b=pkNorm(fin); return b? ('tm2 pk '+a+' - '+b) : ('tm2 pk '+a);
+}
 
 function getCantidades(){
   /* D46 — reparte horas (operadas/programadas/muertas) por máquina entre sus apariciones del día. */

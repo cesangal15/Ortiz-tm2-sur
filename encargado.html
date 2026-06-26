@@ -151,8 +151,16 @@ window.onload = function(){
   document.getElementById('fecha').value=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
 };
 function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
-function pkToMeters(pk){ if(!pk) return null; pk=String(pk).trim().replace(/\s/g,''); if(pk.includes('+')){const p=pk.split('+');const km=parseInt(p[0]);const m=parseInt(p[1]||'0');if(isNaN(km))return null;return km*1000+(isNaN(m)?0:m);} const n=parseFloat(pk);return isNaN(n)?null:n*1000; }
+function pkToMeters(pk){ if(!pk) return null; pk=String(pk).toLowerCase().replace(/pk/g,'').trim().replace(/\s/g,''); if(pk.includes('+')){const p=pk.split('+');const km=parseInt(p[0]);const m=parseInt(p[1]||'0');if(isNaN(km))return null;return km*1000+(isNaN(m)?0:m);} const n=parseFloat(pk);return isNaN(n)?null:n*1000; }
 function ufFromPk(pk){ const m=pkToMeters(pk); if(m==null) return ''; return m<=30000?'UF1':'UF2'; }
+// ELEMENTO unificado (Problema 2.12): "tm2 pk NN+NNN"; normaliza el PK y no duplica el token "pk".
+function pkNorm(s){ const m=pkToMeters(s); if(m==null) return ''; const km=Math.floor(m/1000), r=Math.round(m-km*1000); return km+'+'+('00'+r).slice(-3); }
+function buildElemento(pki,pkf){
+  let ini=pki, fin=pkf;
+  if((fin==null||fin==='') && pki!=null){ const p=String(pki).split(/\s*-\s*/); if(p.length>=2){ ini=p[0]; fin=p.slice(1).join(' - '); } }
+  const a=pkNorm(ini); if(!a) return '';
+  const b=pkNorm(fin); return b? ('tm2 pk '+a+' - '+b) : ('tm2 pk '+a);
+}
 
 async function consultar(){
   const fecha=document.getElementById('fecha').value, proyecto=document.getElementById('proyecto').value;
@@ -474,7 +482,7 @@ function addLinea(){
   const x=ACT_IDX[a], uf=ufFromPk(pk), proy=uf==='UF1'?'3701':uf==='UF2'?'3702':'';
   STATE.cantidades.push({ id_registro:'', reporta:'(encargado)', rol:'encargado',
     grupo:x.cc.split('.')[0]==='05'?'DRENAJES Y ESTRUCTURAS':'TIERRAS', capitulo:'', actividad:a, descripcion:x.item,
-    centro_costo:proy?`${proy}.${x.cc}`:'', unidad:x.uni, uf, proyecto:proy, elemento:pk?`tm2 pk ${pk}`:'', pk_inicial:pk, pk_final:'',
+    centro_costo:proy?`${proy}.${x.cc}`:'', unidad:x.uni, uf, proyecto:proy, elemento:buildElemento(pk,''), pk_inicial:pk, pk_final:'',
     abs_inicial:pkToMeters(pk), abs_final:null, liberacion:'CAMPO', largo, observacion:'', _inc:true });
   render();
 }
