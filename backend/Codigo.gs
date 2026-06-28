@@ -161,11 +161,11 @@ function buildDataRow(c, fecha, ts, reporta, rol, idC){
     const cod = ccCorto(c.centro_costo);            // "02.05" -> reancla el proyecto correcto al CC
     cc = cod ? (proy + '.' + cod) : cc;
   }
-  // ELEMENTO oficial desde la hoja BASE (catálogo de elementos por CC + descripción + abscisa); el
-  // PK válido debe caer dentro de un tramo de la BASE y devolver su elemento limpio (D63). Si la BASE
-  // no tiene candidato para esa actividad, se arma desde el PK con el helper único (sin "Pk Pk").
-  // REVISAR queda SÓLO para el caso legítimo: hay candidatos en la BASE pero el PK no cae en ninguno
-  // (no se inventan elementos nuevos — el elemento se basa en lo que existe en la BASE).
+  // ELEMENTO oficial desde la hoja BASE (catálogo de elementos), eligiendo la FUENTE según la
+  // actividad (D63): préstamo→EL DIVISO, estructuras/MSR→elemento MSR del PK, conformación→RCD,
+  // resto (aprovechable/no aprovechable/terraplén/subbase/base)→tramo "tm2 pk X-Y" por abscisa. Si no
+  // hay elemento para esa actividad/PK, se arma desde el PK con el helper único (sin "Pk Pk"). REVISAR
+  // queda SÓLO para el caso legítimo (el PK no pertenece a ningún tramo del eje / falta el marcador).
   const lk = lookupElemento(cc, c.descripcion, mi);
   const pkElem = buildElemento(c.pk_inicial, c.pk_final);
   const elem = lk.elem ? lk.elem
@@ -212,21 +212,21 @@ function buildElemento(pkIni, pkFin){
   return b ? ('tm2 pk '+a+' - '+b) : ('tm2 pk '+a);
 }
 
-/* ---------- BASE: ELEMENTO oficial por ABSCISA (tabla de TRAMOS del eje) (D63) ----------
+/* ---------- BASE: ELEMENTO oficial, fuente por ACTIVIDAD (D63) ----------
  * La hoja BASE (mismo Sheet) tiene VARIAS tablas lado a lado (ítems, elementos, liberación, acta…),
  * alineadas por fila sólo por accidente — NO es una sola tabla. La de elementos vive en J/K/L:
- * J=ELEMENTO, K=ABSCISA INICIO, L=ABSCISA FIN. Por eso NO se cruza por CC/descripción (esa columna es
- * de OTRA tabla); el cruce es **sólo por abscisa**.
+ * J=ELEMENTO, K=ABSCISA INICIO, L=ABSCISA FIN. Por eso NO se cruza por la descripción/CC de la tabla
+ * de ítems (es OTRA tabla); el ELEMENTO se elige según la ACTIVIDAD del reporte y se cruza por abscisa.
  *
- * Esa tabla de elementos mezcla dos cosas:
- *   - TRAMOS del eje: "tm2 pk X - Y" (rangos contiguos que parten el eje de 9+800 a 39+560). Son los
- *     que usan explanaciones / estructuras / bases — el alcance de este reporte (V1, D22).
- *   - Puntuales de DRENAJES: "ODT1-…/ODT2-…/ODT3-…" (y marcadores como RCD/ZODME/EL DIVISO/MSR), que
- *     comparten PK con los tramos. NO aplican a este reporte y, si se mezclaran, colisionarían con los
- *     tramos por abscisa.
- * Por eso aquí se consideran SÓLO los tramos "tm2 pk …": cada PK del eje cae en exactamente un tramo y
- * devuelve su elemento limpio. Fuera del eje (lejos de todo tramo) → REVISAR (revisión humana, sin
- * inventar elementos nuevos). Los ODT y puntuales de drenaje se ignoran (drenajes = fuera de alcance). */
+ * Tipos de elemento en esa tabla y a qué actividad pertenecen (confirmado por el usuario):
+ *   - TRAMO  "tm2 pk X - Y"  → explanaciones/bases: excavación aprovechable y NO aprovechable,
+ *                              terraplén, subbase, base. Parten el eje (9+800→39+560) por abscisa.
+ *   - DIVISO "EL DIVISO"     → excavación de PRÉSTAMO (CC 02.06).
+ *   - MSR    "MSR …"         → estructuras / MSR (CC 05.* y 02.12); por abscisa entre las MSR.
+ *   - RCD    "RCD …"         → conformación / disposición (CC 02.08). (Por ahora todo 02.08 va a RCD;
+ *                              distinguir ZODME "ZODME PK30" queda PENDIENTE — el usuario trabaja sólo RCD.)
+ *   - ODT*   (drenajes)      → FUERA de alcance (V1, D22). Se ignoran; comparten PK con los tramos.
+ * REVISAR sólo para el caso legítimo: el PK no pertenece a ningún tramo del eje, o falta el marcador. */
 const BASE_TOL_M = 30; // metros de tolerancia para ajustar un PK cercano a un tramo (error humano)
 let _baseRows;
 // Abscisa de la BASE a metros: número = metros tal cual; texto con '+' = PK ("20+875"→20875).
@@ -238,8 +238,24 @@ function baseAbs(v){
   const n=Number(s);
   return isNaN(n)?null:n;
 }
-// ¿es un TRAMO del eje? ("tm2 pk …"). Excluye ODT*/RCD/ZODME/EL DIVISO/MSR y demás puntuales.
-function esTramoBase(elem){ return /^\s*tm2\s*pk/i.test(String(elem==null?'':elem)); }
+// Tipo de un elemento de la BASE por su texto. '' = fuera de alcance (ODT/drenajes u otros).
+function baseTipo(elem){
+  const e=String(elem==null?'':elem);
+  if(/^\s*tm2\s*pk/i.test(e)) return 'TRAMO';
+  if(/diviso/i.test(e))       return 'DIVISO';
+  if(/^\s*msr/i.test(e))      return 'MSR';
+  if(/^\s*rcd/i.test(e))      return 'RCD';
+  if(/zodme/i.test(e))        return 'ZODME';   // clasificado pero aún sin actividad asignada (pendiente)
+  return '';                                     // ODT* y demás -> fuera
+}
+// Conjunto de elementos a usar según el CC corto de la actividad (NN.NN).
+function baseSetFor(ccCortoStr){
+  const c=String(ccCortoStr||'');
+  if(c==='02.06') return 'DIVISO';                       // excavación de préstamo
+  if(c.indexOf('05.')===0 || c==='02.12') return 'MSR';  // estructuras / MSR
+  if(c==='02.08') return 'RCD';                          // conformación/disposición (ZODME pendiente)
+  return 'TRAMO';                                        // aprovechable/no aprovechable/terraplén/subbase/base
+}
 function getBaseRows(){
   if(_baseRows) return _baseRows;
   _baseRows = [];
@@ -249,24 +265,31 @@ function getBaseRows(){
   for(let i=1;i<v.length;i++){
     const elem=v[i][9];                                   // J = ELEMENTO
     if(elem==='' || elem==null) continue;
-    if(!esTramoBase(elem)) continue;                      // sólo tramos del eje (no ODT/drenajes)
+    const tipo=baseTipo(elem);
+    if(!tipo) continue;                                   // ODT/drenajes y otros -> fuera
     let ini=baseAbs(v[i][10]), fin=baseAbs(v[i][11]);     // K = ABS INICIO, L = ABS FIN
-    if(ini==null && fin==null) continue;                 // fila sin abscisa (p. ej. encabezado) -> fuera
     if(fin==null) fin=ini;
     if(ini==null) ini=fin;
-    if(fin<ini){ const t=ini; ini=fin; fin=t; }
-    _baseRows.push({ elem:String(elem), ini:ini, fin:fin });
+    if(ini!=null && fin!=null && fin<ini){ const t=ini; ini=fin; fin=t; }
+    _baseRows.push({ elem:String(elem), ini:ini, fin:fin, tipo:tipo });
   }
   return _baseRows;
 }
-// -> { elem:'<ELEMENTO>'|'' , revisar:true|false }. cc/descripcion se ignoran: el cruce es por abscisa.
+// -> { elem:'<ELEMENTO>'|'' , revisar:true|false }
 function lookupElemento(cc, descripcion, pkMetersIn){
-  const rows=getBaseRows();
-  if(!rows.length) return { elem:'', revisar:false };
+  const all=getBaseRows();
+  if(!all.length) return { elem:'', revisar:false };
+  const set=baseSetFor(ccCorto(cc));
+  const rows=all.filter(r=>r.tipo===set);
+  // DIVISO / RCD: marcador ligado a la ACTIVIDAD (no al PK) -> se devuelve directo.
+  if(set==='DIVISO' || set==='RCD'){
+    return rows.length ? { elem:rows[0].elem, revisar:false } : { elem:'', revisar:true };
+  }
+  // TRAMO / MSR: por abscisa dentro del conjunto.
+  if(!rows.length) return { elem:'', revisar:false };     // sin filas de ese tipo -> respaldo PK
   const pk=(pkMetersIn===''||pkMetersIn==null||isNaN(Number(pkMetersIn)))?null:Number(pkMetersIn);
   if(pk==null) return { elem:'', revisar:false };
-  // 1) PK dentro de un tramo (los tramos parten el eje sin solaparse → normalmente uno solo; si por
-  //    captura hubiera solape, gana el de rango más angosto).
+  // 1) PK dentro de un tramo (sin solape → uno solo; si lo hubiera, gana el de rango más angosto).
   const hits=rows.filter(r=>r.ini!=null && r.fin!=null && pk>=r.ini && pk<=r.fin);
   if(hits.length){
     hits.sort((a,b)=>(a.fin-a.ini)-(b.fin-b.ini));
@@ -278,7 +301,7 @@ function lookupElemento(cc, descripcion, pkMetersIn){
     const d = pk<r.ini ? (r.ini-pk) : (pk-r.fin);
     if(d<bestD){ bestD=d; best=r; } });
   if(best && bestD<=BASE_TOL_M) return { elem:best.elem, revisar:false };
-  // 3) el PK no pertenece a ningún tramo del eje -> revisión humana
+  // 3) el PK no pertenece a ningún tramo/zona del conjunto -> revisión humana
   return { elem:'', revisar:true };
 }
 
