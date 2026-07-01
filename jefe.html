@@ -108,10 +108,15 @@ const COLS_DEFAULT = { FECHA:0, GRUPO:2, DESCRIPCION:5, UF:6, UNIDAD:13, LARGO:1
 
 window.onload = function(){
   const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
-  // Guard: solo jefe (o admin). Cualquier otro rol -> login. NO es el residente.
-  if(!rol || (rol!=='jefe' && rol!=='admin')){ window.location.href='index.html'; return; }
+  // Guard: jefe, admin o residente (el residente entra desde su panel). Otro rol -> login.
+  if(!rol || (rol!=='jefe' && rol!=='admin' && rol!=='residente')){ window.location.href='index.html'; return; }
   document.getElementById('userDisplay').textContent=usuario||'jefe';
-  if(rol==='admin'){var _bm=document.getElementById('btnMenu');if(_bm)_bm.style.display='inline-block';}
+  // Botón de regreso según de dónde viene: admin -> menú; residente -> su panel.
+  var _bm=document.getElementById('btnMenu');
+  if(_bm){
+    if(rol==='admin'){ _bm.onclick=function(){location.href='menu.html';}; _bm.style.display='inline-block'; }
+    else if(rol==='residente'){ _bm.textContent='← Volver'; _bm.onclick=function(){location.href='residente.html';}; _bm.style.display='inline-block'; }
+  }
   // Fecha por defecto = HOY en zona horaria Colombia (D50), nunca toISOString().
   const hoy=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
   document.getElementById('desde').value=hoy;
@@ -251,7 +256,7 @@ function bloqueCopiado(){
     btns+=`<button class="btn-copy" onclick="copiarDia('${d}',this)">Copiar ${esc(d)}<small>${n} fila${n!==1?'s':''} · A:S</small></button>`;
   });
   return '<div class="copy-card">'
-    + '<div class="copy-intro">El pegado al maestro es <b>día a día</b>. Cada botón copia las columnas <b>A a S (19)</b> de ese día, con las celdas de fórmula (ORDEN, ACTA, ESPESOR, FC, CANTIDAD) vacías para respetar el maestro.</div>'
+    + '<div class="copy-intro">El pegado al maestro es <b>día a día</b>. Cada botón copia las columnas <b>A a S (19)</b> de ese día, con las celdas de fórmula (ORDEN, ACTA, ESPESOR, FC, CANTIDAD) vacías para respetar el maestro. Los decimales ya salen con <b>coma</b> para el Excel del maestro.</div>'
     + `<div class="copy-btns">${btns}</div>`
     + '<div class="guia"><h4>Cómo pegar en el Excel maestro</h4><ol>'
     + '<li>Clic en la columna <b>A</b> de la primera fila vacía del maestro.</li>'
@@ -269,10 +274,19 @@ function copiarDia(fecha, btn){
   const rows=STATE.filas.filter(r=>String(r[cF]||'')===fecha);
   const text=rows.map(r=>{
     const cells=[];
-    for(let j=0;j<end;j++){ const v=r[j]; cells.push(v==null?'':String(v)); }
+    for(let j=0;j<end;j++){ cells.push(celdaCopia(r[j])); }
     return cells.join('\t');
   }).join('\n');
   copiarTexto(text, btn);
+}
+// Formatea una celda para el maestro. Los NÚMEROS con decimal salen con COMA (14.5 -> "14,5") porque
+// el Excel del maestro usa coma como separador decimal; así se pegan como número y no como texto raro.
+// Solo se toca lo que es número de verdad: el texto (CC "3701.02.05", elementos, descripciones) se
+// deja intacto, y las celdas vacías siguen siendo cadena vacía real entre tabs.
+function celdaCopia(v){
+  if(v==null) return '';
+  if(typeof v==='number') return String(v).replace('.', ',');
+  return String(v);
 }
 
 function copiarTexto(text, btn){
