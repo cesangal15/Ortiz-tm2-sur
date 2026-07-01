@@ -7,6 +7,7 @@
  * Endpoints:
  *   GET  ?action=bandeja&fecha=YYYY-MM-DD[&proyecto=3701]   -> {cantidades:[](crudo), maquinas:[]}
  *   GET  ?action=consolidado&fecha=...   -> {cantidades:[](de DATA, ya enviado)}
+ *   GET  ?action=consolidado&desde=YYYY-MM-DD&hasta=YYYY-MM-DD  -> {filas:[](A–T crudo de DATA en el rango),header,cols} (panel del jefe, solo lectura)
  *   GET  ?action=estado&fecha=...        -> {reportadas:[{id_maquina,capataz}]}
  *   GET  ?action=cubicaje                -> {cubicaje:{PLACA:cubicaje,...}}  (catálogo placa→m³/viaje, D53)
  *   GET  ?action=maquinaria_produccion&fecha=...  -> cruce MAQUINARIA(CC 02.05-08) × volumen oficial DATA (2.4/D55)
@@ -498,6 +499,10 @@ function bandeja(e){
 
 /* ---------- DATA ya enviada (para verificar) ---------- */
 function consolidado(e){
+  // Panel del jefe (consulta por rango, solo lectura): ?action=consolidado&desde=YYYY-MM-DD&hasta=YYYY-MM-DD
+  // Si llega desde/hasta se usa el handler de rango; si no, se conserva el consolidado de UN día de abajo
+  // intacto (?action=consolidado&fecha=YYYY-MM-DD). Nunca escribe: ni DATA ni maestro.
+  if(e.parameter.desde || e.parameter.hasta) return consolidadoRango(e);
   const fecha=fdate(e.parameter.fecha), proy=e.parameter.proyecto||'';
   const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('DATA');
   let cantidades=[];
@@ -511,6 +516,41 @@ function consolidado(e){
     }
   }
   return json({fecha, cantidades});
+}
+
+/* ---------- consolidado por RANGO (panel del jefe, solo lectura) ----------
+ * Devuelve las filas CRUDAS A–T de DATA cuya FECHA (col A) cae en [desde, hasta] inclusive, para que
+ * el frontend arme el resumen de obra en cliente (sumando LARGO) y el copiado A:S día a día al maestro.
+ * Comparación de fechas por DUCK-TYPING (fdate: usa typeof v.getFullYear==='function', NUNCA instanceof
+ * Date ni Utilities.formatDate) y como cadenas 'YYYY-MM-DD' (orden lexicográfico = orden cronológico).
+ * NO toca DATA/BANDEJA/MAQUINARIA ni el maestro. Es lectura pura. */
+function consolidadoRango(e){
+  const dRaw=fdate(e.parameter.desde), hRaw=fdate(e.parameter.hasta);
+  const desde = dRaw || hRaw, hasta = hRaw || dRaw;   // si falta uno, el rango es un solo día
+  const proy=e.parameter.proyecto||'';
+  const AT=20;                                        // A–T (las 20 columnas espejo del maestro + Columna1)
+  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('DATA');
+  const filas=[];
+  if(desde && hasta && sh && sh.getLastRow()>1){
+    const v=sh.getDataRange().getValues();
+    for(let i=1;i<v.length;i++){
+      const f=fdate(v[i][C.FECHA]);                   // Date -> 'YYYY-MM-DD' por duck-typing; string se normaliza
+      if(!f || f<desde || f>hasta) continue;          // rango inclusivo, comparación lexicográfica
+      if(proy && String(v[i][7])!==proy) continue;
+      const row=v[i].slice(0, AT);                     // recorta a A–T (el copiado A:S recorta a 19 en cliente)
+      row[C.FECHA]=f;                                  // col A como cadena 'YYYY-MM-DD' (agrupar por día / copiar)
+      filas.push(row);
+    }
+  }
+  // cols: índices dentro de cada fila devuelta. COPY_END=19 => el copiado toma [0,19) = A:S (19 columnas).
+  return json({
+    ok:true, desde:desde, hasta:hasta,
+    header: DATA_HEADERS.slice(0, AT),
+    cols: { FECHA:0, ORDEN:1, GRUPO:2, CC:3, CAPITULO:4, DESCRIPCION:5, UF:6, PROYECTO:7, ELEMENTO:8,
+            ABS_INI:9, ABS_FIN:10, LIBERACION:11, ACTA:12, UNIDAD:13, LARGO:14, ESPESOR:15, FC:16,
+            CANTIDAD:17, OBSERVACION:18, COLUMNA1:19, COPY_END:19 },
+    filas: filas
+  });
 }
 
 /* ---------- estado de maquinaria ---------- */

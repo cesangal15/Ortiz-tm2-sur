@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panel del Jefe — Consulta de Obra</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--success:#2ecc71;--error:#e74c3c;--input-bg:#12151f;--uf1:#3a9bdc;--uf2:#9b59b6;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:0 0 48px;}
+  .header{background:linear-gradient(135deg,#1a1d27 0%,#0f1117 100%);border-bottom:3px solid var(--accent);padding:20px 24px;display:flex;align-items:center;justify-content:space-between;}
+  .header-left .label{font-family:'Syne',sans-serif;font-size:10px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;}
+  .header-left h1{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;}
+  .header-user{font-size:12px;color:var(--muted);text-align:right;}
+  .header-user span{display:block;color:var(--accent);font-weight:600;}
+  .logout-btn{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:4px 10px;cursor:pointer;margin-top:4px;font-family:'DM Sans',sans-serif;}
+  .logout-btn:hover{border-color:var(--error);color:var(--error);}
+  .container{max-width:720px;margin:0 auto;padding:24px 16px;}
+  .filtro-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:20px;}
+  .filtro-row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;}
+  .field{flex:1;min-width:130px;}
+  label{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-bottom:5px;letter-spacing:0.5px;text-transform:uppercase;}
+  input[type="date"],select{width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 14px;outline:none;transition:border-color 0.2s;appearance:none;color-scheme:dark;}
+  select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a80a0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px;cursor:pointer;}
+  input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,0.1);}
+  select option,optgroup{background:#1a1d27;}
+  .btn-consultar{padding:10px 18px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:8px;color:#0f1117;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;}
+  .btn-consultar:hover{transform:translateY(-1px);}
+  .filtros-din{margin-top:14px;padding-top:14px;border-top:1px solid var(--border);display:none;}
+  .section-title{font-family:'Syne',sans-serif;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin:26px 0 12px;display:flex;align-items:center;gap:8px;}
+  .section-title::after{content:'';flex:1;height:1px;background:var(--border);}
+  /* ---- Resumen (protagonista) ---- */
+  .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:8px;}
+  .kpi{background:linear-gradient(135deg,var(--surface2),var(--surface));border:1px solid var(--border);border-radius:14px;padding:16px;text-align:center;}
+  .kpi .k-val{font-family:'Syne',sans-serif;font-size:24px;font-weight:800;color:var(--accent);line-height:1.1;}
+  .kpi .k-lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-top:6px;}
+  .resumen-block{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:8px 18px 14px;margin-bottom:16px;}
+  .resumen-block h3{font-family:'Syne',sans-serif;font-size:13px;font-weight:800;color:var(--text);text-transform:uppercase;letter-spacing:1px;padding:12px 0 8px;border-bottom:1px solid var(--border);}
+  .tot-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(46,52,80,0.5);font-size:13px;}
+  .tot-row:last-child{border-bottom:none;}
+  .tot-row .cat{color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;}
+  .tot-row .cat small{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:0.5px;margin-top:1px;}
+  .tot-row .val{font-family:'Syne',sans-serif;font-weight:700;white-space:nowrap;}
+  .tot-row .val .u{font-family:'DM Sans',sans-serif;font-size:11px;color:var(--muted);font-weight:400;margin-left:4px;}
+  .badge{font-size:10px;font-weight:600;padding:1px 7px;border-radius:12px;border:1px solid var(--border);}
+  .badge.uf1{border-color:rgba(58,155,220,0.4);color:var(--uf1);} .badge.uf2{border-color:rgba(155,89,182,0.4);color:var(--uf2);}
+  /* ---- Copiado (secundario) ---- */
+  .copy-card{background:var(--surface2);border:1px dashed var(--border);border-radius:14px;padding:18px;}
+  .copy-intro{font-size:12.5px;color:var(--muted);margin-bottom:14px;line-height:1.5;}
+  .copy-btns{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px;}
+  .btn-copy{padding:11px 16px;background:var(--input-bg);border:1px solid var(--accent);border-radius:10px;color:var(--accent);font-family:'Syne',sans-serif;font-size:12px;font-weight:700;cursor:pointer;letter-spacing:0.5px;transition:all 0.15s;}
+  .btn-copy:hover{background:rgba(245,166,35,0.1);}
+  .btn-copy small{display:block;font-family:'DM Sans',sans-serif;font-size:10px;font-weight:400;color:var(--muted);margin-top:2px;letter-spacing:0;}
+  .btn-copy.copied{border-color:var(--success);color:var(--success);}
+  .guia{background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:14px 16px;}
+  .guia h4{font-family:'Syne',sans-serif;font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
+  .guia ol{margin:0;padding-left:18px;}
+  .guia li{font-size:12px;color:var(--text);line-height:1.6;margin-bottom:3px;}
+  .guia li b{color:var(--accent);}
+  .empty-state{text-align:center;padding:44px 20px;color:var(--muted);}
+  .empty-state .icon{font-size:40px;margin-bottom:12px;}
+  .loading{text-align:center;padding:34px;color:var(--muted);font-size:14px;}
+  @media(max-width:480px){.kpis{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <div class="label">Consulta · Jefe</div>
+    <h1>📊 Panel del Jefe</h1>
+  </div>
+  <div class="header-user">
+    <span id="userDisplay">—</span>
+    <button class="logout-btn" onclick="logout()">Salir</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="filtro-card">
+    <div class="filtro-row">
+      <div class="field"><label>Desde</label><input type="date" id="desde" onchange="syncRango()"></div>
+      <div class="field"><label>Hasta</label><input type="date" id="hasta"></div>
+      <button class="btn-consultar" onclick="consultar()">CONSULTAR →</button>
+    </div>
+    <div class="filtros-din" id="filtrosDin">
+      <div class="filtro-row">
+        <div class="field"><label>Actividad</label><select id="fActividad" onchange="render()"></select></div>
+        <div class="field"><label>Unidad Funcional</label><select id="fUf" onchange="render()"></select></div>
+      </div>
+    </div>
+  </div>
+  <div id="resultados">
+    <div class="empty-state"><div class="icon">🗓️</div><p>Elige un rango de fechas y consulta el resumen de obra.</p></div>
+  </div>
+</div>
+
+<script>
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
+
+// Estado de la consulta. `cols` trae los índices de columna que informa el backend (con fallback al
+// layout A–T conocido) para no acoplar el frontend a posiciones fijas. Es SOLO LECTURA: aquí no se
+// escribe nada a DATA ni al maestro; el copiado va al portapapeles y lo pega el usuario a mano.
+let STATE = { filas:[], cols:{}, desde:'', hasta:'' };
+const COLS_DEFAULT = { FECHA:0, GRUPO:2, DESCRIPCION:5, UF:6, UNIDAD:13, LARGO:14, COPY_END:19 };
+
+window.onload = function(){
+  const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
+  // Guard: solo jefe (o admin). Cualquier otro rol -> login. NO es el residente.
+  if(!rol || (rol!=='jefe' && rol!=='admin')){ window.location.href='index.html'; return; }
+  document.getElementById('userDisplay').textContent=usuario||'jefe';
+  // Fecha por defecto = HOY en zona horaria Colombia (D50), nunca toISOString().
+  const hoy=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
+  document.getElementById('desde').value=hoy;
+  document.getElementById('hasta').value=hoy;
+  syncRango();
+};
+function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
+
+// hasta no puede ser menor que desde: fija el min y corrige si quedó por debajo.
+function syncRango(){
+  const d=document.getElementById('desde').value, h=document.getElementById('hasta');
+  h.min=d;
+  if(h.value && d && h.value<d) h.value=d;
+}
+
+function col(name){ const c=STATE.cols; return (c && c[name]!=null) ? c[name] : COLS_DEFAULT[name]; }
+function num(v){ const n=parseFloat(v); return isNaN(n)?0:n; }
+function fmt(n){ return (Math.round(n*100)/100).toLocaleString('es-CO',{maximumFractionDigits:2}); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+async function consultar(){
+  const desde=document.getElementById('desde').value, hasta=document.getElementById('hasta').value;
+  if(!desde || !hasta){ alert('Selecciona el rango de fechas.'); return; }
+  if(hasta<desde){ alert('La fecha "hasta" no puede ser menor que "desde".'); return; }
+  document.getElementById('resultados').innerHTML='<div class="loading">⏳ Consultando DATA...</div>';
+  document.getElementById('filtrosDin').style.display='none';
+  try{
+    const url=`${APPS_SCRIPT_URL}?action=consolidado&desde=${desde}&hasta=${hasta}`;
+    const resp=await fetch(url); const data=await resp.json();
+    STATE.filas=data.filas||[];
+    STATE.cols=data.cols||{};
+    STATE.desde=desde; STATE.hasta=hasta;
+    armarSelectores();
+    render();
+  }catch(err){
+    document.getElementById('resultados').innerHTML='<div class="empty-state"><div class="icon">⚠️</div><p>No se pudo consultar. Revisa el Apps Script o la conexión.</p></div>';
+  }
+}
+
+// Selectores de Actividad y UF armados con los valores DISTINTOS del resultado (no del catálogo).
+function armarSelectores(){
+  const cA=col('DESCRIPCION'), cU=col('UF');
+  const acts=[...new Set(STATE.filas.map(r=>String(r[cA]||'').trim()).filter(Boolean))].sort();
+  const ufs =[...new Set(STATE.filas.map(r=>String(r[cU]||'').trim()).filter(Boolean))].sort();
+  const selA=document.getElementById('fActividad'), selU=document.getElementById('fUf');
+  selA.innerHTML='<option value="">Todas</option>'+acts.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join('');
+  selU.innerHTML='<option value="">Todas</option>'+ufs.map(u=>`<option value="${esc(u)}">${esc(u)}</option>`).join('');
+  document.getElementById('filtrosDin').style.display = STATE.filas.length ? 'block' : 'none';
+}
+
+// Filas que respetan el filtro Actividad/UF (para el RESUMEN). El copiado NO usa esto: copia el día
+// completo tal cual está en DATA.
+function filasFiltradas(){
+  const fa=document.getElementById('fActividad').value, fu=document.getElementById('fUf').value;
+  const cA=col('DESCRIPCION'), cU=col('UF');
+  return STATE.filas.filter(r=>
+    (!fa || String(r[cA]||'').trim()===fa) &&
+    (!fu || String(r[cU]||'').trim()===fu));
+}
+
+// Suma LARGO agrupando por la columna `ci`; captura la unidad predominante para mostrarla.
+function agrupar(rows, ci){
+  const cL=col('LARGO'), cUn=col('UNIDAD');
+  const map={};
+  rows.forEach(r=>{
+    const k=String(r[ci]||'').trim()||'—';
+    if(!map[k]) map[k]={total:0, n:0, unidad:String(r[cUn]||'').trim()};
+    map[k].total+=num(r[cL]); map[k].n++;
+  });
+  return Object.keys(map).sort().map(k=>({clave:k, ...map[k]}));
+}
+
+function render(){
+  const cont=document.getElementById('resultados');
+  if(!STATE.filas.length){
+    cont.innerHTML='<div class="empty-state"><div class="icon">📭</div><p>No hay filas en DATA para ese rango.</p></div>';
+    return;
+  }
+  const rows=filasFiltradas();
+  const cL=col('LARGO'), cF=col('FECHA');
+  const totalLargo=rows.reduce((s,r)=>s+num(r[cL]),0);
+  const dias=[...new Set(rows.map(r=>String(r[cF]||'')))].filter(Boolean);
+
+  let html='';
+  // ---- A) RESUMEN (protagonista) ----
+  html+='<div class="section-title">Resumen de obra</div>';
+  html+='<div class="kpis">'
+     + `<div class="kpi"><div class="k-val">${fmt(totalLargo)}</div><div class="k-lbl">Total LARGO</div></div>`
+     + `<div class="kpi"><div class="k-val">${rows.length}</div><div class="k-lbl">Líneas</div></div>`
+     + `<div class="kpi"><div class="k-val">${dias.length}</div><div class="k-lbl">Días</div></div>`
+     + '</div>';
+
+  html+=bloqueResumen('Por actividad', agrupar(rows, col('DESCRIPCION')), true);
+  html+=bloqueResumen('Por unidad funcional', agrupar(rows, col('UF')), false);
+  html+=bloqueResumen('Por grupo', agrupar(rows, col('GRUPO')), false);
+
+  // ---- C) COPIADO (secundario) ----
+  html+='<div class="section-title">Copiar para el maestro</div>';
+  html+=bloqueCopiado();
+
+  cont.innerHTML=html;
+}
+
+function bloqueResumen(titulo, items, mostrarUnidad){
+  if(!items.length) return '';
+  let h=`<div class="resumen-block"><h3>${esc(titulo)}</h3>`;
+  items.forEach(it=>{
+    const uni = mostrarUnidad && it.unidad ? `<span class="u">${esc(it.unidad)}</span>` : '';
+    h+=`<div class="tot-row"><div class="cat">${esc(it.clave)}<small>${it.n} línea${it.n!==1?'s':''}</small></div>`
+     + `<div class="val">${fmt(it.total)}${uni}</div></div>`;
+  });
+  return h+'</div>';
+}
+
+// Un botón "Copiar [fecha]" por cada día presente (independiente del filtro): copia A:S de ese día.
+function bloqueCopiado(){
+  const cF=col('FECHA');
+  const dias=[...new Set(STATE.filas.map(r=>String(r[cF]||'')))].filter(Boolean).sort();
+  let btns='';
+  dias.forEach(d=>{
+    const n=STATE.filas.filter(r=>String(r[cF]||'')===d).length;
+    btns+=`<button class="btn-copy" onclick="copiarDia('${d}',this)">Copiar ${esc(d)}<small>${n} fila${n!==1?'s':''} · A:S</small></button>`;
+  });
+  return '<div class="copy-card">'
+    + '<div class="copy-intro">El pegado al maestro es <b>día a día</b>. Cada botón copia las columnas <b>A a S (19)</b> de ese día, con las celdas de fórmula (ORDEN, ACTA, ESPESOR, FC, CANTIDAD) vacías para respetar el maestro.</div>'
+    + `<div class="copy-btns">${btns}</div>`
+    + '<div class="guia"><h4>Cómo pegar en el Excel maestro</h4><ol>'
+    + '<li>Clic en la columna <b>A</b> de la primera fila vacía del maestro.</li>'
+    + '<li>Clic derecho → <b>Pegado especial</b> → marcar <b>“Omitir blancos”</b> → Aceptar.</li>'
+    + '<li>Arrastrar hacia abajo las fórmulas de las columnas que las lleven (CANTIDAD, y ORDEN si aplica) en las filas nuevas.</li>'
+    + '<li>Si algo se ve mal, <b>Ctrl+Z</b> y reintentar.</li>'
+    + '</ol></div></div>';
+}
+
+// Copia al portapapeles las columnas A:S del día. CRÍTICO: las celdas vacías (B/M/P/Q/R y cualquier
+// otra) viajan como cadena vacía REAL entre tabs (...\t\t...), nunca se colapsan ni se omiten, para
+// que "Pegado especial → Omitir blancos" respete las fórmulas del maestro. Recorta a 19 columnas (A:S).
+function copiarDia(fecha, btn){
+  const cF=col('FECHA'), end=col('COPY_END')||19;
+  const rows=STATE.filas.filter(r=>String(r[cF]||'')===fecha);
+  const text=rows.map(r=>{
+    const cells=[];
+    for(let j=0;j<end;j++){ const v=r[j]; cells.push(v==null?'':String(v)); }
+    return cells.join('\t');
+  }).join('\n');
+  copiarTexto(text, btn);
+}
+
+function copiarTexto(text, btn){
+  const ok=()=>{ if(btn){ const orig=btn.innerHTML; btn.classList.add('copied'); btn.innerHTML='✓ Copiado'; setTimeout(()=>{btn.classList.remove('copied');btn.innerHTML=orig;},1600); } };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(ok).catch(()=>fallbackCopiar(text,ok));
+  } else fallbackCopiar(text,ok);
+}
+function fallbackCopiar(text, ok){
+  const ta=document.createElement('textarea');
+  ta.value=text; ta.style.position='fixed'; ta.style.top='-1000px'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.focus(); ta.select();
+  try{ document.execCommand('copy'); ok(); }catch(e){ alert('No se pudo copiar automáticamente.'); }
+  document.body.removeChild(ta);
+}
+</script>
+</body>
+</html>
