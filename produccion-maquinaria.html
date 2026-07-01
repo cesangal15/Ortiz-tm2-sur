@@ -114,6 +114,7 @@
   </div>
   <div class="header-user">
     <span id="userDisplay">—</span>
+    <button class="logout-btn" id="btnMenu" onclick="location.href='menu.html'" style="display:none;border-color:var(--accent);color:var(--accent);margin-right:6px;">← Menú</button>
     <button class="logout-btn" onclick="logout()">Salir</button>
   </div>
 </div>
@@ -149,6 +150,7 @@ window.onload = function(){
   const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
   if(!rol || rol!=='admin'){ window.location.href='index.html'; return; }
   document.getElementById('userDisplay').textContent=usuario||'admin';
+  if(rol==='admin'){var _bm=document.getElementById('btnMenu');if(_bm)_bm.style.display='inline-block';}
   document.getElementById('fecha').value=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
 };
 function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
