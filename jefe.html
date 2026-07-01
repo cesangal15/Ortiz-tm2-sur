@@ -35,6 +35,7 @@
   .kpi{background:linear-gradient(135deg,var(--surface2),var(--surface));border:1px solid var(--border);border-radius:14px;padding:16px;text-align:center;}
   .kpi .k-val{font-family:'Syne',sans-serif;font-size:24px;font-weight:800;color:var(--accent);line-height:1.1;}
   .kpi .k-lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-top:6px;}
+  .meta-line{font-size:12px;color:var(--muted);margin:10px 2px 0;}
   .resumen-block{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:8px 18px 14px;margin-bottom:16px;}
   .resumen-block h3{font-family:'Syne',sans-serif;font-size:13px;font-weight:800;color:var(--text);text-transform:uppercase;letter-spacing:1px;padding:12px 0 8px;border-bottom:1px solid var(--border);}
   .tot-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(46,52,80,0.5);font-size:13px;}
@@ -72,6 +73,7 @@
   </div>
   <div class="header-user">
     <span id="userDisplay">—</span>
+    <button class="logout-btn" id="btnMenu" onclick="location.href='menu.html'" style="display:none;border-color:var(--accent);color:var(--accent);margin-right:6px;">← Menú</button>
     <button class="logout-btn" onclick="logout()">Salir</button>
   </div>
 </div>
@@ -109,6 +111,7 @@ window.onload = function(){
   // Guard: solo jefe (o admin). Cualquier otro rol -> login. NO es el residente.
   if(!rol || (rol!=='jefe' && rol!=='admin')){ window.location.href='index.html'; return; }
   document.getElementById('userDisplay').textContent=usuario||'jefe';
+  if(rol==='admin'){var _bm=document.getElementById('btnMenu');if(_bm)_bm.style.display='inline-block';}
   // Fecha por defecto = HOY en zona horaria Colombia (D50), nunca toISOString().
   const hoy=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
   document.getElementById('desde').value=hoy;
@@ -169,16 +172,30 @@ function filasFiltradas(){
     (!fu || String(r[cU]||'').trim()===fu));
 }
 
-// Suma LARGO agrupando por la columna `ci`; captura la unidad predominante para mostrarla.
+// Agrupa por la columna `ci` sumando LARGO SEPARADO POR UNIDAD DE MEDIDA. Nunca mezcla unidades:
+// m³ con m³, m² con m²... (no se suman "manzanas con peras"). Cada clave trae {n, unidades:{u:total}}.
 function agrupar(rows, ci){
   const cL=col('LARGO'), cUn=col('UNIDAD');
   const map={};
   rows.forEach(r=>{
     const k=String(r[ci]||'').trim()||'—';
-    if(!map[k]) map[k]={total:0, n:0, unidad:String(r[cUn]||'').trim()};
-    map[k].total+=num(r[cL]); map[k].n++;
+    const u=String(r[cUn]||'').trim()||'—';
+    if(!map[k]) map[k]={n:0, unidades:{}};
+    map[k].n++;
+    map[k].unidades[u]=(map[k].unidades[u]||0)+num(r[cL]);
   });
-  return Object.keys(map).sort().map(k=>({clave:k, ...map[k]}));
+  return Object.keys(map).sort().map(k=>({clave:k, n:map[k].n, unidades:map[k].unidades}));
+}
+// Total de LARGO por unidad en todo el conjunto (el único agregado global honesto).
+function totalesPorUnidad(rows){
+  const cL=col('LARGO'), cUn=col('UNIDAD');
+  const map={};
+  rows.forEach(r=>{ const u=String(r[cUn]||'').trim()||'—'; map[u]=(map[u]||0)+num(r[cL]); });
+  return Object.keys(map).sort().map(u=>({unidad:u, total:map[u]}));
+}
+// Renderiza el desglose por unidad de una clave: "8.200 m³ · 300 m²". Nunca colapsa en un solo número.
+function fmtUnidades(u){
+  return Object.keys(u).sort().map(k=>`${fmt(u[k])}<span class="u">${esc(k)}</span>`).join(' · ');
 }
 
 function render(){
@@ -188,22 +205,24 @@ function render(){
     return;
   }
   const rows=filasFiltradas();
-  const cL=col('LARGO'), cF=col('FECHA');
-  const totalLargo=rows.reduce((s,r)=>s+num(r[cL]),0);
+  const cF=col('FECHA');
   const dias=[...new Set(rows.map(r=>String(r[cF]||'')))].filter(Boolean);
+  const porUnidad=totalesPorUnidad(rows);
 
   let html='';
   // ---- A) RESUMEN (protagonista) ----
-  html+='<div class="section-title">Resumen de obra</div>';
+  // Total por UNIDAD (único agregado global honesto): m³ con m³, m² con m²... nunca un total mezclado.
+  html+='<div class="section-title">Total por unidad de medida</div>';
   html+='<div class="kpis">'
-     + `<div class="kpi"><div class="k-val">${fmt(totalLargo)}</div><div class="k-lbl">Total LARGO</div></div>`
-     + `<div class="kpi"><div class="k-val">${rows.length}</div><div class="k-lbl">Líneas</div></div>`
-     + `<div class="kpi"><div class="k-val">${dias.length}</div><div class="k-lbl">Días</div></div>`
+     + porUnidad.map(u=>`<div class="kpi"><div class="k-val">${fmt(u.total)}</div><div class="k-lbl">${esc(u.unidad)}</div></div>`).join('')
      + '</div>';
+  html+=`<p class="meta-line">${rows.length} línea${rows.length!==1?'s':''} · ${dias.length} día${dias.length!==1?'s':''}`
+     + (porUnidad.length>1?' · cada unidad se totaliza aparte (no se suman entre sí)':'')+'</p>';
 
-  html+=bloqueResumen('Por actividad', agrupar(rows, col('DESCRIPCION')), true);
-  html+=bloqueResumen('Por unidad funcional', agrupar(rows, col('UF')), false);
-  html+=bloqueResumen('Por grupo', agrupar(rows, col('GRUPO')), false);
+  html+='<div class="section-title">Desglose</div>';
+  html+=bloqueResumen('Por actividad', agrupar(rows, col('DESCRIPCION')));
+  html+=bloqueResumen('Por unidad funcional', agrupar(rows, col('UF')));
+  html+=bloqueResumen('Por grupo', agrupar(rows, col('GRUPO')));
 
   // ---- C) COPIADO (secundario) ----
   html+='<div class="section-title">Copiar para el maestro</div>';
@@ -212,13 +231,12 @@ function render(){
   cont.innerHTML=html;
 }
 
-function bloqueResumen(titulo, items, mostrarUnidad){
+function bloqueResumen(titulo, items){
   if(!items.length) return '';
   let h=`<div class="resumen-block"><h3>${esc(titulo)}</h3>`;
   items.forEach(it=>{
-    const uni = mostrarUnidad && it.unidad ? `<span class="u">${esc(it.unidad)}</span>` : '';
     h+=`<div class="tot-row"><div class="cat">${esc(it.clave)}<small>${it.n} línea${it.n!==1?'s':''}</small></div>`
-     + `<div class="val">${fmt(it.total)}${uni}</div></div>`;
+     + `<div class="val">${fmtUnidades(it.unidades)}</div></div>`;
   });
   return h+'</div>';
 }

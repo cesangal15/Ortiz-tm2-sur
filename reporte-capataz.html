@@ -111,6 +111,7 @@
   </div>
   <div class="header-user">
     <span id="userDisplay">—</span>
+    <button class="logout-btn" id="btnMenu" onclick="location.href='menu.html'" style="display:none;border-color:var(--accent);color:var(--accent);margin-right:6px;">← Menú</button>
     <button class="logout-btn" id="backBtn" onclick="logout()">Salir</button>
   </div>
 </div>
@@ -222,6 +223,7 @@ window.onload = function(){
   const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
   if(!rol || (rol!=='capataz' && rol!=='admin' && rol!=='encargado')){ window.location.href='index.html'; return; }
   document.getElementById('userDisplay').textContent=usuario||'capataz';
+  if(rol==='admin'){var _bm=document.getElementById('btnMenu');if(_bm)_bm.style.display='inline-block';}
   document.getElementById('backBtn').textContent = (rol==='encargado') ? '← Volver' : 'Salir';
   document.getElementById('fechaReporte').value=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
   addLinea();
