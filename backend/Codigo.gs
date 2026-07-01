@@ -174,7 +174,12 @@ function buildDataRow(c, fecha, ts, reporta, rol, idC){
              : (pkElem || c.elemento || '');
   const absIni = mi != null ? mi : (c.abs_inicial!=null ? c.abs_inicial : '');
   const absFin = mf != null ? mf : (c.abs_final!=null ? c.abs_final : '');
-  return [ toDate(fecha), '', c.grupo||'', cc, c.capitulo||'', c.descripcion||'',
+  // GRUPO: la BASE clasifica tanto tierras como estructuras/MSR bajo el grupo TIERRAS. Las filas de
+  // estructuras (CC 05.*) llegaban de BANDEJA con "DRENAJES Y ESTRUCTURAS"; se corrige a TIERRAS aquí
+  // (red de seguridad para lo ya guardado). El CAPITULO (ESTRUCTURAS) NO se toca: sigue siendo correcto.
+  let grupo = c.grupo||'';
+  if(/estructura/i.test(grupo)) grupo='TIERRAS';
+  return [ toDate(fecha), '', grupo, cc, c.capitulo||'', c.descripcion||'',
     uf, proy, elem, absIni, absFin,
     c.liberacion||'CAMPO', '', c.unidad||'', (c.largo!=null?c.largo:''), '', '', '', c.observacion||'', '',
     idC, ts, reporta||'', rol||'', c.actividad||'', c.pk_inicial||'', c.pk_final||'' ];

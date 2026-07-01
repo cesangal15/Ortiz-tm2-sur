@@ -483,7 +483,7 @@ function addLinea(){
   if(!a){ alert('Elige una actividad'); return; }
   const x=ACT_IDX[a], uf=ufFromPk(pk), proy=uf==='UF1'?'3701':uf==='UF2'?'3702':'';
   STATE.cantidades.push({ id_registro:'', reporta:'(encargado)', rol:'encargado',
-    grupo:x.cc.split('.')[0]==='05'?'DRENAJES Y ESTRUCTURAS':'TIERRAS', capitulo:'', actividad:a, descripcion:x.item,
+    grupo:'TIERRAS', capitulo:'', actividad:a, descripcion:x.item,
     centro_costo:proy?`${proy}.${x.cc}`:'', unidad:x.uni, uf, proyecto:proy, elemento:buildElemento(pk,''), pk_inicial:pk, pk_final:'',
     abs_inicial:pkToMeters(pk), abs_final:null, liberacion:'CAMPO', largo, observacion:'', _inc:true });
   render();
