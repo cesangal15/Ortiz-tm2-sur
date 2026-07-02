@@ -135,8 +135,9 @@ MEDIA JORNADA y NO PROGRAMADO **no salen del app**; son ajuste manual del encarg
 | Chequeadora Diviso (foto, externa) | viajes del diviso | Préstamo — sin digitalizar (V3) |
 
 ## 7. Usuarios — CONFIRMADO (contraseñas de encargado/chequeadoras = placeholder)
-admin/venganza753 → menu · encargado/enc1-2 → encargado · residente/Ortiz2026 → residente · capataz1-5/uf1-2 → reporte-capataz · chequeadora1-3/cheq1-2 → reporte-chequeadora.
-**Residente** (rol `residente`, D57): entra a `residente.html` (panel de selección) → tile activo al Panel del Encargado (guard de `encargado.html` extendido para aceptar el rol) y tile "Resumen General" en placeholder ("Próximamente"). Resumen general post-DATA: pendiente (V2).
+admin/venganza753 → menu · encargado/enc1-2 → encargado · residente/Ortiz2026 → residente · jefe/Ortiz2026 → jefe · capataz1-5/uf1-2 → reporte-capataz · chequeadora1-3/cheq1-2 → reporte-chequeadora.
+**Residente** (rol `residente`, D57): entra a `residente.html` (panel de selección) → tile activo al Panel del Encargado (guard de `encargado.html` extendido para aceptar el rol) y tile **Resumen General** que ahora abre `jefe.html` (D65).
+**Jefe** (rol `jefe`, D65): usuario `jefe`, clave `Ortiz2026` (placeholder); entra a `jefe.html` — consulta post-DATA por rango de fechas (solo lectura): resumen por actividad + ubicación (PK crudo) y copiado A:S día a día. Guard acepta `jefe`/`admin`/`residente`. **Admin:** botón "← Menú" en toda pantalla interna vuelve a `menu.html` sin cerrar sesión.
 
 ## 8. Reglas de reconciliación automática (encargado) — CONFIRMADO
 

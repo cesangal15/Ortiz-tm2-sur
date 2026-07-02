@@ -9,14 +9,18 @@
 │                        ├── reporte-capataz.html (capataz, encargado, admin)             │
 │                        ├── reporte-chequeadora.html (chequeadora, admin)                │
 │                        ├── estado.html          (admin)                                 │
-│                        └── produccion-maquinaria.html (admin · ajuste de producción)    │
+│                        ├── produccion-maquinaria.html (admin · ajuste de producción)    │
+│                        ├── residente.html      (residente, admin)                       │
+│                        └── jefe.html (jefe · residente · admin — resumen post-DATA)      │
 │  Sesión: sessionStorage {usuario, rol}. Credenciales hardcoded en index.html.           │
+│  Admin: botón "← Menú" en toda pantalla interna vuelve a menu.html sin cerrar sesión.    │
 └────────────────────────────────────┬─────────────────────────────────────────────────--┘
                                      │ fetch GET/POST (Content-Type: text/plain)
                                      ▼
 ┌──────────────────── GOOGLE APPS SCRIPT v6 (API, una sola URL) ──────────────────────────┐
 │  GET  ?action=bandeja&fecha=…[&proyecto=…]   → crudo del día (cantidades + máquinas)    │
 │  GET  ?action=consolidado&fecha=…            → lo ya enviado a DATA                     │
+│  GET  ?action=consolidado&desde=…&hasta=…    → filas crudas A–T de DATA del rango (D65) │
 │  GET  ?action=estado&fecha=…                 → máquinas reportadas (estado.html)        │
 │  GET  ?action=debug&fecha=…                  → diagnóstico                              │
 │  GET  ?action=cubicaje                        → mapa placa→cubicaje (frontend, D53/2.10) │
@@ -65,6 +69,7 @@
 
 - estado.html: máquinas reportadas vs faltantes por fecha.
 - encargado.html: consolidado y estado de reportes.
+- jefe.html (jefe/residente/admin): consulta post-DATA **por rango de fechas** (solo lectura). Resumen por actividad y ubicación (PK crudo + UF, sumando LARGO por unidad) y copiado A:S día a día al portapapeles para pegar en el maestro (D65). No escribe nada.
 - Excel maestros: análisis, KPI y resúmenes mensuales (RESUMEN_MES con B2=período, B3=proyecto/0).
 
 ## Mapeo de paste MAQUINARIA → Captura_Diaria (D52, verificado con el archivo real)
