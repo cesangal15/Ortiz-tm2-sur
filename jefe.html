@@ -38,6 +38,11 @@
   .meta-line{font-size:12px;color:var(--muted);margin:10px 2px 0;}
   .resumen-block{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:8px 18px 14px;margin-bottom:16px;}
   .resumen-block h3{font-family:'Syne',sans-serif;font-size:13px;font-weight:800;color:var(--text);text-transform:uppercase;letter-spacing:1px;padding:12px 0 8px;border-bottom:1px solid var(--border);}
+  .act-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;padding:12px 0 8px;border-bottom:1px solid var(--border);}
+  .act-name{font-family:'Syne',sans-serif;font-size:13px;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:0.5px;}
+  .act-sub{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;}
+  .act-sub .u{font-family:'DM Sans',sans-serif;font-size:11px;color:var(--muted);font-weight:400;margin-left:3px;}
+  .tot-row .cat .badge{margin-left:6px;vertical-align:middle;}
   .tot-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(46,52,80,0.5);font-size:13px;}
   .tot-row:last-child{border-bottom:none;}
   .tot-row .cat{color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;}
@@ -104,7 +109,7 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IV
 // layout A–T conocido) para no acoplar el frontend a posiciones fijas. Es SOLO LECTURA: aquí no se
 // escribe nada a DATA ni al maestro; el copiado va al portapapeles y lo pega el usuario a mano.
 let STATE = { filas:[], cols:{}, desde:'', hasta:'' };
-const COLS_DEFAULT = { FECHA:0, GRUPO:2, DESCRIPCION:5, UF:6, UNIDAD:13, LARGO:14, COPY_END:19 };
+const COLS_DEFAULT = { FECHA:0, GRUPO:2, DESCRIPCION:5, UF:6, ELEMENTO:8, UNIDAD:13, LARGO:14, COPY_END:19 };
 
 window.onload = function(){
   const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
@@ -177,30 +182,38 @@ function filasFiltradas(){
     (!fu || String(r[cU]||'').trim()===fu));
 }
 
-// Agrupa por la columna `ci` sumando LARGO SEPARADO POR UNIDAD DE MEDIDA. Nunca mezcla unidades:
-// m³ con m³, m² con m²... (no se suman "manzanas con peras"). Cada clave trae {n, unidades:{u:total}}.
-function agrupar(rows, ci){
-  const cL=col('LARGO'), cUn=col('UNIDAD');
-  const map={};
+// Resumen por ACTIVIDAD y UBICACIÓN (lo que pide el jefe: qué se hizo, DÓNDE y cuánto). Agrupa por
+// actividad (DESCRIPCION) y, dentro, por ubicación (ELEMENTO = "tm2 pk …" + UF). Suma LARGO separado
+// por unidad de medida (nunca mezcla m³ con m²). Cada actividad trae su subtotal por unidad.
+function resumenActividades(rows){
+  const cA=col('DESCRIPCION'), cE=col('ELEMENTO'), cU=col('UF'), cUn=col('UNIDAD'), cL=col('LARGO');
+  const acts={};
   rows.forEach(r=>{
-    const k=String(r[ci]||'').trim()||'—';
+    const a=String(r[cA]||'').trim()||'—';
+    const uf=String(r[cU]||'').trim();
+    const el=String(r[cE]||'').trim()||'(sin ubicación)';
     const u=String(r[cUn]||'').trim()||'—';
-    if(!map[k]) map[k]={n:0, unidades:{}};
-    map[k].n++;
-    map[k].unidades[u]=(map[k].unidades[u]||0)+num(r[cL]);
+    const val=num(r[cL]);
+    if(!acts[a]) acts[a]={n:0, unidades:{}, ubic:{}};
+    acts[a].n++;
+    acts[a].unidades[u]=(acts[a].unidades[u]||0)+val;
+    const k=uf+'||'+el;
+    if(!acts[a].ubic[k]) acts[a].ubic[k]={uf, elemento:el, unidad:u, total:0, n:0};
+    acts[a].ubic[k].total+=val; acts[a].ubic[k].n++;
   });
-  return Object.keys(map).sort().map(k=>({clave:k, n:map[k].n, unidades:map[k].unidades}));
+  // Ordena actividades alfabéticamente y las ubicaciones por UF y luego por elemento.
+  return Object.keys(acts).sort().map(a=>({
+    actividad:a, n:acts[a].n, unidades:acts[a].unidades,
+    ubicaciones:Object.keys(acts[a].ubic).sort().map(k=>acts[a].ubic[k])
+  }));
 }
-// Total de LARGO por unidad en todo el conjunto (el único agregado global honesto).
-function totalesPorUnidad(rows){
-  const cL=col('LARGO'), cUn=col('UNIDAD');
-  const map={};
-  rows.forEach(r=>{ const u=String(r[cUn]||'').trim()||'—'; map[u]=(map[u]||0)+num(r[cL]); });
-  return Object.keys(map).sort().map(u=>({unidad:u, total:map[u]}));
-}
-// Renderiza el desglose por unidad de una clave: "8.200 m³ · 300 m²". Nunca colapsa en un solo número.
+// Renderiza el desglose por unidad: "8.200 m³ · 300 m²". Nunca colapsa unidades distintas en un número.
 function fmtUnidades(u){
   return Object.keys(u).sort().map(k=>`${fmt(u[k])}<span class="u">${esc(k)}</span>`).join(' · ');
+}
+function badgeUf(uf){
+  const c=uf==='UF1'?'uf1':uf==='UF2'?'uf2':'';
+  return uf?`<span class="badge ${c}">${esc(uf)}</span>`:'';
 }
 
 function render(){
@@ -212,22 +225,13 @@ function render(){
   const rows=filasFiltradas();
   const cF=col('FECHA');
   const dias=[...new Set(rows.map(r=>String(r[cF]||'')))].filter(Boolean);
-  const porUnidad=totalesPorUnidad(rows);
+  const acts=resumenActividades(rows);
 
   let html='';
-  // ---- A) RESUMEN (protagonista) ----
-  // Total por UNIDAD (único agregado global honesto): m³ con m³, m² con m²... nunca un total mezclado.
-  html+='<div class="section-title">Total por unidad de medida</div>';
-  html+='<div class="kpis">'
-     + porUnidad.map(u=>`<div class="kpi"><div class="k-val">${fmt(u.total)}</div><div class="k-lbl">${esc(u.unidad)}</div></div>`).join('')
-     + '</div>';
-  html+=`<p class="meta-line">${rows.length} línea${rows.length!==1?'s':''} · ${dias.length} día${dias.length!==1?'s':''}`
-     + (porUnidad.length>1?' · cada unidad se totaliza aparte (no se suman entre sí)':'')+'</p>';
-
-  html+='<div class="section-title">Desglose</div>';
-  html+=bloqueResumen('Por actividad', agrupar(rows, col('DESCRIPCION')));
-  html+=bloqueResumen('Por unidad funcional', agrupar(rows, col('UF')));
-  html+=bloqueResumen('Por grupo', agrupar(rows, col('GRUPO')));
+  // ---- A) RESUMEN (protagonista): por actividad, con DÓNDE (ubicación) y cuánto ----
+  html+='<div class="section-title">Resumen por actividad y ubicación</div>';
+  html+=`<p class="meta-line">${acts.length} actividad${acts.length!==1?'es':''} · ${rows.length} línea${rows.length!==1?'s':''} · ${dias.length} día${dias.length!==1?'s':''}</p>`;
+  acts.forEach(a=>{ html+=bloqueActividad(a); });
 
   // ---- C) COPIADO (secundario) ----
   html+='<div class="section-title">Copiar para el maestro</div>';
@@ -236,12 +240,17 @@ function render(){
   cont.innerHTML=html;
 }
 
-function bloqueResumen(titulo, items){
-  if(!items.length) return '';
-  let h=`<div class="resumen-block"><h3>${esc(titulo)}</h3>`;
-  items.forEach(it=>{
-    h+=`<div class="tot-row"><div class="cat">${esc(it.clave)}<small>${it.n} línea${it.n!==1?'s':''}</small></div>`
-     + `<div class="val">${fmtUnidades(it.unidades)}</div></div>`;
+// Un bloque por actividad: encabezado con el subtotal por unidad, y una fila por UBICACIÓN
+// (elemento "tm2 pk …" + UF) con su cantidad. Así el jefe ve qué se hizo, dónde y cuánto.
+function bloqueActividad(a){
+  let h='<div class="resumen-block"><div class="act-head">'
+    + `<span class="act-name">${esc(a.actividad)}</span>`
+    + `<span class="act-sub">${fmtUnidades(a.unidades)}</span></div>`;
+  a.ubicaciones.forEach(ub=>{
+    h+='<div class="tot-row"><div class="cat">'
+     + `${esc(ub.elemento)} ${badgeUf(ub.uf)}`
+     + `<small>${ub.n} línea${ub.n!==1?'s':''}</small></div>`
+     + `<div class="val">${fmt(ub.total)}<span class="u">${esc(ub.unidad)}</span></div></div>`;
   });
   return h+'</div>';
 }
