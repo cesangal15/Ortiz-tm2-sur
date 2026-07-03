@@ -371,7 +371,7 @@ function guardarReporte(body){
   // El factor editable del reporte (14 por defecto) es el fallback para placas no catalogadas.
   const cubMap=getCubicajeMap();
   const factorReporte=parseFloat(body.m3viaje)>0 ? parseFloat(body.m3viaje) : 14;
-  const lineVol={}; // _linea -> volumen real (m³) calculado desde las placas
+  const lineVol={}, lineTipo={}; // _linea -> volumen real (m³) desde las placas / tipo de destino (D67)
   const volRows=[];
   (body.volquetas||[]).forEach(line=>{
     const idV=Utilities.getUuid();
@@ -386,15 +386,21 @@ function guardarReporte(body){
       volRows.push([idV, ts, fecha, reporta, line.origen||'', line.destino||'', line.tipo_destino||'',
         line.uf||'', p.placa||'', (p.viajes!=null?p.viajes:''), cub, m3p, found?'catalogo':'default']);
     });
-    if(line._linea!=null) lineVol[line._linea]=m3line;
+    if(line._linea!=null){ lineVol[line._linea]=m3line; lineTipo[line._linea]=String(line.tipo_destino||''); }
   });
-  // Problema 2.12: la EXCAVACIÓN de la chequeadora se acumula al ORIGEN (una sola fila por reporte =
-  // Σ de todas las líneas, al PK del origen). El TERRAPLÉN no cambia: sigue 1 fila por línea al PK
-  // destino. D06: el volumen sigue viniendo de la chequeadora (cubicaje real por placa, D53).
+  // Problema 2.12: la EXCAVACIÓN de la chequeadora se acumula al ORIGEN (al PK del origen). El
+  // TERRAPLÉN no cambia: sigue 1 fila por línea al PK destino. D06: el volumen sigue viniendo de la
+  // chequeadora (cubicaje real por placa, D53). D67: el material con destino Botadero se DESCARTA =>
+  // va en su propia fila acumulada de excavación NO APROVECHABLE (_acumBotadero); el resto de destinos
+  // queda en la fila del origen (_acumOrigen). Si el payload no trae _acumBotadero (frontend viejo),
+  // _acumOrigen conserva el total completo para no perder volumen.
   const totalExc=Object.keys(lineVol).reduce((s,k)=>s+(lineVol[k]||0),0);
+  const totalBota=Object.keys(lineVol).reduce((s,k)=>s+(lineTipo[k]==='Botadero'?(lineVol[k]||0):0),0);
+  const traeSplit=(body.cantidades||[]).some(function(c){ return c._acumBotadero; });
   (body.cantidades||[]).forEach(c=>{
     if(rol==='chequeadora'){
-      if(c._acumOrigen) c.largo=totalExc;                                  // excavación acumulada al origen
+      if(c._acumBotadero) c.largo=totalBota;                               // excavación no aprovechable (Botadero)
+      else if(c._acumOrigen) c.largo=traeSplit ? (totalExc-totalBota) : totalExc; // excavación acumulada al origen
       else if(c._linea!=null && lineVol[c._linea]!=null) c.largo=lineVol[c._linea]; // terraplén por línea
     }
     const idC=Utilities.getUuid();
