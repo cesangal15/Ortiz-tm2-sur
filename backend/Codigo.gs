@@ -547,13 +547,15 @@ function consolidadoRango(e){
       filas.push(row);
     }
   }
-  // cols: índices dentro de cada fila devuelta. COPY_END=19 => el copiado toma [0,19) = A:S (19 columnas).
+  // cols: índices dentro de cada fila devuelta. COPY_END=15 => el copiado toma [0,15) = A:O, hasta LARGO
+  // inclusive. La app captura hasta LARGO (D14); no se copian ESPESOR/FC/CANTIDAD (fórmula del maestro)
+  // ni OBSERVACION (texto que no debe ir al maestro).
   return json({
     ok:true, desde:desde, hasta:hasta,
     header: DATA_HEADERS.slice(0, AT),
     cols: { FECHA:0, ORDEN:1, GRUPO:2, CC:3, CAPITULO:4, DESCRIPCION:5, UF:6, PROYECTO:7, ELEMENTO:8,
             ABS_INI:9, ABS_FIN:10, LIBERACION:11, ACTA:12, UNIDAD:13, LARGO:14, ESPESOR:15, FC:16,
-            CANTIDAD:17, OBSERVACION:18, COLUMNA1:19, COPY_END:19 },
+            CANTIDAD:17, OBSERVACION:18, COLUMNA1:19, COPY_END:15 },
     filas: filas
   });
 }
