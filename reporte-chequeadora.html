@@ -411,7 +411,11 @@ function getCantidades(){
   const origenPk=ORIGEN_PK[origen]||origenTexto;
   const ufO=ufFromPk(origenPk), proyO=proyectoFromUf(ufO);
   const rows=[];
-  let totalM3=0, totalViajes=0, nDest=0;
+  // Split por DESTINO (D67): lo que va al Botadero se DESCARTA => excavación NO APROVECHABLE.
+  // El resto de destinos (Terraplén/Puente/ODL/ODT) sigue con la actividad del origen (aprovechable
+  // o préstamo). destM3 acumula Σ m³ por tipo de destino para la observación indicativa (a dónde fue).
+  let aproM3=0, aproViajes=0, botaM3=0, botaViajes=0;
+  const destM3={}, destOrden=[];
   // TERRAPLÉN: NO cambia. 1 fila por línea, al PK DESTINO (el lleno se construye allá). D06/D26.
   document.querySelectorAll('#lineasContainer .linea').forEach(b=>{
     const pk=b.querySelector('.l-pk').value.trim();
@@ -420,7 +424,10 @@ function getCantidades(){
     if(!pk || !viajes) return;
     const m3=lineaM3(b); // volumen real con cubicaje por placa (D53); el backend lo recalcula como fuente
     const lineId=Number(b.id.split('_')[1]); // correlación con la línea de VOLQUETAS para el backend
-    totalM3+=m3; totalViajes+=viajes; nDest++;
+    if(destM3[tipo]==null){ destM3[tipo]=0; destOrden.push(tipo); }
+    destM3[tipo]+=m3;
+    if(tipo==='Botadero'){ botaM3+=m3; botaViajes+=viajes; }
+    else { aproM3+=m3; aproViajes+=viajes; }
     if(tipo==='Terraplén'){
       const ufD=ufFromPk(pk), proyD=proyectoFromUf(ufD);
       rows.push({ grupo:'TIERRAS', capitulo:'EXPLANACIONES', actividad:'Terraplén (conformación)',
@@ -430,16 +437,27 @@ function getCantidades(){
         equipos:[], data:true, observacion: origenLabel+' · '+viajes+' viajes' });
     }
   });
-  // EXCAVACIÓN: UNA sola fila ACUMULADA al PK del ORIGEN = Σ de todas las líneas (Problema 2.12).
-  // PK/ELEMENTO/ABS/UF/PROYECTO/CC derivan del ORIGEN (donde se hizo el corte), no del destino. El
-  // backend recalcula el volumen (Σ líneas) como fuente (D06/D53); aquí va el preview.
-  if(totalViajes>0){
+  // Desglose de destinos "→ Terraplén 300 · Puente 150 m³" para la observación (indicativo, D67).
+  const destTxt = tipos => tipos.map(t=>t+' '+Math.round(destM3[t]).toLocaleString('es-CO')).join(' · ');
+  // EXCAVACIÓN: acumulada al PK del ORIGEN (Problema 2.12), ahora en DOS filas según destino (D67):
+  // la NO APROVECHABLE (lo que fue a Botadero) y la del origen (el resto). PK/ELEMENTO/ABS/UF/PROYECTO/CC
+  // derivan del ORIGEN (donde se hizo el corte). El backend recalcula ambos volúmenes como fuente (D06/D53).
+  if(botaViajes>0){
+    rows.unshift({ grupo:'TIERRAS', capitulo:'EXPLANACIONES', actividad:'Excavación no aprovechable',
+      descripcion:'Excavaciones en material común NO APROVECHABLE',
+      centro_costo: proyO?(proyO+'.02.05'):'', unidad:'m3', uf:ufO, proyecto:proyO,
+      elemento:buildElemento(origenPk,''), pk_inicial:origenPk, pk_final:'',
+      abs_inicial:pkToMeters(origenPk), abs_final:null, liberacion:'CAMPO', largo:botaM3,
+      _acumBotadero:true, origen:origenLabel, equipos:[], data:true,
+      observacion: origenLabel+' · '+botaViajes+' viajes · → Botadero '+Math.round(botaM3).toLocaleString('es-CO')+' m³' });
+  }
+  if(aproViajes>0){
     rows.unshift({ grupo:'TIERRAS', capitulo:'EXPLANACIONES', actividad:exc.actividad, descripcion:exc.item,
       centro_costo: proyO?(proyO+'.'+exc.cc):'', unidad:'m3', uf:ufO, proyecto:proyO,
       elemento:buildElemento(origenPk,''), pk_inicial:origenPk, pk_final:'',
-      abs_inicial:pkToMeters(origenPk), abs_final:null, liberacion:'CAMPO', largo:totalM3,
+      abs_inicial:pkToMeters(origenPk), abs_final:null, liberacion:'CAMPO', largo:aproM3,
       _acumOrigen:true, origen:origenLabel, equipos:[], data:true,
-      observacion: origenLabel+' · '+totalViajes+' viajes · Σ '+nDest+' destino'+(nDest===1?'':'s') });
+      observacion: origenLabel+' · '+aproViajes+' viajes · → '+destTxt(destOrden.filter(t=>t!=='Botadero'))+' m³' });
   }
   return rows;
 }
