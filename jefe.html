@@ -109,7 +109,7 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IV
 // layout A–T conocido) para no acoplar el frontend a posiciones fijas. Es SOLO LECTURA: aquí no se
 // escribe nada a DATA ni al maestro; el copiado va al portapapeles y lo pega el usuario a mano.
 let STATE = { filas:[], cols:{}, desde:'', hasta:'' };
-const COLS_DEFAULT = { FECHA:0, GRUPO:2, DESCRIPCION:5, UF:6, ABS_INI:9, ABS_FIN:10, UNIDAD:13, LARGO:14, COPY_END:19 };
+const COLS_DEFAULT = { FECHA:0, GRUPO:2, DESCRIPCION:5, UF:6, ABS_INI:9, ABS_FIN:10, UNIDAD:13, LARGO:14, COPY_END:15 };
 
 window.onload = function(){
   const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
@@ -271,10 +271,10 @@ function bloqueCopiado(){
   let btns='';
   dias.forEach(d=>{
     const n=STATE.filas.filter(r=>String(r[cF]||'')===d).length;
-    btns+=`<button class="btn-copy" onclick="copiarDia('${d}',this)">Copiar ${esc(d)}<small>${n} fila${n!==1?'s':''} · A:S</small></button>`;
+    btns+=`<button class="btn-copy" onclick="copiarDia('${d}',this)">Copiar ${esc(d)}<small>${n} fila${n!==1?'s':''} · A:O</small></button>`;
   });
   return '<div class="copy-card">'
-    + '<div class="copy-intro">El pegado al maestro es <b>día a día</b>. Cada botón copia las columnas <b>A a S (19)</b> de ese día, con las celdas de fórmula (ORDEN, ACTA, ESPESOR, FC, CANTIDAD) vacías para respetar el maestro. Los decimales ya salen con <b>coma</b> para el Excel del maestro.</div>'
+    + '<div class="copy-intro">El pegado al maestro es <b>día a día</b>. Cada botón copia las columnas <b>A a O (hasta LARGO)</b> de ese día, con ORDEN y ACTA vacías. No se copian ESPESOR/FC/CANTIDAD (fórmula del maestro) ni la OBSERVACIÓN. Los decimales ya salen con <b>coma</b> para el Excel del maestro.</div>'
     + `<div class="copy-btns">${btns}</div>`
     + '<div class="guia"><h4>Cómo pegar en el Excel maestro</h4><ol>'
     + '<li>Clic en la columna <b>A</b> de la primera fila vacía del maestro.</li>'
@@ -284,9 +284,10 @@ function bloqueCopiado(){
     + '</ol></div></div>';
 }
 
-// Copia al portapapeles las columnas A:S del día. CRÍTICO: las celdas vacías (B/M/P/Q/R y cualquier
-// otra) viajan como cadena vacía REAL entre tabs (...\t\t...), nunca se colapsan ni se omiten, para
-// que "Pegado especial → Omitir blancos" respete las fórmulas del maestro. Recorta a 19 columnas (A:S).
+// Copia al portapapeles las columnas A:O del día (hasta LARGO; la app captura hasta ahí, D14). CRÍTICO:
+// las celdas vacías (ORDEN, ACTA y cualquier otra) viajan como cadena vacía REAL entre tabs (...\t\t...),
+// nunca se colapsan ni se omiten, para que "Pegado especial → Omitir blancos" respete las fórmulas del
+// maestro. No se copian ESPESOR/FC/CANTIDAD (fórmula) ni OBSERVACION. Recorta a COPY_END columnas (15).
 function copiarDia(fecha, btn){
   const cF=col('FECHA'), end=col('COPY_END')||19;
   const rows=STATE.filas.filter(r=>String(r[cF]||'')===fecha);
