@@ -287,21 +287,28 @@ function normTexto(s){
 }
 // Una sola pasada por la BASE llena ambos cachés: la tabla de ELEMENTOS (J/K/L, conservando K/L
 // CRUDOS para copiarlos verbatim a ABS, D68) y la tabla de ÍTEMS (A–H: Centro de Coste →
-// DESCRIPCION verbatim, D68). Las columnas de la tabla de ítems se ubican por encabezado (fila 1)
-// dentro de A–H; si no se encuentran, el mapa queda vacío y DESCRIPCION cae al valor reportado.
+// DESCRIPCION verbatim, D68). La BASE real trae una fila de NUMERACIÓN (1,2,3…) encima de los
+// encabezados, así que la fila de encabezados de la tabla de ítems se BUSCA en las primeras filas
+// (la primera que tenga CC y DESCRIPCION dentro de A–H); los ítems empiezan en la fila siguiente.
+// Si no se encuentra, el mapa queda vacío y DESCRIPCION cae al valor reportado. La tabla de
+// elementos no depende de encabezados: filtra por el contenido de J (baseTipo).
 function getBaseData(){
   if(_baseRows) return;
   _baseRows = []; _baseItems = {};
   const ss = SpreadsheetApp.openById(SHEET_ID), sh = ss.getSheetByName('BASE');
   if(!sh || sh.getLastRow() < 2) return;
   const v = sh.getDataRange().getValues();
-  let ccCol=-1, dCol=-1;                                  // tabla de ítems: CC y DESCRIPCION en A–H
-  for(let j=0;j<Math.min(8, v[0].length);j++){
-    const k=normTexto(v[0][j]);
-    if(ccCol<0 && (k==='CC' || k.indexOf('CENTRO')>=0 || k.indexOf('COSTO')>=0 || k.indexOf('COSTE')>=0)) ccCol=j;
-    else if(dCol<0 && k.indexOf('DESCRIPCION')>=0) dCol=j;
+  let ccCol=-1, dCol=-1, hRow=-1;                         // tabla de ítems: fila de encabezados + CC y DESCRIPCION en A–H
+  for(let r=0; r<Math.min(5, v.length) && hRow<0; r++){
+    let c1=-1, c2=-1;
+    for(let j=0;j<Math.min(8, v[r].length);j++){
+      const k=normTexto(v[r][j]);
+      if(c1<0 && (k==='CC' || k.indexOf('CENTRO')>=0 || k.indexOf('COSTO')>=0 || k.indexOf('COSTE')>=0)) c1=j;
+      else if(c2<0 && k.indexOf('DESCRIPCION')>=0) c2=j;
+    }
+    if(c1>=0 && c2>=0){ ccCol=c1; dCol=c2; hRow=r; }      // ambos en la MISMA fila = fila de encabezados
   }
-  _baseItemCols={ cc:ccCol, desc:dCol };                  // expuesto para diagnosticoBase()
+  _baseItemCols={ cc:ccCol, desc:dCol, filaEnc:hRow+1 };  // expuesto para diagnosticoBase()
   for(let i=1;i<v.length;i++){
     // --- tabla de ELEMENTOS (J/K/L) ---
     const elem=v[i][9];                                   // J = ELEMENTO
@@ -316,8 +323,8 @@ function getBaseData(){
         _baseRows.push({ elem:String(elem), ini:ini, fin:fin, tipo:tipo, rawIni:v[i][10], rawFin:v[i][11] });
       }
     }
-    // --- tabla de ÍTEMS (A–H): CC -> DESCRIPCION verbatim ---
-    if(ccCol>=0 && dCol>=0){
+    // --- tabla de ÍTEMS (A–H): CC -> DESCRIPCION verbatim (solo DESPUÉS de la fila de encabezados) ---
+    if(ccCol>=0 && dCol>=0 && i>hRow){
       const ccKey=String(v[i][ccCol]==null?'':v[i][ccCol]).trim();
       const d=v[i][dCol];
       if(ccKey && d!=='' && d!=null){
@@ -921,14 +928,16 @@ function diagnosticoBase(){
   const v=sh.getDataRange().getValues();
   Logger.log('BASE: '+v.length+' filas × '+v[0].length+' columnas.');
   const letras='ABCDEFGHIJKL';
-  for(let j=0;j<Math.min(12, v[0].length);j++)
-    Logger.log('Encabezado '+letras.charAt(j)+'1 = '+JSON.stringify(String(v[0][j]==null?'':v[0][j])));
+  for(let r=0;r<Math.min(3, v.length);r++)
+    for(let j=0;j<Math.min(12, v[r].length);j++)
+      Logger.log('Celda '+letras.charAt(j)+(r+1)+' = '+JSON.stringify(String(v[r][j]==null?'':v[r][j])));
   getBaseData();
-  const cols=_baseItemCols||{cc:-1,desc:-1};
-  Logger.log('Columna detectada para CC: '+(cols.cc>=0?letras.charAt(cols.cc):'NINGUNA')+
-             ' · para DESCRIPCION: '+(cols.desc>=0?letras.charAt(cols.desc):'NINGUNA'));
+  const cols=_baseItemCols||{cc:-1,desc:-1,filaEnc:0};
+  Logger.log('Fila de encabezados detectada: '+(cols.filaEnc>0?cols.filaEnc:'NINGUNA')+
+             ' · columna CC: '+(cols.cc>=0?letras.charAt(cols.cc):'NINGUNA')+
+             ' · columna DESCRIPCION: '+(cols.desc>=0?letras.charAt(cols.desc):'NINGUNA'));
   if(cols.cc>=0 && cols.desc>=0){
-    for(let i=1;i<Math.min(4, v.length);i++)
+    for(let i=cols.filaEnc;i<Math.min(cols.filaEnc+3, v.length);i++)
       Logger.log('Muestra fila '+(i+1)+': CC='+JSON.stringify(String(v[i][cols.cc]))+' · DESC='+JSON.stringify(String(v[i][cols.desc])));
   }
   const items=getBaseItems(), keys=Object.keys(items);
