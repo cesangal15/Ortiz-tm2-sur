@@ -64,6 +64,7 @@
 1. Consulta fecha → ve: quién reportó / quién falta (capataces y máquinas), totales en vivo, bandeja agrupada por categoría con chip de fuente (rol·usuario).
 2. Reconcilia: apaga duplicados (ej. terraplén estimado del capataz vs chequeadora), edita producciones, agrega líneas (directo o vía formulario capataz), anota inoperativos.
 3. **Enviar a DATA** (pisa el día) → **Generar WhatsApp** (copia al portapapeles).
+4. Al pisar el día, `buildDataRow` deriva UF/PROYECTO/CC del PK (D04/D63) y, en filas con **match a la hoja BASE**, copia **verbatim** el ELEMENTO (celda J), ABS INICIAL/FINAL (K/L del elemento/subtramo, no del PK reportado) y la DESCRIPCION (tabla de ítems A–H, cruce por CC) — D68; sin match, ELEMENTO/ABS derivan del PK (`buildElemento`, D63). El PK reportado queda en las internas U–AA.
 
 ## Flujo de consulta
 

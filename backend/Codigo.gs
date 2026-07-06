@@ -153,7 +153,8 @@ function readSheet(name){
   return out;
 }
 function buildDataRow(c, fecha, ts, reporta, rol, idC){
-  // Ubicación (UF/PROYECTO/CC/ABS) derivada del PK con el helper único (Problema 2.12, D04).
+  // Ubicación (UF/PROYECTO/CC) derivada del PK con el helper único (Problema 2.12, D04).
+  // ABS: con match a la BASE viene del elemento (K/L verbatim, D68); sin match, del PK (abajo).
   const mi = pkMeters(c.pk_inicial), mf = pkMeters(c.pk_final);
   let uf = c.uf||'', proy = c.proyecto||'', cc = c.centro_costo||'';
   if(mi != null){                                   // D04: PK≤30→UF1/3701; >30→UF2/3702
@@ -164,22 +165,34 @@ function buildDataRow(c, fecha, ts, reporta, rol, idC){
   }
   // ELEMENTO oficial desde la hoja BASE (catálogo de elementos), eligiendo la FUENTE según la
   // actividad (D63): préstamo→EL DIVISO, estructuras/MSR→elemento MSR del PK, conformación→RCD,
-  // resto (aprovechable/no aprovechable/terraplén/subbase/base)→tramo "tm2 pk X-Y" por abscisa. Si no
-  // hay elemento para esa actividad/PK, se arma desde el PK con el helper único (sin "Pk Pk"). REVISAR
-  // queda SÓLO para el caso legítimo (el PK no pertenece a ningún tramo del eje / falta el marcador).
+  // resto (aprovechable/no aprovechable/terraplén/subbase/base)→tramo "tm2 pk X-Y" por abscisa. Con
+  // match, el ELEMENTO es la celda J de la BASE TAL CUAL (verbatim; el maestro empareja por string
+  // byte-idéntico, D68). Si no hay elemento para esa actividad/PK, se arma desde el PK con el helper
+  // único (sin "Pk Pk") — buildElemento/pkNorm/pkMeters quedan SOLO para ese fallback. REVISAR queda
+  // SÓLO para el caso legítimo (el PK no pertenece a ningún tramo del eje / falta el marcador).
   const lk = lookupElemento(cc, c.descripcion, mi);
   const pkElem = buildElemento(c.pk_inicial, c.pk_final);
   const elem = lk.elem ? lk.elem
              : lk.revisar ? ('REVISAR · ' + (pkElem || c.elemento || ('pk ' + (c.pk_inicial||''))))
              : (pkElem || c.elemento || '');
-  const absIni = mi != null ? mi : (c.abs_inicial!=null ? c.abs_inicial : '');
-  const absFin = mf != null ? mf : (c.abs_final!=null ? c.abs_final : '');
+  // ABS INICIAL/FINAL (D68, enmienda D63b): con match, copian K/L del elemento emparejado VERBATIM
+  // — el ABS refleja el subtramo completo, no el tramo puntual del día (pedido del jefe). Fallback
+  // (sin match / PK fuera de tramo / REVISAR / celda K o L vacía en la BASE): ABS derivado del PK
+  // como antes (D04). El PK reportado sigue intacto en las internas U–AA (pk_inicial/pk_final).
+  const absIni = (lk.elem && lk.absIni!=null && lk.absIni!=='') ? lk.absIni
+               : (mi != null ? mi : (c.abs_inicial!=null ? c.abs_inicial : ''));
+  const absFin = (lk.elem && lk.absFin!=null && lk.absFin!=='') ? lk.absFin
+               : (mf != null ? mf : (c.abs_final!=null ? c.abs_final : ''));
+  // DESCRIPCION verbatim de la tabla de ítems de la BASE, cruce por Centro de Coste (D68): la que
+  // venía del catálogo interno del frontend llegaba a veces recortada respecto a la BASE y rompía
+  // las dinámicas del maestro. Si el CC no está en la BASE, se conserva la descripción reportada.
+  const desc = lookupDescripcion(cc, c.descripcion);
   // GRUPO: la BASE clasifica tanto tierras como estructuras/MSR bajo el grupo TIERRAS. Las filas de
   // estructuras (CC 05.*) llegaban de BANDEJA con "DRENAJES Y ESTRUCTURAS"; se corrige a TIERRAS aquí
   // (red de seguridad para lo ya guardado). El CAPITULO (ESTRUCTURAS) NO se toca: sigue siendo correcto.
   let grupo = c.grupo||'';
   if(/estructura/i.test(grupo)) grupo='TIERRAS';
-  return [ toDate(fecha), '', grupo, cc, c.capitulo||'', c.descripcion||'',
+  return [ toDate(fecha), '', grupo, cc, c.capitulo||'', desc,
     uf, proy, elem, absIni, absFin,
     c.liberacion||'CAMPO', '', c.unidad||'', (c.largo!=null?c.largo:''), '', '', '', c.observacion||'', '',
     idC, ts, reporta||'', rol||'', c.actividad||'', c.pk_inicial||'', c.pk_final||'' ];
@@ -218,7 +231,7 @@ function buildElemento(pkIni, pkFin){
   return b ? ('tm2 pk '+a+' - '+b) : ('tm2 pk '+a);
 }
 
-/* ---------- BASE: ELEMENTO oficial, fuente por ACTIVIDAD (D63) ----------
+/* ---------- BASE: ELEMENTO oficial, fuente por ACTIVIDAD (D63) + copias verbatim (D68) ----------
  * La hoja BASE (mismo Sheet) tiene VARIAS tablas lado a lado (ítems, elementos, liberación, acta…),
  * alineadas por fila sólo por accidente — NO es una sola tabla. La de elementos vive en J/K/L:
  * J=ELEMENTO, K=ABSCISA INICIO, L=ABSCISA FIN. Por eso NO se cruza por la descripción/CC de la tabla
@@ -234,7 +247,7 @@ function buildElemento(pkIni, pkFin){
  *   - ODT*   (drenajes)      → FUERA de alcance (V1, D22). Se ignoran; comparten PK con los tramos.
  * REVISAR sólo para el caso legítimo: el PK no pertenece a ningún tramo del eje, o falta el marcador. */
 const BASE_TOL_M = 30; // metros de tolerancia para ajustar un PK cercano a un tramo (error humano)
-let _baseRows;
+let _baseRows, _baseItems;
 // Abscisa de la BASE a metros: número = metros tal cual; texto con '+' = PK ("20+875"→20875).
 function baseAbs(v){
   if(v===''||v==null) return null;
@@ -262,26 +275,80 @@ function baseSetFor(ccCortoStr){
   if(c==='02.08') return 'RCD';                          // conformación/disposición (ZODME pendiente)
   return 'TRAMO';                                        // aprovechable/no aprovechable/terraplén/subbase/base
 }
-function getBaseRows(){
-  if(_baseRows) return _baseRows;
-  _baseRows = [];
-  const ss = SpreadsheetApp.openById(SHEET_ID), sh = ss.getSheetByName('BASE');
-  if(!sh || sh.getLastRow() < 2) return _baseRows;
-  const v = sh.getDataRange().getValues();
-  for(let i=1;i<v.length;i++){
-    const elem=v[i][9];                                   // J = ELEMENTO
-    if(elem==='' || elem==null) continue;
-    const tipo=baseTipo(elem);
-    if(!tipo) continue;                                   // ODT/drenajes y otros -> fuera
-    let ini=baseAbs(v[i][10]), fin=baseAbs(v[i][11]);     // K = ABS INICIO, L = ABS FIN
-    if(fin==null) fin=ini;
-    if(ini==null) ini=fin;
-    if(ini!=null && fin!=null && fin<ini){ const t=ini; ini=fin; fin=t; }
-    _baseRows.push({ elem:String(elem), ini:ini, fin:fin, tipo:tipo });
-  }
-  return _baseRows;
+// Normaliza texto SOLO para comparar (nunca para escribir): mayúsculas, sin tildes, espacios raros
+// (nbsp/ancho cero) colapsados. Lo que se escribe en DATA es siempre el valor crudo de la celda.
+function normTexto(s){
+  return String(s==null?'':s)
+    .replace(/[\u00A0\u2007\u202F\u200B\u200C\u200D\uFEFF]/g,' ')   // nbsp / ancho-cero / BOM -> espacio
+    .toUpperCase()
+    .replace(/[ÁÀÂÄ]/g,'A').replace(/[ÉÈÊË]/g,'E').replace(/[ÍÌÎÏ]/g,'I')
+    .replace(/[ÓÒÔÖ]/g,'O').replace(/[ÚÙÛÜ]/g,'U').replace(/Ñ/g,'N')
+    .replace(/\s+/g,' ').trim();
 }
-// -> { elem:'<ELEMENTO>'|'' , revisar:true|false }
+// Una sola pasada por la BASE llena ambos cachés: la tabla de ELEMENTOS (J/K/L, conservando K/L
+// CRUDOS para copiarlos verbatim a ABS, D68) y la tabla de ÍTEMS (A–H: Centro de Coste →
+// DESCRIPCION verbatim, D68). Las columnas de la tabla de ítems se ubican por encabezado (fila 1)
+// dentro de A–H; si no se encuentran, el mapa queda vacío y DESCRIPCION cae al valor reportado.
+function getBaseData(){
+  if(_baseRows) return;
+  _baseRows = []; _baseItems = {};
+  const ss = SpreadsheetApp.openById(SHEET_ID), sh = ss.getSheetByName('BASE');
+  if(!sh || sh.getLastRow() < 2) return;
+  const v = sh.getDataRange().getValues();
+  let ccCol=-1, dCol=-1;                                  // tabla de ítems: CC y DESCRIPCION en A–H
+  for(let j=0;j<Math.min(8, v[0].length);j++){
+    const k=normTexto(v[0][j]);
+    if(ccCol<0 && (k==='CC' || k.indexOf('CENTRO')>=0 || k.indexOf('COSTO')>=0 || k.indexOf('COSTE')>=0)) ccCol=j;
+    else if(dCol<0 && k.indexOf('DESCRIPCION')>=0) dCol=j;
+  }
+  for(let i=1;i<v.length;i++){
+    // --- tabla de ELEMENTOS (J/K/L) ---
+    const elem=v[i][9];                                   // J = ELEMENTO
+    if(elem!=='' && elem!=null){
+      const tipo=baseTipo(elem);
+      if(tipo){                                           // ODT/drenajes y otros -> fuera
+        let ini=baseAbs(v[i][10]), fin=baseAbs(v[i][11]); // K = ABS INICIO, L = ABS FIN (a metros, para el match)
+        if(fin==null) fin=ini;
+        if(ini==null) ini=fin;
+        if(ini!=null && fin!=null && fin<ini){ const t=ini; ini=fin; fin=t; }
+        // rawIni/rawFin: celdas K/L TAL CUAL (sin normalizar ni reordenar), para copiar a ABS (D68)
+        _baseRows.push({ elem:String(elem), ini:ini, fin:fin, tipo:tipo, rawIni:v[i][10], rawFin:v[i][11] });
+      }
+    }
+    // --- tabla de ÍTEMS (A–H): CC -> DESCRIPCION verbatim ---
+    if(ccCol>=0 && dCol>=0){
+      const ccKey=String(v[i][ccCol]==null?'':v[i][ccCol]).trim();
+      const d=v[i][dCol];
+      if(ccKey && d!=='' && d!=null){
+        const it={ desc:d, norm:normTexto(d) };           // desc = celda cruda; norm solo para comparar
+        (_baseItems[ccKey]=_baseItems[ccKey]||[]).push(it);
+        const corto=ccCorto(ccKey);                       // registra también la llave corta "NN.NN"
+        if(corto && corto!==ccKey) (_baseItems[corto]=_baseItems[corto]||[]).push(it);
+      }
+    }
+  }
+}
+function getBaseRows(){ getBaseData(); return _baseRows; }
+function getBaseItems(){ getBaseData(); return _baseItems; }
+// DESCRIPCION oficial (verbatim) de la tabla de ítems de la BASE por Centro de Coste (D68).
+// Llave exacta primero ("3701.02.05") y corta después ("02.05"). Si un CC tiene varios ítems
+// (02.05: aprovechable vs NO aprovechable) desambigua por igualdad normalizada y, si no, por el
+// discriminante "NO APRO" (mismo criterio que bucketDeData). Sin ítem en la BASE -> se conserva
+// la descripción reportada (catálogo del frontend), que es el fallback sin match.
+function lookupDescripcion(cc, descripcion){
+  const items=getBaseItems();
+  const cand=items[String(cc==null?'':cc).trim()] || items[ccCorto(cc)];
+  if(!cand || !cand.length) return descripcion||'';
+  if(cand.length===1) return cand[0].desc;
+  const n=normTexto(descripcion);
+  for(let i=0;i<cand.length;i++){ if(cand[i].norm===n) return cand[i].desc; }
+  const noApro = n.indexOf('NO APRO')>=0;
+  const f=cand.filter(it=> (it.norm.indexOf('NO APRO')>=0)===noApro );
+  return f.length ? f[0].desc : cand[0].desc;
+}
+// -> { elem:'<ELEMENTO>'|'' , revisar:true|false , absIni , absFin }
+// elem = celda J verbatim; absIni/absFin = celdas K/L verbatim del elemento emparejado (D68).
+// En los retornos sin match, absIni/absFin quedan undefined y buildDataRow deriva ABS del PK.
 function lookupElemento(cc, descripcion, pkMetersIn){
   const all=getBaseRows();
   if(!all.length) return { elem:'', revisar:false };
@@ -289,7 +356,8 @@ function lookupElemento(cc, descripcion, pkMetersIn){
   const rows=all.filter(r=>r.tipo===set);
   // DIVISO / RCD: marcador ligado a la ACTIVIDAD (no al PK) -> se devuelve directo.
   if(set==='DIVISO' || set==='RCD'){
-    return rows.length ? { elem:rows[0].elem, revisar:false } : { elem:'', revisar:true };
+    return rows.length ? { elem:rows[0].elem, revisar:false, absIni:rows[0].rawIni, absFin:rows[0].rawFin }
+                       : { elem:'', revisar:true };
   }
   // TRAMO / MSR: por abscisa dentro del conjunto.
   if(!rows.length) return { elem:'', revisar:false };     // sin filas de ese tipo -> respaldo PK
@@ -299,14 +367,14 @@ function lookupElemento(cc, descripcion, pkMetersIn){
   const hits=rows.filter(r=>r.ini!=null && r.fin!=null && pk>=r.ini && pk<=r.fin);
   if(hits.length){
     hits.sort((a,b)=>(a.fin-a.ini)-(b.fin-b.ini));
-    return { elem:hits[0].elem, revisar:false };
+    return { elem:hits[0].elem, revisar:false, absIni:hits[0].rawIni, absFin:hits[0].rawFin };
   }
   // 2) PK cercano (error humano): ajustar al tramo más próximo dentro de la tolerancia
   let best=null, bestD=Infinity;
   rows.forEach(r=>{ if(r.ini==null||r.fin==null) return;
     const d = pk<r.ini ? (r.ini-pk) : (pk-r.fin);
     if(d<bestD){ bestD=d; best=r; } });
-  if(best && bestD<=BASE_TOL_M) return { elem:best.elem, revisar:false };
+  if(best && bestD<=BASE_TOL_M) return { elem:best.elem, revisar:false, absIni:best.rawIni, absFin:best.rawFin };
   // 3) el PK no pertenece a ningún tramo/zona del conjunto -> revisión humana
   return { elem:'', revisar:true };
 }
@@ -350,7 +418,7 @@ function doGet(e){
   if(a==='cubicaje')    return json({ok:true, cubicaje:getCubicajeMap()});
   if(a==='maquinaria_produccion') return maquinariaProduccion(e);
   if(a==='debug')       return debug(e);
-  return json({ok:true, msg:'API viva', version:'v9'});
+  return json({ok:true, msg:'API viva', version:'v10'});
 }
 function doPost(e){
   try{
@@ -818,6 +886,6 @@ function debug(e){
   const fechaQ=fdate(e.parameter.fecha||'');
   const ban=readSheet('BANDEJA').filter(r=>r.fecha===fechaQ);
   const data=readSheet('DATA') ? '' : '';
-  return json({version:'v9', sheetTZ:shTZ(), queryFecha:fechaQ, bandejaFilas:ban.length,
+  return json({version:'v10', sheetTZ:shTZ(), queryFecha:fechaQ, bandejaFilas:ban.length,
     muestra: ban.slice(0,5).map(r=>({reporta:r.reporta, rol:r.rol, actividad:r.actividad, pk:r.pk_inicial, largo:r.largo, estado:r.estado})) });
 }
