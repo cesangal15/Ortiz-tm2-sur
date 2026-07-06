@@ -889,3 +889,37 @@ function debug(e){
   return json({version:'v10', sheetTZ:shTZ(), queryFecha:fechaQ, bandejaFilas:ban.length,
     muestra: ban.slice(0,5).map(r=>({reporta:r.reporta, rol:r.rol, actividad:r.actividad, pk:r.pk_inicial, largo:r.largo, estado:r.estado})) });
 }
+
+/* ---------- MIGRACIÓN ÚNICA: DESCRIPCION de DATA verbatim de la BASE (D68) ----------
+ * Pasada única sobre las filas YA existentes en DATA (el app no reescribe lo histórico: solo pisa
+ * el día que se reenvía, D03). NO es un endpoint: se corre A MANO desde el editor de Apps Script
+ * (no requiere redesplegar, basta guardar el archivo):
+ *   1) previsualizarDescripcionesData() -> solo registra en el Log lo que cambiaría; NO escribe nada.
+ *      (Ver > Registro de ejecución / Executions para leer la salida.)
+ *   2) actualizarDescripcionesData()    -> aplica los cambios, escribiendo SOLO la columna F
+ *      (DESCRIPCION) de las filas que difieren.
+ * Usa el MISMO lookupDescripcion del flujo normal: cruce por Centro de Costo (col D) contra la
+ * tabla de ítems A–H de la BASE; el 02.05 se desambigua con la descripción actual de la fila.
+ * Si el CC no tiene ítem en la BASE, la fila se deja como está (no inventa). No toca ninguna otra
+ * columna (ELEMENTO/ABS históricos quedan igual), ninguna otra hoja, ni los .xlsx maestros (D24). */
+function previsualizarDescripcionesData(){ _descripcionesDataPass(false); }
+function actualizarDescripcionesData(){ _descripcionesDataPass(true); }
+function _descripcionesDataPass(aplicar){
+  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('DATA');
+  if(!sh || sh.getLastRow()<2){ Logger.log('DATA vacía: nada que hacer.'); return; }
+  const v=sh.getDataRange().getValues();
+  const items=getBaseItems();
+  let cambia=0, igual=0, sinItem=0;
+  for(let i=1;i<v.length;i++){
+    const cc=v[i][3], desc=v[i][5];                     // D = CENTRO DE COSTO, F = DESCRIPCION
+    const hayItem = cc!=null && cc!=='' && !!(items[String(cc).trim()] || items[ccCorto(cc)]);
+    if(!hayItem){ sinItem++; continue; }                // CC sin ítem en la BASE -> se deja como está
+    const nueva=lookupDescripcion(cc, desc);
+    if(nueva===desc){ igual++; continue; }              // ya es byte-idéntica a la BASE
+    cambia++;
+    Logger.log('fila '+(i+1)+' [CC '+cc+'] '+JSON.stringify(String(desc))+' -> '+JSON.stringify(String(nueva)));
+    if(aplicar) sh.getRange(i+1, 6).setValue(nueva);    // SOLO col F (DESCRIPCION), verbatim de la BASE
+  }
+  Logger.log((aplicar?'APLICADO.':'PREVISUALIZACIÓN (no se escribió nada).')+
+    ' Filas revisadas: '+(v.length-1)+' · cambiadas: '+cambia+' · ya idénticas: '+igual+' · sin ítem en BASE: '+sinItem);
+}
