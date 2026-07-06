@@ -247,7 +247,7 @@ function buildElemento(pkIni, pkFin){
  *   - ODT*   (drenajes)      → FUERA de alcance (V1, D22). Se ignoran; comparten PK con los tramos.
  * REVISAR sólo para el caso legítimo: el PK no pertenece a ningún tramo del eje, o falta el marcador. */
 const BASE_TOL_M = 30; // metros de tolerancia para ajustar un PK cercano a un tramo (error humano)
-let _baseRows, _baseItems;
+let _baseRows, _baseItems, _baseItemCols;
 // Abscisa de la BASE a metros: número = metros tal cual; texto con '+' = PK ("20+875"→20875).
 function baseAbs(v){
   if(v===''||v==null) return null;
@@ -301,6 +301,7 @@ function getBaseData(){
     if(ccCol<0 && (k==='CC' || k.indexOf('CENTRO')>=0 || k.indexOf('COSTO')>=0 || k.indexOf('COSTE')>=0)) ccCol=j;
     else if(dCol<0 && k.indexOf('DESCRIPCION')>=0) dCol=j;
   }
+  _baseItemCols={ cc:ccCol, desc:dCol };                  // expuesto para diagnosticoBase()
   for(let i=1;i<v.length;i++){
     // --- tabla de ELEMENTOS (J/K/L) ---
     const elem=v[i][9];                                   // J = ELEMENTO
@@ -331,20 +332,26 @@ function getBaseData(){
 function getBaseRows(){ getBaseData(); return _baseRows; }
 function getBaseItems(){ getBaseData(); return _baseItems; }
 // DESCRIPCION oficial (verbatim) de la tabla de ítems de la BASE por Centro de Coste (D68).
-// Llave exacta primero ("3701.02.05") y corta después ("02.05"). Si un CC tiene varios ítems
-// (02.05: aprovechable vs NO aprovechable) desambigua por igualdad normalizada y, si no, por el
-// discriminante "NO APRO" (mismo criterio que bucketDeData). Sin ítem en la BASE -> se conserva
-// la descripción reportada (catálogo del frontend), que es el fallback sin match.
+// Llave exacta primero ("3701.02.05") y corta después ("02.05"). Si un CC tiene varios ítems:
+//   1) separa por el discriminante "NO APRO" (02.05 aprovechable vs no aprovechable, mismo
+//      criterio que bucketDeData);
+//   2) entre los que quedan, gana el candidato MÁS COMPLETO cuyo texto empiece por el reportado
+//      (la BASE puede traer el ítem recortado Y el completo bajo el mismo CC: con igualdad exacta
+//      ganaba el recortado, p. ej. "Conformación y disposición de sobrantes" vs "… (incluye obras
+//      de adecuación)"); la igualdad exacta es un caso particular de este prefijo.
+// Sin ítem en la BASE -> se conserva la descripción reportada (fallback sin match).
 function lookupDescripcion(cc, descripcion){
   const items=getBaseItems();
   const cand=items[String(cc==null?'':cc).trim()] || items[ccCorto(cc)];
   if(!cand || !cand.length) return descripcion||'';
   if(cand.length===1) return cand[0].desc;
   const n=normTexto(descripcion);
-  for(let i=0;i<cand.length;i++){ if(cand[i].norm===n) return cand[i].desc; }
   const noApro = n.indexOf('NO APRO')>=0;
-  const f=cand.filter(it=> (it.norm.indexOf('NO APRO')>=0)===noApro );
-  return f.length ? f[0].desc : cand[0].desc;
+  let pool=cand.filter(it=> (it.norm.indexOf('NO APRO')>=0)===noApro );
+  if(!pool.length) pool=cand;
+  let best=null;
+  pool.forEach(it=>{ if(n && it.norm.indexOf(n)===0 && (!best || it.norm.length>best.norm.length)) best=it; });
+  return best ? best.desc : pool[0].desc;
 }
 // -> { elem:'<ELEMENTO>'|'' , revisar:true|false , absIni , absFin }
 // elem = celda J verbatim; absIni/absFin = celdas K/L verbatim del elemento emparejado (D68).
@@ -904,6 +911,35 @@ function debug(e){
  * columna (ELEMENTO/ABS históricos quedan igual), ninguna otra hoja, ni los .xlsx maestros (D24). */
 function previsualizarDescripcionesData(){ _descripcionesDataPass(false); }
 function actualizarDescripcionesData(){ _descripcionesDataPass(true); }
+// Diagnóstico de la tabla de ítems de la BASE: correr a mano desde el editor cuando el cruce de
+// DESCRIPCION no tome la celda esperada. Registra qué columnas detectó (encabezados A–H), las
+// llaves CC encontradas y TODOS los candidatos de las llaves que contengan '02.08' (o cámbiese el
+// filtro abajo). No escribe nada en ninguna hoja.
+function diagnosticoBase(){
+  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('BASE');
+  if(!sh){ Logger.log('No existe la hoja BASE.'); return; }
+  const v=sh.getDataRange().getValues();
+  Logger.log('BASE: '+v.length+' filas × '+v[0].length+' columnas.');
+  const letras='ABCDEFGHIJKL';
+  for(let j=0;j<Math.min(12, v[0].length);j++)
+    Logger.log('Encabezado '+letras.charAt(j)+'1 = '+JSON.stringify(String(v[0][j]==null?'':v[0][j])));
+  getBaseData();
+  const cols=_baseItemCols||{cc:-1,desc:-1};
+  Logger.log('Columna detectada para CC: '+(cols.cc>=0?letras.charAt(cols.cc):'NINGUNA')+
+             ' · para DESCRIPCION: '+(cols.desc>=0?letras.charAt(cols.desc):'NINGUNA'));
+  if(cols.cc>=0 && cols.desc>=0){
+    for(let i=1;i<Math.min(4, v.length);i++)
+      Logger.log('Muestra fila '+(i+1)+': CC='+JSON.stringify(String(v[i][cols.cc]))+' · DESC='+JSON.stringify(String(v[i][cols.desc])));
+  }
+  const items=getBaseItems(), keys=Object.keys(items);
+  Logger.log('Llaves CC en el mapa ('+keys.length+'): '+keys.map(k=>k+'×'+items[k].length).join(' | '));
+  keys.forEach(k=>{
+    if(k.indexOf('02.08')<0) return;                     // <- cambiar aquí para inspeccionar otro CC
+    items[k].forEach((it,x)=>Logger.log('Candidato '+k+' #'+(x+1)+': '+JSON.stringify(String(it.desc))));
+  });
+  Logger.log('lookupDescripcion("3701.02.08", "Conformación y disposición de sobrantes") -> '+
+    JSON.stringify(String(lookupDescripcion('3701.02.08','Conformación y disposición de sobrantes'))));
+}
 function _descripcionesDataPass(aplicar){
   const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('DATA');
   if(!sh || sh.getLastRow()<2){ Logger.log('DATA vacía: nada que hacer.'); return; }
