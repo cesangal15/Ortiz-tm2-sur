@@ -247,7 +247,7 @@ function buildElemento(pkIni, pkFin){
  *   - ODT*   (drenajes)      → FUERA de alcance (V1, D22). Se ignoran; comparten PK con los tramos.
  * REVISAR sólo para el caso legítimo: el PK no pertenece a ningún tramo del eje, o falta el marcador. */
 const BASE_TOL_M = 30; // metros de tolerancia para ajustar un PK cercano a un tramo (error humano)
-let _baseRows, _baseItems;
+let _baseRows, _baseItems, _baseItemCols;
 // Abscisa de la BASE a metros: número = metros tal cual; texto con '+' = PK ("20+875"→20875).
 function baseAbs(v){
   if(v===''||v==null) return null;
@@ -287,20 +287,28 @@ function normTexto(s){
 }
 // Una sola pasada por la BASE llena ambos cachés: la tabla de ELEMENTOS (J/K/L, conservando K/L
 // CRUDOS para copiarlos verbatim a ABS, D68) y la tabla de ÍTEMS (A–H: Centro de Coste →
-// DESCRIPCION verbatim, D68). Las columnas de la tabla de ítems se ubican por encabezado (fila 1)
-// dentro de A–H; si no se encuentran, el mapa queda vacío y DESCRIPCION cae al valor reportado.
+// DESCRIPCION verbatim, D68). La BASE real trae una fila de NUMERACIÓN (1,2,3…) encima de los
+// encabezados, así que la fila de encabezados de la tabla de ítems se BUSCA en las primeras filas
+// (la primera que tenga CC y DESCRIPCION dentro de A–H); los ítems empiezan en la fila siguiente.
+// Si no se encuentra, el mapa queda vacío y DESCRIPCION cae al valor reportado. La tabla de
+// elementos no depende de encabezados: filtra por el contenido de J (baseTipo).
 function getBaseData(){
   if(_baseRows) return;
   _baseRows = []; _baseItems = {};
   const ss = SpreadsheetApp.openById(SHEET_ID), sh = ss.getSheetByName('BASE');
   if(!sh || sh.getLastRow() < 2) return;
   const v = sh.getDataRange().getValues();
-  let ccCol=-1, dCol=-1;                                  // tabla de ítems: CC y DESCRIPCION en A–H
-  for(let j=0;j<Math.min(8, v[0].length);j++){
-    const k=normTexto(v[0][j]);
-    if(ccCol<0 && (k==='CC' || k.indexOf('CENTRO')>=0 || k.indexOf('COSTO')>=0 || k.indexOf('COSTE')>=0)) ccCol=j;
-    else if(dCol<0 && k.indexOf('DESCRIPCION')>=0) dCol=j;
+  let ccCol=-1, dCol=-1, hRow=-1;                         // tabla de ítems: fila de encabezados + CC y DESCRIPCION en A–H
+  for(let r=0; r<Math.min(5, v.length) && hRow<0; r++){
+    let c1=-1, c2=-1;
+    for(let j=0;j<Math.min(8, v[r].length);j++){
+      const k=normTexto(v[r][j]);
+      if(c1<0 && (k==='CC' || k.indexOf('CENTRO')>=0 || k.indexOf('COSTO')>=0 || k.indexOf('COSTE')>=0)) c1=j;
+      else if(c2<0 && k.indexOf('DESCRIPCION')>=0) c2=j;
+    }
+    if(c1>=0 && c2>=0){ ccCol=c1; dCol=c2; hRow=r; }      // ambos en la MISMA fila = fila de encabezados
   }
+  _baseItemCols={ cc:ccCol, desc:dCol, filaEnc:hRow+1 };  // expuesto para diagnosticoBase()
   for(let i=1;i<v.length;i++){
     // --- tabla de ELEMENTOS (J/K/L) ---
     const elem=v[i][9];                                   // J = ELEMENTO
@@ -315,8 +323,8 @@ function getBaseData(){
         _baseRows.push({ elem:String(elem), ini:ini, fin:fin, tipo:tipo, rawIni:v[i][10], rawFin:v[i][11] });
       }
     }
-    // --- tabla de ÍTEMS (A–H): CC -> DESCRIPCION verbatim ---
-    if(ccCol>=0 && dCol>=0){
+    // --- tabla de ÍTEMS (A–H): CC -> DESCRIPCION verbatim (solo DESPUÉS de la fila de encabezados) ---
+    if(ccCol>=0 && dCol>=0 && i>hRow){
       const ccKey=String(v[i][ccCol]==null?'':v[i][ccCol]).trim();
       const d=v[i][dCol];
       if(ccKey && d!=='' && d!=null){
@@ -331,20 +339,26 @@ function getBaseData(){
 function getBaseRows(){ getBaseData(); return _baseRows; }
 function getBaseItems(){ getBaseData(); return _baseItems; }
 // DESCRIPCION oficial (verbatim) de la tabla de ítems de la BASE por Centro de Coste (D68).
-// Llave exacta primero ("3701.02.05") y corta después ("02.05"). Si un CC tiene varios ítems
-// (02.05: aprovechable vs NO aprovechable) desambigua por igualdad normalizada y, si no, por el
-// discriminante "NO APRO" (mismo criterio que bucketDeData). Sin ítem en la BASE -> se conserva
-// la descripción reportada (catálogo del frontend), que es el fallback sin match.
+// Llave exacta primero ("3701.02.05") y corta después ("02.05"). Si un CC tiene varios ítems:
+//   1) separa por el discriminante "NO APRO" (02.05 aprovechable vs no aprovechable, mismo
+//      criterio que bucketDeData);
+//   2) entre los que quedan, gana el candidato MÁS COMPLETO cuyo texto empiece por el reportado
+//      (la BASE puede traer el ítem recortado Y el completo bajo el mismo CC: con igualdad exacta
+//      ganaba el recortado, p. ej. "Conformación y disposición de sobrantes" vs "… (incluye obras
+//      de adecuación)"); la igualdad exacta es un caso particular de este prefijo.
+// Sin ítem en la BASE -> se conserva la descripción reportada (fallback sin match).
 function lookupDescripcion(cc, descripcion){
   const items=getBaseItems();
   const cand=items[String(cc==null?'':cc).trim()] || items[ccCorto(cc)];
   if(!cand || !cand.length) return descripcion||'';
   if(cand.length===1) return cand[0].desc;
   const n=normTexto(descripcion);
-  for(let i=0;i<cand.length;i++){ if(cand[i].norm===n) return cand[i].desc; }
   const noApro = n.indexOf('NO APRO')>=0;
-  const f=cand.filter(it=> (it.norm.indexOf('NO APRO')>=0)===noApro );
-  return f.length ? f[0].desc : cand[0].desc;
+  let pool=cand.filter(it=> (it.norm.indexOf('NO APRO')>=0)===noApro );
+  if(!pool.length) pool=cand;
+  let best=null;
+  pool.forEach(it=>{ if(n && it.norm.indexOf(n)===0 && (!best || it.norm.length>best.norm.length)) best=it; });
+  return best ? best.desc : pool[0].desc;
 }
 // -> { elem:'<ELEMENTO>'|'' , revisar:true|false , absIni , absFin }
 // elem = celda J verbatim; absIni/absFin = celdas K/L verbatim del elemento emparejado (D68).
@@ -888,4 +902,69 @@ function debug(e){
   const data=readSheet('DATA') ? '' : '';
   return json({version:'v10', sheetTZ:shTZ(), queryFecha:fechaQ, bandejaFilas:ban.length,
     muestra: ban.slice(0,5).map(r=>({reporta:r.reporta, rol:r.rol, actividad:r.actividad, pk:r.pk_inicial, largo:r.largo, estado:r.estado})) });
+}
+
+/* ---------- MIGRACIÓN ÚNICA: DESCRIPCION de DATA verbatim de la BASE (D68) ----------
+ * Pasada única sobre las filas YA existentes en DATA (el app no reescribe lo histórico: solo pisa
+ * el día que se reenvía, D03). NO es un endpoint: se corre A MANO desde el editor de Apps Script
+ * (no requiere redesplegar, basta guardar el archivo):
+ *   1) previsualizarDescripcionesData() -> solo registra en el Log lo que cambiaría; NO escribe nada.
+ *      (Ver > Registro de ejecución / Executions para leer la salida.)
+ *   2) actualizarDescripcionesData()    -> aplica los cambios, escribiendo SOLO la columna F
+ *      (DESCRIPCION) de las filas que difieren.
+ * Usa el MISMO lookupDescripcion del flujo normal: cruce por Centro de Costo (col D) contra la
+ * tabla de ítems A–H de la BASE; el 02.05 se desambigua con la descripción actual de la fila.
+ * Si el CC no tiene ítem en la BASE, la fila se deja como está (no inventa). No toca ninguna otra
+ * columna (ELEMENTO/ABS históricos quedan igual), ninguna otra hoja, ni los .xlsx maestros (D24). */
+function previsualizarDescripcionesData(){ _descripcionesDataPass(false); }
+function actualizarDescripcionesData(){ _descripcionesDataPass(true); }
+// Diagnóstico de la tabla de ítems de la BASE: correr a mano desde el editor cuando el cruce de
+// DESCRIPCION no tome la celda esperada. Registra qué columnas detectó (encabezados A–H), las
+// llaves CC encontradas y TODOS los candidatos de las llaves que contengan '02.08' (o cámbiese el
+// filtro abajo). No escribe nada en ninguna hoja.
+function diagnosticoBase(){
+  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('BASE');
+  if(!sh){ Logger.log('No existe la hoja BASE.'); return; }
+  const v=sh.getDataRange().getValues();
+  Logger.log('BASE: '+v.length+' filas × '+v[0].length+' columnas.');
+  const letras='ABCDEFGHIJKL';
+  for(let r=0;r<Math.min(3, v.length);r++)
+    for(let j=0;j<Math.min(12, v[r].length);j++)
+      Logger.log('Celda '+letras.charAt(j)+(r+1)+' = '+JSON.stringify(String(v[r][j]==null?'':v[r][j])));
+  getBaseData();
+  const cols=_baseItemCols||{cc:-1,desc:-1,filaEnc:0};
+  Logger.log('Fila de encabezados detectada: '+(cols.filaEnc>0?cols.filaEnc:'NINGUNA')+
+             ' · columna CC: '+(cols.cc>=0?letras.charAt(cols.cc):'NINGUNA')+
+             ' · columna DESCRIPCION: '+(cols.desc>=0?letras.charAt(cols.desc):'NINGUNA'));
+  if(cols.cc>=0 && cols.desc>=0){
+    for(let i=cols.filaEnc;i<Math.min(cols.filaEnc+3, v.length);i++)
+      Logger.log('Muestra fila '+(i+1)+': CC='+JSON.stringify(String(v[i][cols.cc]))+' · DESC='+JSON.stringify(String(v[i][cols.desc])));
+  }
+  const items=getBaseItems(), keys=Object.keys(items);
+  Logger.log('Llaves CC en el mapa ('+keys.length+'): '+keys.map(k=>k+'×'+items[k].length).join(' | '));
+  keys.forEach(k=>{
+    if(k.indexOf('02.08')<0) return;                     // <- cambiar aquí para inspeccionar otro CC
+    items[k].forEach((it,x)=>Logger.log('Candidato '+k+' #'+(x+1)+': '+JSON.stringify(String(it.desc))));
+  });
+  Logger.log('lookupDescripcion("3701.02.08", "Conformación y disposición de sobrantes") -> '+
+    JSON.stringify(String(lookupDescripcion('3701.02.08','Conformación y disposición de sobrantes'))));
+}
+function _descripcionesDataPass(aplicar){
+  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('DATA');
+  if(!sh || sh.getLastRow()<2){ Logger.log('DATA vacía: nada que hacer.'); return; }
+  const v=sh.getDataRange().getValues();
+  const items=getBaseItems();
+  let cambia=0, igual=0, sinItem=0;
+  for(let i=1;i<v.length;i++){
+    const cc=v[i][3], desc=v[i][5];                     // D = CENTRO DE COSTO, F = DESCRIPCION
+    const hayItem = cc!=null && cc!=='' && !!(items[String(cc).trim()] || items[ccCorto(cc)]);
+    if(!hayItem){ sinItem++; continue; }                // CC sin ítem en la BASE -> se deja como está
+    const nueva=lookupDescripcion(cc, desc);
+    if(nueva===desc){ igual++; continue; }              // ya es byte-idéntica a la BASE
+    cambia++;
+    Logger.log('fila '+(i+1)+' [CC '+cc+'] '+JSON.stringify(String(desc))+' -> '+JSON.stringify(String(nueva)));
+    if(aplicar) sh.getRange(i+1, 6).setValue(nueva);    // SOLO col F (DESCRIPCION), verbatim de la BASE
+  }
+  Logger.log((aplicar?'APLICADO.':'PREVISUALIZACIÓN (no se escribió nada).')+
+    ' Filas revisadas: '+(v.length-1)+' · cambiadas: '+cambia+' · ya idénticas: '+igual+' · sin ítem en BASE: '+sinItem);
 }
