@@ -396,12 +396,25 @@ async function obtenerExport(fecha){
   return data;
 }
 
-// A. No. Recurso: string exacto del catálogo por código; sin match (ingreso nuevo / código no catalogado)
-// se construye "codigo| NOMBRE" en MAYÚSCULAS, sin bloqueo ni marca (regla del prompt §2/§6).
+// A. No. Recurso: string EXACTO del listado de Trabajadores (Navision lo lee tal cual). Sin match
+// (ingreso nuevo / código no catalogado) se construye "codigo| NOMBRE" en MAYÚSCULAS, sin bloqueo (§2/§6).
 function noRecurso(codigo, nombre, catTrabajadores){
   const c=String(codigo||'').trim();
   if(c && catTrabajadores[c]) return catTrabajadores[c];
   return `${c}| ${String(nombre||'').toUpperCase()}`;
+}
+// Construye {codigo: 'codigo| NOMBRE'} desde la hoja "Trabajadores" de la PLANTILLA (columna A, string
+// exacto que espera Navision). El código es lo que va antes del '|'. Así el string de la columna A sale
+// idéntico al listado oficial sin que el usuario mantenga nada aparte. Si no existe la hoja, devuelve {}.
+function mapTrabajadoresDeWb(wb){
+  const map={}; const sh=wb.Sheets['Trabajadores']; if(!sh) return map;
+  const rows=XLSX.utils.sheet_to_json(sh,{header:1});
+  rows.forEach(r=>{
+    const val=String((r&&r[0])!=null?r[0]:'').trim();
+    const i=val.indexOf('|');
+    if(i>0){ const cod=val.slice(0,i).trim(); if(cod) map[cod]=val; }
+  });
+  return map;
 }
 // Fila A–R (18 columnas) de la hoja Parte para una persona del día. Ausente: TODAS las horas en 0 (§6).
 function buildParteRow(f, proyectoStr, cfg, tipoJornada, catTrabajadores){
@@ -432,11 +445,16 @@ async function generarExcel(proyecto){
   msg.innerHTML='<div class="aviso">⏳ Generando…</div>';
   try{
     const data=await obtenerExport(STATE.fecha);
-    const cfg=data.config||{}, festivos=data.festivos||[], catTrabajadores=data.catTrabajadores||{};
+    const cfg=data.config||{}, festivos=data.festivos||[];
     const proyectoStr = proyecto==='3701' ? (cfg.proyecto_3701||'3701') : (cfg.proyecto_3702||'3702');
     if(proyecto==='3702' && (!cfg.proyecto_3702 || cfg.proyecto_3702==='PENDIENTE')){
       msg.innerHTML='<div class="aviso">⚠️ El string de CONFIG.proyecto_3702 sigue como "PENDIENTE" (parámetro abierto). Se usará "3702" tal cual; ajusta CONFIG cuando llegue la plantilla del 3702.</div>';
     }
+    // Lee la plantilla y saca el catálogo de Trabajadores de SU PROPIA hoja "Trabajadores" (string exacto
+    // de Navision, columna A). El mapa de la plantilla manda sobre lo que traiga el backend (que en la
+    // práctica va vacío). Códigos que no estén (ingresos nuevos) caen al respaldo "codigo| NOMBRE".
+    const wb=XLSX.read(STATE.tplBuf, {type:'array'});
+    const catTrabajadores=Object.assign({}, data.catTrabajadores||{}, mapTrabajadoresDeWb(wb));
     const tipoJornada=tipoJornadaDeFecha(STATE.fecha, festivos);
     const avisosProyDefecto=[];
     const filasProyecto=(data.filas||[]).filter(f=>{
@@ -457,7 +475,6 @@ async function generarExcel(proyecto){
       return row;
     });
 
-    const wb=XLSX.read(STATE.tplBuf, {type:'array'});
     const wsName = wb.SheetNames.indexOf('Parte')>=0 ? 'Parte' : wb.SheetNames[0];
     const ws=wb.Sheets[wsName];
     // Limpia cualquier fila de datos previa de la hoja Parte (por si la plantilla trae filas de ejemplo):
