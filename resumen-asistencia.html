@@ -460,13 +460,20 @@ async function generarExcel(proyecto){
     const wb=XLSX.read(STATE.tplBuf, {type:'array'});
     const wsName = wb.SheetNames.indexOf('Parte')>=0 ? 'Parte' : wb.SheetNames[0];
     const ws=wb.Sheets[wsName];
-    const origin='A'+STATE.filaInicio;
-    XLSX.utils.sheet_add_aoa(ws, aoa, {origin});
-    // Extiende el rango de la hoja si el bloque escrito quedó afuera del !ref original.
+    // Limpia cualquier fila de datos previa de la hoja Parte (por si la plantilla trae filas de ejemplo):
+    // borra toda celda con fila >= filaInicio, conserva la fila 1 (encabezados) y las demás hojas intactas.
+    Object.keys(ws).forEach(k=>{
+      if(k[0]==='!') return;
+      const cell=XLSX.utils.decode_cell(k);
+      if(cell.r >= STATE.filaInicio-1) delete ws[k];   // filaInicio es 1-based; decode_cell.r es 0-based
+    });
+    ws['!ref']='A1:R1';                                  // solo encabezados antes de escribir el día
+    XLSX.utils.sheet_add_aoa(ws, aoa, {origin:'A'+STATE.filaInicio});
     const endRow=STATE.filaInicio+aoa.length-1;
-    const range=XLSX.utils.decode_range(ws['!ref']||'A1:A1');
+    const range=XLSX.utils.decode_range(ws['!ref']);
+    range.s.r=0; range.s.c=0;
     if(endRow-1 > range.e.r) range.e.r=endRow-1;
-    if(range.e.c<17) range.e.c=17;
+    if(range.e.c<17) range.e.c=17;                       // asegura A–R (18 columnas)
     ws['!ref']=XLSX.utils.encode_range(range);
 
     const nombre=`Parte_${proyecto}_${STATE.fecha}.xlsx`;
