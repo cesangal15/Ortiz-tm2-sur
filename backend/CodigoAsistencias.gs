@@ -192,11 +192,19 @@ function asistenciaDia(e){
       presente:r.presente, motivo_ausencia:r.motivo_ausencia, observacion:r.observacion }));
   const cuadrillasCat=readSheet('CUADRILLAS', CUADRILLAS_HEADERS);
   const personalActivo=readSheet('PERSONAL', PERSONAL_HEADERS).filter(p=>p.estado==='activo');
-  const codigosReportados={}; // codigo(+cedula fallback) -> fila de ese día
-  filas.forEach(f=>{ const k=f.codigo||('CED:'+f.cedula); codigosReportados[k]=f; });
+  // Una fila cuenta como REPORTE COMPLETO solo si: ausente con motivo, o presente CON centro de costo.
+  // Presente SIN CC (el capataz la dejó pasar sin actividad) = como si NO se hubiera reportado
+  // (decisión del residente, jul-2026): NO cuenta presente y va a faltantes para completarla.
+  function filaValida(f){ return f.presente==='No' || (f.presente==='Si' && !!String(f.cc||'').trim()); }
+  const codigosReportados={}, incompletos={};
+  filas.forEach(f=>{
+    const k=f.codigo||('CED:'+f.cedula);
+    if(filaValida(f)) codigosReportados[k]=f;
+    else if(f.presente==='Si') incompletos[k]=f;   // presente sin CC = incompleto (no reportado)
+  });
 
   const cuadrillasEstado=cuadrillasCat.map(cq=>{
-    const filasCuad=filas.filter(f=>f.cuadrilla===cq.cuadrilla);
+    const filasCuad=filas.filter(f=>f.cuadrilla===cq.cuadrilla && filaValida(f));
     return {
       cuadrilla:cq.cuadrilla, responsables:cq.responsables||'',
       reporto: filasCuad.length>0,
@@ -210,12 +218,16 @@ function asistenciaDia(e){
   personalActivo.forEach(p=>{
     const k=p.codigo||('CED:'+p.cedula);
     const reg=codigosReportados[k];
-    if(!reg){
+    if(reg){
+      if(reg.presente==='No'){
+        faltantes.push({ codigo:p.codigo||'', cedula:p.cedula||'', nombre:p.nombre||'', cargo:p.cargo||'',
+          cuadrilla:p.cuadrilla||'', responsable:p.responsable||'', tipo:'ausente', motivo:reg.motivo_ausencia||'' });
+      }
+      // presente CON CC = reportado OK, no es faltante
+    } else {
+      // sin fila válida: nunca reportó, o quedó presente sin CC (incompleto). Ambos = por completar.
       faltantes.push({ codigo:p.codigo||'', cedula:p.cedula||'', nombre:p.nombre||'', cargo:p.cargo||'',
-        cuadrilla:p.cuadrilla||'', responsable:p.responsable||'', tipo:'sin_reportar' });
-    } else if(reg.presente==='No'){
-      faltantes.push({ codigo:p.codigo||'', cedula:p.cedula||'', nombre:p.nombre||'', cargo:p.cargo||'',
-        cuadrilla:p.cuadrilla||'', responsable:p.responsable||'', tipo:'ausente', motivo:reg.motivo_ausencia||'' });
+        cuadrilla:p.cuadrilla||'', responsable:p.responsable||'', tipo:'sin_reportar', incompleto: !!incompletos[k] });
     }
   });
 

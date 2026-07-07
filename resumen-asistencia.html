@@ -147,7 +147,8 @@ function onFechaChange(v){ STATE.fecha=v; STATE.exportCache={}; cargarResumen();
 function render(){
   const d=STATE.data;
   const filas=d.filas||[], cuadrillas=d.cuadrillas||[], faltantes=d.faltantes||[];
-  const presentes=filas.filter(f=>f.presente==='Si');
+  // Presente cuenta SOLO si tiene CC. Presente sin CC = no reportado (ya viene en faltantes).
+  const presentes=filas.filter(f=>f.presente==='Si' && String(f.cc||'').trim());
   const ausentesConMotivo=faltantes.filter(f=>f.tipo==='ausente');
   const sinReportar=faltantes.filter(f=>f.tipo==='sin_reportar');
   const porProyecto={};
@@ -177,9 +178,10 @@ function render(){
   html+='<div class="section-title">Personas faltantes</div><div class="card">';
   if(!faltantes.length){ html+='<p style="color:var(--muted);font-size:13px;">No hay faltantes: todas las cuadrillas reportaron y no hay ausentes.</p>'; }
   if(sinReportar.length){
-    html+='<p style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Cuadrilla sin reportar</p>';
+    html+='<p style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">Sin reportar</p>';
     sinReportar.forEach(f=>{
-      html+=`<div class="falt-row"><div class="nm"><b>${esc(f.nombre)}</b><small>${esc(f.cargo)} · ${esc(f.cuadrilla)} · resp. ${esc(f.responsable)}</small></div><span class="badge sin">Sin reportar</span></div>`;
+      const badge = f.incompleto ? '<span class="badge sin">Presente sin CC</span>' : '<span class="badge sin">Sin reportar</span>';
+      html+=`<div class="falt-row"><div class="nm"><b>${esc(f.nombre)}</b><small>${esc(f.cargo)} · ${esc(f.cuadrilla)} · resp. ${esc(f.responsable)}</small></div>${badge}</div>`;
     });
   }
   if(ausentesConMotivo.length){
@@ -211,10 +213,11 @@ function render(){
 function proyectoFromCC(cc){ const m=String(cc||'').match(/^(\d{4})/); return m?m[1]:''; }
 function seccionCompletar(d){
   if(!(STATE.rol==='residente' || STATE.rol==='admin' || STATE.rol==='jeisson')) return '';
-  const filas=d.filas||[], faltantes=d.faltantes||[];
+  const faltantes=d.faltantes||[];
   const comp=[];
-  faltantes.filter(f=>f.tipo==='sin_reportar').forEach(f=>comp.push({codigo:f.codigo,cedula:f.cedula,nombre:f.nombre,cargo:f.cargo,cuadrilla:f.cuadrilla,tag:'sin reportar'}));
-  filas.filter(f=>f.presente==='Si' && !String(f.cc||'').trim()).forEach(f=>comp.push({codigo:f.codigo,cedula:f.cedula,nombre:f.nombre,cargo:f.cargo,cuadrilla:f.cuadrilla,tag:'presente sin CC'}));
+  // Los "presente sin CC" ya vienen en faltantes como sin_reportar (incompleto=true), así que basta
+  // con recorrer faltantes — sin duplicar. Etiqueta según sea incompleto o nunca reportado.
+  faltantes.filter(f=>f.tipo==='sin_reportar').forEach(f=>comp.push({codigo:f.codigo,cedula:f.cedula,nombre:f.nombre,cargo:f.cargo,cuadrilla:f.cuadrilla,tag: f.incompleto?'presente sin CC':'sin reportar'}));
   if(!comp.length) return '';
   STATE._comp=comp;
   const catCC=d.catCC||[], catMotivos=d.catMotivos||[], j=d.jornada||{};
