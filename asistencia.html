@@ -175,6 +175,8 @@ function elegirCC(bid, cc){
   const b=STATE.bloques.find(x=>x.id===bid);
   b.cc=cc; b.proyecto=proyectoFromCC(cc); b.ccQuery=''; b.ccAbierto=false; render();
 }
+// Devuelve la lista COMPLETA de CC que casan (sin recortar); el recorte + aviso "…y N más" lo hace
+// el renderer, para que quede claro que hay que escribir para filtrar (son ~383 por proyecto).
 function resultadosCC(b){
   const q=(b.ccQuery||'').trim().toLowerCase();
   const recientes=STATE.recientesCC[STATE.cuadrillaActual]||[];
@@ -182,9 +184,9 @@ function resultadosCC(b){
   if(!q){
     // sin texto: prioriza los CC usados recientemente por esta cuadrilla
     const resto=lista.filter(cc=>recientes.indexOf(cc)<0);
-    return recientes.concat(resto).slice(0,15);
+    return recientes.concat(resto);
   }
-  return lista.filter(cc=>cc.toLowerCase().indexOf(q)>=0).slice(0,25);
+  return lista.filter(cc=>cc.toLowerCase().indexOf(q)>=0);
 }
 function bloqueHoraChange(bid, campo, v){ const b=STATE.bloques.find(x=>x.id===bid); b[campo]=v; render(); }
 function toggleMiembro(bid, pidx, checked){
@@ -313,8 +315,12 @@ function bloqueHtml(b, personas){
     h+='<div class="cc-search">'
       + `<input type="text" placeholder="Buscar Centro de Costo…" value="${esc(b.ccQuery||'')}" oninput="ccQueryChange(${b.id},this.value)" onfocus="ccQueryChange(${b.id},this.value||'')">`;
     if(b.ccAbierto){
-      const res=resultadosCC(b);
-      h+='<div class="cc-results">'+ (res.length? res.map(cc=>`<div class="cc-opt" onclick="elegirCC(${b.id},'${esc(cc).replace(/'/g,"\\'")}')">${esc(cc)}</div>`).join('') : '<div class="cc-opt">Sin resultados</div>') +'</div>';
+      const all=resultadosCC(b), CAP=60, res=all.slice(0,CAP);
+      let inner = res.length
+        ? res.map(cc=>`<div class="cc-opt" onclick="elegirCC(${b.id},'${esc(cc).replace(/'/g,"\\'")}')">${esc(cc)}</div>`).join('')
+        : '<div class="cc-opt">Sin resultados</div>';
+      if(all.length>CAP) inner += `<div class="cc-opt" style="color:var(--muted);cursor:default;">…y ${all.length-CAP} más · escribe para filtrar</div>`;
+      h+='<div class="cc-results">'+inner+'</div>';
     }
     h+='</div>';
   }

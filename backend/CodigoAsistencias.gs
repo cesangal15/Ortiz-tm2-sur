@@ -79,7 +79,16 @@ function norm(s){ return String(s==null?'':s).trim().toLowerCase(); }
 /* ---------- CONFIG / FESTIVOS ---------- */
 function getConfigMap(){
   const rows=readSheet('CONFIG', CONFIG_HEADERS), m={};
-  rows.forEach(r=>{ if(r.clave) m[String(r.clave).trim()]=r.valor; });
+  rows.forEach(r=>{
+    if(!r.clave) return;
+    let v=r.valor;
+    // Sheets guarda las celdas de hora (entrada_lv, salida_lv, almuerzo_*, nocturno_*) como VALOR de
+    // hora → Apps Script las lee como Date (base 1899-12-30) y saldrían como "1899-12-30T..." al JSON.
+    // Las normalizamos a "HH:MM" por duck-typing (getHours), nunca instanceof Date (D31). Números y
+    // strings (topes, strings de proyecto) pasan tal cual.
+    if(v && typeof v==='object' && typeof v.getHours==='function') v=ftime(v);
+    m[String(r.clave).trim()]=v;
+  });
   return m;
 }
 function getFestivos(){
