@@ -76,7 +76,7 @@
 
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbymgvQX03ZqS_YzIz5l6WVesasDUMYwGOFItrggTJCdsFhcjXQvDPVz03E7mNcZQ4Nq/exec";
-let STATE = { usuario:'', rol:'', fecha:'', data:null, exportCache:{}, tplBuf:null, tplName:'', tplRecordada:false, filaInicio:2, personal:null, completar:{} };
+let STATE = { usuario:'', rol:'', fecha:'', data:null, exportCache:{}, tplBuf:null, tplName:'', tplRecordada:false, tplBundle:false, filaInicio:2, personal:null, completar:{} };
 
 // Plantilla recordada entre sesiones (localStorage): así solo se sube UNA vez, no cada sesión. Se
 // guarda como base64 del .xlsx. Si es demasiado grande para localStorage, cae a "solo esta sesión".
@@ -90,9 +90,24 @@ function restaurarPlantilla(){
   }catch(e){}
 }
 function olvidarPlantilla(){
-  STATE.tplBuf=null; STATE.tplName=''; STATE.tplRecordada=false;
+  STATE.tplBuf=null; STATE.tplName=''; STATE.tplRecordada=false; STATE.tplBundle=false;
   try{ localStorage.removeItem('asis_tpl_b64'); localStorage.removeItem('asis_tpl_name'); localStorage.removeItem('asis_tpl_fila'); }catch(e){}
   render();
+  cargarPlantillaBundle(); // si hay plantilla incluida en el repo, vuelve a tomarla
+}
+// Plantilla incluida en el repo: la app busca `plantilla_parte.xlsx` junto al HTML. Si existe, la usa
+// sola (sin que el usuario suba nada). Si no está (404) o no es un .xlsx válido, cae al modo subir.
+async function cargarPlantillaBundle(){
+  if(STATE.tplBuf) return; // ya hay una (recordada o subida esta sesión)
+  try{
+    const resp=await fetch('plantilla_parte.xlsx', {cache:'no-store'});
+    if(!resp.ok) return;
+    const buf=await resp.arrayBuffer();
+    const sig=new Uint8Array(buf.slice(0,2));            // un .xlsx es un ZIP: empieza con 'PK' (0x50 0x4B)
+    if(sig[0]!==0x50 || sig[1]!==0x4B) return;           // 404 servido como HTML u otro archivo -> ignora
+    STATE.tplBuf=buf; STATE.tplName='plantilla incluida en la app'; STATE.tplBundle=true; STATE.tplRecordada=false;
+    if(STATE.data) render();
+  }catch(e){}
 }
 
 window.onload = function(){
@@ -109,6 +124,7 @@ window.onload = function(){
   STATE.fecha=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
   restaurarPlantilla();
   cargarResumen();
+  cargarPlantillaBundle();
 };
 function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -260,9 +276,12 @@ function exportCardHtml(){
   const tieneTpl=!!STATE.tplBuf;
   let h='<div class="export-card">';
   if(tieneTpl){
-    // Ya hay plantilla (recordada o subida esta sesión): no hay que volver a subirla.
+    // Ya hay plantilla (incluida en la app, recordada, o subida esta sesión): no hay que volver a subirla.
+    const nota = STATE.tplBundle ? '(incluida en la app — no hay que subir nada)'
+               : STATE.tplRecordada ? '(recordada — no hay que volver a subirla)'
+               : '(solo esta sesión)';
     h+='<p style="font-size:12.5px;color:var(--success);margin-bottom:10px;">✓ Plantilla lista: <b>'+esc(STATE.tplName)+'</b>'
-      + (STATE.tplRecordada?' <span style="color:var(--muted)">(recordada — no hay que volver a subirla)</span>':' <span style="color:var(--muted)">(solo esta sesión)</span>')
+      + ' <span style="color:var(--muted)">'+nota+'</span>'
       + ' &nbsp;<button class="mini-btn" onclick="olvidarPlantilla()">Cambiar plantilla</button></p>';
   } else {
     h+='<p style="font-size:12.5px;color:var(--muted);margin-bottom:12px;">Sube la <b>Plantilla_Parte_Trabajo…xlsx</b> vigente <b>una sola vez</b> (se recuerda en este navegador). El generador llena SOLO la hoja <b>Parte</b> y conserva las demás hojas/catálogos intactos, para que la importación a Navision quede exacta.</p>'
