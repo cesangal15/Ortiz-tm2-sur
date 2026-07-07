@@ -45,11 +45,18 @@
 | 2.17 | **DATA: ABS desde el elemento/subtramo + DESCRIPCION/ELEMENTO verbatim de la BASE (D68).** (a) ABS INICIAL/FINAL de filas con match toman K/L del elemento de la BASE verbatim (pedido del jefe), no el PK reportado; sin match, del PK. (b) DESCRIPCION verbatim de la BASE (cruce por CC, tabla de ítems A–H) en vez del catálogo interno; ELEMENTO en filas con match ya salía verbatim de la celda J desde D63 (verificado en inspección; `buildElemento` solo para el fallback). PK reportado se conserva en internas U–AA. Si un elemento con match sigue sin emparejar en el maestro, el carácter raro vive en la celda de la BASE → limpieza única sobre la BASE. | ✅ Hecho (validar en campo + redeploy) | Pedido del jefe + bug de fidelidad (jul-2026) |
 | 2.13 | **Informe mensual de maquinaria alineado al reporte del jefe.** El jefe pasa un reporte externo (hoja del mes) con las actividades de las máquinas; el informe mensual debe espejarlo **sin tocar Captura_Diaria**. Tabla nueva `fact_jefe` (gemela de `fact_produccion`) con máquinas/actividades/horas del jefe y producción **redistribuida** (proporcional a horas; invitadas en 0; cruce UF; salto al día anterior); copias `Informe_Mensual (Jefe)` / `Maquinas Junio (Jefe)` apuntan a ella. Proyecto desde el CC (no la columna UF). Producción solo para 02.05/02.06/02.07/02.08/03.01/03.03; desmonte/descapote solo horas. Entregado como **herramienta HTML independiente** (`Generar_fact_jefe.html`, SheetJS, patrón Bitácora): cargar el Excel → validar cuadre → descargar `fact_jefe.xlsx` → pegar sobre la tabla. Office Scripts bloqueado por la cuenta; VBA evitado por archivo compartido. Ver D64. | ✅ Hecho (validar en campo) | Cambio de panorama del jefe (jun-2026) |
 
+## Módulo Asistencias (en curso)
+
+| # | Ítem | Estado |
+|---|---|---|
+| 4.1 | **Sistema de asistencia de personal de tierra** (antes 3.1) — módulo nuevo, aislado (Sheet + Apps Script propios, mismo repo/login, D69). Digitaliza las planillas físicas: `asistencia.html` (formulario del responsable, roster por cuadrilla + bloques por CC + ausencias), `resumen-asistencia.html` (residente/jeisson: resumen del día, faltantes, descarga Excel Navision, gestión de personal), `seleccion-reporte.html` (tiles para usuarios con doble deber). Backend `backend/CodigoAsistencias.gs` (`SHEET_ID` propio) con hojas PERSONAL/CUADRILLAS/ASISTENCIA/CONFIG/FESTIVOS/CAT_TRABAJADORES/CAT_CC/CAT_MOTIVOS y `setupHojas()` de un solo uso. | ✅ Hecho (alcance); pendiente validación en campo + datos reales |
+| 4.2 | **Parámetro abierto — mapeo columnas G–N (recargos/Dom-Fest c/s compensación).** El generador Navision deja G–N vacías y avisa en naranja cuando detecta horas nocturnas/dominicales para revisión manual; el punto de extensión es la función `mapearColumnasEspeciales()` (con TODO) en `resumen-asistencia.html`. | ⏸️ Abierto — pendiente de que la empresa confirme el mapeo |
+| 4.3 | **Parámetro abierto — string `CONFIG.proyecto_3702`.** Semilla en `"PENDIENTE"`; el usuario debe pegar el string exacto de la plantilla Navision del proyecto 3702 en cuanto esté disponible (hoja CONFIG del Sheet de Asistencias). | ⏸️ Abierto — pendiente de la plantilla 3702 |
+
 ## V3 — Largo plazo
 
 | # | Ítem | Origen |
 |---|---|---|
-| 3.1 | Sistema de asistencia de personal (oficiales, ayudantes, operadores) | "Más adelante puede que hagamos un sistema para la asistencia" |
 | 3.2 | Chequeadora del Diviso digitalizada (hoy reporta por foto, otra persona) | Conversación fuentes |
 | 3.3 | Materiales MSR con columnas propias en el resumen diario (hoy solo en DATA por ítem) | Análisis Excel |
 | 3.4 | Inoperativos estructurados (hoy texto libre) | D28 |
