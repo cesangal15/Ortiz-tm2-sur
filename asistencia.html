@@ -178,7 +178,7 @@ function elegirCC(bid, cc){
 function resultadosCC(b){
   const q=(b.ccQuery||'').trim().toLowerCase();
   const recientes=STATE.recientesCC[STATE.cuadrillaActual]||[];
-  let lista=STATE.catCC.map(r=>r.string_cc);
+  let lista=STATE.catCC;
   if(!q){
     // sin texto: prioriza los CC usados recientemente por esta cuadrilla
     const resto=lista.filter(cc=>recientes.indexOf(cc)<0);

@@ -36,7 +36,9 @@ const ASISTENCIA_HEADERS    = ['id_registro','timestamp','fecha','reporta','cuad
 const CONFIG_HEADERS        = ['clave','valor'];
 const FESTIVOS_HEADERS      = ['fecha'];
 const CAT_TRABAJADORES_HEADERS = ['codigo','string_navision'];
-const CAT_CC_HEADERS        = ['proyecto','string_cc'];
+// Una sola columna: cada CC va COMPLETO en su celda ("3701.06.67| Box abovedados...", verbatim de
+// Navision). El proyecto NO se pide aparte: se deriva del propio prefijo del string (proyectoFromCC).
+const CAT_CC_HEADERS        = ['string_cc'];
 const CAT_MOTIVOS_HEADERS   = ['string_motivo'];
 
 /* ---------- helpers genéricos (mismo patrón que Codigo.gs) ---------- */
@@ -155,7 +157,7 @@ function roster(e){
   const festivos=getFestivos();
   const fecha=e.parameter.fecha || Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy-MM-dd');
   const jornada=jornadaDelDia(fecha, cfg, festivos);
-  const catCC=readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>({proyecto:String(r.proyecto||''), string_cc:String(r.string_cc||'')}));
+  const catCC=readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
   const catMotivos=readSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS).map(r=>String(r.string_motivo||'')).filter(Boolean);
   // CC usados recientemente por cada cuadrilla (últimos 60 días de ASISTENCIA), más reciente primero.
   const recientesCC={};
