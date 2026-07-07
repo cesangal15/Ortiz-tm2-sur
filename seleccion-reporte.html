@@ -56,11 +56,29 @@ const TILES = {
                  {href:'resumen-asistencia.html', ico:'📋', t:'Resumen de asistencias', p:'Resumen del día y descarga del Excel Navision'}]
 };
 const ASISTENCIA_TILE = {href:'asistencia.html', ico:'👷', t:'Asistencia de personal', p:'Reporta la asistencia de tu cuadrilla'};
+// Admin tiene acceso a todo el sistema (D65): si llega aquí (p. ej. con "atrás" del navegador en vez
+// de menu.html) ve TODOS los tiles en lugar de ser expulsado a index.html.
+const ADMIN_TILES=[
+  {href:'reporte-capataz.html', ico:'📋', t:'Reporte de Capataz', p:'Actividades del día con producción y maquinaria'},
+  {href:'reporte-chequeadora.html', ico:'🚛', t:'Reporte de Chequeadora', p:'Viajes por PK destino con origen del material'},
+  {href:'asistencia.html', ico:'👷', t:'Asistencia (formulario)', p:'Reporta la asistencia de cualquier cuadrilla'},
+  {href:'resumen-asistencia.html', ico:'📋', t:'Resumen de asistencias', p:'Resumen del día, Excel Navision y gestión de personal'}
+];
 
 window.onload = function(){
   const rol=sessionStorage.getItem('rol'), usuario=(sessionStorage.getItem('usuario')||'').trim().toLowerCase();
-  if(!rol || !usuario || !TILES[usuario]){ window.location.href='index.html'; return; }
+  if(!rol || !usuario || (!TILES[usuario] && rol!=='admin')){ window.location.href='index.html'; return; }
   document.getElementById('userDisplay').textContent=usuario;
+  if(rol==='admin'){
+    const bm=document.createElement('button');
+    bm.className='logout-btn'; bm.textContent='← Menú'; bm.style.borderColor='var(--accent)'; bm.style.color='var(--accent)'; bm.style.marginRight='6px';
+    bm.onclick=function(){location.href='menu.html';};
+    document.querySelector('.header-user').prepend(bm);
+    document.getElementById('tiles').innerHTML = ADMIN_TILES.map(t=>
+      `<a class="tile" href="${t.href}"><div class="ico">${t.ico}</div><div class="t-main"><h2>${t.t}</h2><p>${t.p}</p></div><div class="arrow">→</div></a>`
+    ).join('');
+    return;
+  }
   let tiles=TILES[usuario].slice();
   if(usuario!=='jeisson') tiles.push(ASISTENCIA_TILE); // capataces/mairy: su reporte + asistencia
   document.getElementById('tiles').innerHTML = tiles.map(t=>
