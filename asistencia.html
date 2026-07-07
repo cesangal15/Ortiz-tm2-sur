@@ -175,6 +175,12 @@ function elegirCC(bid, cc){
   const b=STATE.bloques.find(x=>x.id===bid);
   b.cc=cc; b.proyecto=proyectoFromCC(cc); b.ccQuery=''; b.ccAbierto=false; render();
 }
+// "Cambiar" el CC de un bloque: hay que LIMPIAR el cc elegido (si no, bloqueHtml sigue mostrando la
+// vista de "CC elegido" y el buscador nunca reaparece — el botón parecía no hacer nada).
+function cambiarCC(bid){
+  const b=STATE.bloques.find(x=>x.id===bid);
+  b.cc=''; b.proyecto=''; b.ccQuery=''; b.ccAbierto=true; render();
+}
 // Devuelve la lista COMPLETA de CC que casan (sin recortar); el recorte + aviso "…y N más" lo hace
 // el renderer, para que quede claro que hay que escribir para filtrar (son ~383 por proyecto).
 function resultadosCC(b){
@@ -310,7 +316,7 @@ function bloqueHtml(b, personas){
     + `<span class="tag">Bloque #${b.id}</span>`
     + `<button class="btn-x" onclick="quitarBloque(${b.id})">✕ Quitar</button></div>`;
   if(b.cc){
-    h+=`<div class="cc-chosen"><span><b>${esc(b.proyecto)}</b> · ${esc(b.cc)}</span><button class="btn-x" onclick="ccQueryChange(${b.id},'')">Cambiar</button></div>`;
+    h+=`<div class="cc-chosen"><span><b>${esc(b.proyecto)}</b> · ${esc(b.cc)}</span><button class="btn-x" onclick="cambiarCC(${b.id})">Cambiar</button></div>`;
   } else {
     h+='<div class="cc-search">'
       + `<input type="text" placeholder="Buscar Centro de Costo…" value="${esc(b.ccQuery||'')}" oninput="ccQueryChange(${b.id},this.value)" onfocus="ccQueryChange(${b.id},this.value||'')">`;
