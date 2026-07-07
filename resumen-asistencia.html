@@ -318,14 +318,16 @@ function onTplFile(ev){
  * Salida: {ordinarias, ord_domfest, extra_diurna, extra_nocturna, avisoExtra, avisoDomFest}.
  * Frontera nocturna = CONFIG.nocturno_desde (19:00, Ley 2466/2025). Domingo/festivo: todo a ord_domfest
  * (columnas D) y se marca avisoDomFest para que el panel avise revisar G–N a mano (parámetro abierto, §6).
+ * Las extras se TOPAN a CONFIG.max_extras_dia (2) en días normales — decisión del residente (jul-2026):
+ * lo que exceda no se reporta, pero avisoExtra=true para que el residente lo sume a mano aparte.
  *
- * Casos de prueba manual (verificados a mano, ver prompt §7.5):
- *   clasificarHoras('lv','07:00','15:30',CFG_DEFAULT) -> {ordinarias:7.5, extra_diurna:0, extra_nocturna:0}
- *   clasificarHoras('lv','07:00','17:30',CFG_DEFAULT) -> {ordinarias:7.5, extra_diurna:2, extra_nocturna:0}
- *   clasificarHoras('sabado','07:00','11:30',CFG_DEFAULT) -> {ordinarias:4.5, extra_diurna:0}
- *   clasificarHoras('lv','14:00','21:00',CFG_DEFAULT) -> tope 7.5 agotado a las 21:30 (14+7.5); extra 14:00-21:00
- *     dura 6.5h netas... con almuerzo cubierto -> ordinarias=7.5? no, total=6h (7-1 almuerzo)<tope, sin extra.
- *   clasificarHoras('domfest','07:00','15:00',CFG_DEFAULT) -> {ordinarias:0, ord_domfest:7, avisoDomFest:true}
+ * Casos de prueba manual (verificados a mano):
+ *   clasificarHoras('lv','07:00','15:30',CFG) -> {ordinarias:7.5, extra_diurna:0, extra_nocturna:0}
+ *   clasificarHoras('lv','07:00','17:30',CFG) -> {ordinarias:7.5, extra_diurna:2, extra_nocturna:0}
+ *   clasificarHoras('lv','07:00','20:30',CFG) -> {ordinarias:7.5, extra_diurna:2, extra_nocturna:0, avisoExtra:true}
+ *      (trabajó 12.5h netas = 5 extras, pero se TOPAN a 2; avisoExtra marca que hubo más)
+ *   clasificarHoras('sabado','07:00','11:30',CFG) -> {ordinarias:4.5, extra_diurna:0}
+ *   clasificarHoras('domfest','07:00','15:00',CFG) -> {ordinarias:0, ord_domfest:7, avisoDomFest:true}
  */
 function round2(n){ return Math.round(n*100)/100; }
 function horasNum(hhmm){ if(!hhmm) return null; const p=String(hhmm).split(':'); if(p.length<2) return null; const n=Number(p[0])+Number(p[1])/60; return isNaN(n)?null:n; }
@@ -341,18 +343,29 @@ function clasificarHoras(tipoJornada, entrada, salida, cfg){
     return { ordinarias:0, ord_domfest:round2(total), extra_diurna:0, extra_nocturna:0, avisoExtra:false, avisoDomFest:true };
   }
   const tope = tipoJornada==='sabado' ? (parseFloat(cfg.ord_sabado)||4.5) : (parseFloat(cfg.ord_lun_vie)||7.5);
-  const maxExtra=parseFloat(cfg.max_extras_dia)||2;
+  const maxExtraCfg=parseFloat(cfg.max_extras_dia); const cap = isNaN(maxExtraCfg)?Infinity:maxExtraCfg;
   const ordinarias=Math.min(total, tope);
-  const extra=Math.max(0, total-tope);
-  const avisoExtra=extra>maxExtra;
+  const extraFull=Math.max(0, total-tope);
+  // DECISIÓN DEL RESIDENTE (jul-2026): en días normales el archivo reporta como MÁXIMO `max_extras_dia`
+  // horas extra (2). Lo que exceda NO se reporta aquí — el residente lo maneja aparte, sumándolo a mano
+  // en los días que correspondan. `avisoExtra` sigue marcándose para que sepa quién trabajó de más.
+  const avisoExtra = extraFull > cap + 0.001;
+  const extra = Math.min(extraFull, cap);
+  // Reparto diurna/nocturna de las extras REPORTADAS (las primeras `extra` horas tras la jornada
+  // ordinaria). Las extras arrancan al terminar la jornada; en reloj eso es (salida − extraFull), lo
+  // que ya descuenta el almuerzo implícitamente. El corte nocturno es CONFIG.nocturno_desde (19:00).
   let extraDiurna=extra, extraNocturna=0;
   if(extra>0){
     const nDesde=horasNum(cfg.nocturno_desde||'19:00');
-    let inicioExtra=e+tope; if(inicioExtra>=24) inicioExtra-=24;
-    let finExtra=s; if(finExtra<inicioExtra) finExtra+=24;
+    let sLin=s; if(sLin<e) sLin+=24;
+    const extraStart = sLin - extraFull;            // reloj donde empiezan las extras (fin de jornada)
+    const capEnd = extraStart + extra;              // fin de las extras ya recortadas al tope
+    // Porción de [extraStart, capEnd] que cae en horario nocturno de la tarde (≥ nocturno_desde=19:00).
+    // Suficiente para las jornadas diurnas de la obra; el cruce de medianoche (nocturno_hasta 06:00)
+    // no se modela aquí porque G–N sigue siendo parámetro abierto y no ocurre en la práctica.
     if(nDesde!=null){
-      let nD=nDesde; if(nD<inicioExtra) nD+=24;
-      if(nD<finExtra){ extraNocturna=round2(finExtra-nD); extraDiurna=round2(extra-extraNocturna); }
+      const nocturnalStart=Math.max(extraStart, nDesde);
+      if(capEnd>nocturnalStart){ extraNocturna=round2(capEnd-nocturnalStart); extraDiurna=round2(extra-extraNocturna); }
     }
   }
   if(extraNocturna<0) extraNocturna=0; if(extraDiurna<0) extraDiurna=0;
@@ -457,7 +470,8 @@ async function generarExcel(proyecto){
     XLSX.writeFile(wb, nombre);
     let out=`<div class="aviso" style="color:var(--success);border-color:rgba(46,204,113,0.3);background:rgba(46,204,113,0.08);">✓ Generado <b>${nombre}</b> (${aoa.length} fila(s)).</div>`;
     if(hayAvisoGN) out+='<div class="aviso">⚠️ Este día tiene horas nocturnas/dominicales: revisar columnas G–N a mano antes de importar (mapeo pendiente de confirmar, ver §6).</div>';
-    if(overExtra.length) out+='<div class="aviso">⚠️ Estas personas superan las '+(parseFloat(cfg.max_extras_dia)||2)+' horas extra del día: <b>'+overExtra.map(esc).join(', ')+'</b>. En días normales solo se reconocen '+(parseFloat(cfg.max_extras_dia)||2)+' extras — revisa las columnas E/F antes de importar a Navision.</div>';
+    if(overExtra.length){ const mx=parseFloat(cfg.max_extras_dia)||2;
+      out+='<div class="aviso">ℹ️ Estas personas trabajaron más de '+mx+' horas extra: <b>'+overExtra.map(esc).join(', ')+'</b>. El archivo reporta solo '+mx+' (el tope); el resto queda para que el residente lo sume a mano en los días que corresponda.</div>'; }
     if(avisosProyDefecto.length) out+='<div class="aviso">⚠️ No se pudo determinar el proyecto habitual de: '+avisosProyDefecto.map(esc).join(', ')+'. Se incluyeron en 3701 por defecto — mover a mano si corresponde.</div>';
     msg.innerHTML=out;
   }catch(err){
