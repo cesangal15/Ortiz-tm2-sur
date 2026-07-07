@@ -76,7 +76,24 @@
 
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbymgvQX03ZqS_YzIz5l6WVesasDUMYwGOFItrggTJCdsFhcjXQvDPVz03E7mNcZQ4Nq/exec";
-let STATE = { usuario:'', rol:'', fecha:'', data:null, exportCache:{}, tplBuf:null, tplName:'', filaInicio:2, personal:null };
+let STATE = { usuario:'', rol:'', fecha:'', data:null, exportCache:{}, tplBuf:null, tplName:'', tplRecordada:false, filaInicio:2, personal:null, completar:{} };
+
+// Plantilla recordada entre sesiones (localStorage): así solo se sube UNA vez, no cada sesión. Se
+// guarda como base64 del .xlsx. Si es demasiado grande para localStorage, cae a "solo esta sesión".
+function ab2b64(buf){ let bin=''; const b=new Uint8Array(buf), ch=0x8000; for(let i=0;i<b.length;i+=ch) bin+=String.fromCharCode.apply(null, b.subarray(i,i+ch)); return btoa(bin); }
+function b642ab(b64){ const bin=atob(b64), n=bin.length, b=new Uint8Array(n); for(let i=0;i<n;i++) b[i]=bin.charCodeAt(i); return b.buffer; }
+function restaurarPlantilla(){
+  try{
+    const b=localStorage.getItem('asis_tpl_b64'); if(!b) return;
+    STATE.tplBuf=b642ab(b); STATE.tplName=localStorage.getItem('asis_tpl_name')||'plantilla recordada'; STATE.tplRecordada=true;
+    const fi=parseInt(localStorage.getItem('asis_tpl_fila')); if(fi>=2) STATE.filaInicio=fi;
+  }catch(e){}
+}
+function olvidarPlantilla(){
+  STATE.tplBuf=null; STATE.tplName=''; STATE.tplRecordada=false;
+  try{ localStorage.removeItem('asis_tpl_b64'); localStorage.removeItem('asis_tpl_name'); localStorage.removeItem('asis_tpl_fila'); }catch(e){}
+  render();
+}
 
 window.onload = function(){
   const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
@@ -90,6 +107,7 @@ window.onload = function(){
   else if(rol==='residente'){ bm.onclick=function(){location.href='residente.html';}; }
   else { bm.onclick=function(){location.href='seleccion-reporte.html';}; }
   STATE.fecha=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
+  restaurarPlantilla();
   cargarResumen();
 };
 function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
@@ -156,6 +174,8 @@ function render(){
   }
   html+='</div>';
 
+  html+=seccionCompletar(d);
+
   html+='<div class="section-title">Descargar Excel Navision</div>';
   html+=exportCardHtml();
 
@@ -168,15 +188,89 @@ function render(){
   if(STATE.personal) renderPersonal();
 }
 
+/* ================= COMPLETAR FALTANTES (residente / admin / jeisson) =================
+ * Mini-interfaz para agregar/corregir personas que no reportaron o quedaron presentes sin CC.
+ * Usa el endpoint asistencia_individual (upsert por persona): NO pisa lo que ya reportó el
+ * responsable de la cuadrilla. */
+function proyectoFromCC(cc){ const m=String(cc||'').match(/^(\d{4})/); return m?m[1]:''; }
+function seccionCompletar(d){
+  if(!(STATE.rol==='residente' || STATE.rol==='admin' || STATE.rol==='jeisson')) return '';
+  const filas=d.filas||[], faltantes=d.faltantes||[];
+  const comp=[];
+  faltantes.filter(f=>f.tipo==='sin_reportar').forEach(f=>comp.push({codigo:f.codigo,cedula:f.cedula,nombre:f.nombre,cargo:f.cargo,cuadrilla:f.cuadrilla,tag:'sin reportar'}));
+  filas.filter(f=>f.presente==='Si' && !String(f.cc||'').trim()).forEach(f=>comp.push({codigo:f.codigo,cedula:f.cedula,nombre:f.nombre,cargo:f.cargo,cuadrilla:f.cuadrilla,tag:'presente sin CC'}));
+  if(!comp.length) return '';
+  STATE._comp=comp;
+  const catCC=d.catCC||[], catMotivos=d.catMotivos||[], j=d.jornada||{};
+  let h='<div class="section-title">Completar faltantes</div>';
+  h+='<div class="card"><p style="font-size:12px;color:var(--muted);margin-bottom:10px;">Agrega o corrige personas que no reportaron (o quedaron presentes sin CC). Marca su estado y guarda; <b>no borra</b> lo que ya reportó el responsable de la cuadrilla.</p>';
+  h+='<datalist id="ccList">'+catCC.map(cc=>`<option value="${esc(cc)}">`).join('')+'</datalist>';
+  comp.forEach((p,i)=>{
+    h+=`<div class="comp-item" style="border-bottom:1px solid rgba(46,52,80,0.5);padding:10px 0;">`
+     + `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">`
+     + `<div class="nm"><b>${esc(p.nombre)}</b><small style="color:var(--muted)">${esc(p.cargo)} · ${esc(p.cuadrilla)} · ${esc(p.tag)}</small></div>`
+     + `<select class="comp-estado" id="comp-est-${i}" onchange="compToggle(${i})" style="max-width:160px;"><option value="">— Pendiente</option><option value="Si">Presente</option><option value="No">Ausente</option></select>`
+     + `</div>`
+     + `<div id="comp-pres-${i}" style="display:none;margin-top:8px;"><div class="row">`
+     + `<div class="field"><label>Centro de Costo</label><input type="text" list="ccList" id="comp-cc-${i}" placeholder="Buscar CC…"></div>`
+     + `<div class="field" style="max-width:120px;"><label>Entrada</label><input type="time" id="comp-ent-${i}" value="${esc(j.entrada||'')}"></div>`
+     + `<div class="field" style="max-width:120px;"><label>Salida</label><input type="time" id="comp-sal-${i}" value="${esc(j.salida||'')}"></div>`
+     + `</div></div>`
+     + `<div id="comp-aus-${i}" style="display:none;margin-top:8px;"><select id="comp-mot-${i}"><option value="">Motivo de ausencia…</option>${catMotivos.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('')}</select></div>`
+     + `</div>`;
+  });
+  h+='<button class="btn" style="margin-top:12px;" onclick="guardarCompletar()">Guardar faltantes →</button><div id="compMsg" style="margin-top:8px;"></div>';
+  h+='</div>';
+  return h;
+}
+function compToggle(i){
+  const est=document.getElementById('comp-est-'+i).value;
+  document.getElementById('comp-pres-'+i).style.display = est==='Si'?'block':'none';
+  document.getElementById('comp-aus-'+i).style.display  = est==='No'?'block':'none';
+}
+async function guardarCompletar(){
+  const comp=STATE._comp||[], filas=[];
+  comp.forEach((p,i)=>{
+    const est=document.getElementById('comp-est-'+i).value;
+    if(!est) return;
+    if(est==='Si'){
+      const cc=document.getElementById('comp-cc-'+i).value.trim();
+      filas.push({ codigo:p.codigo, cedula:p.cedula, nombre:p.nombre, cargo:p.cargo, cuadrilla:p.cuadrilla,
+        cc, proyecto:proyectoFromCC(cc), hora_entrada:document.getElementById('comp-ent-'+i).value,
+        hora_salida:document.getElementById('comp-sal-'+i).value, presente:'Si', motivo_ausencia:'' });
+    } else {
+      filas.push({ codigo:p.codigo, cedula:p.cedula, nombre:p.nombre, cargo:p.cargo, cuadrilla:p.cuadrilla,
+        cc:'', proyecto:'', hora_entrada:'', hora_salida:'', presente:'No', motivo_ausencia:document.getElementById('comp-mot-'+i).value });
+    }
+  });
+  if(!filas.length){ alert('No marcaste el estado de ninguna persona.'); return; }
+  if(filas.some(f=>f.presente==='No' && !f.motivo_ausencia)){ alert('Falta el motivo de alguna persona marcada como ausente.'); return; }
+  const msg=document.getElementById('compMsg'); msg.innerHTML='<div class="aviso">⏳ Guardando…</div>';
+  try{
+    const resp=await fetch(APPS_SCRIPT_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'asistencia_individual', fecha:STATE.fecha, reporta:STATE.usuario, usuario:STATE.usuario, filas }) });
+    const data=await resp.json();
+    if(data.ok){ STATE.exportCache={}; cargarResumen(); }
+    else msg.innerHTML='<div class="aviso">⚠️ '+esc(data.error||'error')+'</div>';
+  }catch(err){ msg.innerHTML='<div class="aviso">⚠️ '+esc(err.message||err)+'</div>'; }
+}
+
 /* ================= EXPORT NAVISION (SheetJS, cliente) ================= */
 function exportCardHtml(){
-  let h='<div class="export-card">'
-    + '<p style="font-size:12.5px;color:var(--muted);margin-bottom:12px;">Sube la <b>Plantilla_Parte_Trabajo…xlsx</b> vigente una vez por sesión. El generador llena SOLO la hoja <b>Parte</b> y conserva las demás hojas/catálogos intactos.</p>'
-    + '<div class="row">'
-    + `<div class="field"><label>Plantilla (.xlsx)</label><input type="file" id="tplFile" accept=".xlsx" onchange="onTplFile(event)"></div>`
-    + `<div class="field" style="max-width:160px;"><label>Fila inicial de datos</label><input type="number" id="filaInicio" value="${STATE.filaInicio}" min="2" onchange="STATE.filaInicio=parseInt(this.value)||2"></div>`
-    + '</div>';
-  h+=`<p style="font-size:11.5px;color:var(--muted);margin-top:6px;">${STATE.tplName?('Plantilla cargada: '+esc(STATE.tplName)):'Aún no se ha cargado ninguna plantilla.'}</p>`;
+  const tieneTpl=!!STATE.tplBuf;
+  let h='<div class="export-card">';
+  if(tieneTpl){
+    // Ya hay plantilla (recordada o subida esta sesión): no hay que volver a subirla.
+    h+='<p style="font-size:12.5px;color:var(--success);margin-bottom:10px;">✓ Plantilla lista: <b>'+esc(STATE.tplName)+'</b>'
+      + (STATE.tplRecordada?' <span style="color:var(--muted)">(recordada — no hay que volver a subirla)</span>':' <span style="color:var(--muted)">(solo esta sesión)</span>')
+      + ' &nbsp;<button class="mini-btn" onclick="olvidarPlantilla()">Cambiar plantilla</button></p>';
+  } else {
+    h+='<p style="font-size:12.5px;color:var(--muted);margin-bottom:12px;">Sube la <b>Plantilla_Parte_Trabajo…xlsx</b> vigente <b>una sola vez</b> (se recuerda en este navegador). El generador llena SOLO la hoja <b>Parte</b> y conserva las demás hojas/catálogos intactos, para que la importación a Navision quede exacta.</p>'
+      + '<div class="row">'
+      + `<div class="field"><label>Plantilla (.xlsx)</label><input type="file" id="tplFile" accept=".xlsx" onchange="onTplFile(event)"></div>`
+      + `<div class="field" style="max-width:160px;"><label>Fila inicial de datos</label><input type="number" id="filaInicio" value="${STATE.filaInicio}" min="2" onchange="STATE.filaInicio=parseInt(this.value)||2"></div>`
+      + '</div>';
+  }
   h+='<div class="export-btns">'
     + `<button class="btn" onclick="generarExcel('3701')">Excel 3701 →</button>`
     + `<button class="btn" onclick="generarExcel('3702')">Excel 3702 →</button>`
@@ -186,7 +280,17 @@ function exportCardHtml(){
 function onTplFile(ev){
   const file=ev.target.files[0]; if(!file) return;
   const reader=new FileReader();
-  reader.onload=function(e){ STATE.tplBuf=e.target.result; STATE.tplName=file.name; render(); };
+  reader.onload=function(e){
+    STATE.tplBuf=e.target.result; STATE.tplName=file.name;
+    // recuérdala entre sesiones; si no cabe en localStorage, sigue disponible solo esta sesión
+    try{
+      localStorage.setItem('asis_tpl_b64', ab2b64(e.target.result));
+      localStorage.setItem('asis_tpl_name', file.name);
+      localStorage.setItem('asis_tpl_fila', String(STATE.filaInicio));
+      STATE.tplRecordada=true;
+    }catch(err){ STATE.tplRecordada=false; }
+    render();
+  };
   reader.readAsArrayBuffer(file);
 }
 
@@ -276,6 +380,8 @@ function buildParteRow(f, proyectoStr, cfg, tipoJornada, catTrabajadores){
     const cl=clasificarHoras(tipoJornada, f.hora_entrada, f.hora_salida, cfg);
     row[2]=cl.ordinarias; row[3]=cl.ord_domfest; row[4]=cl.extra_diurna; row[5]=cl.extra_nocturna;
     row._aviso = cl.avisoDomFest || cl.extra_nocturna>0;
+    row._avisoExtra = cl.avisoExtra;   // extras > max_extras_dia en día normal: revisar a mano
+    row._nombre = f.nombre;
   }
   // G–N (6..13) vacías: provisional, ver mapearColumnasEspeciales()
   row[14]=proyectoStr;                                      // O No. Proyecto
@@ -308,10 +414,11 @@ async function generarExcel(proyecto){
       msg.innerHTML='<div class="aviso">No hay filas para el proyecto '+proyecto+' en esta fecha.</div>';
       return;
     }
-    let hayAvisoGN=false;
+    let hayAvisoGN=false; const overExtra=[];
     const aoa=filasProyecto.map(f=>{
       const row=buildParteRow(f, proyectoStr, cfg, tipoJornada, catTrabajadores);
       if(row._aviso) hayAvisoGN=true;
+      if(row._avisoExtra) overExtra.push(row._nombre);
       return row;
     });
 
@@ -331,6 +438,7 @@ async function generarExcel(proyecto){
     XLSX.writeFile(wb, nombre);
     let out=`<div class="aviso" style="color:var(--success);border-color:rgba(46,204,113,0.3);background:rgba(46,204,113,0.08);">✓ Generado <b>${nombre}</b> (${aoa.length} fila(s)).</div>`;
     if(hayAvisoGN) out+='<div class="aviso">⚠️ Este día tiene horas nocturnas/dominicales: revisar columnas G–N a mano antes de importar (mapeo pendiente de confirmar, ver §6).</div>';
+    if(overExtra.length) out+='<div class="aviso">⚠️ Estas personas superan las '+(parseFloat(cfg.max_extras_dia)||2)+' horas extra del día: <b>'+overExtra.map(esc).join(', ')+'</b>. En días normales solo se reconocen '+(parseFloat(cfg.max_extras_dia)||2)+' extras — revisa las columnas E/F antes de importar a Navision.</div>';
     if(avisosProyDefecto.length) out+='<div class="aviso">⚠️ No se pudo determinar el proyecto habitual de: '+avisosProyDefecto.map(esc).join(', ')+'. Se incluyeron en 3701 por defecto — mover a mano si corresponde.</div>';
     msg.innerHTML=out;
   }catch(err){

@@ -130,8 +130,9 @@ function doGet(e){
 function doPost(e){
   try{
     const body=JSON.parse(e.postData.contents);
-    if(body.action==='reporte_asistencia') return guardarAsistencia(body);
-    if(body.action==='personal')           return gestionPersonal(body);
+    if(body.action==='reporte_asistencia')  return guardarAsistencia(body);
+    if(body.action==='asistencia_individual') return guardarIndividual(body);
+    if(body.action==='personal')            return gestionPersonal(body);
     return json({ok:false, error:'acción no reconocida'});
   }catch(err){ return json({ok:false, error:String(err)}); }
 }
@@ -218,7 +219,46 @@ function asistenciaDia(e){
     }
   });
 
-  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes });
+  // Catálogos para la mini-interfaz de "completar faltantes" del residente/jeisson (CC, motivos,
+  // jornada por defecto del día). Así el resumen puede armar el formulario rápido sin otra llamada.
+  const cfg=getConfigMap();
+  const festivos=getFestivos();
+  const jornada=jornadaDelDia(fecha, cfg, festivos);
+  const catCC=readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
+  const catMotivos=readSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS).map(r=>String(r.string_motivo||'')).filter(Boolean);
+  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, jornada, catCC, catMotivos });
+}
+
+/* ---------- POST asistencia_individual: upsert por PERSONA (residente/jeisson completan faltantes) ----------
+ * A diferencia de reporte_asistencia (que PISA toda la cuadrilla, D03), este upsert toca SOLO las
+ * personas que llegan en `filas`: borra la fila de ESE día de cada persona entrante (si existía) y
+ * la reescribe. Así el residente/jeisson pueden agregar faltantes o corregir un presente-sin-CC sin
+ * borrar lo que ya reportó el responsable. Permitido a residente, admin y jeisson. */
+function guardarIndividual(body){
+  const usuario=norm(body.usuario);
+  if(usuario!=='residente' && usuario!=='admin' && usuario!=='jeisson')
+    return json({ok:false, error:'No autorizado para completar faltantes.'});
+  const fecha=fdate(body.fecha), ts=new Date();
+  const sh=getSheet('ASISTENCIA', ASISTENCIA_HEADERS), need=ASISTENCIA_HEADERS.length, last=sh.getLastRow();
+  let rows = last>1 ? sh.getRange(2,1,last-1,need).getValues() : [];
+  function keyOf(codigo,cedula){
+    const c=String(codigo||'').trim();
+    return c ? ('COD:'+c) : ('CED:'+String(cedula||'').trim());
+  }
+  const incoming=body.filas||[], keys={};
+  incoming.forEach(f=>{ keys[keyOf(f.codigo,f.cedula)]=true; });
+  // quita la fila existente de ese día SOLO para las personas entrantes (col C=fecha, F=codigo, G=cedula)
+  rows = rows.filter(r=> !(fdate(r[2])===fecha && keys[keyOf(r[5], r[6])]));
+  const nuevas=incoming.map(f=>[
+    Utilities.getUuid(), ts, fecha, body.reporta||usuario, f.cuadrilla||'', f.codigo||'', f.cedula||'', f.nombre||'', f.cargo||'',
+    f.cc||'', f.proyecto||'', f.hora_entrada||'', f.hora_salida||'',
+    (f.presente===false||f.presente==='No')?'No':'Si', f.motivo_ausencia||'', f.observacion||''
+  ]);
+  const todas=rows.concat(nuevas);
+  sh.clearContents();
+  sh.getRange(1,1,1,need).setValues([ASISTENCIA_HEADERS]);
+  if(todas.length) sh.getRange(2,1,todas.length,need).setValues(todas);
+  return json({ok:true, filas:nuevas.length});
 }
 
 /* ---------- GET personal: gestión (solo residente/admin la usan, pero la lectura es abierta a jeisson también) ---------- */

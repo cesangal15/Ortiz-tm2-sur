@@ -356,6 +356,33 @@ async function enviar(){
   if(!personas.length){ alert('No hay personal para reportar en esta cuadrilla.'); return; }
   const faltaMotivo=personas.some(p=>!p.presente && !p.motivo);
   if(faltaMotivo){ alert('Falta el motivo de ausencia de alguna persona.'); return; }
+
+  const cfg=STATE.config, tope=STATE.jornada.tope||0, maxExtra=parseFloat(cfg.max_extras_dia)||2;
+
+  // SUPER AVISO 1: personas PRESENTES sin actividad/CC. Lo correcto es asignarlas a un bloque con CC
+  // o marcarlas AUSENTES con motivo. Se permite forzar (escape hatch) pero exige confirmación explícita.
+  const sinCC=personas.filter(p=>{ if(!p.presente) return false; const b=STATE.bloques.find(x=>x.id===p.bloqueId); return !b || !b.cc; });
+  if(sinCC.length){
+    const nombres=sinCC.map(p=>'  • '+p.nombre).join('\n');
+    if(!confirm(`⚠️ ATENCIÓN — ${sinCC.length} persona(s) PRESENTES sin actividad / Centro de Costo:\n\n${nombres}\n\nLo correcto es asignarlas a un bloque con CC, o marcarlas AUSENTES con motivo.\n\nSi las envías así quedarán SIN CC en el reporte (habrá que corregirlas después).\n\n¿Enviar de todas formas?`)) return;
+  }
+
+  // SUPER AVISO 2: horas que superan el turno + máximo de extras del día (solo días normales; en
+  // domingo/festivo todas las horas van a Dom/Fest y el tope de extras no aplica).
+  if(STATE.jornada.tipo!=='domfest'){
+    const over=[];
+    personas.filter(p=>p.presente).forEach(p=>{
+      const b=STATE.bloques.find(x=>x.id===p.bloqueId);
+      const he=p.hora_entrada_ov!=null?p.hora_entrada_ov:(b?b.hora_entrada:p.hora_entrada);
+      const hs=p.hora_salida_ov!=null?p.hora_salida_ov:(b?b.hora_salida:p.hora_salida);
+      const h=horasTrabajadas(he,hs,cfg);
+      if(h!=null && h>tope+maxExtra+0.001) over.push(`  • ${p.nombre} — ${h.toFixed(1)}h`);
+    });
+    if(over.length){
+      if(!confirm(`⚠️ ATENCIÓN — estas personas superan el turno (${tope}h) + máximo de extras (${maxExtra}h):\n\n${over.join('\n')}\n\nEn días normales solo se reconocen ${maxExtra} horas extra. Revisa las horas de entrada/salida.\n\n¿Enviar de todas formas?`)) return;
+    }
+  }
+
   if(!confirm(`Vas a enviar la asistencia de ${esc(STATE.cuadrillaActual)} del ${STATE.fecha}.\n\nSi ya existe un reporte de esa fecha+cuadrilla, se REEMPLAZARÁ por completo.\n\n¿Continuar?`)) return;
 
   const filas=personas.map(p=>{
