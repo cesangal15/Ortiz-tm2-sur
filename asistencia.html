@@ -157,7 +157,7 @@ function togglePresente(i, checked){
 function setMotivo(i, v){ STATE.personas[i].motivo=v; }
 
 function agregarBloque(){
-  STATE.bloques.push({ id:STATE.nextBloqueId++, cc:'', proyecto:'', cuadrilla:STATE.cuadrillaActual,
+  STATE.bloques.push({ id:STATE.nextBloqueId++, cc:'', proyecto:'', uf:'', cuadrilla:STATE.cuadrillaActual,
     hora_entrada:STATE.jornada.entrada||'', hora_salida:STATE.jornada.salida||'', ccQuery:'', ccAbierto:false });
   render();
 }
@@ -181,16 +181,24 @@ function cambiarCC(bid){
   const b=STATE.bloques.find(x=>x.id===bid);
   b.cc=''; b.proyecto=''; b.ccQuery=''; b.ccAbierto=true; render();
 }
-// Devuelve la lista COMPLETA de CC que casan (sin recortar); el recorte + aviso "…y N más" lo hace
-// el renderer, para que quede claro que hay que escribir para filtrar (son ~383 por proyecto).
+// UF del bloque (3701/3702): filtra la lista de CC a los que empiezan por ese proyecto (el CC arranca
+// con "3701." o "3702."). Al cambiar la UF se limpia el CC/búsqueda para no dejar uno de la otra UF.
+function bloqueUfChange(bid, v){
+  const b=STATE.bloques.find(x=>x.id===bid);
+  b.uf=v; b.cc=''; b.proyecto=''; b.ccQuery=''; b.ccAbierto=!!v; render();
+}
+// Lista COMPLETA de CC que casan (sin recortar): filtra por UF del bloque y por el texto escrito. Sin
+// texto, muestra primero los CC USADOS recientemente por la cuadrilla (5-20 típicos), luego el resto.
+// La búsqueda calza tanto por CÓDIGO como por NOMBRE porque cada string es "3701.02.07| Terraplenes…".
 function resultadosCC(b){
   const q=(b.ccQuery||'').trim().toLowerCase();
-  const recientes=STATE.recientesCC[STATE.cuadrillaActual]||[];
-  let lista=STATE.catCC;
+  const uf=b.uf||'';
+  const enUF=cc=> !uf || String(cc).indexOf(uf)===0;   // "3701."/"3702." según prefijo del CC
+  const lista=STATE.catCC.filter(enUF);
   if(!q){
-    // sin texto: prioriza los CC usados recientemente por esta cuadrilla
-    const resto=lista.filter(cc=>recientes.indexOf(cc)<0);
-    return recientes.concat(resto);
+    const rec=(STATE.recientesCC[STATE.cuadrillaActual]||[]).filter(enUF);
+    const resto=lista.filter(cc=>rec.indexOf(cc)<0);
+    return rec.concat(resto);
   }
   return lista.filter(cc=>cc.toLowerCase().indexOf(q)>=0);
 }
@@ -315,11 +323,20 @@ function bloqueHtml(b, personas){
   let h='<div class="bloque"><div class="bloque-head">'
     + `<span class="tag">Bloque #${b.id}</span>`
     + `<button class="btn-x" onclick="quitarBloque(${b.id})">✕ Quitar</button></div>`;
+  // Selector de UF (3701/3702): define los primeros dígitos del CC. Siempre visible para poder cambiarlo.
+  h+='<div class="row" style="margin-bottom:8px;"><div class="field" style="max-width:220px;"><label>Unidad Funcional</label>'
+    + `<select onchange="bloqueUfChange(${b.id},this.value)">`
+    + `<option value="" ${!b.uf?'selected':''}>Elegir UF…</option>`
+    + `<option value="3701" ${b.uf==='3701'?'selected':''}>3701 · UF1</option>`
+    + `<option value="3702" ${b.uf==='3702'?'selected':''}>3702 · UF2</option>`
+    + '</select></div></div>';
   if(b.cc){
     h+=`<div class="cc-chosen"><span><b>${esc(b.proyecto)}</b> · ${esc(b.cc)}</span><button class="btn-x" onclick="cambiarCC(${b.id})">Cambiar</button></div>`;
+  } else if(!b.uf){
+    h+='<p style="font-size:12px;color:var(--muted);">Elige primero la Unidad Funcional para ver sus centros de costo.</p>';
   } else {
     h+='<div class="cc-search">'
-      + `<input type="text" placeholder="Buscar Centro de Costo…" value="${esc(b.ccQuery||'')}" oninput="ccQueryChange(${b.id},this.value)" onfocus="ccQueryChange(${b.id},this.value||'')">`;
+      + `<input type="text" placeholder="Buscar CC por código o nombre…" value="${esc(b.ccQuery||'')}" oninput="ccQueryChange(${b.id},this.value)" onfocus="ccQueryChange(${b.id},this.value||'')">`;
     if(b.ccAbierto){
       const all=resultadosCC(b), CAP=60, res=all.slice(0,CAP);
       let inner = res.length
