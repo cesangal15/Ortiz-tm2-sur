@@ -231,12 +231,15 @@ function seccionCompletar(d){
   faltantes.filter(f=>f.tipo==='sin_reportar').forEach(f=>comp.push({codigo:f.codigo,cedula:f.cedula,nombre:f.nombre,cargo:f.cargo,cuadrilla:f.cuadrilla,tag: f.incompleto?'presente sin CC':'sin reportar'}));
   if(!comp.length) return '';
   STATE._comp=comp;
-  const catCC=d.catCC||[], catMotivos=d.catMotivos||[], j=d.jornada||{};
+  const catCC=d.catCC||[], catCCUsados=d.catCCUsados||[], catMotivos=d.catMotivos||[], j=d.jornada||{};
+  // Los CC frecuentes (CC_USADOS) primero en el datalist; el resto del catálogo queda disponible al
+  // escribir (búsqueda nativa del datalist). Así el residente ve los usuales pero puede buscar cualquiera.
+  const ccOrden = catCCUsados.concat(catCC.filter(cc=>catCCUsados.indexOf(cc)<0));
   let h='<div style="display:flex;justify-content:space-between;align-items:center;margin:22px 0 10px;">'
     + '<span style="font-family:\'Syne\',sans-serif;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Completar faltantes ('+comp.length+')</span>'
     + '<button class="mini-btn" onclick="toggleLista(\'listaCompletar\',this)">Mostrar</button></div>';
   h+='<div id="listaCompletar" class="card" style="display:none;"><p style="font-size:12px;color:var(--muted);margin-bottom:10px;">Agrega o corrige personas que no reportaron (o quedaron presentes sin CC). Marca su estado y guarda; <b>no borra</b> lo que ya reportó el responsable de la cuadrilla.</p>';
-  h+='<datalist id="ccList">'+catCC.map(cc=>`<option value="${esc(cc)}">`).join('')+'</datalist>';
+  h+='<datalist id="ccList">'+ccOrden.map(cc=>`<option value="${esc(cc)}">`).join('')+'</datalist>';
   comp.forEach((p,i)=>{
     h+=`<div class="comp-item" style="border-bottom:1px solid rgba(46,52,80,0.5);padding:10px 0;">`
      + `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">`

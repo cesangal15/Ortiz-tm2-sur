@@ -40,6 +40,10 @@ const CAT_TRABAJADORES_HEADERS = ['codigo','string_navision'];
 // Navision). El proyecto NO se pide aparte: se deriva del propio prefijo del string (proyectoFromCC).
 const CAT_CC_HEADERS        = ['string_cc'];
 const CAT_MOTIVOS_HEADERS   = ['string_motivo'];
+// CC_USADOS: subconjunto de CAT_CC que se usa a diario (≈5-20). El usuario lo mantiene (pega los CC
+// frecuentes, mismo string exacto que CAT_CC). El formulario muestra estos por defecto y deja buscar
+// el resto del catálogo completo. Si la hoja está vacía, se usa el catálogo completo como antes.
+const CC_USADOS_HEADERS     = ['string_cc'];
 
 /* ---------- helpers genéricos (mismo patrón que Codigo.gs) ---------- */
 function json(o){ return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
@@ -168,6 +172,7 @@ function roster(e){
   const fecha=e.parameter.fecha || Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy-MM-dd');
   const jornada=jornadaDelDia(fecha, cfg, festivos);
   const catCC=readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
+  const catCCUsados=readSheet('CC_USADOS', CC_USADOS_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
   const catMotivos=readSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS).map(r=>String(r.string_motivo||'')).filter(Boolean);
   // CC usados recientemente por cada cuadrilla (últimos 60 días de ASISTENCIA), más reciente primero.
   const recientesCC={};
@@ -179,7 +184,7 @@ function roster(e){
     const list=recientesCC[r.cuadrilla]; if(!list) return;
     if(list.indexOf(r.cc)<0 && list.length<10) list.push(r.cc);
   });
-  return json({ ok:true, cuadrillas, personas, config:cfg, festivos, jornada, catCC, catMotivos, recientesCC });
+  return json({ ok:true, cuadrillas, personas, config:cfg, festivos, jornada, catCC, catCCUsados, catMotivos, recientesCC });
 }
 
 /* ---------- GET asistencia: resumen del día para el residente/jeisson ---------- */
@@ -237,8 +242,9 @@ function asistenciaDia(e){
   const festivos=getFestivos();
   const jornada=jornadaDelDia(fecha, cfg, festivos);
   const catCC=readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
+  const catCCUsados=readSheet('CC_USADOS', CC_USADOS_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
   const catMotivos=readSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS).map(r=>String(r.string_motivo||'')).filter(Boolean);
-  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, jornada, catCC, catMotivos });
+  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, jornada, catCC, catCCUsados, catMotivos });
 }
 
 /* ---------- POST asistencia_individual: upsert por PERSONA (residente/jeisson completan faltantes) ----------
@@ -381,6 +387,7 @@ function setupHojas(){
   getSheet('ASISTENCIA', ASISTENCIA_HEADERS);
   getSheet('CAT_TRABAJADORES', CAT_TRABAJADORES_HEADERS);
   getSheet('CAT_CC', CAT_CC_HEADERS);
+  getSheet('CC_USADOS', CC_USADOS_HEADERS);   // el usuario pega aquí los ~5-20 CC frecuentes (opcional)
   getSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS);
 
   const cuadSh=getSheet('CUADRILLAS', CUADRILLAS_HEADERS);

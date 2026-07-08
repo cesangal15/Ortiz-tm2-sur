@@ -95,7 +95,7 @@
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbymgvQX03ZqS_YzIz5l6WVesasDUMYwGOFItrggTJCdsFhcjXQvDPVz03E7mNcZQ4Nq/exec";
 
 let STATE = { usuario:'', rol:'', fecha:'', cuadrillas:[], cuadrillaActual:'', personas:[], bloques:[],
-  config:{}, festivos:[], jornada:{}, catCC:[], catMotivos:[], recientesCC:{}, nextBloqueId:1, enviando:false };
+  config:{}, festivos:[], jornada:{}, catCC:[], catCCUsados:[], catMotivos:[], recientesCC:{}, nextBloqueId:1, enviando:false };
 
 window.onload = function(){
   const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
@@ -121,7 +121,7 @@ async function cargarRoster(){
     STATE.cuadrillas=data.cuadrillas||[];
     STATE.cuadrillaActual=STATE.cuadrillas[0]||'';
     STATE.config=data.config||{}; STATE.festivos=data.festivos||[]; STATE.jornada=data.jornada||{};
-    STATE.catCC=data.catCC||[]; STATE.catMotivos=data.catMotivos||[]; STATE.recientesCC=data.recientesCC||{};
+    STATE.catCC=data.catCC||[]; STATE.catCCUsados=data.catCCUsados||[]; STATE.catMotivos=data.catMotivos||[]; STATE.recientesCC=data.recientesCC||{};
     STATE.personas=(data.personas||[]).map((p,i)=>({ _pid:i, cedula:p.cedula, codigo:p.codigo, nombre:p.nombre,
       cargo:p.cargo, cuadrilla:p.cuadrilla, presente:true, motivo:'',
       hora_entrada: STATE.jornada.entrada||'', hora_salida: STATE.jornada.salida||'',
@@ -187,20 +187,23 @@ function bloqueUfChange(bid, v){
   const b=STATE.bloques.find(x=>x.id===bid);
   b.uf=v; b.cc=''; b.proyecto=''; b.ccQuery=''; b.ccAbierto=!!v; render();
 }
-// Lista COMPLETA de CC que casan (sin recortar): filtra por UF del bloque y por el texto escrito. Sin
-// texto, muestra primero los CC USADOS recientemente por la cuadrilla (5-20 típicos), luego el resto.
-// La búsqueda calza tanto por CÓDIGO como por NOMBRE porque cada string es "3701.02.07| Terraplenes…".
+// Lista de CC que casan: filtra por UF del bloque y por el texto escrito. La búsqueda calza por CÓDIGO
+// o NOMBRE (cada string es "3701.02.07| Terraplenes…"). SIN texto muestra solo los CC FRECUENTES
+// (hoja CC_USADOS) de esa UF —los pocos que se usan a diario— más los usados recientemente por la
+// cuadrilla; al ESCRIBIR busca en el catálogo COMPLETO (por si necesitan uno que no está en la lista
+// corta). Si CC_USADOS está vacía, sin texto cae al catálogo completo (comportamiento anterior).
 function resultadosCC(b){
   const q=(b.ccQuery||'').trim().toLowerCase();
   const uf=b.uf||'';
   const enUF=cc=> !uf || String(cc).indexOf(uf)===0;   // "3701."/"3702." según prefijo del CC
-  const lista=STATE.catCC.filter(enUF);
-  if(!q){
-    const rec=(STATE.recientesCC[STATE.cuadrillaActual]||[]).filter(enUF);
-    const resto=lista.filter(cc=>rec.indexOf(cc)<0);
-    return rec.concat(resto);
+  if(q) return STATE.catCC.filter(enUF).filter(cc=>cc.toLowerCase().indexOf(q)>=0);   // buscar en TODO
+  const rec=(STATE.recientesCC[STATE.cuadrillaActual]||[]).filter(enUF);
+  const usados=(STATE.catCCUsados||[]).filter(enUF);
+  if(usados.length || rec.length){
+    const corta=rec.concat(usados.filter(cc=>rec.indexOf(cc)<0));   // recientes + frecuentes, sin duplicar
+    return corta;
   }
-  return lista.filter(cc=>cc.toLowerCase().indexOf(q)>=0);
+  return STATE.catCC.filter(enUF);   // sin lista corta definida: catálogo completo de la UF
 }
 function bloqueHoraChange(bid, campo, v){ const b=STATE.bloques.find(x=>x.id===bid); b[campo]=v; render(); }
 function toggleMiembro(bid, pidx, checked){
