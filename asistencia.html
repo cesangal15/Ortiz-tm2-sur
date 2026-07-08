@@ -198,23 +198,18 @@ function bloqueUfChange(bid, v){
   const b=STATE.bloques.find(x=>x.id===bid);
   b.uf=v; b.cc=''; b.proyecto=''; b.ccQuery=''; b.ccAbierto=!!v; render();
 }
-// Lista de CC que casan: filtra por UF del bloque y por el texto escrito. La búsqueda calza por CÓDIGO
-// o NOMBRE (cada string es "3701.02.07| Terraplenes…"). SIN texto muestra solo los CC FRECUENTES
-// (hoja CC_USADOS) de esa UF —los pocos que se usan a diario— más los usados recientemente por la
-// cuadrilla; al ESCRIBIR busca en el catálogo COMPLETO (por si necesitan uno que no está en la lista
-// corta). Si CC_USADOS está vacía, sin texto cae al catálogo completo (comportamiento anterior).
+// CAPATAZ: la búsqueda se queda SIEMPRE dentro de los CC FRECUENTES (hoja CC_USADOS) de la UF elegida
+// —tanto la lista por defecto como al escribir—. No se abre al catálogo completo (eso solo lo hace el
+// residente en el resumen). La búsqueda calza por CÓDIGO o NOMBRE (cada string es "3701.02.07| …").
+// Si CC_USADOS está vacía (aún no configurada), cae al catálogo completo para no quedar sin opciones.
 function resultadosCC(b){
   const q=(b.ccQuery||'').trim().toLowerCase();
   const uf=b.uf||'';
   const enUF=cc=> !uf || String(cc).indexOf(uf)===0;   // "3701."/"3702." según prefijo del CC
-  if(q) return STATE.catCC.filter(enUF).filter(cc=>cc.toLowerCase().indexOf(q)>=0);   // buscar en TODO
-  const rec=(STATE.recientesCC[STATE.cuadrillaActual]||[]).filter(enUF);
   const usados=(STATE.catCCUsados||[]).filter(enUF);
-  if(usados.length || rec.length){
-    const corta=rec.concat(usados.filter(cc=>rec.indexOf(cc)<0));   // recientes + frecuentes, sin duplicar
-    return corta;
-  }
-  return STATE.catCC.filter(enUF);   // sin lista corta definida: catálogo completo de la UF
+  const pool = usados.length ? usados : STATE.catCC.filter(enUF);   // solo frecuentes si están definidos
+  if(!q) return pool;
+  return pool.filter(cc=>cc.toLowerCase().indexOf(q)>=0);
 }
 function bloqueHoraChange(bid, campo, v){ const b=STATE.bloques.find(x=>x.id===bid); b[campo]=v; render(); }
 function toggleMiembro(bid, pidx, checked){
