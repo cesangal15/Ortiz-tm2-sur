@@ -168,8 +168,19 @@ function quitarBloque(id){
 }
 function proyectoFromCC(cc){ const m=String(cc||'').match(/^(\d{4})/); return m?m[1]:''; }
 
+// Al teclear en el buscador NO se re-renderiza todo (eso hacía perder el foco del input y no dejaba
+// escribir). Solo se actualiza el contenedor de resultados de ese bloque; el input conserva su foco.
 function ccQueryChange(bid, v){
-  const b=STATE.bloques.find(x=>x.id===bid); b.ccQuery=v; b.ccAbierto=true; render();
+  const b=STATE.bloques.find(x=>x.id===bid); b.ccQuery=v; b.ccAbierto=true; renderCCResults(b);
+}
+function renderCCResults(b){
+  const cont=document.getElementById('cc-results-'+b.id); if(!cont) return;
+  const all=resultadosCC(b), CAP=60, res=all.slice(0,CAP);
+  let inner = res.length
+    ? res.map(cc=>`<div class="cc-opt" onclick="elegirCC(${b.id},'${esc(cc).replace(/'/g,"\\'")}')">${esc(cc)}</div>`).join('')
+    : '<div class="cc-opt">Sin resultados</div>';
+  if(all.length>CAP) inner += `<div class="cc-opt" style="color:var(--muted);cursor:default;">…y ${all.length-CAP} más · escribe para filtrar</div>`;
+  cont.innerHTML=inner;
 }
 function elegirCC(bid, cc){
   const b=STATE.bloques.find(x=>x.id===bid);
@@ -319,6 +330,9 @@ function render(){
   html+='<div id="confirmBox"></div>';
 
   cont.innerHTML=html;
+  // Rellena el dropdown de resultados de los bloques con buscador abierto (tras un render completo el
+  // contenedor queda vacío; así se ven los CC de una vez sin tener que hacer clic en el input).
+  STATE.bloques.forEach(b=>{ if(b.ccAbierto && !b.cc && b.uf) renderCCResults(b); });
 }
 
 function bloqueHtml(b, personas){
@@ -339,15 +353,8 @@ function bloqueHtml(b, personas){
     h+='<p style="font-size:12px;color:var(--muted);">Elige primero la Unidad Funcional para ver sus centros de costo.</p>';
   } else {
     h+='<div class="cc-search">'
-      + `<input type="text" placeholder="Buscar CC por código o nombre…" value="${esc(b.ccQuery||'')}" oninput="ccQueryChange(${b.id},this.value)" onfocus="ccQueryChange(${b.id},this.value||'')">`;
-    if(b.ccAbierto){
-      const all=resultadosCC(b), CAP=60, res=all.slice(0,CAP);
-      let inner = res.length
-        ? res.map(cc=>`<div class="cc-opt" onclick="elegirCC(${b.id},'${esc(cc).replace(/'/g,"\\'")}')">${esc(cc)}</div>`).join('')
-        : '<div class="cc-opt">Sin resultados</div>';
-      if(all.length>CAP) inner += `<div class="cc-opt" style="color:var(--muted);cursor:default;">…y ${all.length-CAP} más · escribe para filtrar</div>`;
-      h+='<div class="cc-results">'+inner+'</div>';
-    }
+      + `<input type="text" placeholder="Buscar CC por código o nombre…" value="${esc(b.ccQuery||'')}" oninput="ccQueryChange(${b.id},this.value)" onfocus="ccQueryChange(${b.id},this.value||'')">`
+      + `<div class="cc-results" id="cc-results-${b.id}"></div>`;   // se llena vía renderCCResults (sin re-render global)
     h+='</div>';
   }
   h+='<div class="row" style="margin-top:10px;">'
