@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Asistencia de Personal — Responsable</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--success:#2ecc71;--error:#e74c3c;--input-bg:#12151f;--warn:#f5a623;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:0 0 60px;}
+  .header{background:linear-gradient(135deg,#1a1d27 0%,#0f1117 100%);border-bottom:3px solid var(--accent);padding:20px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20;}
+  .header-left .label{font-family:'Syne',sans-serif;font-size:10px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;}
+  .header-left h1{font-family:'Syne',sans-serif;font-size:19px;font-weight:800;}
+  .header-user{font-size:12px;color:var(--muted);text-align:right;}
+  .header-user span{display:block;color:var(--accent);font-weight:600;}
+  .logout-btn{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:4px 10px;cursor:pointer;margin-top:4px;font-family:'DM Sans',sans-serif;}
+  .logout-btn:hover{border-color:var(--error);color:var(--error);}
+  .container{max-width:720px;margin:0 auto;padding:20px 16px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;}
+  .row{display:flex;gap:12px;flex-wrap:wrap;}
+  .field{flex:1;min-width:130px;}
+  label{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-bottom:5px;letter-spacing:0.5px;text-transform:uppercase;}
+  input[type="date"],input[type="text"],input[type="time"],select,textarea{width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 12px;outline:none;transition:border-color 0.2s;color-scheme:dark;}
+  select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a80a0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px;cursor:pointer;}
+  input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,0.1);}
+  .jornada-banner{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;font-size:12.5px;color:var(--muted);margin-top:12px;}
+  .jornada-banner b{color:var(--accent);}
+  .section-title{font-family:'Syne',sans-serif;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin:22px 0 10px;display:flex;align-items:center;gap:8px;}
+  .section-title::after{content:'';flex:1;height:1px;background:var(--border);}
+  .persona-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(46,52,80,0.5);font-size:13.5px;flex-wrap:wrap;}
+  .persona-row:last-child{border-bottom:none;}
+  .persona-row .nombre{flex:1;min-width:140px;}
+  .persona-row .nombre b{display:block;}
+  .persona-row .nombre small{color:var(--muted);font-size:11px;}
+  .persona-row .badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;border:1px solid var(--border);color:var(--muted);white-space:nowrap;}
+  .persona-row .badge.asig{border-color:rgba(46,204,113,0.4);color:var(--success);}
+  .persona-row .badge.sin{border-color:rgba(245,166,35,0.4);color:var(--warn);}
+  .chk-presente{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);white-space:nowrap;}
+  .chk-presente input{width:auto;}
+  .motivo-sel{min-width:220px;flex:1;}
+  .sin-asignar{border:1px solid var(--border);border-radius:12px;padding:14px 16px;background:var(--surface2);}
+  .sin-asignar.alerta{border-color:rgba(245,166,35,0.5);background:rgba(245,166,35,0.08);}
+  .sin-asignar h3{font-family:'Syne',sans-serif;font-size:12px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;color:var(--muted);}
+  .sin-asignar.alerta h3{color:var(--warn);}
+  .chip-list{display:flex;flex-wrap:wrap;gap:6px;}
+  .chip{background:var(--input-bg);border:1px solid var(--border);border-radius:20px;padding:4px 12px;font-size:12px;}
+  .sin-asignar.alerta .chip{border-color:rgba(245,166,35,0.4);color:var(--warn);}
+  .bloque{border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;background:var(--surface2);}
+  .bloque-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;}
+  .bloque-head .tag{font-family:'Syne',sans-serif;font-size:12px;font-weight:800;color:var(--accent);}
+  .btn-x{background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:4px 9px;cursor:pointer;font-size:12px;}
+  .btn-x:hover{border-color:var(--error);color:var(--error);}
+  .cc-search{position:relative;}
+  .cc-results{position:absolute;top:100%;left:0;right:0;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;max-height:220px;overflow-y:auto;z-index:10;margin-top:4px;}
+  .cc-opt{padding:9px 12px;font-size:12.5px;cursor:pointer;border-bottom:1px solid var(--border);}
+  .cc-opt:last-child{border-bottom:none;}
+  .cc-opt:hover{background:var(--surface2);color:var(--accent);}
+  .cc-opt small{display:block;color:var(--muted);font-size:10px;margin-top:2px;}
+  .cc-chosen{background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:13px;display:flex;justify-content:space-between;align-items:center;gap:8px;}
+  .cc-chosen b{color:var(--accent);font-size:12px;}
+  .miembro{display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;flex-wrap:wrap;}
+  .miembro input[type=checkbox]{width:auto;}
+  .miembro .link-ov{font-size:11px;color:var(--muted);text-decoration:underline;cursor:pointer;background:none;border:none;}
+  .miembro-ov{display:flex;gap:8px;margin:4px 0 8px 26px;}
+  .miembro-ov input{max-width:110px;}
+  .btn-add-bloque{width:100%;padding:12px;background:var(--input-bg);border:1px dashed var(--accent);border-radius:10px;color:var(--accent);font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;}
+  .avisos{background:rgba(245,166,35,0.08);border:1px solid rgba(245,166,35,0.3);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:12.5px;color:var(--warn);}
+  .avisos ul{margin:6px 0 0 18px;}
+  .btn-enviar{width:100%;padding:15px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:12px;color:#0f1117;font-family:'Syne',sans-serif;font-size:15px;font-weight:800;cursor:pointer;letter-spacing:0.5px;}
+  .btn-enviar:hover{transform:translateY(-1px);}
+  .btn-enviar:disabled{opacity:0.5;cursor:not-allowed;}
+  .loading,.empty-state{text-align:center;padding:34px;color:var(--muted);font-size:14px;}
+  .confirm-ok{background:rgba(46,204,113,0.1);border:1px solid rgba(46,204,113,0.3);border-radius:10px;padding:12px 14px;color:var(--success);font-size:13px;margin-bottom:14px;}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <div class="label">Asistencia</div>
+    <h1>👷 Reporte de Asistencia</h1>
+  </div>
+  <div class="header-user">
+    <span id="userDisplay">—</span>
+    <button class="logout-btn" id="btnMenu" onclick="location.href='menu.html'" style="display:none;border-color:var(--accent);color:var(--accent);margin-right:6px;">← Menú</button>
+    <button class="logout-btn" id="btnSeleccion" onclick="location.href='seleccion-reporte.html'" style="display:none;border-color:var(--accent);color:var(--accent);margin-right:6px;">← Volver</button>
+    <button class="logout-btn" onclick="logout()">Salir</button>
+  </div>
+</div>
+<div class="container" id="container">
+  <div class="loading">⏳ Cargando roster…</div>
+</div>
+
+<script>
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbymgvQX03ZqS_YzIz5l6WVesasDUMYwGOFItrggTJCdsFhcjXQvDPVz03E7mNcZQ4Nq/exec";
+
+let STATE = { usuario:'', rol:'', fecha:'', cuadrillas:[], cuadrillaActual:'', personas:[], bloques:[],
+  config:{}, festivos:[], jornada:{}, catCC:[], catCCUsados:[], catMotivos:[], recientesCC:{}, nextBloqueId:1, enviando:false };
+
+window.onload = function(){
+  const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
+  if(!rol || !usuario){ window.location.href='index.html'; return; }
+  STATE.usuario=usuario; STATE.rol=rol;
+  document.getElementById('userDisplay').textContent=usuario;
+  if(rol==='admin'){ document.getElementById('btnMenu').style.display='inline-block'; }
+  else { document.getElementById('btnSeleccion').style.display='inline-block'; }
+  STATE.fecha=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
+  cargarRoster();
+};
+function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function pid(p){ return p._pid; }
+
+async function cargarRoster(){
+  document.getElementById('container').innerHTML='<div class="loading">⏳ Cargando roster…</div>';
+  try{
+    const url=`${APPS_SCRIPT_URL}?action=roster&usuario=${encodeURIComponent(STATE.usuario)}&fecha=${STATE.fecha}`;
+    const resp=await fetch(url); const data=await resp.json();
+    if(!data.ok) throw new Error(data.error||'roster');
+    STATE.cuadrillas=data.cuadrillas||[];
+    STATE.cuadrillaActual=STATE.cuadrillas[0]||'';
+    STATE.config=data.config||{}; STATE.festivos=data.festivos||[]; STATE.jornada=data.jornada||{};
+    STATE.catCC=data.catCC||[]; STATE.catCCUsados=data.catCCUsados||[]; STATE.catMotivos=data.catMotivos||[]; STATE.recientesCC=data.recientesCC||{};
+    STATE.personas=(data.personas||[]).map((p,i)=>({ _pid:i, cedula:p.cedula, codigo:p.codigo, nombre:p.nombre,
+      cargo:p.cargo, cuadrilla:p.cuadrilla, presente:true, motivo:'',
+      hora_entrada: STATE.jornada.entrada||'', hora_salida: STATE.jornada.salida||'',
+      hora_entrada_ov:null, hora_salida_ov:null, bloqueId:null }));
+    STATE.bloques=[];
+    render();
+  }catch(err){
+    document.getElementById('container').innerHTML='<div class="empty-state">⚠️ No se pudo cargar el roster. Revisa la conexión o el Apps Script.<br><small>'+esc(err.message||err)+'</small></div>';
+  }
+}
+
+function onFechaChange(v){
+  STATE.fecha=v;
+  // recalcula jornada estándar del día en cliente (mismo criterio que el backend: L-V/sábado/dom-fest)
+  const d=v.split('-'); const dt=new Date(Number(d[0]),Number(d[1])-1,Number(d[2])); const dow=dt.getDay();
+  const cfg=STATE.config, festivo=STATE.festivos.indexOf(v)>=0;
+  if(festivo || dow===0) STATE.jornada={tipo:'domfest', entrada:'', salida:'', tope:parseFloat(cfg.ord_domingo)||0};
+  else if(dow===6) STATE.jornada={tipo:'sabado', entrada:cfg.entrada_sab||'07:00', salida:cfg.salida_sab||'11:30', tope:parseFloat(cfg.ord_sabado)||4.5};
+  else STATE.jornada={tipo:'lv', entrada:cfg.entrada_lv||'07:00', salida:cfg.salida_lv||'15:30', tope:parseFloat(cfg.ord_lun_vie)||7.5};
+  render();
+}
+function onCuadrillaChange(v){ STATE.cuadrillaActual=v; render(); }
+
+function personasCuadrilla(){ return STATE.personas.filter(p=>p.cuadrilla===STATE.cuadrillaActual); }
+
+function togglePresente(i, checked){
+  const p=STATE.personas[i];
+  p.presente=checked;
+  if(checked){ p.motivo=''; }
+  else { p.bloqueId=null; }
+  render();
+}
+function setMotivo(i, v){ STATE.personas[i].motivo=v; }
+
+function agregarBloque(){
+  STATE.bloques.push({ id:STATE.nextBloqueId++, cc:'', proyecto:'', uf:'', cuadrilla:STATE.cuadrillaActual,
+    hora_entrada:STATE.jornada.entrada||'', hora_salida:STATE.jornada.salida||'', ccQuery:'', ccAbierto:false });
+  render();
+}
+function quitarBloque(id){
+  STATE.personas.forEach(p=>{ if(p.bloqueId===id) p.bloqueId=null; });
+  STATE.bloques=STATE.bloques.filter(b=>b.id!==id);
+  render();
+}
+function proyectoFromCC(cc){ const m=String(cc||'').match(/^(\d{4})/); return m?m[1]:''; }
+
+// Al teclear en el buscador NO se re-renderiza todo (eso hacía perder el foco del input y no dejaba
+// escribir). Solo se actualiza el contenedor de resultados de ese bloque; el input conserva su foco.
+function ccQueryChange(bid, v){
+  const b=STATE.bloques.find(x=>x.id===bid); b.ccQuery=v; b.ccAbierto=true; renderCCResults(b);
+}
+function renderCCResults(b){
+  const cont=document.getElementById('cc-results-'+b.id); if(!cont) return;
+  const all=resultadosCC(b), CAP=60, res=all.slice(0,CAP);
+  let inner = res.length
+    ? res.map(cc=>`<div class="cc-opt" onclick="elegirCC(${b.id},'${esc(cc).replace(/'/g,"\\'")}')">${esc(cc)}</div>`).join('')
+    : '<div class="cc-opt">Sin resultados</div>';
+  if(all.length>CAP) inner += `<div class="cc-opt" style="color:var(--muted);cursor:default;">…y ${all.length-CAP} más · escribe para filtrar</div>`;
+  cont.innerHTML=inner;
+}
+function elegirCC(bid, cc){
+  const b=STATE.bloques.find(x=>x.id===bid);
+  b.cc=cc; b.proyecto=proyectoFromCC(cc); b.ccQuery=''; b.ccAbierto=false; render();
+}
+// "Cambiar" el CC de un bloque: hay que LIMPIAR el cc elegido (si no, bloqueHtml sigue mostrando la
+// vista de "CC elegido" y el buscador nunca reaparece — el botón parecía no hacer nada).
+function cambiarCC(bid){
+  const b=STATE.bloques.find(x=>x.id===bid);
+  b.cc=''; b.proyecto=''; b.ccQuery=''; b.ccAbierto=true; render();
+}
+// UF del bloque (3701/3702): filtra la lista de CC a los que empiezan por ese proyecto (el CC arranca
+// con "3701." o "3702."). Al cambiar la UF se limpia el CC/búsqueda para no dejar uno de la otra UF.
+function bloqueUfChange(bid, v){
+  const b=STATE.bloques.find(x=>x.id===bid);
+  b.uf=v; b.cc=''; b.proyecto=''; b.ccQuery=''; b.ccAbierto=!!v; render();
+}
+// CAPATAZ: la búsqueda se queda SIEMPRE dentro de los CC FRECUENTES (hoja CC_USADOS) de la UF elegida
+// —tanto la lista por defecto como al escribir—. No se abre al catálogo completo (eso solo lo hace el
+// residente en el resumen). La búsqueda calza por CÓDIGO o NOMBRE (cada string es "3701.02.07| …").
+// Si CC_USADOS está vacía (aún no configurada), cae al catálogo completo para no quedar sin opciones.
+function resultadosCC(b){
+  const q=(b.ccQuery||'').trim().toLowerCase();
+  const uf=b.uf||'';
+  const enUF=cc=> !uf || String(cc).indexOf(uf)===0;   // "3701."/"3702." según prefijo del CC
+  const usados=(STATE.catCCUsados||[]).filter(enUF);
+  const pool = usados.length ? usados : STATE.catCC.filter(enUF);   // solo frecuentes si están definidos
+  if(!q) return pool;
+  return pool.filter(cc=>cc.toLowerCase().indexOf(q)>=0);
+}
+function bloqueHoraChange(bid, campo, v){ const b=STATE.bloques.find(x=>x.id===bid); b[campo]=v; render(); }
+function toggleMiembro(bid, pidx, checked){
+  const p=STATE.personas[pidx];
+  p.bloqueId = checked ? bid : null;
+  render();
+}
+function toggleOverride(pidx){
+  const p=STATE.personas[pidx];
+  if(p.hora_entrada_ov==null && p.hora_salida_ov==null){ p.hora_entrada_ov=p.hora_entrada; p.hora_salida_ov=p.hora_salida; }
+  else { p.hora_entrada_ov=null; p.hora_salida_ov=null; }
+  render();
+}
+function setOverride(pidx, campo, v){ STATE.personas[pidx][campo]=v; }
+
+/* ---------- validaciones suaves (avisan, no bloquean) ---------- */
+function horasNum(hhmm){ if(!hhmm) return null; const p=hhmm.split(':'); if(p.length<2) return null; return Number(p[0])+Number(p[1])/60; }
+function horasTrabajadas(entrada, salida, cfg){
+  const e=horasNum(entrada), s=horasNum(salida);
+  if(e==null||s==null) return null;
+  let h=s-e;
+  const almIni=horasNum(cfg.almuerzo_ini||'12:00'), almFin=horasNum(cfg.almuerzo_fin||'13:00');
+  if(almIni!=null && almFin!=null && e<=almIni && s>=almFin) h-=(almFin-almIni);
+  return h;
+}
+function calcularAvisos(){
+  const avisos=[];
+  const cfg=STATE.config, tope=STATE.jornada.tope||0, maxExtra=parseFloat(cfg.max_extras_dia)||2;
+  STATE.bloques.forEach(b=>{
+    const e=b.hora_entrada, s=b.hora_salida;
+    if(e && s){
+      if(horasNum(e)>=horasNum(s)) avisos.push(`Bloque "${esc(b.cc)||'(sin CC)'}": la hora de entrada es mayor o igual a la de salida.`);
+      const h=horasTrabajadas(e,s,cfg);
+      if(h!=null && h>tope+maxExtra) avisos.push(`Bloque "${esc(b.cc)||'(sin CC)'}": ${h.toFixed(1)}h trabajadas superan el turno (${tope}h) + extras permitidas (${maxExtra}h).`);
+    }
+    if(!b.cc) avisos.push('Hay un bloque sin Centro de Costo seleccionado.');
+  });
+  const sinAsignar=personasCuadrilla().filter(p=>p.presente && p.bloqueId==null);
+  if(sinAsignar.length) avisos.push(`${sinAsignar.length} persona(s) presente(s) sin asignar a un bloque: `+sinAsignar.map(p=>esc(p.nombre)).join(', ')+'.');
+  return avisos;
+}
+
+function render(){
+  const cont=document.getElementById('container');
+  if(!STATE.cuadrillas.length){
+    cont.innerHTML='<div class="empty-state">No tienes cuadrillas asignadas para reportar. Contacta al residente/admin (hoja CUADRILLAS).</div>';
+    return;
+  }
+  const personas=personasCuadrilla();
+  const sinAsignar=personas.filter(p=>p.presente && p.bloqueId==null);
+  const avisos=calcularAvisos();
+
+  let html='';
+  // ---- fecha + cuadrilla + jornada ----
+  html+='<div class="card"><div class="row">';
+  html+=`<div class="field"><label>Fecha</label><input type="date" value="${STATE.fecha}" onchange="onFechaChange(this.value)"></div>`;
+  if(STATE.cuadrillas.length>1){
+    html+='<div class="field"><label>Cuadrilla</label><select onchange="onCuadrillaChange(this.value)">'
+      + STATE.cuadrillas.map(c=>`<option value="${esc(c)}" ${c===STATE.cuadrillaActual?'selected':''}>${esc(c)}</option>`).join('')
+      + '</select></div>';
+  } else {
+    html+=`<div class="field"><label>Cuadrilla</label><input type="text" value="${esc(STATE.cuadrillaActual)}" disabled></div>`;
+  }
+  html+='</div>';
+  const j=STATE.jornada;
+  if(j.tipo==='domfest'){
+    html+=`<div class="jornada-banner">⚠️ Día <b>domingo/festivo</b>: jornada ordinaria = 0h. Todo lo trabajado va a horas Dom/Fest (revisión manual al exportar).</div>`;
+  } else {
+    html+=`<div class="jornada-banner">Jornada estándar (<b>${j.tipo==='sabado'?'sábado':'lunes a viernes'}</b>): <b>${esc(j.entrada)}</b> a <b>${esc(j.salida)}</b> · tope ordinario <b>${j.tope}h</b></div>`;
+  }
+  html+='</div>';
+
+  if(avisos.length){
+    html+='<div class="avisos">⚠️ Revisa antes de enviar (no bloquea el envío):<ul>'+avisos.map(a=>`<li>${a}</li>`).join('')+'</ul></div>';
+  }
+
+  // ---- Personal (presente/ausente) ----
+  html+='<div class="section-title">Personal de la cuadrilla</div>';
+  html+='<div class="card">';
+  if(!personas.length){ html+='<p style="color:var(--muted);font-size:13px;">Sin personas activas en esta cuadrilla.</p>'; }
+  personas.forEach(p=>{
+    const bloque=STATE.bloques.find(b=>b.id===p.bloqueId);
+    html+='<div class="persona-row">'
+      + `<label class="chk-presente"><input type="checkbox" ${p.presente?'checked':''} onchange="togglePresente(${p._pid},this.checked)"> Presente</label>`
+      + `<div class="nombre"><b>${esc(p.nombre)}</b><small>${esc(p.codigo||'s/cód.')} · ${esc(p.cargo)}</small></div>`;
+    if(!p.presente){
+      html+='<select class="motivo-sel" onchange="setMotivo('+p._pid+',this.value)"><option value="">Motivo de ausencia…</option>'
+        + STATE.catMotivos.map(m=>`<option value="${esc(m)}" ${p.motivo===m?'selected':''}>${esc(m)}</option>`).join('')
+        + '</select>';
+    } else if(bloque){
+      html+=`<span class="badge asig">${esc(bloque.cc)||'CC pend.'}</span>`;
+    } else {
+      html+='<span class="badge sin">Sin asignar</span>';
+    }
+    html+='</div>';
+  });
+  html+='</div>';
+
+  // ---- Sin asignar (siempre visible) ----
+  html+=`<div class="sin-asignar ${sinAsignar.length?'alerta':''}"><h3>${sinAsignar.length?'⚠️ Sin asignar':'✓ Todos asignados'}</h3>`;
+  html+= sinAsignar.length
+    ? '<div class="chip-list">'+sinAsignar.map(p=>`<span class="chip">${esc(p.nombre)}</span>`).join('')+'</div>'
+    : '<p style="color:var(--muted);font-size:12.5px;">Todas las personas presentes están en un bloque.</p>';
+  html+='</div>';
+
+  // ---- Bloques ----
+  html+='<div class="section-title">Bloques de actividad (CC)</div>';
+  STATE.bloques.filter(b=>b.cuadrilla===STATE.cuadrillaActual).forEach(b=>{ html+=bloqueHtml(b, personas); });
+  html+='<button class="btn-add-bloque" onclick="agregarBloque()">+ Agregar bloque</button>';
+
+  html+='<div style="margin-top:22px;"><button class="btn-enviar" id="btnEnviar" onclick="enviar()" '+(STATE.enviando?'disabled':'')+'>'
+    + (STATE.enviando?'Enviando…':'ENVIAR ASISTENCIA →') + '</button></div>';
+  html+='<div id="confirmBox"></div>';
+
+  cont.innerHTML=html;
+  // Rellena el dropdown de resultados de los bloques con buscador abierto (tras un render completo el
+  // contenedor queda vacío; así se ven los CC de una vez sin tener que hacer clic en el input).
+  STATE.bloques.forEach(b=>{ if(b.ccAbierto && !b.cc && b.uf) renderCCResults(b); });
+}
+
+function bloqueHtml(b, personas){
+  const elegibles=personas.filter(p=>p.presente && (p.bloqueId===b.id || p.bloqueId==null));
+  let h='<div class="bloque"><div class="bloque-head">'
+    + `<span class="tag">Bloque #${b.id}</span>`
+    + `<button class="btn-x" onclick="quitarBloque(${b.id})">✕ Quitar</button></div>`;
+  // Selector de UF (3701/3702): define los primeros dígitos del CC. Siempre visible para poder cambiarlo.
+  h+='<div class="row" style="margin-bottom:8px;"><div class="field" style="max-width:220px;"><label>Unidad Funcional</label>'
+    + `<select onchange="bloqueUfChange(${b.id},this.value)">`
+    + `<option value="" ${!b.uf?'selected':''}>Elegir UF…</option>`
+    + `<option value="3701" ${b.uf==='3701'?'selected':''}>3701 · UF1</option>`
+    + `<option value="3702" ${b.uf==='3702'?'selected':''}>3702 · UF2</option>`
+    + '</select></div></div>';
+  if(b.cc){
+    h+=`<div class="cc-chosen"><span><b>${esc(b.proyecto)}</b> · ${esc(b.cc)}</span><button class="btn-x" onclick="cambiarCC(${b.id})">Cambiar</button></div>`;
+  } else if(!b.uf){
+    h+='<p style="font-size:12px;color:var(--muted);">Elige primero la Unidad Funcional para ver sus centros de costo.</p>';
+  } else {
+    h+='<div class="cc-search">'
+      + `<input type="text" placeholder="Buscar CC por código o nombre…" value="${esc(b.ccQuery||'')}" oninput="ccQueryChange(${b.id},this.value)" onfocus="ccQueryChange(${b.id},this.value||'')">`
+      + `<div class="cc-results" id="cc-results-${b.id}"></div>`;   // se llena vía renderCCResults (sin re-render global)
+    h+='</div>';
+  }
+  h+='<div class="row" style="margin-top:10px;">'
+    + `<div class="field"><label>Hora entrada (bloque)</label><input type="time" value="${esc(b.hora_entrada)}" onchange="bloqueHoraChange(${b.id},'hora_entrada',this.value)"></div>`
+    + `<div class="field"><label>Hora salida (bloque)</label><input type="time" value="${esc(b.hora_salida)}" onchange="bloqueHoraChange(${b.id},'hora_salida',this.value)"></div>`
+    + '</div>';
+  h+='<div class="section-title" style="margin:14px 0 6px;font-size:11px;">Miembros</div>';
+  if(!elegibles.length){ h+='<p style="color:var(--muted);font-size:12.5px;">No hay personas presentes disponibles.</p>'; }
+  elegibles.forEach(p=>{
+    const checked=p.bloqueId===b.id;
+    const tieneOv=checked && p.hora_entrada_ov!=null;
+    h+=`<div class="miembro"><input type="checkbox" ${checked?'checked':''} onchange="toggleMiembro(${b.id},${p._pid},this.checked)"> ${esc(p.nombre)}`;
+    if(checked) h+=` <button class="link-ov" onclick="toggleOverride(${p._pid})">${tieneOv?'quitar override':'horas individuales'}</button>`;
+    h+='</div>';
+    if(tieneOv){
+      h+=`<div class="miembro-ov"><input type="time" value="${esc(p.hora_entrada_ov)}" onchange="setOverride(${p._pid},'hora_entrada_ov',this.value)">`
+        + `<input type="time" value="${esc(p.hora_salida_ov)}" onchange="setOverride(${p._pid},'hora_salida_ov',this.value)"></div>`;
+    }
+  });
+  h+='</div>';
+  return h;
+}
+
+async function enviar(){
+  const personas=personasCuadrilla();
+  if(!personas.length){ alert('No hay personal para reportar en esta cuadrilla.'); return; }
+  const faltaMotivo=personas.some(p=>!p.presente && !p.motivo);
+  if(faltaMotivo){ alert('Falta el motivo de ausencia de alguna persona.'); return; }
+
+  const cfg=STATE.config, tope=STATE.jornada.tope||0, maxExtra=parseFloat(cfg.max_extras_dia)||2;
+
+  // SUPER AVISO 1: personas PRESENTES sin actividad/CC. Lo correcto es asignarlas a un bloque con CC
+  // o marcarlas AUSENTES con motivo. Se permite forzar (escape hatch) pero exige confirmación explícita.
+  const sinCC=personas.filter(p=>{ if(!p.presente) return false; const b=STATE.bloques.find(x=>x.id===p.bloqueId); return !b || !b.cc; });
+  if(sinCC.length){
+    const nombres=sinCC.map(p=>'  • '+p.nombre).join('\n');
+    if(!confirm(`⚠️ ATENCIÓN — ${sinCC.length} persona(s) PRESENTES sin actividad / Centro de Costo:\n\n${nombres}\n\nLo correcto es asignarlas a un bloque con CC, o marcarlas AUSENTES con motivo.\n\nSi las envías así quedarán SIN CC en el reporte (habrá que corregirlas después).\n\n¿Enviar de todas formas?`)) return;
+  }
+
+  // SUPER AVISO 2: horas que superan el turno + máximo de extras del día (solo días normales; en
+  // domingo/festivo todas las horas van a Dom/Fest y el tope de extras no aplica).
+  if(STATE.jornada.tipo!=='domfest'){
+    const over=[];
+    personas.filter(p=>p.presente).forEach(p=>{
+      const b=STATE.bloques.find(x=>x.id===p.bloqueId);
+      const he=p.hora_entrada_ov!=null?p.hora_entrada_ov:(b?b.hora_entrada:p.hora_entrada);
+      const hs=p.hora_salida_ov!=null?p.hora_salida_ov:(b?b.hora_salida:p.hora_salida);
+      const h=horasTrabajadas(he,hs,cfg);
+      if(h!=null && h>tope+maxExtra+0.001) over.push(`  • ${p.nombre} — ${h.toFixed(1)}h`);
+    });
+    if(over.length){
+      if(!confirm(`⚠️ ATENCIÓN — estas personas superan el turno (${tope}h) + máximo de extras (${maxExtra}h):\n\n${over.join('\n')}\n\nEn días normales solo se reconocen ${maxExtra} horas extra. Revisa las horas de entrada/salida.\n\n¿Enviar de todas formas?`)) return;
+    }
+  }
+
+  if(!confirm(`Vas a enviar la asistencia de ${esc(STATE.cuadrillaActual)} del ${STATE.fecha}.\n\nSi ya existe un reporte de esa fecha+cuadrilla, se REEMPLAZARÁ por completo.\n\n¿Continuar?`)) return;
+
+  const filas=personas.map(p=>{
+    if(!p.presente){
+      return { codigo:p.codigo, cedula:p.cedula, nombre:p.nombre, cargo:p.cargo, cc:'', proyecto:'',
+        hora_entrada:'', hora_salida:'', presente:'No', motivo_ausencia:p.motivo, observacion:'' };
+    }
+    const b=STATE.bloques.find(x=>x.id===p.bloqueId);
+    const he = p.hora_entrada_ov!=null ? p.hora_entrada_ov : (b?b.hora_entrada:p.hora_entrada);
+    const hs = p.hora_salida_ov!=null ? p.hora_salida_ov : (b?b.hora_salida:p.hora_salida);
+    return { codigo:p.codigo, cedula:p.cedula, nombre:p.nombre, cargo:p.cargo, cc:b?b.cc:'', proyecto:b?b.proyecto:'',
+      hora_entrada:he||'', hora_salida:hs||'', presente:'Si', motivo_ausencia:'', observacion:'' };
+  });
+
+  STATE.enviando=true; render();
+  try{
+    const resp=await fetch(APPS_SCRIPT_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'reporte_asistencia', fecha:STATE.fecha, cuadrilla:STATE.cuadrillaActual, reporta:STATE.usuario, filas }) });
+    const data=await resp.json();
+    STATE.enviando=false;
+    if(data.ok){
+      render();
+      document.getElementById('confirmBox').innerHTML=`<div class="confirm-ok">✓ Guardado en el servidor: ${data.filas} fila(s) para ${esc(STATE.cuadrillaActual)} · ${STATE.fecha}.</div>`;
+    } else {
+      alert('El servidor respondió con un error: '+(data.error||'desconocido'));
+    }
+  }catch(err){
+    STATE.enviando=false; render();
+    alert('No se pudo enviar. Revisa la conexión.\n'+(err.message||err));
+  }
+}
+</script>
+</body>
+</html>

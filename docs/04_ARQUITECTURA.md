@@ -73,6 +73,48 @@
 - jefe.html (jefe/residente/admin): consulta post-DATA **por rango de fechas** (solo lectura). Resumen por actividad y ubicación (PK crudo + UF, sumando LARGO por unidad) y copiado A:S día a día al portapapeles para pegar en el maestro (D65). No escribe nada.
 - Excel maestros: análisis, KPI y resúmenes mensuales (RESUMEN_MES con B2=período, B3=proyecto/0).
 
+## Módulo Asistencias (D69) — aislado, Sheet/Script propios
+
+```
+┌── GITHUB PAGES (mismo repo, mismo login index.html) ──────────────────┐
+│  seleccion-reporte.html (capataces/mairy/jeisson: tiles según usuario) │
+│  asistencia.html         (responsable de cuadrilla + admin)           │
+│  resumen-asistencia.html (residente, admin, jeisson)                  │
+└────────────────────────┬────────────────────────────────────────────--┘
+                          │ fetch GET/POST (text/plain), URL PROPIA
+                          ▼
+┌── backend/CodigoAsistencias.gs (Apps Script NUEVO, SHEET_ID propio) ───┐
+│  GET  ?action=roster&usuario=…     → cuadrillas + roster + CONFIG      │
+│                                       + CAT_CC + CAT_MOTIVOS + recientes│
+│  GET  ?action=asistencia&fecha=…   → filas del día + estado cuadrilla  │
+│                                       + faltantes (con responsable)    │
+│  GET  ?action=personal             → PERSONAL + CUADRILLAS (gestión)  │
+│  GET  ?action=export&fecha=…       → crudo del día + catálogos        │
+│                                       (el cliente arma el Excel)       │
+│  POST {reporte_asistencia,…}       → pisa fecha+cuadrilla, escritura   │
+│                                       DIRECTA (sin bandeja, D03)       │
+│  POST {personal, op, usuario,…}    → valida usuario ∈{residente,admin}│
+└────────────────────────┬────────────────────────────────────────────--┘
+                          ▼
+┌── GOOGLE SHEET NUEVO (1KrhzaIg3BSspyi0oH0gHkAJnSRXaOIdel_pKaMVHX9w) ───┐
+│  PERSONAL · CUADRILLAS · ASISTENCIA · CONFIG · FESTIVOS ·              │
+│  CAT_TRABAJADORES · CAT_CC · CAT_MOTIVOS — setupHojas() de un solo uso │
+└────────────────────────┬────────────────────────────────────────────--┘
+                          │ SheetJS en el navegador (resumen-asistencia.html)
+                          ▼
+┌── Plantilla_Parte_Trabajo…xlsx (subida por el usuario, una vez/sesión) ┐
+│  El generador llena SOLO la hoja "Parte" (18 columnas A–R) y conserva  │
+│  las demás hojas/catálogos intactos → Parte_{proyecto}_{fecha}.xlsx    │
+└─────────────────────────────────────────────────────────────────────--┘
+```
+
+Reglas clave: captura CRUDA de hora entrada/salida; la clasificación (ordinarias/extras diurna-nocturna/
+Dom-Fest) la hace el **clasificador de horas** (módulo JS compartido embebido en `resumen-asistencia.html`,
+con casos de prueba manual en comentario) **al exportar**, nunca al guardar. Códigos sin catálogo pasan
+sin bloqueo (`codigo| NOMBRE`). Retiros = `inactivo` + `fecha_retiro`, nunca se borra una fila. Columnas
+G–N y el string de `CONFIG.proyecto_3702` son parámetros abiertos (ver 03_BACKLOG). Este módulo **nunca**
+lee ni escribe BANDEJA/DATA/MAQUINARIA ni comparte Sheet/Script con `Codigo.gs`.
+
 ## Mapeo de paste MAQUINARIA → Captura_Diaria (D52, verificado con el archivo real)
 
 Captura_Diaria es una **tabla de Excel** (`fact_produccion`, A1:AA). Se pegan SOLO las columnas de entrada con **Pegado especial → Omitir blancos**; la tabla autocompleta las columnas-fórmula.

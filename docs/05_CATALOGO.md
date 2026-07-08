@@ -139,6 +139,20 @@ admin/venganza753 → menu · encargado/enc1-2 → encargado · residente/Ortiz2
 **Residente** (rol `residente`, D57): entra a `residente.html` (panel de selección) → tile activo al Panel del Encargado (guard de `encargado.html` extendido para aceptar el rol) y tile **Resumen General** que ahora abre `jefe.html` (D65).
 **Jefe** (rol `jefe`, D65): usuario `jefe`, clave `Ortiz2026` (placeholder); entra a `jefe.html` — consulta post-DATA por rango de fechas (solo lectura): resumen por actividad + ubicación (PK crudo) y copiado A:S día a día. Guard acepta `jefe`/`admin`/`residente`. **Admin:** botón "← Menú" en toda pantalla interna vuelve a `menu.html` sin cerrar sesión.
 
+**Módulo Asistencias (D69) — usuarios y mapa cuadrilla→responsable.** `jeisson` (clave `Ortiz2026` placeholder, rol `asistencia_plus`): entra a `seleccion-reporte.html` con tiles "Asistencia de mi grupo" y "Resumen de asistencias" (sin reporte de obra, sin gestión de personal). Capataces (`albert/ariel/angel/alejo/robinson`) y `mairy` conservan su usuario/clave/rol de siempre pero ahora aterrizan en `seleccion-reporte.html` (su reporte de obra + tile "Asistencia de personal"). Semilla de la hoja CUADRILLAS (`cuadrilla·responsables`, data-driven: se amplía sin tocar código):
+
+| Cuadrilla | Responsable(s) (usuario del login) |
+|---|---|
+| ANGEL | angel |
+| ROBINSON | robinson |
+| ALBERT | albert |
+| ARIEL | ariel |
+| ALEJANDRO | alejandro (alias de `alejo`, mismo capataz — ver nota abajo) |
+| OPERADORES | jeisson |
+| VOLQUETEROS | mairy |
+
+Nota: `alejo` (usuario real del login) y `alejandro` (nombre usado en la cuadrilla) son la misma persona; el backend (`cuadrillasDeUsuario` en `CodigoAsistencias.gs`) los trata como alias. Gestión de personal (alta/retiro/mover/reactivar) solo `residente`/`admin`, validado también en el backend. Acceso a `resumen-asistencia.html`: `residente`, `admin` y `jeisson` (sin los controles de gestión para este último).
+
 ## 8. Reglas de reconciliación automática (encargado) — CONFIRMADO
 
 - Al cargar la bandeja, las filas de **capataz** en categorías de volumen oficial
