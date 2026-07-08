@@ -23,17 +23,17 @@
                                      │ fetch GET/POST (Content-Type: text/plain)
                                      ▼
 ┌──────────────────── GOOGLE APPS SCRIPT v6 (API, una sola URL) ──────────────────────────┐
-│  GET  ?action=bandeja&fecha=…[&proyecto=…][&area=…] → crudo del día por área (D69)      │
+│  GET  ?action=bandeja&fecha=…[&proyecto=…][&area=…] → crudo del día por área (D70)      │
 │  GET  ?action=consolidado&fecha=…            → lo ya enviado a DATA                     │
 │  GET  ?action=consolidado&desde=…&hasta=…    → filas crudas A–T de DATA del rango (D65) │
 │  GET  ?action=estado&fecha=…                 → máquinas reportadas (estado.html)        │
 │  GET  ?action=debug&fecha=…                  → diagnóstico                              │
 │  GET  ?action=cubicaje                        → mapa placa→cubicaje (frontend, D53/2.10) │
 │  GET  ?action=maquinaria_produccion&fecha=…  → frentes×oficial DATA + PK/horas/faltantes  │
-│  GET  ?action=drenajes                        → 147 marcadores ODT + ítems .06/.07 (D69)  │
+│  GET  ?action=drenajes                        → 147 marcadores ODT + ítems .06/.07 (D70)  │
 │  POST {reporte}                              → escribe BANDEJA + MAQUINARIA (+VOLQUETAS)  │
 │  POST {action:enviar_data, area}             → pisa DATA del día POR ÁREA + marca bandeja │
-│         (tierras/odt/odl derivada del CC con deriveArea; sin area = tierras — D69)       │
+│         (tierras/odt/odl derivada del CC con deriveArea; sin area = tierras — D70)       │
 │  POST {action:maquinaria_produccion}         → parcha col T + crea filas (redir/horas/compl, D60-62)│
 │  Regla técnica: fechas por duck-typing (getFullYear), nunca instanceof Date.            │
 │  Redespliegue: Administrar implementaciones → editar → Nueva versión (misma URL).       │
@@ -44,9 +44,9 @@
 │              +`origen` (col 23): banco de material de la chequeadora para excavación     │
 │              aprovechable (Masivo 1/2/Complementario/Otro); vacío capataz/enc (D56)      │
 │              +`area` (col 24, ''=tierras) y SOLO-WhatsApp `personal_oficiales` ·         │
-│              `personal_ayudantes` · `turno_noche` · `nota_libre` (cols 25–28, D69)       │
+│              `personal_ayudantes` · `turno_noche` · `nota_libre` (cols 25–28, D70)       │
 │  MAQUINARIA  equipos con producción individual (directo, sin aprobación); interno `area` │
-│              tras produccion_capataz_orig — drenajes = captura libre, a_captura=NO (D69) │
+│              tras produccion_capataz_orig — drenajes = captura libre, a_captura=NO (D70) │
 │  VOLQUETAS   desglose por placa de la chequeadora (1 fila/placa, informativo; no a DATA) │
 │  CUBICAJE    catálogo placa→cubicaje (lo lee el backend; lo mantiene el usuario; D53/2.10)│
 │  DATA        oficial; columnas A–T = espejo del maestro TM2                             │
@@ -69,7 +69,7 @@
 2. **Chequeadora** entra → fecha, origen → N líneas {PK destino, tipo destino (Terraplén·Puente·ODL·ODT·Botadero), bloque de placas} + maquinaria (excavadoras del origen). Pega el desglose por placa estilo WhatsApp; el sistema parsea placa+viajes, calcula el **volumen real de la línea = Σ(viajes×cubicaje)** leyendo la hoja CUBICAJE (D53 sobre D06). Placa no registrada → fallback **14 fijo** (D54) + flag (naranja + `cubicaje_origen`=default). Cada placa se guarda en VOLQUETAS con su cubicaje y m3_placa. **Excavación = por ORIGEN, acumulada (D63):** la excavación se registra DONDE SE HIZO EL CORTE = el origen, así que el reporte genera **UNA sola fila de excavación = Σ(volúmenes de todas las líneas)** al PK del origen (Masivo 2→19+800, Masivo 1→14+400, Diviso→21+500, todos ≤30→UF1/3701; Complementario/Otro→el PK que teclea la chequeadora), del que derivan PK/ELEMENTO/ABS/UF/PROYECTO/CC. El **terraplén NO cambia**: 1 fila por línea con destino=Terraplén, al PK de DESTINO. No aprovechable acumulada sigue disparando ZODME (D17). Las excavadoras reportadas van a MAQUINARIA con producción = total excavado del día **repartido en partes iguales** entre ellas (D54; el encargado reconcilia duplicados con el capataz, D51).
 3. Ambos envían → BANDEJA (+ MAQUINARIA). Confirmación real del servidor (cuenta de filas guardadas).
 
-## Flujo de captura — DRENAJES (D69)
+## Flujo de captura — DRENAJES (D70)
 
 1. **Capataz ODT** (`capataz_odt`) entra a `reporte-drenajes.html` → elige el **marcador de obra**
    (147 puntuales `ODT*` servidos por `?action=drenajes`, con su PK visible) → N actividades:
@@ -81,7 +81,7 @@
    la col `area` de BANDEJA (derivada del CC).
 3. **Residente del área** (`residente_odt`/`residente_odl`) revisa en `residente-drenajes.html`
    (bandeja filtrada con `&area=`), reconcilia con toggles, edita/agrega → **Enviar a DATA**
-   (pisa el día SOLO en su área, D69/D03) → **Generar WhatsApp** (formato drenajes con
+   (pisa el día SOLO en su área, D70/D03) → **Generar WhatsApp** (formato drenajes con
    personal/turno de noche/máquinas).
 4. `buildDataRowDrenajes` arma la fila: GRUPO "DRENAJES Y ESTRUCTURAS", CAPITULO DRENAJE
    TRANSVERSAL/LONGITUDINAL, ELEMENTO = marcador (ODT) o tramo `"tm2 pk X - Y"` (ODL), ABS del
@@ -91,15 +91,57 @@
 
 1. Consulta fecha → ve: quién reportó / quién falta (capataces y máquinas), totales en vivo, bandeja agrupada por categoría con chip de fuente (rol·usuario).
 2. Reconcilia: apaga duplicados (ej. terraplén estimado del capataz vs chequeadora), edita producciones, agrega líneas (directo o vía formulario capataz), anota inoperativos.
-3. **Enviar a DATA** (pisa el día **solo en el área tierras**, D69) → **Generar WhatsApp** (copia al portapapeles).
+3. **Enviar a DATA** (pisa el día **solo en el área tierras**, D70) → **Generar WhatsApp** (copia al portapapeles).
 4. Al pisar el día, `buildDataRow` deriva UF/PROYECTO/CC del PK (D04/D63) y, en filas con **match a la hoja BASE**, copia **verbatim** el ELEMENTO (celda J), ABS INICIAL/FINAL (K/L del elemento/subtramo, no del PK reportado) y la DESCRIPCION (tabla de ítems A–H, cruce por CC) — D68; sin match, ELEMENTO/ABS derivan del PK (`buildElemento`, D63). El PK reportado queda en las internas U–AA.
 
 ## Flujo de consulta
 
 - estado.html: máquinas reportadas vs faltantes por fecha.
 - encargado.html: consolidado y estado de reportes.
-- jefe.html (jefe/residente/admin): consulta post-DATA **por rango de fechas** (solo lectura). Resumen por actividad y ubicación (PK crudo + UF, sumando LARGO por unidad), filtro de **Área** (Tierras/ODT/ODL/Todas — derivada del CC en cliente con el espejo de `deriveArea`, D69; el esquema A–T no cambia) y copiado A:S día a día al portapapeles, **por área o día completo**, para pegar en el maestro (D65). No escribe nada.
+- jefe.html (jefe/residente/admin): consulta post-DATA **por rango de fechas** (solo lectura). Resumen por actividad y ubicación (PK crudo + UF, sumando LARGO por unidad), filtro de **Área** (Tierras/ODT/ODL/Todas — derivada del CC en cliente con el espejo de `deriveArea`, D70; el esquema A–T no cambia) y copiado A:S día a día al portapapeles, **por área o día completo**, para pegar en el maestro (D65). No escribe nada.
 - Excel maestros: análisis, KPI y resúmenes mensuales (RESUMEN_MES con B2=período, B3=proyecto/0).
+
+## Módulo Asistencias (D69) — aislado, Sheet/Script propios
+
+```
+┌── GITHUB PAGES (mismo repo, mismo login index.html) ──────────────────┐
+│  seleccion-reporte.html (capataces/mairy/jeisson: tiles según usuario) │
+│  asistencia.html         (responsable de cuadrilla + admin)           │
+│  resumen-asistencia.html (residente, admin, jeisson)                  │
+└────────────────────────┬────────────────────────────────────────────--┘
+                          │ fetch GET/POST (text/plain), URL PROPIA
+                          ▼
+┌── backend/CodigoAsistencias.gs (Apps Script NUEVO, SHEET_ID propio) ───┐
+│  GET  ?action=roster&usuario=…     → cuadrillas + roster + CONFIG      │
+│                                       + CAT_CC + CAT_MOTIVOS + recientes│
+│  GET  ?action=asistencia&fecha=…   → filas del día + estado cuadrilla  │
+│                                       + faltantes (con responsable)    │
+│  GET  ?action=personal             → PERSONAL + CUADRILLAS (gestión)  │
+│  GET  ?action=export&fecha=…       → crudo del día + catálogos        │
+│                                       (el cliente arma el Excel)       │
+│  POST {reporte_asistencia,…}       → pisa fecha+cuadrilla, escritura   │
+│                                       DIRECTA (sin bandeja, D03)       │
+│  POST {personal, op, usuario,…}    → valida usuario ∈{residente,admin}│
+└────────────────────────┬────────────────────────────────────────────--┘
+                          ▼
+┌── GOOGLE SHEET NUEVO (1KrhzaIg3BSspyi0oH0gHkAJnSRXaOIdel_pKaMVHX9w) ───┐
+│  PERSONAL · CUADRILLAS · ASISTENCIA · CONFIG · FESTIVOS ·              │
+│  CAT_TRABAJADORES · CAT_CC · CAT_MOTIVOS — setupHojas() de un solo uso │
+└────────────────────────┬────────────────────────────────────────────--┘
+                          │ SheetJS en el navegador (resumen-asistencia.html)
+                          ▼
+┌── Plantilla_Parte_Trabajo…xlsx (subida por el usuario, una vez/sesión) ┐
+│  El generador llena SOLO la hoja "Parte" (18 columnas A–R) y conserva  │
+│  las demás hojas/catálogos intactos → Parte_{proyecto}_{fecha}.xlsx    │
+└─────────────────────────────────────────────────────────────────────--┘
+```
+
+Reglas clave: captura CRUDA de hora entrada/salida; la clasificación (ordinarias/extras diurna-nocturna/
+Dom-Fest) la hace el **clasificador de horas** (módulo JS compartido embebido en `resumen-asistencia.html`,
+con casos de prueba manual en comentario) **al exportar**, nunca al guardar. Códigos sin catálogo pasan
+sin bloqueo (`codigo| NOMBRE`). Retiros = `inactivo` + `fecha_retiro`, nunca se borra una fila. Columnas
+G–N y el string de `CONFIG.proyecto_3702` son parámetros abiertos (ver 03_BACKLOG). Este módulo **nunca**
+lee ni escribe BANDEJA/DATA/MAQUINARIA ni comparte Sheet/Script con `Codigo.gs`.
 
 ## Mapeo de paste MAQUINARIA → Captura_Diaria (D52, verificado con el archivo real)
 

@@ -52,21 +52,26 @@ const USUARIOS = {
   'encargado':   { clave: 'enc1-2', rol: 'encargado',  redirige: 'encargado.html' },
   'residente':   { clave: 'Ortiz2026', rol: 'residente',  redirige: 'residente.html' },
   'jefe':        { clave: 'Ortiz2026', rol: 'jefe',       redirige: 'jefe.html' },
-  'albert':      { clave: 'capataz2025',  rol: 'capataz',    redirige: 'reporte-capataz.html' },
-  'ariel':       { clave: 'capataz2025',  rol: 'capataz',    redirige: 'reporte-capataz.html' },
-  'angel':       { clave: 'capataz2025',  rol: 'capataz',    redirige: 'reporte-capataz.html' },
-  'alejo':       { clave: 'capataz2025',  rol: 'capataz',    redirige: 'reporte-capataz.html' },
-  'robinson':    { clave: 'capataz2025',  rol: 'capataz',    redirige: 'reporte-capataz.html' },
-  // Drenajes (D69): capataces y residentes de ODT/ODL (claves placeholder; llaves en minúscula)
+  // Capataces y mairy tienen doble deber (reporte de obra + asistencia de personal, D69): aterrizan
+  // en seleccion-reporte.html, que arma sus tiles según el usuario. El rol no cambia (sigue siendo
+  // 'capataz'/'chequeadora' para que encargado.html y demás guards no se vean afectados).
+  'albert':      { clave: 'capataz2025',  rol: 'capataz',    redirige: 'seleccion-reporte.html' },
+  'ariel':       { clave: 'capataz2025',  rol: 'capataz',    redirige: 'seleccion-reporte.html' },
+  'angel':       { clave: 'capataz2025',  rol: 'capataz',    redirige: 'seleccion-reporte.html' },
+  'alejo':       { clave: 'capataz2025',  rol: 'capataz',    redirige: 'seleccion-reporte.html' },
+  'robinson':    { clave: 'capataz2025',  rol: 'capataz',    redirige: 'seleccion-reporte.html' },
+  // Drenajes (D70): capataces y residentes de ODT/ODL (claves placeholder; llaves en minúscula)
   'capataz_odt':   { clave: 'dren2026',  rol: 'capataz_odt',   redirige: 'reporte-drenajes.html' },
   'capataz_odl':   { clave: 'dren2026',  rol: 'capataz_odl',   redirige: 'reporte-drenajes.html' },
   'residente_odt': { clave: 'Ortiz2026', rol: 'residente_odt', redirige: 'residente-drenajes.html' },
   'residente_odl': { clave: 'Ortiz2026', rol: 'residente_odl', redirige: 'residente-drenajes.html' },
   // Chequeadoras (claves: comparten una contraseña común; usuario se compara en minúsculas)
   'maleja':   { clave: 'cheq2025', rol: 'chequeadora', redirige: 'reporte-chequeadora.html' },
-  'mairy':    { clave: 'cheq2025', rol: 'chequeadora', redirige: 'reporte-chequeadora.html' },
+  'mairy':    { clave: 'cheq2025', rol: 'chequeadora', redirige: 'seleccion-reporte.html' },
   'maria':    { clave: 'cheq2025', rol: 'chequeadora', redirige: 'reporte-chequeadora.html' },
   'luzdary':  { clave: 'cheq2025', rol: 'chequeadora', redirige: 'reporte-chequeadora.html' },
+  // Módulo de Asistencias (D69): jeisson reporta operadores + resumen sin gestión de personal.
+  'jeisson':  { clave: 'Oficial2026', rol: 'asistencia_plus', redirige: 'seleccion-reporte.html' },
 };
 
 function login() {

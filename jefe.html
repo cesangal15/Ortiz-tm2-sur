@@ -117,7 +117,7 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IV
 let STATE = { filas:[], cols:{}, desde:'', hasta:'' };
 const COLS_DEFAULT = { FECHA:0, GRUPO:2, CC:3, DESCRIPCION:5, UF:6, ABS_INI:9, ABS_FIN:10, UNIDAD:13, LARGO:14, COPY_END:15 };
 
-// Área derivada del CC en CLIENTE (espejo de deriveArea del backend, D69) — el esquema A–T de
+// Área derivada del CC en CLIENTE (espejo de deriveArea del backend, D70) — el esquema A–T de
 // consolidado no cambia: capítulo 06 → ODT, 07 → ODL, resto → tierras.
 function deriveArea(cc){
   const c=String(cc==null?'':cc).trim();
@@ -190,7 +190,7 @@ function armarSelectores(){
 }
 
 // Filas que respetan los filtros Área/Actividad/UF (para el RESUMEN). El copiado NO usa Actividad/UF,
-// pero SÍ respeta el filtro de Área (D69): con "Todas" copia el día completo; con un área, solo esa.
+// pero SÍ respeta el filtro de Área (D70): con "Todas" copia el día completo; con un área, solo esa.
 function filasFiltradas(){
   const fa=document.getElementById('fActividad').value, fu=document.getElementById('fUf').value;
   const cA=col('DESCRIPCION'), cU=col('UF');
@@ -289,7 +289,7 @@ function bloqueActividad(a){
 }
 
 // Un botón "Copiar [fecha]" por cada día presente. Independiente de Actividad/UF, pero respeta el
-// filtro de ÁREA (D69): "Todas" = día completo; un área = solo las filas de esa área ese día.
+// filtro de ÁREA (D70): "Todas" = día completo; un área = solo las filas de esa área ese día.
 function bloqueCopiado(){
   const cF=col('FECHA');
   const pool=filasArea();
@@ -318,7 +318,7 @@ function bloqueCopiado(){
 // maestro. No se copian ESPESOR/FC/CANTIDAD (fórmula) ni OBSERVACION. Recorta a COPY_END columnas (15).
 function copiarDia(fecha, btn){
   const cF=col('FECHA'), end=col('COPY_END')||19;
-  const rows=filasArea().filter(r=>String(r[cF]||'')===fecha); // respeta el filtro de Área (D69)
+  const rows=filasArea().filter(r=>String(r[cF]||'')===fecha); // respeta el filtro de Área (D70)
   const text=rows.map(r=>{
     const cells=[];
     for(let j=0;j<end;j++){ cells.push(celdaCopia(r[j])); }

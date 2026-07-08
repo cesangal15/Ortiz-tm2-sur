@@ -109,7 +109,7 @@
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
 
-/* Área del panel (D69): el residente hace de "encargado" de SU área. La bandeja se pide con
+/* Área del panel (D70): el residente hace de "encargado" de SU área. La bandeja se pide con
  * &area= (el backend filtra por la columna `area`/CC), el envío a DATA pisa el día SOLO en esta
  * área (enmienda operativa de D03) y el WhatsApp usa el formato propio de drenajes. */
 let AREA='odt';
@@ -357,7 +357,7 @@ async function enviar(){
   }catch(err){ alert('⚠ No se pudo enviar: '+err.message); }
 }
 
-/* WhatsApp de drenajes (D69): por actividad → línea por marcador/PK con cantidad, personal,
+/* WhatsApp de drenajes (D70): por actividad → línea por marcador/PK con cantidad, personal,
  * turno de noche y notas; luego las máquinas del área. */
 function generarMensaje(){
   const {t,order}=calcTotales();

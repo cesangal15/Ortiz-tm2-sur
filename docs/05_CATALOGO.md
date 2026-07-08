@@ -69,7 +69,7 @@ Aplican a excavadoras, motoniveladoras, bulldozer. Estado `no_data`; no van a DA
 
 Máquina de **apoyo** (vibro/compactación sobre un frente): hereda el H/I del frente que apoya, producción en blanco. **No pasan a Captura** (sin par definido): paisajeo, adecuación de caminos, limpieza de derrumbe, materiales MSR y pedraplén.
 
-### Drenajes ODT / ODL (D69) — catálogo VIVO en la BASE, servido por `?action=drenajes`
+### Drenajes ODT / ODL (D70) — catálogo VIVO en la BASE, servido por `?action=drenajes`
 Las actividades de drenajes NO se listan aquí ni viven hardcodeadas en el frontend: son **TODOS los
 ítems `.06.*` (ODT — DRENAJE TRANSVERSAL) y `.07.*` (ODL — DRENAJE LONGITUDINAL)** de la tabla de
 ítems de la hoja BASE, por proyecto (3701/3702), incluidos los ~20 "box abovedados" aunque no se
@@ -156,8 +156,22 @@ MEDIA JORNADA y NO PROGRAMADO **no salen del app**; son ajuste manual del encarg
 ## 7. Usuarios — CONFIRMADO (contraseñas de encargado/chequeadoras = placeholder)
 admin/venganza753 → menu · encargado/enc1-2 → encargado · residente/Ortiz2026 → residente · jefe/Ortiz2026 → jefe · capataz1-5/uf1-2 → reporte-capataz · chequeadora1-3/cheq1-2 → reporte-chequeadora.
 **Residente** (rol `residente`, D57): entra a `residente.html` (panel de selección) → tile activo al Panel del Encargado (guard de `encargado.html` extendido para aceptar el rol) y tile **Resumen General** que ahora abre `jefe.html` (D65).
-**Jefe** (rol `jefe`, D65): usuario `jefe`, clave `Ortiz2026` (placeholder); entra a `jefe.html` — consulta post-DATA por rango de fechas (solo lectura): resumen por actividad + ubicación (PK crudo) y copiado A:S día a día, ahora con filtro de **Área** (Tierras/ODT/ODL/Todas, derivada del CC en cliente, D69). Guard acepta `jefe`/`admin`/`residente`. **Admin:** botón "← Menú" en toda pantalla interna vuelve a `menu.html` sin cerrar sesión.
-**Drenajes (D69, claves placeholder):** `capataz_odt` y `capataz_odl` (clave común `dren2026`, roles `capataz_odt`/`capataz_odl`) → `reporte-drenajes.html` (el modo ODT/ODL sale del rol); `residente_odt` y `residente_odl` (clave `Ortiz2026`, roles `residente_odt`/`residente_odl`) → `residente-drenajes.html` (bandeja/envío/WhatsApp SOLO de su área). El admin entra a ambas pantallas desde `menu.html` con `?area=odt|odl`.
+**Jefe** (rol `jefe`, D65): usuario `jefe`, clave `Ortiz2026` (placeholder); entra a `jefe.html` — consulta post-DATA por rango de fechas (solo lectura): resumen por actividad + ubicación (PK crudo) y copiado A:S día a día, ahora con filtro de **Área** (Tierras/ODT/ODL/Todas, derivada del CC en cliente, D70). Guard acepta `jefe`/`admin`/`residente`. **Admin:** botón "← Menú" en toda pantalla interna vuelve a `menu.html` sin cerrar sesión.
+**Drenajes (D70, claves placeholder):** `capataz_odt` y `capataz_odl` (clave común `dren2026`, roles `capataz_odt`/`capataz_odl`) → `reporte-drenajes.html` (el modo ODT/ODL sale del rol); `residente_odt` y `residente_odl` (clave `Ortiz2026`, roles `residente_odt`/`residente_odl`) → `residente-drenajes.html` (bandeja/envío/WhatsApp SOLO de su área). El admin entra a ambas pantallas desde `menu.html` con `?area=odt|odl`.
+
+**Módulo Asistencias (D69) — usuarios y mapa cuadrilla→responsable.** `jeisson` (clave `Ortiz2026` placeholder, rol `asistencia_plus`): entra a `seleccion-reporte.html` con tiles "Asistencia de mi grupo" y "Resumen de asistencias" (sin reporte de obra, sin gestión de personal). Capataces (`albert/ariel/angel/alejo/robinson`) y `mairy` conservan su usuario/clave/rol de siempre pero ahora aterrizan en `seleccion-reporte.html` (su reporte de obra + tile "Asistencia de personal"). Semilla de la hoja CUADRILLAS (`cuadrilla·responsables`, data-driven: se amplía sin tocar código):
+
+| Cuadrilla | Responsable(s) (usuario del login) |
+|---|---|
+| ANGEL | angel |
+| ROBINSON | robinson |
+| ALBERT | albert |
+| ARIEL | ariel |
+| ALEJANDRO | alejandro (alias de `alejo`, mismo capataz — ver nota abajo) |
+| OPERADORES | jeisson |
+| VOLQUETEROS | mairy |
+
+Nota: `alejo` (usuario real del login) y `alejandro` (nombre usado en la cuadrilla) son la misma persona; el backend (`cuadrillasDeUsuario` en `CodigoAsistencias.gs`) los trata como alias. Gestión de personal (alta/retiro/mover/reactivar) solo `residente`/`admin`, validado también en el backend. Acceso a `resumen-asistencia.html`: `residente`, `admin` y `jeisson` (sin los controles de gestión para este último).
 
 ## 8. Reglas de reconciliación automática (encargado) — CONFIRMADO
 
