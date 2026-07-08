@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reporte Diario de Obra — Drenajes</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--success:#2ecc71;--error:#e74c3c;--input-bg:#12151f;--uf1:#3a9bdc;--uf2:#9b59b6;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:0 0 80px;}
+  .header{background:linear-gradient(135deg,#1a1d27 0%,#0f1117 100%);border-bottom:3px solid var(--accent);padding:20px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20;}
+  .header-left .label{font-family:'Syne',sans-serif;font-size:10px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;}
+  .header-left h1{font-family:'Syne',sans-serif;font-size:19px;font-weight:800;}
+  .header-user{font-size:12px;color:var(--muted);text-align:right;}
+  .header-user span{display:block;color:var(--accent);font-weight:600;}
+  .logout-btn{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:4px 10px;cursor:pointer;margin-top:4px;font-family:'DM Sans',sans-serif;}
+  .logout-btn:hover{border-color:var(--error);color:var(--error);}
+  .container{max-width:600px;margin:0 auto;padding:20px 16px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px;}
+  .section-title{font-family:'Syne',sans-serif;font-size:12px;letter-spacing:2px;color:var(--accent);text-transform:uppercase;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+  .section-title::after{content:'';flex:1;height:1px;background:var(--border);}
+  .section-title .count{font-size:11px;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:2px 10px;letter-spacing:0;}
+  .field{margin-bottom:14px;}
+  .field:last-child{margin-bottom:0;}
+  label{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-bottom:5px;letter-spacing:0.5px;text-transform:uppercase;}
+  label .req{color:var(--accent);margin-left:2px;}
+  label .opt{color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;}
+  select,input[type="number"],input[type="text"],input[type="date"]{width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 14px;outline:none;transition:border-color 0.2s;appearance:none;}
+  input[type="date"]{color-scheme:dark;}
+  select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a80a0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:36px;cursor:pointer;}
+  select:focus,input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,0.1);}
+  select option,optgroup{background:#1a1d27;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+  .field-error{border-color:var(--error)!important;}
+  .item-hint{font-size:11px;color:var(--muted);margin-top:6px;font-style:italic;display:none;}
+  .item-hint b{color:var(--accent);font-style:normal;font-weight:600;}
+  .linea{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px;}
+  .linea-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+  .linea-num{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:1px;text-transform:uppercase;}
+  .btn-del{background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;width:26px;height:26px;font-size:14px;cursor:pointer;line-height:1;flex-shrink:0;}
+  .btn-del:hover{border-color:var(--error);color:var(--error);}
+  .meta-row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 12px;}
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;border:1px solid var(--border);background:var(--input-bg);color:var(--muted);}
+  .badge.uf1{border-color:rgba(58,155,220,0.4);background:rgba(58,155,220,0.1);color:var(--uf1);}
+  .badge.uf2{border-color:rgba(155,89,182,0.4);background:rgba(155,89,182,0.1);color:var(--uf2);}
+  .badge.unidad{border-color:rgba(245,166,35,0.3);background:rgba(245,166,35,0.08);color:var(--accent);}
+  .largo-wrap{position:relative;}
+  .largo-unit{position:absolute;right:14px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--muted);pointer-events:none;}
+  .sub-block{margin-top:14px;border-top:1px dashed var(--border);padding-top:12px;}
+  .sub-block .sublabel{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;display:block;}
+  .chk-row{display:flex;align-items:center;gap:8px;margin-top:10px;}
+  .chk-row input[type="checkbox"]{width:auto;accent-color:var(--accent);}
+  .chk-row span{font-size:13px;color:var(--text);}
+  .eq-item{background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;}
+  .eq-item label{font-size:10px;}
+  .eq-top{display:flex;gap:8px;align-items:center;margin-bottom:10px;}
+  .eq-top input{flex:1;}
+  .btn-add{width:100%;padding:12px;background:var(--input-bg);border:1px dashed var(--border);border-radius:10px;color:var(--accent);font-family:'Syne',sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;cursor:pointer;transition:all 0.2s;text-transform:uppercase;}
+  .btn-add:hover{border-color:var(--accent);background:rgba(245,166,35,0.05);}
+  .btn-add.mini{padding:8px;font-size:10px;}
+  .empty-hint{font-size:12px;color:var(--muted);text-align:center;padding:8px 0 14px;}
+  .submit-bar{position:fixed;bottom:0;left:0;right:0;background:linear-gradient(to top,#0f1117 60%,transparent);padding:16px;z-index:15;}
+  .submit-inner{max-width:600px;margin:0 auto;}
+  .btn-submit{width:100%;padding:16px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:12px;color:#0f1117;font-family:'Syne',sans-serif;font-size:15px;font-weight:800;cursor:pointer;letter-spacing:1px;transition:all 0.2s;box-shadow:0 6px 24px rgba(245,166,35,0.25);}
+  .btn-submit:hover{transform:translateY(-1px);}
+  .btn-submit:disabled{opacity:0.6;cursor:default;transform:none;}
+  .success{display:none;text-align:center;padding:60px 20px;}
+  .success.visible{display:block;}
+  .success .ico{font-size:56px;margin-bottom:16px;}
+  .success h2{font-family:'Syne',sans-serif;font-size:22px;margin-bottom:8px;}
+  .success p{color:var(--muted);font-size:14px;margin-bottom:24px;}
+  .success button{padding:12px 28px;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:'Syne',sans-serif;font-weight:700;cursor:pointer;}
+  .hidden{display:none;}
+  .resumen-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px;}
+  .resumen-row{border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px;background:var(--input-bg);}
+  .resumen-row.incompleto{border-color:rgba(245,166,35,0.4);}
+  .resumen-row:last-child{margin-bottom:0;}
+  .resumen-act{font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px;}
+  .resumen-pk{font-size:11px;color:var(--muted);margin-bottom:6px;}
+  .resumen-prod{font-size:12px;color:var(--accent);font-weight:600;margin-bottom:6px;}
+  .resumen-eqs{display:flex;flex-wrap:wrap;gap:6px;}
+  .resumen-eq{font-size:11px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:3px 8px;color:var(--muted);}
+  .resumen-eq b{color:var(--text);}
+  .resumen-footer{display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding-top:12px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);}
+  .resumen-footer b{color:var(--text);}
+  .resumen-warn{font-size:11px;color:var(--accent);margin-top:2px;}
+  .cat-loading{font-size:12px;color:var(--muted);text-align:center;padding:14px 0;}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <div class="label" id="hdrLabel">Reporte Diario · Drenajes</div>
+    <h1 id="hdrTitle">🚧 Reporte de Drenajes</h1>
+  </div>
+  <div class="header-user">
+    <span id="userDisplay">—</span>
+    <button class="logout-btn" id="btnMenu" onclick="location.href='menu.html'" style="display:none;border-color:var(--accent);color:var(--accent);margin-right:6px;">← Menú</button>
+    <button class="logout-btn" id="backBtn" onclick="logout()">Salir</button>
+  </div>
+</div>
+
+<div id="formMain">
+<div class="container">
+  <div class="card">
+    <div class="grid2">
+      <div class="field" style="margin:0;">
+        <label>Fecha del reporte <span class="req">*</span></label>
+        <input type="date" id="fechaReporte">
+      </div>
+      <div class="field" id="areaField" style="margin:0;display:none;">
+        <label>Área (solo admin)</label>
+        <select id="areaSel" onchange="cambiarArea()">
+          <option value="odt">ODT — Drenaje transversal</option>
+          <option value="odl">ODL — Drenaje longitudinal</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-title">Actividades del día <span class="count" id="cntCantidades">0</span></div>
+    <div class="cat-loading" id="catLoading">⏳ Cargando catálogo de la BASE (marcadores e ítems)...</div>
+    <div id="cantidadesContainer"></div>
+    <div class="empty-hint" id="cantEmpty" style="display:none;">Agrega las actividades ejecutadas hoy</div>
+    <button class="btn-add" id="btnAddLinea" onclick="addLinea()" style="display:none;">+ Agregar actividad</button>
+  </div>
+  <div class="resumen-card" id="resumenCard" style="display:none;">
+    <div class="section-title">Resumen a enviar</div>
+    <div id="resumenBody"></div>
+  </div>
+</div>
+</div>
+
+<div class="success" id="successScreen">
+  <div class="ico">✅</div>
+  <h2>Reporte enviado</h2>
+  <p id="successMsg">Tu reporte del día quedó registrado.</p>
+  <button onclick="resetForm()">Nuevo reporte</button>
+</div>
+
+<div class="submit-bar" id="submitBar">
+  <div class="submit-inner">
+    <button class="btn-submit" id="btnSubmit" onclick="submitForm()">ENVIAR REPORTE DEL DÍA →</button>
+  </div>
+</div>
+
+<script>
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
+
+/* Área del formulario (D70): 'odt' (marcador obligatorio, ítems .06.*) u 'odl' (PK o marcador
+ * opcional para el descole, ítems .07.*). Viene del rol logueado; el admin puede cambiarla. */
+let AREA='odt';
+/* Catálogo servido por ?action=drenajes (la BASE no es accesible desde Pages):
+ * MARCADORES = 147 puntuales ODT* (elemento verbatim + abs en metros + PK formateado);
+ * ITEMS = ítems .06/.07 por proyecto, DESCRIPCION verbatim de la celda (typos incluidos: NO
+ * "corregir" p. ej. "Excavaciones varias sin clasicar" ni el sufijo " ODL" — pivotes del maestro).
+ * Para el dropdown se deduplican por CC corto + descripción (los dos proyectos traen el mismo
+ * ítem); el CC final = proyecto derivado del PK/marcador (D04) + código corto, como en tierras. */
+let MARCADORES=[], ITEMS=[];
+
+let lineaIdx=0, eqIdx=0;
+
+window.onload = async function(){
+  const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
+  const OK=['capataz_odt','capataz_odl','residente_odt','residente_odl','admin'];
+  if(!rol || OK.indexOf(rol)<0){ window.location.href='index.html'; return; }
+  document.getElementById('userDisplay').textContent=usuario||'capataz';
+  if(rol==='capataz_odt'||rol==='residente_odt') AREA='odt';
+  else if(rol==='capataz_odl'||rol==='residente_odl') AREA='odl';
+  else { // admin: área por query (?area=odl) o selector en pantalla
+    const q=new URLSearchParams(location.search).get('area');
+    AREA=(q==='odl')?'odl':'odt';
+    document.getElementById('areaField').style.display='block';
+    document.getElementById('areaSel').value=AREA;
+    var _bm=document.getElementById('btnMenu'); if(_bm) _bm.style.display='inline-block';
+  }
+  // el residente entra desde su panel: el botón vuelve allá sin cerrar sesión (patrón encargado)
+  if(rol==='residente_odt'||rol==='residente_odl') document.getElementById('backBtn').textContent='← Volver';
+  pintarTitulo();
+  document.getElementById('fechaReporte').value=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'}); // D50
+  await cargarCatalogo();
+};
+function logout(){
+  const rol=sessionStorage.getItem('rol');
+  if(rol==='residente_odt'||rol==='residente_odl'){ window.location.href='residente-drenajes.html'; return; }
+  sessionStorage.clear(); window.location.href='index.html';
+}
+function pintarTitulo(){
+  const n=(AREA==='odt')?'ODT · Transversal':'ODL · Longitudinal';
+  document.getElementById('hdrLabel').textContent='Reporte Diario · Drenajes '+(AREA==='odt'?'ODT':'ODL');
+  document.getElementById('hdrTitle').textContent='🚧 Drenajes — '+n;
+}
+function cambiarArea(){
+  AREA=document.getElementById('areaSel').value==='odl'?'odl':'odt';
+  pintarTitulo();
+  document.getElementById('cantidadesContainer').innerHTML=''; lineaIdx=0;
+  addLinea(); refreshCounts();
+}
+async function cargarCatalogo(){
+  try{
+    const resp=await fetch(APPS_SCRIPT_URL+'?action=drenajes');
+    const data=await resp.json();
+    if(!data || !data.ok) throw new Error((data&&data.error)||'Respuesta inesperada');
+    MARCADORES=(data.marcadores||[]);
+    ITEMS=(data.items||[]);
+    document.getElementById('catLoading').style.display='none';
+    document.getElementById('btnAddLinea').style.display='block';
+    addLinea();
+  }catch(err){
+    document.getElementById('catLoading').innerHTML='⚠ No se pudo cargar el catálogo de la BASE ('+err.message+'). <a href="#" onclick="cargarCatalogo();return false;" style="color:var(--accent)">Reintentar</a>';
+  }
+}
+
+/* helpers de PK — mismos del resto de pantallas (Problema 2.12) */
+function pkToMeters(pk){ if(!pk) return null; pk=String(pk).toLowerCase().replace(/pk/g,'').trim().replace(/\s/g,''); if(pk.includes('+')){const p=pk.split('+');const km=parseInt(p[0]);const m=parseInt(p[1]||'0');if(isNaN(km))return null;return km*1000+(isNaN(m)?0:m);} const n=parseFloat(pk);return isNaN(n)?null:n*1000; }
+function pkNorm(s){ const m=pkToMeters(s); if(m==null) return ''; const km=Math.floor(m/1000), r=Math.round(m-km*1000); return km+'+'+('00'+r).slice(-3); }
+function buildElemento(pki,pkf){
+  let ini=pki, fin=pkf;
+  if((fin==null||fin==='') && pki!=null){ const p=String(pki).split(/\s*-\s*/); if(p.length>=2){ ini=p[0]; fin=p.slice(1).join(' - '); } }
+  const a=pkNorm(ini); if(!a) return '';
+  const b=pkNorm(fin); return b? ('tm2 pk '+a+' - '+b) : ('tm2 pk '+a);
+}
+function ufFromMeters(m){ if(m==null) return ''; return m<=30000?'UF1':'UF2'; }
+function proyectoFromUf(uf){ return uf==='UF1'?'3701':uf==='UF2'?'3702':''; }
+function fmtNum(n){ if(n==null||isNaN(n)) return '0'; return ''+(Math.round(n*100)/100); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* ítems del área, deduplicados por CC corto + descripción (mismo ítem en 3701 y 3702) */
+function itemsArea(){
+  const seen={}, out=[];
+  ITEMS.forEach(it=>{
+    if(it.area!==AREA) return;
+    const k=(it.corto||it.cc)+'|'+String(it.desc||'').trim();
+    if(seen[k]) return; seen[k]=1;
+    out.push(it);
+  });
+  return out;
+}
+function actividadOptions(){
+  let html='<option value="">— Selecciona actividad —</option>';
+  itemsArea().forEach((it,i)=>{ html+='<option value="'+i+'">'+esc(it.desc)+(it.unidad?(' ['+esc(it.unidad)+']'):'')+'</option>'; });
+  return html;
+}
+function marcadorOptions(conVacio){
+  let html=conVacio?'<option value="">— (usar PK) —</option>':'<option value="">— Selecciona marcador —</option>';
+  MARCADORES.forEach((m,i)=>{ html+='<option value="'+i+'">'+esc(m.elemento)+(m.pk?(' · PK '+esc(m.pk)):'')+'</option>'; });
+  return html;
+}
+
+function addLinea(){
+  const i=lineaIdx++;
+  const div=document.createElement('div');
+  div.className='linea'; div.id='linea_'+i;
+  let ubic='';
+  if(AREA==='odt'){
+    ubic='<div class="field"><label>Marcador de obra (ODT) <span class="req">*</span></label>'
+      +'<select class="l-marc" onchange="refreshLinea('+i+')">'+marcadorOptions(false)+'</select></div>';
+  } else {
+    ubic='<div class="grid2">'
+      +'<div class="field" style="margin:0;"><label>PK inicial <span class="req">*</span></label>'
+      +'<input type="text" class="l-pki" placeholder="14+635" oninput="refreshLinea('+i+')"></div>'
+      +'<div class="field" style="margin:0;"><label>PK final <span class="opt">(opcional)</span></label>'
+      +'<input type="text" class="l-pkf" placeholder="solo si es tramo" oninput="refreshLinea('+i+')"></div></div>'
+      +'<div class="field" style="margin-top:12px;"><label>Marcador ODT <span class="opt">(opcional — descole de una ODT; reemplaza al PK)</span></label>'
+      +'<select class="l-marc" onchange="refreshLinea('+i+')">'+marcadorOptions(true)+'</select></div>';
+  }
+  div.innerHTML=
+    '<div class="linea-head"><span class="linea-num">Actividad #'+(document.querySelectorAll('.linea').length+1)+'</span>'
+    +'<button class="btn-del" onclick="delLinea('+i+')" title="Eliminar">✕</button></div>'
+    +ubic
+    +'<div class="field"><label>Actividad <span class="req">*</span></label>'
+    +'<select class="l-act" onchange="refreshLinea('+i+')">'+actividadOptions()+'</select>'
+    +'<div class="item-hint" id="hint_'+i+'"></div></div>'
+    +'<div class="meta-row" id="meta_'+i+'" style="display:none;">'
+    +'<span class="badge unidad" id="uniBadge_'+i+'">—</span>'
+    +'<span class="badge" id="ufBadge_'+i+'">UF —</span>'
+    +'<span class="badge" id="ccBadge_'+i+'">—</span></div>'
+    +'<div class="field"><label>Cantidad <span class="req">*</span></label>'
+    +'<div class="largo-wrap"><input type="number" step="any" class="l-cant" placeholder="0" oninput="refreshAll()"><span class="largo-unit" id="cantU_'+i+'"></span></div>'
+    +'<div class="item-hint" style="display:block;">Cantidad directa en la unidad contractual del ítem (sin conversiones, V1).</div></div>'
+    +'<div class="sub-block"><span class="sublabel">Personal y turno (opcional — solo WhatsApp, no va a DATA)</span>'
+    +'<div class="grid2">'
+    +'<div class="field" style="margin:0;"><label>Oficiales</label><input type="number" min="0" step="1" class="l-ofi" placeholder="0" oninput="refreshAll()"></div>'
+    +'<div class="field" style="margin:0;"><label>Ayudantes</label><input type="number" min="0" step="1" class="l-ayu" placeholder="0" oninput="refreshAll()"></div>'
+    +'</div>'
+    +'<label class="chk-row"><input type="checkbox" class="l-noche" onchange="refreshAll()"><span>🌙 Turno de noche</span></label>'
+    +'<div class="field" style="margin-top:10px;"><label>Nota libre <span class="opt">(opcional)</span></label>'
+    +'<input type="text" class="l-nota" placeholder="ej. fundida de aletas, encofrado listo" oninput="refreshAll()"></div></div>'
+    +'<div class="sub-block"><span class="sublabel">Máquinas (opcional — texto libre: id/placa, operador, horas)</span>'
+    +'<div id="eqs_'+i+'"></div>'
+    +'<button class="btn-add mini" onclick="addEquipo('+i+')">+ Máquina</button></div>';
+  document.getElementById('cantidadesContainer').appendChild(div);
+  refreshCounts();
+}
+function delLinea(i){ const el=document.getElementById('linea_'+i); if(el) el.remove(); renumber(); refreshCounts(); }
+function renumber(){ document.querySelectorAll('#cantidadesContainer .linea').forEach((el,k)=>{ el.querySelector('.linea-num').textContent='Actividad #'+(k+1); }); }
+
+function addEquipo(i){
+  const cont=document.getElementById('eqs_'+i), j=eqIdx++;
+  const row=document.createElement('div'); row.className='eq-item'; row.id='eq_'+j;
+  row.innerHTML=
+    '<div class="eq-top"><input type="text" class="e-id" placeholder="Id / placa de la máquina" oninput="refreshAll()">'
+    +'<button class="btn-del" onclick="delEquipo('+j+')" title="Quitar">✕</button></div>'
+    +'<div class="grid2">'
+    +'<div class="field" style="margin:0;"><label>Operador <span class="opt">(opcional)</span></label><input type="text" class="e-op" placeholder="nombre" oninput="refreshAll()"></div>'
+    +'<div class="field" style="margin:0;"><label>Horas <span class="opt">(opcional)</span></label><input type="number" step="any" class="e-hrs" placeholder="0" oninput="refreshAll()"></div>'
+    +'</div>';
+  cont.appendChild(row);
+}
+function delEquipo(j){ const el=document.getElementById('eq_'+j); if(el) el.remove(); refreshAll(); }
+
+/* ubicación de una línea: {marc (obj o null), mAbs (metros), pki, pkf, uf, proy, pkTxt} */
+function ubicacionDe(b){
+  const marcSel=b.querySelector('.l-marc');
+  const mi=marcSel && marcSel.value!=='' ? MARCADORES[parseInt(marcSel.value,10)] : null;
+  const pkiEl=b.querySelector('.l-pki'), pkfEl=b.querySelector('.l-pkf');
+  const pki=pkiEl?pkiEl.value.trim():'', pkf=pkfEl?pkfEl.value.trim():'';
+  let m=null, pkTxt='';
+  if(mi){ m=(mi.abs===''||mi.abs==null)?null:Number(mi.abs); pkTxt=mi.elemento+(mi.pk?(' (PK '+mi.pk+')'):''); }
+  else if(pki){ m=pkToMeters(pki); pkTxt='PK '+(pkf?(pki+' – '+pkf):pki); }
+  const uf=ufFromMeters(m), proy=proyectoFromUf(uf);
+  return {marc:mi, mAbs:m, pki:pki, pkf:pkf, uf:uf, proy:proy, pkTxt:pkTxt};
+}
+function refreshLinea(i){
+  const b=document.getElementById('linea_'+i); if(!b) return;
+  const meta=document.getElementById('meta_'+i), hint=document.getElementById('hint_'+i);
+  const sel=b.querySelector('.l-act');
+  const it=sel.value!==''?itemsArea()[parseInt(sel.value,10)]:null;
+  const u=ubicacionDe(b);
+  document.getElementById('cantU_'+i).textContent=it?(it.unidad||''):'';
+  if(!it){ meta.style.display='none'; hint.style.display='none'; refreshAll(); return; }
+  meta.style.display='flex';
+  hint.style.display='block';
+  hint.innerHTML='→ ítem: <b>'+esc(it.desc)+'</b>';
+  const uniB=document.getElementById('uniBadge_'+i); uniB.textContent=it.unidad||'—';
+  const ufB=document.getElementById('ufBadge_'+i);
+  ufB.className='badge'+(u.uf==='UF1'?' uf1':u.uf==='UF2'?' uf2':'');
+  ufB.textContent=u.uf?(u.uf+' · '+u.proy):'UF —';
+  const ccB=document.getElementById('ccBadge_'+i);
+  ccB.textContent=u.proy?(u.proy+'.'+(it.corto||it.cc)):(it.corto||it.cc||'—');
+  refreshAll();
+}
+function refreshCounts(){
+  const nc=document.querySelectorAll('#cantidadesContainer .linea').length;
+  document.getElementById('cntCantidades').textContent=nc;
+  document.getElementById('cantEmpty').style.display=(nc||document.getElementById('catLoading').style.display!=='none')?'none':'block';
+  refreshAll();
+}
+function refreshAll(){ updateResumen(); }
+
+function updateResumen(){
+  const lineas=document.querySelectorAll('#cantidadesContainer .linea');
+  const card=document.getElementById('resumenCard'), body=document.getElementById('resumenBody');
+  if(!lineas.length){ card.style.display='none'; return; }
+  let warnings=0, html='', nMaq=0;
+  lineas.forEach(b=>{
+    const sel=b.querySelector('.l-act');
+    const it=sel.value!==''?itemsArea()[parseInt(sel.value,10)]:null;
+    const u=ubicacionDe(b);
+    const cant=b.querySelector('.l-cant').value;
+    let inc=false;
+    if(!it){ warnings++; inc=true; }
+    if(!u.pkTxt){ warnings++; inc=true; }
+    if(!cant){ warnings++; inc=true; }
+    const ofi=b.querySelector('.l-ofi').value, ayu=b.querySelector('.l-ayu').value;
+    const noche=b.querySelector('.l-noche').checked, nota=b.querySelector('.l-nota').value.trim();
+    let persTxt='';
+    if(ofi||ayu) persTxt=(ofi?ofi+' oficial'+(ofi==='1'?'':'es'):'')+(ofi&&ayu?' · ':'')+(ayu?ayu+' ayudante'+(ayu==='1'?'':'s'):'');
+    if(noche) persTxt+=(persTxt?' · ':'')+'🌙 turno noche';
+    let eqsHtml='';
+    b.querySelectorAll('.eq-item').forEach(r=>{
+      const id=r.querySelector('.e-id').value.trim(); if(!id) return;
+      nMaq++;
+      const op=r.querySelector('.e-op').value.trim(), h=r.querySelector('.e-hrs').value;
+      eqsHtml+='<span class="resumen-eq"><b>'+esc(id)+'</b>'+(op?' · '+esc(op):'')+(h?' · '+esc(h)+' h':'')+'</span>';
+    });
+    html+='<div class="resumen-row'+(inc?' incompleto':'')+'">'
+      +'<div class="resumen-act">'+(it?esc(it.desc):'⚠ sin actividad')+'</div>'
+      +'<div class="resumen-pk">📍 '+(u.pkTxt?esc(u.pkTxt):'⚠ sin '+(AREA==='odt'?'marcador':'PK'))+(u.uf?(' · '+u.uf):'')+'</div>'
+      +(cant?('<div class="resumen-prod">'+esc(cant)+' '+(it?esc(it.unidad||''):'')+'</div>'):'<div class="resumen-warn">⚠ sin cantidad</div>')
+      +(persTxt?('<div class="resumen-pk">'+persTxt+'</div>'):'')
+      +(nota?('<div class="resumen-pk">📝 '+esc(nota)+'</div>'):'')
+      +(eqsHtml?('<div class="resumen-eqs">'+eqsHtml+'</div>'):'')
+      +'</div>';
+  });
+  html+='<div class="resumen-footer"><span><b>'+lineas.length+'</b> actividad'+(lineas.length!==1?'es':'')+' · <b>'+nMaq+'</b> máquina'+(nMaq!==1?'s':'')+'</span>'
+    +(warnings?'<span style="color:var(--accent)">⚠ '+warnings+' campo'+(warnings!==1?'s':'')+' incompleto'+(warnings!==1?'s':'')+'</span>':'<span style="color:var(--success)">✓ listo para enviar</span>')+'</div>';
+  body.innerHTML=html;
+  card.style.display='block';
+}
+
+function getCantidades(){
+  const rows=[];
+  document.querySelectorAll('#cantidadesContainer .linea').forEach(b=>{
+    const sel=b.querySelector('.l-act');
+    if(sel.value==='') return;
+    const it=itemsArea()[parseInt(sel.value,10)];
+    const u=ubicacionDe(b);
+    const cant=parseFloat(b.querySelector('.l-cant').value)||0;
+    // elemento: marcador ODT verbatim si hay; si no (solo ODL), tramo por PK — el backend re-resuelve
+    // contra la BASE al enviar a DATA (marcador → J/K/L; PK → cruce TRAMO), esto es el crudo de bandeja.
+    const elemento = u.marc ? u.marc.elemento : buildElemento(u.pki, u.pkf);
+    const pkIni = u.pki || (u.marc ? (u.marc.pk||'') : '');
+    const absIni = u.marc ? (u.marc.abs!==''?u.marc.abs:null) : pkToMeters(u.pki);
+    const absFin = u.marc ? (u.marc.abs!==''?u.marc.abs:null) : pkToMeters(u.pkf);
+    const equipos=[];
+    b.querySelectorAll('.eq-item').forEach(r=>{
+      const id=r.querySelector('.e-id').value.trim(); if(!id) return;
+      equipos.push({ id_maquina:id, tipo_equipo:'', operador:r.querySelector('.e-op').value.trim(),
+        horas_programadas:'', horas_operadas:(r.querySelector('.e-hrs').value||''), horas_muertas:'', motivo:'' });
+    });
+    rows.push({
+      grupo:'DRENAJES Y ESTRUCTURAS',
+      capitulo:(AREA==='odt')?'DRENAJE TRANSVERSAL':'DRENAJE LONGITUDINAL',
+      actividad:it.desc, descripcion:it.desc, sub_actividad:'',
+      centro_costo: u.proy ? (u.proy+'.'+(it.corto||it.cc)) : (it.cc||''),
+      unidad:it.unidad||'', data:true, uf:u.uf||'', proyecto:u.proy||'',
+      elemento:elemento, pk_inicial:pkIni, pk_final:u.marc?'':(u.pkf||''),
+      abs_inicial:absIni, abs_final:absFin,
+      liberacion:'CAMPO', largo:cant, observacion:'',
+      personal_oficiales:(b.querySelector('.l-ofi').value||''),
+      personal_ayudantes:(b.querySelector('.l-ayu').value||''),
+      turno_noche:b.querySelector('.l-noche').checked,
+      nota_libre:b.querySelector('.l-nota').value.trim(),
+      equipos:equipos });
+  });
+  return rows;
+}
+function validate(){
+  let ok=true;
+  refreshAll();
+  document.querySelectorAll('.field-error').forEach(e=>e.classList.remove('field-error'));
+  const fecha=document.getElementById('fechaReporte'); if(!fecha.value){ fecha.classList.add('field-error'); ok=false; }
+  document.querySelectorAll('#cantidadesContainer .linea').forEach(b=>{
+    const sel=b.querySelector('.l-act');
+    if(sel.value===''){ sel.classList.add('field-error'); ok=false; return; }
+    const u=ubicacionDe(b);
+    if(AREA==='odt'){
+      if(!u.marc){ b.querySelector('.l-marc').classList.add('field-error'); ok=false; }
+    } else {
+      if(!u.marc && u.mAbs==null){ b.querySelector('.l-pki').classList.add('field-error'); ok=false; }
+    }
+    const cant=b.querySelector('.l-cant');
+    if(!cant.value){ cant.classList.add('field-error'); ok=false; }
+  });
+  if(getCantidades().length===0){ alert('Agrega al menos una actividad.'); return false; }
+  return ok;
+}
+let enviando=false;
+async function submitForm(){
+  if(enviando) return;
+  if(!validate()){ if(document.querySelector('.field-error')) alert('Revisa los campos marcados.'); return; }
+  enviando=true;
+  let exito=false;
+  const btn=document.getElementById('btnSubmit'); btn.textContent='ENVIANDO...'; btn.disabled=true;
+  const data={ fecha:document.getElementById('fechaReporte').value,
+    rol:sessionStorage.getItem('rol')||('capataz_'+AREA),
+    capataz:sessionStorage.getItem('usuario')||('capataz_'+AREA),
+    cantidades:getCantidades() };
+  try{
+    // confirmación real del servidor (D30): POST text/plain y se lee la respuesta
+    const resp=await fetch(APPS_SCRIPT_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(data) });
+    const res=await resp.json();
+    if(!res || !res.ok) throw new Error((res&&res.error)||'Respuesta inesperada del servidor');
+    exito=true;
+    document.getElementById('successMsg').textContent='Se guardaron '+res.cantidades+' actividad(es) y '+res.maquinas+' máquina(s).';
+    document.getElementById('formMain').classList.add('hidden');
+    document.getElementById('submitBar').classList.add('hidden');
+    document.getElementById('successScreen').classList.add('visible');
+  }catch(err){
+    alert('⚠ No se pudo guardar: '+err.message+'\n\nNo cierres la página, intenta enviar de nuevo.');
+  }finally{
+    if(!exito){ btn.textContent='ENVIAR REPORTE DEL DÍA →'; btn.disabled=false; }
+    else{ btn.textContent='✓ ENVIADO'; btn.disabled=true; }
+    enviando=false;
+  }
+}
+function resetForm(){
+  document.getElementById('cantidadesContainer').innerHTML=''; lineaIdx=0;
+  document.getElementById('successScreen').classList.remove('visible');
+  document.getElementById('formMain').classList.remove('hidden');
+  document.getElementById('submitBar').classList.remove('hidden');
+  document.getElementById('btnSubmit').textContent='ENVIAR REPORTE DEL DÍA →'; document.getElementById('btnSubmit').disabled=false;
+  document.getElementById('fechaReporte').value=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
+  addLinea();
+}
+</script>
+</body>
+</html>

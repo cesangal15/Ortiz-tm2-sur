@@ -170,7 +170,9 @@ async function consultar(){
   if(!fecha){ alert('Selecciona una fecha'); return; }
   document.getElementById('resultados').innerHTML='<div class="loading">⏳ Cargando bandeja...</div>';
   try{
-    let url=`${APPS_SCRIPT_URL}?action=bandeja&fecha=${fecha}`;
+    // &area=tierras (D70): este panel es SOLO tierras; las filas de drenajes (ODT/ODL) las ven
+    // sus residentes en residente-drenajes.html y no deben aparecer (ni enviarse) desde aquí.
+    let url=`${APPS_SCRIPT_URL}?action=bandeja&fecha=${fecha}&area=tierras`;
     if(proyecto) url+=`&proyecto=${encodeURIComponent(proyecto)}`;
     const resp=await fetch(url); const data=await resp.json();
     STATE.fecha=fecha;
@@ -498,10 +500,11 @@ function addLinea(){
 
 async function enviar(){
   const incluidas=STATE.cantidades.filter(c=>c._inc);
-  if(!confirm('Vas a enviar '+incluidas.length+' filas a DATA para el '+STATE.fecha+'. Esto reemplaza lo que ya hubiera de ese día. ¿Continuar?')) return;
+  if(!confirm('Vas a enviar '+incluidas.length+' filas a DATA para el '+STATE.fecha+'. Esto reemplaza lo que ya hubiera de ese día (solo tierras; drenajes ODT/ODL no se tocan). ¿Continuar?')) return;
   try{
+    // area:'tierras' (D70): el pisado de DATA es por día + área — este envío nunca borra ODT/ODL.
     const resp=await fetch(APPS_SCRIPT_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body:JSON.stringify({action:'enviar_data', fecha:STATE.fecha, cantidades:incluidas})});
+      body:JSON.stringify({action:'enviar_data', fecha:STATE.fecha, area:'tierras', cantidades:incluidas})});
     const res=await resp.json();
     if(!res||!res.ok) throw new Error((res&&res.error)||'Respuesta inesperada');
     const f=document.getElementById('savedFlag'); f.style.display='inline'; setTimeout(()=>f.style.display='none',3000);

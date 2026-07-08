@@ -5,18 +5,21 @@
  *        encargado revisa la bandeja y "Envía a DATA" -> DATA (oficial, limpio)
  *
  * Endpoints:
- *   GET  ?action=bandeja&fecha=YYYY-MM-DD[&proyecto=3701]   -> {cantidades:[](crudo), maquinas:[]}
+ *   GET  ?action=bandeja&fecha=YYYY-MM-DD[&proyecto=3701][&area=tierras|odt|odl]
+ *                                        -> {cantidades:[](crudo), maquinas:[]} (área derivada del CC, D69)
  *   GET  ?action=consolidado&fecha=...   -> {cantidades:[](de DATA, ya enviado)}
  *   GET  ?action=consolidado&desde=YYYY-MM-DD&hasta=YYYY-MM-DD  -> {filas:[](A–T crudo de DATA en el rango),header,cols} (panel del jefe, solo lectura)
  *   GET  ?action=estado&fecha=...        -> {reportadas:[{id_maquina,capataz}]}
  *   GET  ?action=cubicaje                -> {cubicaje:{PLACA:cubicaje,...}}  (catálogo placa→m³/viaje, D53)
+ *   GET  ?action=drenajes                -> {marcadores:[ODT*],items:[ítems .06/.07]} (catálogo drenajes, D69)
  *   GET  ?action=maquinaria_produccion&fecha=...  -> cruce MAQUINARIA(CC 02.05-08) × volumen oficial DATA (2.4/D55)
  *   POST {action:'maquinaria_produccion', fecha, ajustes:[{id_registro,produccion}]} -> parcha SOLO col T de MAQUINARIA
  *   GET  ?action=debug&fecha=...
  *   POST  reporte: {fecha,rol,capataz,cantidades:[{...,equipos:[]}],volquetas:[{origen,destino,tipo_destino,uf,placas:[{placa,viajes}]}],maquinaria:[{id_maquina,...}]}
  *           -> BANDEJA (+ MAQUINARIA) ; chequeadora además -> VOLQUETAS (una fila por placa)
  *           y, si envía maquinaria, sus excavadoras -> MAQUINARIA (producción = total excavado ÷ nº máquinas, D54)
- *   POST  {action:'enviar_data', fecha, cantidades:[...incluidas...]}  -> DATA
+ *   POST  {action:'enviar_data', fecha, area, cantidades:[...incluidas...]}  -> DATA
+ *           (pisa el día SOLO en el área que envía — tierras | odt | odl; enmienda operativa de D03, D69)
  */
 
 const SHEET_ID = '1OEAZCcj_kgVS6jWXxOSgyvm57sOsJ7fA1mRTJPU-icM';
@@ -31,9 +34,14 @@ const C = { FECHA:0, LARGO:14, OBS:18 };
 // BANDEJA: llaves limpias (lo crudo que reportan)
 // col 23 `origen`: banco de material (Masivo 1, Masivo 2, Complementario, Otro) para filas de
 // excavación aprovechable de la chequeadora; vacío para capataz/encargado (D56).
+// col 24 `area` (D69): 'odt' | 'odl' derivada del CC al guardar; vacío = tierras (retrocompatible:
+// las filas anteriores al cambio quedan con area='' y se leen como tierras).
+// cols 25–28 (D69, SOLO WhatsApp de drenajes — NUNCA van a DATA): `personal_oficiales`,
+// `personal_ayudantes`, `turno_noche` ('SI'/''), `nota_libre`.
 const BANDEJA_HEADERS = ['id_registro','timestamp','fecha','reporta','rol','grupo','capitulo',
   'actividad','descripcion','centro_costo','unidad','uf','proyecto','elemento',
-  'pk_inicial','pk_final','abs_inicial','abs_final','liberacion','largo','observacion','estado','origen'];
+  'pk_inicial','pk_final','abs_inicial','abs_final','liberacion','largo','observacion','estado','origen',
+  'area','personal_oficiales','personal_ayudantes','turno_noche','nota_libre'];
 
 // MAQUINARIA: layout alineado a Captura_Diaria (fact_produccion, A1:AA) — D52.
 // A→AA = columnas de la tabla Excel (entrada con valor; fórmula/no-captura en BLANCO);
@@ -54,7 +62,11 @@ const MAQ_HEADERS = [
   // produccion_capataz_orig: estimado geométrico original del capataz (largo, D20) que el panel
   // produccion-maquinaria.html (2.4/D55) sustituye por el volumen oficial de la chequeadora.
   // Se escribe SOLO la primera vez que se ajusta la fila, para conservar el estimado original.
-  'produccion_capataz_orig'];
+  'produccion_capataz_orig',
+  // area (D69): 'odt' | 'odl' para máquinas de drenajes (captura libre, a_captura=NO SIEMPRE: no
+  // pasan a Captura_Diaria); vacío = tierras (filas viejas incluidas). Sirve para filtrar la
+  // bandeja/WhatsApp y el seguimiento de faltantes por área.
+  'area'];
 
 // Mapa actividad del capataz → [actividad(H), SUB ACTIVIDAD(I)] de Captura_Diaria (05_CATALOGO §1, D52)
 const CAPTURA_ACT_MAP = {
@@ -156,6 +168,10 @@ function buildDataRow(c, fecha, ts, reporta, rol, idC){
   // Ubicación (UF/PROYECTO/CC) derivada del PK con el helper único (Problema 2.12, D04).
   // ABS: con match a la BASE viene del elemento (K/L verbatim, D68); sin match, del PK (abajo).
   const mi = pkMeters(c.pk_inicial), mf = pkMeters(c.pk_final);
+  // D69: las filas de DRENAJES (área derivada del CC: 06.*→ODT, 07.*→ODL) se arman en su propia
+  // rama — GRUPO/CAPITULO fijos, ELEMENTO por marcador ODT o tramo, y la red D66 NO las toca.
+  const areaFila = deriveArea(c.centro_costo);
+  if(areaFila==='odt' || areaFila==='odl') return buildDataRowDrenajes(c, fecha, ts, reporta, rol, idC, areaFila, mi, mf);
   let uf = c.uf||'', proy = c.proyecto||'', cc = c.centro_costo||'';
   if(mi != null){                                   // D04: PK≤30→UF1/3701; >30→UF2/3702
     uf   = mi <= 30000 ? 'UF1' : 'UF2';
@@ -190,12 +206,76 @@ function buildDataRow(c, fecha, ts, reporta, rol, idC){
   // GRUPO: la BASE clasifica tanto tierras como estructuras/MSR bajo el grupo TIERRAS. Las filas de
   // estructuras (CC 05.*) llegaban de BANDEJA con "DRENAJES Y ESTRUCTURAS"; se corrige a TIERRAS aquí
   // (red de seguridad para lo ya guardado). El CAPITULO (ESTRUCTURAS) NO se toca: sigue siendo correcto.
+  // OJO (D69): esta red aplica SOLO a filas de área tierras (MSR/05.*) — las de drenajes salieron
+  // por buildDataRowDrenajes arriba y conservan su GRUPO "DRENAJES Y ESTRUCTURAS".
   let grupo = c.grupo||'';
   if(/estructura/i.test(grupo)) grupo='TIERRAS';
   return [ toDate(fecha), '', grupo, cc, c.capitulo||'', desc,
     uf, proy, elem, absIni, absFin,
     c.liberacion||'CAMPO', '', c.unidad||'', (c.largo!=null?c.largo:''), '', '', '', c.observacion||'', '',
     idC, ts, reporta||'', rol||'', c.actividad||'', c.pk_inicial||'', c.pk_final||'' ];
+}
+
+/* ---------- DATA para DRENAJES (ODT / ODL) — D69 ----------
+ * ODT: el ELEMENTO es el MARCADOR de obra (ODT1-xxx/ODT2-xxx/ODT3-xxx), copiado verbatim de la
+ * celda J de la BASE; ABS INICIAL/FINAL = K/L del marcador verbatim (abscisa PUNTUAL: inicio=fin,
+ * en metros). ODL: el ELEMENTO es el tramo "tm2 pk X - Y" por abscisa — MISMO cruce TRAMO de
+ * tierras (lookupElemento; el CC 07.* cae al conjunto TRAMO por baseSetFor) — salvo que el capataz
+ * haya elegido un marcador ODT (descole de una ODT): entonces ELEMENTO/ABS = los del marcador.
+ * UF/PROYECTO se derivan de la abscisa ancla (PK reportado, o la del marcador si no hay PK) por
+ * D04 y el proyecto se re-ancla al CC (D63b). GRUPO fijo "DRENAJES Y ESTRUCTURAS" (la red D66 no
+ * aplica aquí); CAPITULO fijo por área; LIBERACION=CAMPO. DESCRIPCION verbatim de la BASE por CC
+ * (D68) — incluye el typo real "…sin clasicar" y el sufijo " ODL": NO corregirlos (pivotes del
+ * maestro). Sin ZODME automático ni derivadas: cantidades directas en la unidad contractual. */
+function buildDataRowDrenajes(c, fecha, ts, reporta, rol, idC, area, mi, mf){
+  const mk = lookupMarcadorODT(c.elemento);
+  const ancla = (mi!=null) ? mi : (mk ? mk.ini : null);
+  let uf=c.uf||'', proy=c.proyecto||'', cc=c.centro_costo||'';
+  if(ancla!=null){                                   // D04: ≤30000 m → UF1/3701; >30000 → UF2/3702
+    uf   = ancla<=30000 ? 'UF1' : 'UF2';
+    proy = uf==='UF1' ? '3701' : '3702';
+    const cod=ccCorto(c.centro_costo);               // re-ancla el proyecto correcto al CC (D63)
+    cc = cod ? (proy+'.'+cod) : cc;
+  }
+  let elem='', absIni='', absFin='';
+  if(area==='odt' || mk){
+    // marcador ODT: obligatorio en ODT; opcional en ODL (descole)
+    if(mk){
+      elem=mk.elem;                                  // celda J verbatim
+      absIni=(mk.rawIni!=null && mk.rawIni!=='') ? mk.rawIni : (ancla!=null?ancla:'');
+      absFin=(mk.rawFin!=null && mk.rawFin!=='') ? mk.rawFin : absIni;
+    } else {                                         // ODT sin marcador reconocible -> revisión humana
+      elem='REVISAR · '+(c.elemento || buildElemento(c.pk_inicial,c.pk_final) || ('pk '+(c.pk_inicial||'')));
+      absIni=(mi!=null) ? mi : (c.abs_inicial!=null ? c.abs_inicial : '');
+      absFin=(mf!=null) ? mf : (c.abs_final!=null ? c.abs_final : '');
+    }
+  } else {
+    // ODL por tramo: mismo flujo que tierras (cruce por abscisa contra los tramos "tm2 pk X - Y")
+    const lk=lookupElemento(cc, c.descripcion, mi);
+    const pkElem=buildElemento(c.pk_inicial, c.pk_final);
+    elem = lk.elem ? lk.elem
+         : lk.revisar ? ('REVISAR · '+(pkElem || c.elemento || ('pk '+(c.pk_inicial||''))))
+         : (pkElem || c.elemento || '');
+    absIni=(lk.elem && lk.absIni!=null && lk.absIni!=='') ? lk.absIni : (mi!=null ? mi : (c.abs_inicial!=null?c.abs_inicial:''));
+    absFin=(lk.elem && lk.absFin!=null && lk.absFin!=='') ? lk.absFin : (mf!=null ? mf : (c.abs_final!=null?c.abs_final:''));
+  }
+  const desc=lookupDescripcion(cc, c.descripcion);
+  const capitulo = (area==='odt') ? 'DRENAJE TRANSVERSAL' : 'DRENAJE LONGITUDINAL';
+  return [ toDate(fecha), '', 'DRENAJES Y ESTRUCTURAS', cc, capitulo, desc,
+    uf, proy, elem, absIni, absFin,
+    c.liberacion||'CAMPO', '', c.unidad||'', (c.largo!=null?c.largo:''), '', '', '', c.observacion||'', '',
+    idC, ts, reporta||'', rol||'', c.actividad||'', c.pk_inicial||'', c.pk_final||'' ];
+}
+// Marcador ODT de la tabla de elementos de la BASE por su nombre (cruce tolerante con normTexto,
+// que NUNCA altera lo que se escribe: el elem devuelto es la celda J cruda). null si no calza.
+function lookupMarcadorODT(nombre){
+  const n=normTexto(nombre);
+  if(!n || n.indexOf('ODT')!==0) return null;
+  const rows=getBaseRows();
+  for(let i=0;i<rows.length;i++){
+    if(rows[i].tipo==='ODT' && normTexto(rows[i].elem)===n) return rows[i];
+  }
+  return null;
 }
 
 /* ---------- ELEMENTO + PK: helper único (Problema 2.12) ----------
@@ -247,7 +327,7 @@ function buildElemento(pkIni, pkFin){
  *   - ODT*   (drenajes)      → FUERA de alcance (V1, D22). Se ignoran; comparten PK con los tramos.
  * REVISAR sólo para el caso legítimo: el PK no pertenece a ningún tramo del eje, o falta el marcador. */
 const BASE_TOL_M = 30; // metros de tolerancia para ajustar un PK cercano a un tramo (error humano)
-let _baseRows, _baseItems, _baseItemCols;
+let _baseRows, _baseItems, _baseItemCols, _baseDrenItems;
 // Abscisa de la BASE a metros: número = metros tal cual; texto con '+' = PK ("20+875"→20875).
 function baseAbs(v){
   if(v===''||v==null) return null;
@@ -257,7 +337,10 @@ function baseAbs(v){
   const n=Number(s);
   return isNaN(n)?null:n;
 }
-// Tipo de un elemento de la BASE por su texto. '' = fuera de alcance (ODT/drenajes u otros).
+// Tipo de un elemento de la BASE por su texto. '' = fuera de alcance.
+// D69: los marcadores ODT* (drenajes) ahora se cachean con tipo propio 'ODT' — los usan SOLO las
+// filas de área ODT/ODL (lookupMarcadorODT). En tierras se siguen ignorando: ningún baseSetFor
+// devuelve 'ODT', así que el cruce por abscisa de tierras nunca los ve (D63 intacta).
 function baseTipo(elem){
   const e=String(elem==null?'':elem);
   if(/^\s*tm2\s*pk/i.test(e)) return 'TRAMO';
@@ -265,7 +348,8 @@ function baseTipo(elem){
   if(/^\s*msr/i.test(e))      return 'MSR';
   if(/^\s*rcd/i.test(e))      return 'RCD';
   if(/zodme/i.test(e))        return 'ZODME';   // clasificado pero aún sin actividad asignada (pendiente)
-  return '';                                     // ODT* y demás -> fuera
+  if(/^\s*odt/i.test(e))      return 'ODT';     // marcadores de drenajes (abscisa puntual, D69)
+  return '';                                     // demás -> fuera
 }
 // Conjunto de elementos a usar según el CC corto de la actividad (NN.NN).
 function baseSetFor(ccCortoStr){
@@ -294,21 +378,24 @@ function normTexto(s){
 // elementos no depende de encabezados: filtra por el contenido de J (baseTipo).
 function getBaseData(){
   if(_baseRows) return;
-  _baseRows = []; _baseItems = {};
+  _baseRows = []; _baseItems = {}; _baseDrenItems = [];
+  const drenSeen = {};
   const ss = SpreadsheetApp.openById(SHEET_ID), sh = ss.getSheetByName('BASE');
   if(!sh || sh.getLastRow() < 2) return;
   const v = sh.getDataRange().getValues();
-  let ccCol=-1, dCol=-1, hRow=-1;                         // tabla de ítems: fila de encabezados + CC y DESCRIPCION en A–H
+  let ccCol=-1, dCol=-1, uCol=-1, hRow=-1;                // tabla de ítems: fila de encabezados + CC y DESCRIPCION en A–H
   for(let r=0; r<Math.min(5, v.length) && hRow<0; r++){
-    let c1=-1, c2=-1;
+    let c1=-1, c2=-1, c3=-1;
     for(let j=0;j<Math.min(8, v[r].length);j++){
       const k=normTexto(v[r][j]);
       if(c1<0 && (k==='CC' || k.indexOf('CENTRO')>=0 || k.indexOf('COSTO')>=0 || k.indexOf('COSTE')>=0)) c1=j;
       else if(c2<0 && k.indexOf('DESCRIPCION')>=0) c2=j;
+      // unidad contractual del ítem (D69, para el catálogo de drenajes); se evita "UNIDAD FUNCIONAL"
+      else if(c3<0 && (k==='UND' || k==='UM' || (k.indexOf('UNIDAD')>=0 && k.indexOf('FUNCIONAL')<0))) c3=j;
     }
-    if(c1>=0 && c2>=0){ ccCol=c1; dCol=c2; hRow=r; }      // ambos en la MISMA fila = fila de encabezados
+    if(c1>=0 && c2>=0){ ccCol=c1; dCol=c2; uCol=c3; hRow=r; }  // CC y DESCRIPCION en la MISMA fila = encabezados
   }
-  _baseItemCols={ cc:ccCol, desc:dCol, filaEnc:hRow+1 };  // expuesto para diagnosticoBase()
+  _baseItemCols={ cc:ccCol, desc:dCol, unidad:uCol, filaEnc:hRow+1 };  // expuesto para diagnosticoBase()
   for(let i=1;i<v.length;i++){
     // --- tabla de ELEMENTOS (J/K/L) ---
     const elem=v[i][9];                                   // J = ELEMENTO
@@ -332,12 +419,37 @@ function getBaseData(){
         (_baseItems[ccKey]=_baseItems[ccKey]||[]).push(it);
         const corto=ccCorto(ccKey);                       // registra también la llave corta "NN.NN"
         if(corto && corto!==ccKey) (_baseItems[corto]=_baseItems[corto]||[]).push(it);
+        // catálogo de DRENAJES (D69): TODOS los ítems .06.* (ODT) y .07.* (ODL), por proyecto,
+        // con la descripción verbatim de la celda (typos incluidos) y la unidad si la tabla la trae.
+        const areaIt=deriveArea(ccKey);
+        if(areaIt!=='tierras'){
+          const u=(uCol>=0 && v[i][uCol]!=null) ? String(v[i][uCol]).trim() : '';
+          const dk=ccKey+'|'+it.norm;
+          if(!drenSeen[dk]){ drenSeen[dk]=1;
+            _baseDrenItems.push({ cc:ccKey, corto:corto||ccKey, area:areaIt, desc:String(d), unidad:u }); }
+        }
       }
     }
   }
 }
 function getBaseRows(){ getBaseData(); return _baseRows; }
 function getBaseItems(){ getBaseData(); return _baseItems; }
+
+/* ---------- catálogo de drenajes para los frontends (D69) ----------
+ * GET ?action=drenajes -> { ok, marcadores:[{elemento,abs,pk}], items:[{cc,corto,area,desc,unidad}] }
+ * - marcadores: las filas ODT* de la tabla de elementos (J/K/L) de la BASE — abscisa PUNTUAL en
+ *   metros (K; si K vacía, L) y su PK formateado, para el selector del capataz ODT (y el descole ODL).
+ * - items: TODOS los ítems .06.* (ODT) y .07.* (ODL) de la tabla de ítems de la BASE, por proyecto,
+ *   con la DESCRIPCION verbatim (los frontends la reenvían tal cual; el backend re-verifica con
+ *   lookupDescripcion al armar DATA). Incluye los "box abovedados" aunque no se usen.
+ * Es la única vía por la que las pantallas (GitHub Pages, estáticas) conocen la BASE: no pueden
+ * leer el Sheet directamente ni el catálogo vive en el repo. Solo lectura. */
+function drenajesCatalogo(){
+  const marcadores=getBaseRows().filter(r=>r.tipo==='ODT')
+    .map(r=>({ elemento:r.elem, abs:(r.ini!=null?r.ini:''), pk:pkFmt(r.ini) }));
+  getBaseData();
+  return json({ ok:true, marcadores:marcadores, items:_baseDrenItems||[] });
+}
 // DESCRIPCION oficial (verbatim) de la tabla de ítems de la BASE por Centro de Coste (D68).
 // Llave exacta primero ("3701.02.05") y corta después ("02.05"). Si un CC tiene varios ítems:
 //   1) separa por el discriminante "NO APRO" (02.05 aprovechable vs no aprovechable, mismo
@@ -430,9 +542,10 @@ function doGet(e){
   if(a==='consolidado') return consolidado(e);
   if(a==='estado')      return estado(e);
   if(a==='cubicaje')    return json({ok:true, cubicaje:getCubicajeMap()});
+  if(a==='drenajes')    return drenajesCatalogo();
   if(a==='maquinaria_produccion') return maquinariaProduccion(e);
   if(a==='debug')       return debug(e);
-  return json({ok:true, msg:'API viva', version:'v10'});
+  return json({ok:true, msg:'API viva', version:'v11'});
 }
 function doPost(e){
   try{
@@ -489,10 +602,17 @@ function guardarReporte(body){
     // D56: origen del banco de material para la fila de excavación acumulada de la chequeadora; la
     // chequeadora lo manda en c.origen (la fila acumulada ya no tiene un _linea único).
     const origenBandeja = (rol==='chequeadora') ? (c.origen||'') : '';
+    // D69: área derivada del CC de la línea ('' = tierras) + campos SOLO-WhatsApp de drenajes
+    // (personal/turno noche/nota libre por línea). Nunca pasan a DATA.
+    const areaLinea = deriveArea(c.centro_costo);
+    const areaCol = (areaLinea==='tierras') ? '' : areaLinea;
+    const turnoNoche = (c.turno_noche===true || String(c.turno_noche||'').toUpperCase()==='SI') ? 'SI' : '';
     // todo entra a BANDEJA; cereo (data:false) marcado como 'no_data' para que el encargado lo vea pero no lo envíe a DATA
     banRows.push([idC, ts, fecha, reporta, rol, c.grupo||'', c.capitulo||'', c.actividad||'', c.descripcion||'', c.centro_costo||'',
       c.unidad||'', c.uf||'', c.proyecto||'', c.elemento||'', c.pk_inicial||'', c.pk_final||'', c.abs_inicial||'', c.abs_final||'', c.liberacion||'CAMPO',
-      c.largo||0, c.observacion||'', (c.data===false)?'no_data':'pendiente', origenBandeja]);
+      c.largo||0, c.observacion||'', (c.data===false)?'no_data':'pendiente', origenBandeja,
+      areaCol, (c.personal_oficiales!=null?c.personal_oficiales:''), (c.personal_ayudantes!=null?c.personal_ayudantes:''),
+      turnoNoche, c.nota_libre||'']);
     // ZODME automático tras excavación no aprovechable (origen vacío: no es excavación aprovechable).
     // D58: si la no aprovechable nació de descapote/desmonte (c.derivada), el ZODME hereda el sello
     // 'orig:descapote/desmonte' en su observación para que la reconciliación del encargado no lo apague
@@ -504,10 +624,13 @@ function guardarReporte(body){
         banRows.push([Utilities.getUuid(), ts, fecha, reporta, rol, 'TIERRAS', 'EXPLANACIONES',
           'Conformación y disposición de sobrantes (ZODME)', 'Conformación y disposición de sobrantes',
           proy?(proy+'.02.08'):'', 'm3', c.uf, proy, c.elemento, c.pk_inicial, c.pk_final, c.abs_inicial, c.abs_final,
-          c.liberacion, c.largo, obsZodme, 'pendiente', '']);
+          c.liberacion, c.largo, obsZodme, 'pendiente', '', '', '', '', '', '']);
     }
     // equipos -> MAQUINARIA (layout Captura A→AA + internos del app, D52)
+    // D69: las máquinas de líneas de drenajes (ODT/ODL) son captura libre (id/placa + operador +
+    // horas opcionales): a_captura=NO SIEMPRE (no pasan a Captura_Diaria) y T Producción en blanco.
     const der = derivarActividad(c);
+    const esDrenaje = (areaLinea!=='tierras');
     (c.equipos||[]).forEach(m=>{
       const esVibro = esTipoSinProduccion(m.tipo_equipo);
       const esApoyo = (c.actividad||'') === 'APOYO';
@@ -516,7 +639,7 @@ function guardarReporte(body){
       // contractual de la fila (Ha). Si la fila trae prod_maquina, ese valor (y su unidad) manda en T.
       const tieneProdMaq = (c.prod_maquina != null && c.prod_maquina !== '');
       const baseProd = tieneProdMaq ? c.prod_maquina : c.largo;
-      const prod  = (esVibro || esApoyo || baseProd == null || baseProd === '') ? '' : baseProd;
+      const prod  = (esDrenaje || esVibro || esApoyo || baseProd == null || baseProd === '') ? '' : baseProd;
       const uProd = (prod === '') ? '' : (tieneProdMaq ? (c.unidad_maquina || '') : (c.unidad || ''));
       // O Horas Mantenimiento: prog−oper solo si motivo=Mantenimiento; en otro caso blanco
       const esMant = (m.motivo||'').trim().toLowerCase().indexOf('mantenimiento') >= 0;
@@ -534,7 +657,7 @@ function guardarReporte(body){
         prod, '', '', '', '', '', '', c.observacion||'',
         // internos del app
         Utilities.getUuid(), idC, ts, reporta, m.tipo_equipo, m.horas_programadas, m.horas_muertas,
-        m.motivo, uProd, c.actividad, der.aCaptura, '']);
+        m.motivo, uProd, c.actividad, (esDrenaje?'NO':der.aCaptura), '', areaCol]);
     });
   });
   // Maquinaria de la chequeadora (D54): excavadoras que alimentaron el origen. Una vez por reporte.
@@ -565,7 +688,7 @@ function guardarReporte(body){
         '', hMant, '', '', estado, '',
         prod, '', '', '', '', '', '', '',
         Utilities.getUuid(), '', ts, reporta, m.tipo_equipo, m.horas_programadas, m.horas_muertas,
-        m.motivo, uProd, actMaq, der.aCaptura, '']);
+        m.motivo, uProd, actMaq, der.aCaptura, '', '']);
     });
   })();
   if(banRows.length) banSh.getRange(banSh.getLastRow()+1,1,banRows.length,BANDEJA_HEADERS.length).setValues(banRows);
@@ -580,14 +703,21 @@ function guardarReporte(body){
   return json({ok:true, cantidades:banRows.length, maquinas:maqRows.length, volquetas:volRows.length});
 }
 
-/* ---------- bandeja para el encargado ---------- */
+/* ---------- bandeja para el encargado / residentes de drenajes ---------- */
+// &area=tierras|odt|odl (D69): cada pantalla ve SOLO su área. Sin el parámetro se devuelve todo
+// (compatible con frontends viejos). El área de cada fila = columna `area` (o derivada del CC para
+// filas anteriores a la columna); en MAQUINARIA solo cuenta la columna (las filas no llevan CC).
 function bandeja(e){
   const fecha=fdate(e.parameter.fecha), proy=e.parameter.proyecto||'';
-  getSheet('MAQUINARIA', MAQ_HEADERS); // auto-sana encabezados al layout D52 antes de leer
-  const cantidades=readSheet('BANDEJA').filter(r=> r.fecha===fecha && (!proy||String(r.proyecto)===proy));
-  const maquinas=readSheet('MAQUINARIA').filter(r=> r.fecha===fecha && (!proy||String(r.proyecto)===proy));
+  const areaQ=String(e.parameter.area||'').trim().toLowerCase();
+  getSheet('BANDEJA', BANDEJA_HEADERS);  // auto-sana encabezados (+ cols de área D69) antes de leer
+  getSheet('MAQUINARIA', MAQ_HEADERS);   // auto-sana encabezados al layout D52 (+ area) antes de leer
+  const cantidades=readSheet('BANDEJA').filter(r=> r.fecha===fecha && (!proy||String(r.proyecto)===proy)
+    && (!areaQ || areaDeFila(r.area, r.centro_costo)===areaQ));
+  const maquinas=readSheet('MAQUINARIA').filter(r=> r.fecha===fecha && (!proy||String(r.proyecto)===proy)
+    && (!areaQ || areaDeFila(r.area, '')===areaQ));
   const observaciones=readSheet('OBSERVACIONES').filter(r=>r.fecha===fecha).map(r=>({reporta:r.reporta||'', observacion:r.observacion||''}));
-  return json({fecha, cantidades, maquinas, observaciones});
+  return json({fecha, area:areaQ, cantidades, maquinas, observaciones});
 }
 
 /* ---------- DATA ya enviada (para verificar) ---------- */
@@ -723,6 +853,26 @@ function bucketDeData(cc, descripcion){
 }
 // CC corto (NN.NN) desde el centro de costo de DATA (formato "3701.02.05" o "02.05").
 function ccCorto(centroCosto){ const m=String(centroCosto==null?'':centroCosto).match(/(\d{2}\.\d{2})\s*$/); return m?m[1]:''; }
+// Área derivada del Centro de Costo (D69) — SIN columna nueva en DATA: capítulo 06 → 'odt'
+// (drenaje transversal), 07 → 'odl' (drenaje longitudinal), resto (o CC vacío) → 'tierras'.
+// Acepta CC largo ("3701.06.01") o corto ("06.01"); quita el prefijo de proyecto (37xx.) antes de
+// mirar el capítulo para no confundir "02.06" (préstamo, tierras) con "06.xx" (ODT).
+// Espejada en los frontends que la necesitan (jefe.html deriva el área en cliente).
+function deriveArea(cc){
+  const c=String(cc==null?'':cc).trim();
+  if(!c) return 'tierras';
+  const sin=c.replace(/^\d{4}\./,'');
+  if(sin.indexOf('06.')===0) return 'odt';
+  if(sin.indexOf('07.')===0) return 'odl';
+  return 'tierras';
+}
+// Área de una fila leída de BANDEJA/MAQUINARIA: manda la columna `area` si trae un valor válido;
+// si no (filas viejas, area=''), se deriva del CC (BANDEJA) o se asume tierras (MAQUINARIA no lleva CC).
+function areaDeFila(areaCol, cc){
+  const a=String(areaCol==null?'':areaCol).trim().toLowerCase();
+  if(a==='odt'||a==='odl') return a;
+  return deriveArea(cc);
+}
 
 // GET: panorama del día. Cruza el volumen oficial de DATA (por proyecto+bucket) con las filas de
 // MAQUINARIA del día. Devuelve:
@@ -868,31 +1018,43 @@ function maquinariaProduccionGuardar(body){
       prod, '', '', '', '', '', '', obs,
       // internos: app_id · id_cantidad · ts · reporta · app_tipo · app_hprog · app_hmuertas
       Utilities.getUuid(), '', ts, reporta, cat.tipo, cat.prog, muertas,
-      // motivo · unidad_prod · cap_actividad · a_captura · produccion_capataz_orig
-      motivo, (prod===''?'':'m3'), capLabel, aCap, '']);
+      // motivo · unidad_prod · cap_actividad · a_captura · produccion_capataz_orig · area (panel=tierras)
+      motivo, (prod===''?'':'m3'), capLabel, aCap, '', '']);
   });
   if(maqRows.length) sh.getRange(sh.getLastRow()+1,1,maqRows.length,MAQ_HEADERS.length).setValues(maqRows);
   return json({ok:true, actualizadas:upd, creadas:maqRows.length});
 }
 
 /* ---------- enviar lo aprobado a DATA ---------- */
+// D69 (enmienda operativa de D03): pisa el día POR ÁREA, no completo. Al enviar el área X se
+// borran/reescriben en DATA solo las filas de esa FECHA cuyo deriveArea(CENTRO DE COSTO, col D)
+// sea X, y la bandeja se marca incluido/descartado SOLO para esa área. Así el residente ODT no
+// borra lo de tierras ni lo de ODL (y viceversa). body.area viene del rol que envía; si falta
+// (frontend viejo en caché) se asume 'tierras', el único emisor que existía antes de drenajes.
 function enviarData(body){
   const fecha=fdate(body.fecha), incluidas=body.cantidades||[], ts=new Date();
-  // 1) DATA: borrar el día y reescribir
+  const aB=String(body.area||'').trim().toLowerCase();
+  const area=(aB==='odt'||aB==='odl'||aB==='tierras') ? aB : 'tierras';
+  // 1) DATA: borrar el día SOLO en el área que envía, y reescribir
   const sh=getSheet('DATA', DATA_HEADERS);
   const v=sh.getDataRange().getValues(), del=[];
-  for(let i=1;i<v.length;i++){ if(fdate(v[i][C.FECHA])===fecha) del.push(i+1); }
+  for(let i=1;i<v.length;i++){ if(fdate(v[i][C.FECHA])===fecha && deriveArea(v[i][3])===area) del.push(i+1); }
   del.sort((a,b)=>b-a).forEach(r=>sh.deleteRow(r));
-  const rows=incluidas.filter(c=>c.estado!=='no_data').map(c=> buildDataRow(c, fecha, ts, c.reporta||'(encargado)', c.rol||'encargado', Utilities.getUuid()));
+  // Guard: solo se escriben filas del área que envía (una fila de otra área colada en el payload
+  // duplicaría datos que este envío NO borró). Las de otra área se ignoran sin error.
+  const rows=incluidas.filter(c=>c.estado!=='no_data' && deriveArea(c.centro_costo)===area)
+    .map(c=> buildDataRow(c, fecha, ts, c.reporta||'(encargado)', c.rol||'encargado', Utilities.getUuid()));
   if(rows.length) sh.getRange(sh.getLastRow()+1,1,rows.length,DATA_HEADERS.length).setValues(rows);
-  // 2) BANDEJA: marcar incluido / descartado
+  // 2) BANDEJA: marcar incluido / descartado SOLO las filas de esa área
   const banSh=getSheet('BANDEJA', BANDEJA_HEADERS);
   const bv=banSh.getDataRange().getValues(), bh=bv[0];
   const idCol=bh.indexOf('id_registro'), fCol=bh.indexOf('fecha'), eCol=bh.indexOf('estado');
+  const ccCol=bh.indexOf('centro_costo'), aCol=bh.indexOf('area');
   const inc={}; incluidas.forEach(c=>{ if(c.id_registro) inc[c.id_registro]=1; });
   for(let i=1;i<bv.length;i++){ if(fdate(bv[i][fCol])!==fecha) continue;
+    if(areaDeFila(aCol>=0?bv[i][aCol]:'', ccCol>=0?bv[i][ccCol]:'')!==area) continue;
     banSh.getRange(i+1, eCol+1).setValue(inc[bv[i][idCol]]?'incluido':'descartado'); }
-  return json({ok:true, enviadas:rows.length});
+  return json({ok:true, enviadas:rows.length, area:area});
 }
 
 /* ---------- debug ---------- */
@@ -900,7 +1062,7 @@ function debug(e){
   const fechaQ=fdate(e.parameter.fecha||'');
   const ban=readSheet('BANDEJA').filter(r=>r.fecha===fechaQ);
   const data=readSheet('DATA') ? '' : '';
-  return json({version:'v10', sheetTZ:shTZ(), queryFecha:fechaQ, bandejaFilas:ban.length,
+  return json({version:'v11', sheetTZ:shTZ(), queryFecha:fechaQ, bandejaFilas:ban.length,
     muestra: ban.slice(0,5).map(r=>({reporta:r.reporta, rol:r.rol, actividad:r.actividad, pk:r.pk_inicial, largo:r.largo, estado:r.estado})) });
 }
 

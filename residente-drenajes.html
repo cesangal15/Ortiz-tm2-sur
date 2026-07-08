@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panel de Drenajes — Residente</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--success:#2ecc71;--error:#e74c3c;--input-bg:#12151f;--uf1:#3a9bdc;--uf2:#9b59b6;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:0 0 40px;}
+  .header{background:linear-gradient(135deg,#1a1d27 0%,#0f1117 100%);border-bottom:3px solid var(--accent);padding:20px 24px;display:flex;align-items:center;justify-content:space-between;}
+  .header-left .label{font-family:'Syne',sans-serif;font-size:10px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;}
+  .header-left h1{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;}
+  .header-user{font-size:12px;color:var(--muted);text-align:right;}
+  .header-user span{display:block;color:var(--accent);font-weight:600;}
+  .logout-btn{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:4px 10px;cursor:pointer;margin-top:4px;font-family:'DM Sans',sans-serif;}
+  .logout-btn:hover{border-color:var(--error);color:var(--error);}
+  .container{max-width:700px;margin:0 auto;padding:24px 16px;}
+  .filtro-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:20px;}
+  .filtro-row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;}
+  .field{flex:1;min-width:130px;}
+  label{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-bottom:5px;letter-spacing:0.5px;text-transform:uppercase;}
+  input[type="date"],select,input[type="number"],input[type="text"]{width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 14px;outline:none;transition:border-color 0.2s;appearance:none;color-scheme:dark;}
+  select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a80a0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px;cursor:pointer;}
+  input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,0.1);}
+  select option,optgroup{background:#1a1d27;}
+  .btn-consultar{padding:10px 18px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:8px;color:#0f1117;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;}
+  .btn-consultar:hover{transform:translateY(-1px);}
+  .section-title{font-family:'Syne',sans-serif;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin:24px 0 12px;display:flex;align-items:center;gap:8px;}
+  .section-title::after{content:'';flex:1;height:1px;background:var(--border);}
+  .estado-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .estado-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;}
+  .estado-box h3{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:12px;font-weight:600;}
+  .chips{display:flex;flex-wrap:wrap;gap:7px;}
+  .chip{font-size:12px;font-weight:600;padding:5px 11px;border-radius:20px;border:1px solid var(--border);background:var(--input-bg);}
+  .chip.ok{border-color:rgba(46,204,113,0.4);background:rgba(46,204,113,0.08);color:var(--success);}
+  .chip.no{border-color:rgba(231,76,60,0.4);background:rgba(231,76,60,0.08);color:var(--error);}
+  .totales{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px;}
+  .tot-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px;gap:10px;}
+  .tot-row:last-child{border-bottom:none;}
+  .tot-row .cat{color:var(--muted);min-width:0;}
+  .tot-row .val{font-family:'Syne',sans-serif;font-weight:700;white-space:nowrap;}
+  .grupo-cat{font-family:'Syne',sans-serif;font-size:12px;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px;}
+  .linea-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;}
+  .linea-item.off{opacity:0.5;}
+  .tog{background:none;border:1px solid var(--border);border-radius:7px;width:30px;height:30px;font-size:15px;cursor:pointer;flex-shrink:0;line-height:1;}
+  .tog.on{border-color:rgba(46,204,113,0.5);color:var(--success);background:rgba(46,204,113,0.08);}
+  .tog.no{border-color:var(--border);color:var(--muted);}
+  .li-main{flex:1;min-width:0;}
+  .li-act{font-size:13px;font-weight:600;}
+  .li-sub{font-size:11px;color:var(--muted);margin-top:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  .li-pers{font-size:10.5px;color:var(--accent);margin-top:2px;opacity:0.9;}
+  .li-nota{font-size:10.5px;color:var(--muted);margin-top:2px;font-style:italic;}
+  .src{font-size:10px;font-weight:600;padding:1px 7px;border-radius:12px;border:1px solid var(--border);}
+  .src.cap{border-color:rgba(245,166,35,0.4);color:var(--accent);}
+  .src.enc{border-color:var(--border);color:var(--muted);}
+  .li-largo{width:88px;flex-shrink:0;}
+  .li-largo input{padding:7px 9px;font-size:13px;text-align:right;}
+  .li-unit{font-size:11px;color:var(--muted);width:30px;flex-shrink:0;}
+  .badge{font-size:10px;font-weight:600;padding:1px 7px;border-radius:12px;border:1px solid var(--border);}
+  .badge.uf1{border-color:rgba(58,155,220,0.4);color:var(--uf1);} .badge.uf2{border-color:rgba(155,89,182,0.4);color:var(--uf2);}
+  .maq-id{font-family:'Syne',sans-serif;font-weight:700;font-size:14px;white-space:nowrap;min-width:60px;flex-shrink:0;}
+  .add-card{background:var(--surface2);border:1px dashed var(--border);border-radius:10px;padding:14px;margin-top:10px;}
+  .add-grid{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:end;}
+  .add-grid label{font-size:10px;}
+  .btn-add{padding:9px 14px;background:var(--input-bg);border:1px solid var(--accent);border-radius:8px;color:var(--accent);font-family:'Syne',sans-serif;font-size:11px;font-weight:700;cursor:pointer;letter-spacing:1px;}
+  .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px;}
+  .btn-action{flex:1;min-width:160px;padding:14px;border-radius:10px;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:0.5px;border:1px solid var(--border);background:var(--surface);color:var(--text);}
+  .btn-action:hover{border-color:var(--accent);}
+  .btn-action.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#0f1117;border:none;}
+  .msg-box{margin-top:16px;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:14px;white-space:pre-wrap;font-size:12.5px;line-height:1.6;color:var(--text);max-height:340px;overflow:auto;display:none;}
+  .empty-state{text-align:center;padding:40px 20px;color:var(--muted);}
+  .empty-state .icon{font-size:40px;margin-bottom:12px;}
+  .loading{text-align:center;padding:30px;color:var(--muted);font-size:14px;}
+  .saved-flag{font-size:12px;color:var(--success);margin-left:8px;display:none;}
+  .nota-maq{font-size:11px;color:var(--muted);margin-top:6px;}
+  @media(max-width:480px){.estado-grid{grid-template-columns:1fr;}.add-grid{grid-template-columns:1fr 1fr;}}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <div class="label" id="hdrLabel">Bandeja · Drenajes</div>
+    <h1 id="hdrTitle">🚧 Panel de Drenajes</h1>
+  </div>
+  <div class="header-user">
+    <span id="userDisplay">—</span>
+    <button class="logout-btn" id="btnMenu" onclick="location.href='menu.html'" style="display:none;border-color:var(--accent);color:var(--accent);margin-right:6px;">← Menú</button>
+    <button class="logout-btn" onclick="logout()">Salir</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="filtro-card">
+    <div class="filtro-row">
+      <div class="field"><label>Fecha</label><input type="date" id="fecha"></div>
+      <div class="field" id="areaField" style="max-width:150px;display:none;"><label>Área (admin)</label>
+        <select id="areaSel" onchange="cambiarArea()"><option value="odt">ODT</option><option value="odl">ODL</option></select>
+      </div>
+      <button class="btn-consultar" onclick="consultar()">CONSULTAR →</button>
+    </div>
+  </div>
+  <div id="resultados">
+    <div class="empty-state"><div class="icon">🗓️</div><p>Selecciona una fecha y revisa la bandeja de tu área</p></div>
+  </div>
+</div>
+
+<script>
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
+
+/* Área del panel (D70): el residente hace de "encargado" de SU área. La bandeja se pide con
+ * &area= (el backend filtra por la columna `area`/CC), el envío a DATA pisa el día SOLO en esta
+ * área (enmienda operativa de D03) y el WhatsApp usa el formato propio de drenajes. */
+let AREA='odt';
+const CAPATACES_ESPERADOS_POR_AREA={ odt:['capataz_odt'], odl:['capataz_odl'] };
+
+let STATE={ fecha:'', cantidades:[], maquinas:[], observaciones:[] };
+/* catálogo de la BASE (?action=drenajes) para el add-line del residente */
+let MARCADORES=[], ITEMS=[];
+
+window.onload = async function(){
+  const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
+  const OK=['residente_odt','residente_odl','admin'];
+  if(!rol || OK.indexOf(rol)<0){ window.location.href='index.html'; return; }
+  document.getElementById('userDisplay').textContent=usuario||'residente';
+  if(rol==='residente_odt') AREA='odt';
+  else if(rol==='residente_odl') AREA='odl';
+  else { // admin: área por query (?area=odl) o selector
+    const q=new URLSearchParams(location.search).get('area');
+    AREA=(q==='odl')?'odl':'odt';
+    document.getElementById('areaField').style.display='block';
+    document.getElementById('areaSel').value=AREA;
+    var _bm=document.getElementById('btnMenu'); if(_bm) _bm.style.display='inline-block';
+  }
+  pintarTitulo();
+  document.getElementById('fecha').value=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'}); // D50
+  cargarCatalogo();
+};
+function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
+function pintarTitulo(){
+  const n=(AREA==='odt')?'ODT · Transversal':'ODL · Longitudinal';
+  document.getElementById('hdrLabel').textContent='Bandeja · Drenajes '+(AREA==='odt'?'ODT':'ODL');
+  document.getElementById('hdrTitle').textContent='🚧 Drenajes — '+n;
+}
+function cambiarArea(){
+  AREA=document.getElementById('areaSel').value==='odl'?'odl':'odt';
+  pintarTitulo();
+  document.getElementById('resultados').innerHTML='<div class="empty-state"><div class="icon">🗓️</div><p>Consulta de nuevo para ver la bandeja de '+AREA.toUpperCase()+'</p></div>';
+}
+async function cargarCatalogo(){
+  try{
+    const resp=await fetch(APPS_SCRIPT_URL+'?action=drenajes');
+    const data=await resp.json();
+    if(data && data.ok){ MARCADORES=data.marcadores||[]; ITEMS=data.items||[]; }
+  }catch(err){ /* el add-line avisará si no hay catálogo */ }
+}
+
+/* helpers PK — mismos del resto de pantallas */
+function pkToMeters(pk){ if(!pk) return null; pk=String(pk).toLowerCase().replace(/pk/g,'').trim().replace(/\s/g,''); if(pk.includes('+')){const p=pk.split('+');const km=parseInt(p[0]);const m=parseInt(p[1]||'0');if(isNaN(km))return null;return km*1000+(isNaN(m)?0:m);} const n=parseFloat(pk);return isNaN(n)?null:n*1000; }
+function ufFromPk(pk){ const m=pkToMeters(pk); if(m==null) return ''; return m<=30000?'UF1':'UF2'; }
+function pkNorm(s){ const m=pkToMeters(s); if(m==null) return ''; const km=Math.floor(m/1000), r=Math.round(m-km*1000); return km+'+'+('00'+r).slice(-3); }
+function buildElemento(pki,pkf){
+  let ini=pki, fin=pkf;
+  if((fin==null||fin==='') && pki!=null){ const p=String(pki).split(/\s*-\s*/); if(p.length>=2){ ini=p[0]; fin=p.slice(1).join(' - '); } }
+  const a=pkNorm(ini); if(!a) return '';
+  const b=pkNorm(fin); return b? ('tm2 pk '+a+' - '+b) : ('tm2 pk '+a);
+}
+function fmt(n){ return (Math.round(n*100)/100).toLocaleString('es-CO'); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function numH(v){ const n=parseFloat(v); return isNaN(n)?0:n; }
+function esNoche(c){ return String(c.turno_noche||'').toUpperCase()==='SI' || c.turno_noche===true; }
+
+async function consultar(){
+  const fecha=document.getElementById('fecha').value;
+  if(!fecha){ alert('Selecciona una fecha'); return; }
+  document.getElementById('resultados').innerHTML='<div class="loading">⏳ Cargando bandeja de '+AREA.toUpperCase()+'...</div>';
+  try{
+    const url=`${APPS_SCRIPT_URL}?action=bandeja&fecha=${fecha}&area=${AREA}`;
+    const resp=await fetch(url); const data=await resp.json();
+    STATE.fecha=fecha;
+    STATE.cantidades=(data.cantidades||[]).map(c=>({...c, largo:parseFloat(c.largo)||0, _inc:(c.estado!=='descartado'&&c.estado!=='no_data'), _nodata:(c.estado==='no_data')}));
+    STATE.maquinas=data.maquinas||[];
+    STATE.observaciones=data.observaciones||[];
+    render();
+  }catch(err){
+    document.getElementById('resultados').innerHTML=`<div class="empty-state"><div class="icon">⚠️</div><p>No se pudo consultar. Revisa el Apps Script o la conexión.</p></div>`;
+  }
+}
+
+/* agrupación por ACTIVIDAD (descripción verbatim del ítem) — drenajes no usa las categorías de tierras */
+function calcTotales(){
+  const t={}, order=[];
+  STATE.cantidades.forEach(c=>{ if(!c._inc) return;
+    const k=(c.descripcion||c.actividad||'—')+'||'+(c.unidad||'');
+    if(!t[k]){ t[k]={desc:(c.descripcion||c.actividad||'—'), uni:c.unidad||'', total:0}; order.push(k); }
+    t[k].total+=c.largo;
+  });
+  return {t, order};
+}
+function ubicTxt(c){
+  if(/^\s*odt/i.test(String(c.elemento||''))) return c.elemento;
+  const pk=c.pk_inicial+(c.pk_final?(' - '+c.pk_final):'');
+  return pk?('PK '+pk):(c.elemento||'—');
+}
+function persTxt(c){
+  const of=String(c.personal_oficiales||'').trim(), ay=String(c.personal_ayudantes||'').trim();
+  let s='';
+  if(of&&numH(of)>0) s+=of+' of.';
+  if(ay&&numH(ay)>0) s+=(s?' · ':'')+ay+' ayu.';
+  if(esNoche(c)) s+=(s?' · ':'')+'🌙 noche';
+  return s;
+}
+
+function render(){
+  const cont=document.getElementById('resultados');
+  const esperados=CAPATACES_ESPERADOS_POR_AREA[AREA]||[];
+  const repC=new Set(STATE.cantidades.map(c=>c.reporta).concat(STATE.maquinas.map(m=>m.reporta)).filter(Boolean));
+  const faltC=esperados.filter(c=>!repC.has(c));
+  const {t,order}=calcTotales();
+  let html='';
+  html+='<div class="section-title">Estado de reportes ('+AREA.toUpperCase()+')</div><div class="estado-grid">';
+  html+='<div class="estado-box"><h3>Reportaron</h3><div class="chips">'+
+    ([...repC].length? [...repC].map(c=>`<span class="chip ok">✓ ${esc(c)}</span>`).join(''):'<span class="chip">—</span>')+'</div></div>';
+  html+='<div class="estado-box"><h3>Capataces que faltan</h3><div class="chips">'+
+    (faltC.length? faltC.map(c=>`<span class="chip no">${esc(c)}</span>`).join(''):'<span class="chip ok">Todos</span>')+'</div></div>';
+  html+='</div>';
+
+  html+='<div class="section-title">Totales del día (solo incluidos)</div><div class="totales">';
+  if(order.length){
+    order.forEach(k=>{ const o=t[k];
+      html+=`<div class="tot-row"><span class="cat">${esc(o.desc)}</span><span class="val">${fmt(o.total)} ${esc(o.uni)}</span></div>`; });
+  } else html+='<div class="cat" style="color:var(--muted)">Sin cantidades incluidas</div>';
+  html+='</div>';
+
+  html+='<div class="section-title">Bandeja del día <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);font-size:11px;">(prende/apaga para incluir en DATA)</span></div>';
+  html+='<div id="bandejaBox">'+renderBandeja()+'</div>';
+  html+=renderAddCard();
+
+  html+='<div class="section-title">Máquinas del área ('+STATE.maquinas.length+')</div>'+renderMaquinas();
+
+  html+='<div class="actions">'+
+    '<button class="btn-action primary" onclick="enviar()">📤 Enviar a DATA ('+AREA.toUpperCase()+')<span class="saved-flag" id="savedFlag">enviado ✓</span></button>'+
+    '<button class="btn-action" onclick="generarMensaje()">📲 Generar WhatsApp</button>'+
+    '</div>';
+  html+='<div class="msg-box" id="msgBox"></div>';
+  cont.innerHTML=html;
+}
+
+function renderBandeja(){
+  if(!STATE.cantidades.length) return '<div class="empty-state" style="padding:20px;"><p>La bandeja de '+AREA.toUpperCase()+' está vacía para esta fecha.</p></div>';
+  let html=''; const byAct={}, orderAct=[];
+  STATE.cantidades.forEach((c,idx)=>{ const k=c.descripcion||c.actividad||'—';
+    if(!byAct[k]){ byAct[k]=[]; orderAct.push(k); } byAct[k].push({c,idx}); });
+  orderAct.forEach(k=>{
+    html+=`<div class="grupo-cat">${esc(k)}</div>`;
+    byAct[k].forEach(({c,idx})=>{
+      const uf=c.uf||ufFromPk(c.pk_inicial);
+      const pers=persTxt(c);
+      const nota=String(c.nota_libre||'').trim();
+      html+=`<div class="linea-item ${c._inc?'':'off'}" id="li_${idx}">
+        <button class="tog ${c._inc?'on':'no'}" onclick="toggleInc(${idx})">${c._inc?'✓':'✕'}</button>
+        <div class="li-main"><div class="li-act">${esc(ubicTxt(c))}</div>
+        <div class="li-sub"><span class="src ${c.rol==='encargado'||String(c.rol||'').indexOf('residente')===0?'enc':'cap'}">${esc(c.rol||'?')}·${esc(c.reporta||'?')}</span>${uf?` <span class="badge ${uf.toLowerCase()}">${esc(uf)}</span>`:''} ${esc(c.centro_costo||'')}</div>
+        ${pers?`<div class="li-pers">👷 ${pers}</div>`:''}
+        ${nota?`<div class="li-nota">📝 ${esc(nota)}</div>`:''}</div>
+        <div class="li-largo"><input type="number" step="any" value="${c.largo}" onchange="editLargo(${idx},this.value)"></div>
+        <div class="li-unit">${esc(c.unidad||'')}</div>
+      </div>`;
+    });
+  });
+  return html;
+}
+/* add-line del residente: marcador (ODT) o PK (ODL) + ítem del catálogo + cantidad */
+function renderAddCard(){
+  if(!ITEMS.length) return '<div class="add-card"><div class="nota-maq">⚠ Catálogo de la BASE no cargado; recarga la página para poder agregar líneas.</div></div>';
+  const seen={}; let opts='<option value="">— Actividad —</option>';
+  const its=[]; ITEMS.forEach(it=>{ if(it.area!==AREA) return; const k=(it.corto||it.cc)+'|'+String(it.desc||'').trim(); if(seen[k])return; seen[k]=1; its.push(it); });
+  its.forEach((it,i)=>{ opts+=`<option value="${i}">${esc(it.desc)}${it.unidad?(' ['+esc(it.unidad)+']'):''}</option>`; });
+  window._ADD_ITEMS=its;
+  let ubic='';
+  if(AREA==='odt'){
+    let mo='<option value="">— Marcador —</option>';
+    MARCADORES.forEach((m,i)=>{ mo+=`<option value="${i}">${esc(m.elemento)}${m.pk?(' · '+esc(m.pk)):''}</option>`; });
+    ubic=`<div><label>Marcador ODT</label><select id="addMarc">${mo}</select></div>`;
+  } else {
+    ubic=`<div><label>PK inicial</label><input type="text" id="addPk" placeholder="14+635"></div>`;
+  }
+  return `<div class="add-card"><div class="add-grid">
+    <div><label>Agregar (residente)</label><select id="addAct">${opts}</select></div>
+    ${ubic}
+    <div><label>Cantidad</label><input type="number" step="any" id="addCant" placeholder="0"></div>
+    <button class="btn-add" onclick="addLinea()">+ Añadir</button>
+  </div></div>`;
+}
+function renderMaquinas(){
+  if(!STATE.maquinas.length) return '<div class="empty-state" style="padding:16px;"><p>Sin máquinas reportadas en '+AREA.toUpperCase()+'</p></div>'
+    +'<div class="nota-maq">Sin catálogo de máquinas de drenajes (V1): se listan solo las reportadas por los capataces; no hay lista de faltantes.</div>';
+  let html='';
+  STATE.maquinas.forEach(m=>{
+    const h=(m.horas_operadas===''||m.horas_operadas==null)?'':(fmt(numH(m.horas_operadas))+'h');
+    html+=`<div class="linea-item">
+      <span class="maq-id">${esc(m.id_maquina||'—')}</span>
+      <div class="li-main"><div class="li-sub">${esc(m.operador||'s/op')} · <span class="src cap">${esc(m.reporta||'?')}</span></div></div>
+      <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;white-space:nowrap;">${h||'—'}</div></div>`;
+  });
+  html+='<div class="nota-maq">Captura libre (V1): estas máquinas no pasan a Captura_Diaria (a_captura=NO); van al WhatsApp del área.</div>';
+  return html;
+}
+
+function toggleInc(idx){ STATE.cantidades[idx]._inc=!STATE.cantidades[idx]._inc; render(); }
+function editLargo(idx,val){ STATE.cantidades[idx].largo=parseFloat(val)||0; refreshTot(); }
+function refreshTot(){ const {t,order}=calcTotales(); const box=document.querySelector('.totales'); if(!box)return;
+  let html='';
+  if(order.length){ order.forEach(k=>{ const o=t[k];
+    html+=`<div class="tot-row"><span class="cat">${esc(o.desc)}</span><span class="val">${fmt(o.total)} ${esc(o.uni)}</span></div>`; }); }
+  else html='<div class="cat" style="color:var(--muted)">Sin cantidades incluidas</div>';
+  box.innerHTML=html;
+}
+function addLinea(){
+  const its=window._ADD_ITEMS||[];
+  const ai=document.getElementById('addAct').value;
+  if(ai===''){ alert('Elige una actividad'); return; }
+  const it=its[parseInt(ai,10)];
+  const cant=parseFloat(document.getElementById('addCant').value)||0;
+  let elemento='', pk='', abs=null;
+  if(AREA==='odt'){
+    const mi=document.getElementById('addMarc').value;
+    if(mi===''){ alert('Elige el marcador ODT'); return; }
+    const mk=MARCADORES[parseInt(mi,10)];
+    elemento=mk.elemento; pk=mk.pk||''; abs=(mk.abs===''||mk.abs==null)?null:Number(mk.abs);
+  } else {
+    pk=document.getElementById('addPk').value.trim();
+    if(!pk){ alert('Escribe el PK'); return; }
+    elemento=buildElemento(pk,''); abs=pkToMeters(pk);
+  }
+  const uf=abs==null?'':(abs<=30000?'UF1':'UF2'), proy=uf==='UF1'?'3701':uf==='UF2'?'3702':'';
+  STATE.cantidades.push({ id_registro:'', reporta:'(residente)', rol:sessionStorage.getItem('rol')||'residente',
+    grupo:'DRENAJES Y ESTRUCTURAS', capitulo:(AREA==='odt')?'DRENAJE TRANSVERSAL':'DRENAJE LONGITUDINAL',
+    actividad:it.desc, descripcion:it.desc,
+    centro_costo:proy?`${proy}.${it.corto||it.cc}`:(it.cc||''), unidad:it.unidad||'', uf, proyecto:proy,
+    elemento, pk_inicial:pk, pk_final:'', abs_inicial:abs, abs_final:abs,
+    liberacion:'CAMPO', largo:cant, observacion:'',
+    personal_oficiales:'', personal_ayudantes:'', turno_noche:'', nota_libre:'', _inc:true });
+  render();
+}
+
+async function enviar(){
+  const incluidas=STATE.cantidades.filter(c=>c._inc);
+  if(!confirm('Vas a enviar '+incluidas.length+' filas a DATA para el '+STATE.fecha+'.\n\nEsto reemplaza SOLO lo del área '+AREA.toUpperCase()+' de ese día (tierras y la otra área no se tocan). ¿Continuar?')) return;
+  try{
+    const resp=await fetch(APPS_SCRIPT_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body:JSON.stringify({action:'enviar_data', fecha:STATE.fecha, area:AREA, cantidades:incluidas})});
+    const res=await resp.json();
+    if(!res||!res.ok) throw new Error((res&&res.error)||'Respuesta inesperada');
+    const f=document.getElementById('savedFlag'); f.style.display='inline'; setTimeout(()=>f.style.display='none',3000);
+  }catch(err){ alert('⚠ No se pudo enviar: '+err.message); }
+}
+
+/* WhatsApp de drenajes (D70): por actividad → línea por marcador/PK con cantidad, personal,
+ * turno de noche y notas; luego las máquinas del área. */
+function generarMensaje(){
+  const {t,order}=calcTotales();
+  const f=new Date(STATE.fecha+'T12:00:00');
+  const dd=String(f.getDate()).padStart(2,'0'), mm=String(f.getMonth()+1).padStart(2,'0'), yy=String(f.getFullYear()).slice(2);
+  const nombre=(AREA==='odt')?'Drenaje Transversal (ODT)':'Drenaje Longitudinal (ODL)';
+  let msg=`*Reporte de actividades de ${nombre} ${dd}/${mm}/${yy}*\n——————————\n`;
+  const byAct={}, orderAct=[];
+  STATE.cantidades.forEach(c=>{ if(!c._inc) return; const k=(c.descripcion||c.actividad||'—')+'||'+(c.unidad||'');
+    if(!byAct[k]){ byAct[k]=[]; orderAct.push(k); } byAct[k].push(c); });
+  orderAct.forEach(k=>{
+    const o=t[k], lines=byAct[k];
+    msg+=`\n* *${o.desc}: ${fmt(o.total)} ${o.uni}\n`;
+    lines.forEach(c=>{
+      msg+=`${ubicTxt(c)}  ${fmt(c.largo)} ${c.unidad||''}${esNoche(c)?' 🌙':''}\n`;
+      const pers=persTxt(c); if(pers) msg+=`  👷 ${pers}\n`;
+      const nota=String(c.nota_libre||'').trim(); if(nota) msg+=`  📝 ${nota}\n`;
+    });
+  });
+  // personal total del día (solo líneas incluidas)
+  let totOf=0, totAy=0, hayNoche=false;
+  STATE.cantidades.forEach(c=>{ if(!c._inc) return; totOf+=numH(c.personal_oficiales); totAy+=numH(c.personal_ayudantes); if(esNoche(c)) hayNoche=true; });
+  if(totOf||totAy) msg+=`\n*Personal:* ${fmt(totOf)} oficiales · ${fmt(totAy)} ayudantes${hayNoche?' · incluye turno de noche 🌙':''}\n`;
+  if(STATE.maquinas.length){
+    msg+='\n*Máquinas:*\n';
+    STATE.maquinas.forEach(m=>{
+      const h=(m.horas_operadas===''||m.horas_operadas==null)?'':(' '+fmt(numH(m.horas_operadas))+'h');
+      msg+=`- ${m.id_maquina||'—'}${m.operador?(' ('+m.operador+')'):''}${h}\n`;
+    });
+  }
+  const obsArr=(STATE.observaciones||[]).filter(o=>o.observacion);
+  if(obsArr.length){ msg+='\n*OBSERVACIONES:*\n'; obsArr.forEach(o=>{ msg+=`${o.reporta||'?'}: ${o.observacion}\n`; }); }
+  const box=document.getElementById('msgBox'); box.style.display='block'; box.textContent=msg;
+  if(navigator.clipboard) navigator.clipboard.writeText(msg).then(()=>{},()=>{});
+}
+</script>
+</body>
+</html>
