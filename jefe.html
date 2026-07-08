@@ -92,6 +92,12 @@
     </div>
     <div class="filtros-din" id="filtrosDin">
       <div class="filtro-row">
+        <div class="field"><label>Área</label><select id="fArea" onchange="render()">
+          <option value="">Todas</option>
+          <option value="tierras">Tierras</option>
+          <option value="odt">ODT (drenaje transversal)</option>
+          <option value="odl">ODL (drenaje longitudinal)</option>
+        </select></div>
         <div class="field"><label>Actividad</label><select id="fActividad" onchange="render()"></select></div>
         <div class="field"><label>Unidad Funcional</label><select id="fUf" onchange="render()"></select></div>
       </div>
@@ -109,7 +115,18 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IV
 // layout A–T conocido) para no acoplar el frontend a posiciones fijas. Es SOLO LECTURA: aquí no se
 // escribe nada a DATA ni al maestro; el copiado va al portapapeles y lo pega el usuario a mano.
 let STATE = { filas:[], cols:{}, desde:'', hasta:'' };
-const COLS_DEFAULT = { FECHA:0, GRUPO:2, DESCRIPCION:5, UF:6, ABS_INI:9, ABS_FIN:10, UNIDAD:13, LARGO:14, COPY_END:15 };
+const COLS_DEFAULT = { FECHA:0, GRUPO:2, CC:3, DESCRIPCION:5, UF:6, ABS_INI:9, ABS_FIN:10, UNIDAD:13, LARGO:14, COPY_END:15 };
+
+// Área derivada del CC en CLIENTE (espejo de deriveArea del backend, D69) — el esquema A–T de
+// consolidado no cambia: capítulo 06 → ODT, 07 → ODL, resto → tierras.
+function deriveArea(cc){
+  const c=String(cc==null?'':cc).trim();
+  if(!c) return 'tierras';
+  const sin=c.replace(/^\d{4}\./,'');
+  if(sin.indexOf('06.')===0) return 'odt';
+  if(sin.indexOf('07.')===0) return 'odl';
+  return 'tierras';
+}
 
 window.onload = function(){
   const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
@@ -172,14 +189,21 @@ function armarSelectores(){
   document.getElementById('filtrosDin').style.display = STATE.filas.length ? 'block' : 'none';
 }
 
-// Filas que respetan el filtro Actividad/UF (para el RESUMEN). El copiado NO usa esto: copia el día
-// completo tal cual está en DATA.
+// Filas que respetan los filtros Área/Actividad/UF (para el RESUMEN). El copiado NO usa Actividad/UF,
+// pero SÍ respeta el filtro de Área (D69): con "Todas" copia el día completo; con un área, solo esa.
 function filasFiltradas(){
   const fa=document.getElementById('fActividad').value, fu=document.getElementById('fUf').value;
   const cA=col('DESCRIPCION'), cU=col('UF');
-  return STATE.filas.filter(r=>
+  return filasArea().filter(r=>
     (!fa || String(r[cA]||'').trim()===fa) &&
     (!fu || String(r[cU]||'').trim()===fu));
+}
+// Filas del área seleccionada (derivada del CC en cliente); '' = todas.
+function filasArea(){
+  const fr=document.getElementById('fArea').value;
+  if(!fr) return STATE.filas;
+  const cC=col('CC');
+  return STATE.filas.filter(r=>deriveArea(r[cC])===fr);
 }
 
 // PK crudo desde metros (ABS): 19800 -> "19+800". '' si no es número.
@@ -264,17 +288,21 @@ function bloqueActividad(a){
   return h+'</div>';
 }
 
-// Un botón "Copiar [fecha]" por cada día presente (independiente del filtro): copia A:S de ese día.
+// Un botón "Copiar [fecha]" por cada día presente. Independiente de Actividad/UF, pero respeta el
+// filtro de ÁREA (D69): "Todas" = día completo; un área = solo las filas de esa área ese día.
 function bloqueCopiado(){
   const cF=col('FECHA');
-  const dias=[...new Set(STATE.filas.map(r=>String(r[cF]||'')))].filter(Boolean).sort();
+  const pool=filasArea();
+  const fr=document.getElementById('fArea').value;
+  const tag=fr?(' · '+(fr==='tierras'?'Tierras':fr.toUpperCase())):'';
+  const dias=[...new Set(pool.map(r=>String(r[cF]||'')))].filter(Boolean).sort();
   let btns='';
   dias.forEach(d=>{
-    const n=STATE.filas.filter(r=>String(r[cF]||'')===d).length;
-    btns+=`<button class="btn-copy" onclick="copiarDia('${d}',this)">Copiar ${esc(d)}<small>${n} fila${n!==1?'s':''} · A:O</small></button>`;
+    const n=pool.filter(r=>String(r[cF]||'')===d).length;
+    btns+=`<button class="btn-copy" onclick="copiarDia('${d}',this)">Copiar ${esc(d)}${esc(tag)}<small>${n} fila${n!==1?'s':''} · A:O</small></button>`;
   });
   return '<div class="copy-card">'
-    + '<div class="copy-intro">El pegado al maestro es <b>día a día</b>. Cada botón copia las columnas <b>A a O (hasta LARGO)</b> de ese día, con ORDEN y ACTA vacías. No se copian ESPESOR/FC/CANTIDAD (fórmula del maestro) ni la OBSERVACIÓN. Los decimales ya salen con <b>coma</b> para el Excel del maestro.</div>'
+    + '<div class="copy-intro">El pegado al maestro es <b>día a día</b>. Cada botón copia las columnas <b>A a O (hasta LARGO)</b> de ese día, con ORDEN y ACTA vacías. Con el filtro <b>Área</b> en "Todas" se copia el día completo; con un área elegida, solo las filas de esa área. No se copian ESPESOR/FC/CANTIDAD (fórmula del maestro) ni la OBSERVACIÓN. Los decimales ya salen con <b>coma</b> para el Excel del maestro.</div>'
     + `<div class="copy-btns">${btns}</div>`
     + '<div class="guia"><h4>Cómo pegar en el Excel maestro</h4><ol>'
     + '<li>Clic en la columna <b>A</b> de la primera fila vacía del maestro.</li>'
@@ -290,7 +318,7 @@ function bloqueCopiado(){
 // maestro. No se copian ESPESOR/FC/CANTIDAD (fórmula) ni OBSERVACION. Recorta a COPY_END columnas (15).
 function copiarDia(fecha, btn){
   const cF=col('FECHA'), end=col('COPY_END')||19;
-  const rows=STATE.filas.filter(r=>String(r[cF]||'')===fecha);
+  const rows=filasArea().filter(r=>String(r[cF]||'')===fecha); // respeta el filtro de Área (D69)
   const text=rows.map(r=>{
     const cells=[];
     for(let j=0;j<end;j++){ cells.push(celdaCopia(r[j])); }

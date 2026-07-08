@@ -69,6 +69,25 @@ Aplican a excavadoras, motoniveladoras, bulldozer. Estado `no_data`; no van a DA
 
 Máquina de **apoyo** (vibro/compactación sobre un frente): hereda el H/I del frente que apoya, producción en blanco. **No pasan a Captura** (sin par definido): paisajeo, adecuación de caminos, limpieza de derrumbe, materiales MSR y pedraplén.
 
+### Drenajes ODT / ODL (D69) — catálogo VIVO en la BASE, servido por `?action=drenajes`
+Las actividades de drenajes NO se listan aquí ni viven hardcodeadas en el frontend: son **TODOS los
+ítems `.06.*` (ODT — DRENAJE TRANSVERSAL) y `.07.*` (ODL — DRENAJE LONGITUDINAL)** de la tabla de
+ítems de la hoja BASE, por proyecto (3701/3702), incluidos los ~20 "box abovedados" aunque no se
+usen. El backend los sirve con el endpoint `?action=drenajes` junto con los **147 marcadores de obra
+`ODT1-…/ODT2-…/ODT3-…`** (tabla de elementos J/K/L, abscisa puntual) y los frontends arman el
+dropdown deduplicando por CC corto (el CC final = proyecto derivado del PK/marcador + código corto).
+Reglas:
+- **Cantidades directas** en la unidad contractual del ítem (sin conversiones ml→m³/und→m: V2).
+- DESCRIPCION **verbatim de la celda** de la BASE — con el typo real `"Excavaciones varias sin
+  clasicar"` y el sufijo `" ODL"` en los ítems de longitudinal. NO corregirlos (pivotes del maestro).
+- **ODT**: el ELEMENTO es el marcador de obra; ABS INI/FIN = abscisa puntual del marcador (K/L).
+- **ODL**: el ELEMENTO es el tramo `"tm2 pk X - Y"` por abscisa (como tierras); opcionalmente un
+  marcador ODT si se trabaja el descole de una ODT.
+- Sin ZODME, sin no-aprovechable, sin chequeadora, sin actividades derivadas.
+- Campos por línea SOLO-WhatsApp (no van a DATA): oficiales, ayudantes, turno de noche, nota libre.
+- Máquinas de drenajes: **texto libre** (id/placa + operador + horas opcionales), sin catálogo;
+  `a_captura=NO` siempre (no pasan a Captura_Diaria).
+
 ## 2. Orígenes de material (chequeadora) — CONFIRMADO
 - Masivo 2 (PK 19) → excavación aprovechable
 - Masivo 1 (PK 14) → excavación aprovechable
@@ -137,7 +156,8 @@ MEDIA JORNADA y NO PROGRAMADO **no salen del app**; son ajuste manual del encarg
 ## 7. Usuarios — CONFIRMADO (contraseñas de encargado/chequeadoras = placeholder)
 admin/venganza753 → menu · encargado/enc1-2 → encargado · residente/Ortiz2026 → residente · jefe/Ortiz2026 → jefe · capataz1-5/uf1-2 → reporte-capataz · chequeadora1-3/cheq1-2 → reporte-chequeadora.
 **Residente** (rol `residente`, D57): entra a `residente.html` (panel de selección) → tile activo al Panel del Encargado (guard de `encargado.html` extendido para aceptar el rol) y tile **Resumen General** que ahora abre `jefe.html` (D65).
-**Jefe** (rol `jefe`, D65): usuario `jefe`, clave `Ortiz2026` (placeholder); entra a `jefe.html` — consulta post-DATA por rango de fechas (solo lectura): resumen por actividad + ubicación (PK crudo) y copiado A:S día a día. Guard acepta `jefe`/`admin`/`residente`. **Admin:** botón "← Menú" en toda pantalla interna vuelve a `menu.html` sin cerrar sesión.
+**Jefe** (rol `jefe`, D65): usuario `jefe`, clave `Ortiz2026` (placeholder); entra a `jefe.html` — consulta post-DATA por rango de fechas (solo lectura): resumen por actividad + ubicación (PK crudo) y copiado A:S día a día, ahora con filtro de **Área** (Tierras/ODT/ODL/Todas, derivada del CC en cliente, D69). Guard acepta `jefe`/`admin`/`residente`. **Admin:** botón "← Menú" en toda pantalla interna vuelve a `menu.html` sin cerrar sesión.
+**Drenajes (D69, claves placeholder):** `capataz_odt` y `capataz_odl` (clave común `dren2026`, roles `capataz_odt`/`capataz_odl`) → `reporte-drenajes.html` (el modo ODT/ODL sale del rol); `residente_odt` y `residente_odl` (clave `Ortiz2026`, roles `residente_odt`/`residente_odl`) → `residente-drenajes.html` (bandeja/envío/WhatsApp SOLO de su área). El admin entra a ambas pantallas desde `menu.html` con `?area=odt|odl`.
 
 ## 8. Reglas de reconciliación automática (encargado) — CONFIRMADO
 
