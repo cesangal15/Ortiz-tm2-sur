@@ -480,11 +480,12 @@ async function generarExcel(proyecto){
       msg.innerHTML='<div class="aviso">No hay filas para el proyecto '+proyecto+' en esta fecha.</div>';
       return;
     }
-    let hayAvisoGN=false; const overExtra=[];
+    let hayAvisoGN=false; const overExtra=[]; const sinCodigo=[];
     const aoa=filasProyecto.map(f=>{
       const row=buildParteRow(f, proyectoStr, cfg, tipoJornada, catTrabajadores);
       if(row._aviso) hayAvisoGN=true;
       if(row._avisoExtra) overExtra.push(row._nombre);
+      if(!String(f.codigo||'').trim()) sinCodigo.push(f.nombre);  // sin código Navision (col A queda "| NOMBRE")
       return row;
     });
 
@@ -512,6 +513,7 @@ async function generarExcel(proyecto){
     if(hayAvisoGN) out+='<div class="aviso">⚠️ Este día tiene horas nocturnas/dominicales: revisar columnas G–N a mano antes de importar (mapeo pendiente de confirmar, ver §6).</div>';
     if(overExtra.length){ const mx=parseFloat(cfg.max_extras_dia)||2;
       out+='<div class="aviso">ℹ️ Estas personas trabajaron más de '+mx+' horas extra: <b>'+overExtra.map(esc).join(', ')+'</b>. El archivo reporta solo '+mx+' (el tope); el resto queda para que el residente lo sume a mano en los días que corresponda.</div>'; }
+    if(sinCodigo.length) out+='<div class="aviso">⚠️ Sin código Navision (la columna A queda incompleta "| NOMBRE"): <b>'+sinCodigo.map(esc).join(', ')+'</b>. Consigue su código en Navision/RRHH y ponlo en PERSONAL antes de importar.</div>';
     if(avisosProyDefecto.length) out+='<div class="aviso">⚠️ No se pudo determinar el proyecto habitual de: '+avisosProyDefecto.map(esc).join(', ')+'. Se incluyeron en 3701 por defecto — mover a mano si corresponde.</div>';
     msg.innerHTML=out;
   }catch(err){
