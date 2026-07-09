@@ -95,7 +95,7 @@
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbymgvQX03ZqS_YzIz5l6WVesasDUMYwGOFItrggTJCdsFhcjXQvDPVz03E7mNcZQ4Nq/exec";
 
 let STATE = { usuario:'', rol:'', fecha:'', cuadrillas:[], cuadrillaActual:'', personas:[], bloques:[],
-  config:{}, festivos:[], jornada:{}, catCC:[], catCCUsados:[], catMotivos:[], recientesCC:{}, nextBloqueId:1, enviando:false };
+  config:{}, festivos:[], jornada:{}, catCC:[], catCCUsados:[], catMotivos:[], recientesCC:{}, turnos:[], nextBloqueId:1, enviando:false };
 
 window.onload = function(){
   const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
@@ -122,6 +122,7 @@ async function cargarRoster(){
     STATE.cuadrillaActual=STATE.cuadrillas[0]||'';
     STATE.config=data.config||{}; STATE.festivos=data.festivos||[]; STATE.jornada=data.jornada||{};
     STATE.catCC=data.catCC||[]; STATE.catCCUsados=data.catCCUsados||[]; STATE.catMotivos=data.catMotivos||[]; STATE.recientesCC=data.recientesCC||{};
+    STATE.turnos=data.turnos||[];   // D72: catálogo de turnos para pre-llenar horas por bloque
     STATE.personas=(data.personas||[]).map((p,i)=>({ _pid:i, cedula:p.cedula, codigo:p.codigo, nombre:p.nombre,
       cargo:p.cargo, cuadrilla:p.cuadrilla, presente:true, motivo:'',
       hora_entrada: STATE.jornada.entrada||'', hora_salida: STATE.jornada.salida||'',
@@ -157,8 +158,19 @@ function togglePresente(i, checked){
 function setMotivo(i, v){ STATE.personas[i].motivo=v; }
 
 function agregarBloque(){
-  STATE.bloques.push({ id:STATE.nextBloqueId++, cc:'', proyecto:'', uf:'', cuadrilla:STATE.cuadrillaActual,
-    hora_entrada:STATE.jornada.entrada||'', hora_salida:STATE.jornada.salida||'', ccQuery:'', ccAbierto:false });
+  // D72: turno por defecto = 1 (diurno). Sus horas coinciden con la jornada estándar; si TURNOS no
+  // está cargada, cae a la jornada del día.
+  const t1=turnoHoras('1', STATE.fecha);
+  STATE.bloques.push({ id:STATE.nextBloqueId++, cc:'', proyecto:'', uf:'', cuadrilla:STATE.cuadrillaActual, turno:'1',
+    hora_entrada:(t1?t1.entrada:STATE.jornada.entrada)||'', hora_salida:(t1?t1.salida:STATE.jornada.salida)||'', ccQuery:'', ccAbierto:false });
+  render();
+}
+// D72: al cambiar el turno del bloque, se pre-llenan sus horas de entrada/salida (captura cruda: se
+// pueden ajustar luego). El override por persona sigue disponible para excepciones dentro del bloque.
+function bloqueTurnoChange(bid, v){
+  const b=STATE.bloques.find(x=>x.id===bid); if(!b) return;
+  b.turno=v; const t=turnoHoras(v, STATE.fecha);
+  if(t){ b.hora_entrada=t.entrada; b.hora_salida=t.salida; }
   render();
 }
 function quitarBloque(id){
@@ -167,6 +179,41 @@ function quitarBloque(id){
   render();
 }
 function proyectoFromCC(cc){ const m=String(cc||'').match(/^(\d{4})/); return m?m[1]:''; }
+
+/* ---------- TURNOS (D72): pre-llenan la hora de entrada/salida por bloque ----------
+ * Cada turno tiene variantes por tipo de día (lv=L-V, lj=L-J, viernes, sabado). Se elige la fila que
+ * mejor calza con la fecha del reporte. En domingo/festivo NO se pre-llena (jornada 0h, revisión manual).
+ * La captura sigue siendo CRUDA (D69b): el turno solo rellena; el usuario puede ajustar. */
+function diaTipoTurno(fecha){
+  const d=String(fecha||'').split('-'); if(d.length<3) return 'lj';
+  const dow=new Date(Number(d[0]),Number(d[1])-1,Number(d[2])).getDay();
+  if(dow===6) return 'sabado'; if(dow===5) return 'viernes'; if(dow===0) return 'domingo'; return 'lj';
+}
+// Fila de TURNOS que aplica a (turno, fecha), respetando la preferencia por día. null si no hay match.
+function turnoHoras(turno, fecha){
+  if(STATE.jornada && STATE.jornada.tipo==='domfest') return null;  // domingo/festivo: sin pre-llenado
+  const cand=STATE.turnos.filter(t=>String(t.turno)===String(turno));
+  if(!cand.length) return null;
+  const dt=diaTipoTurno(fecha);
+  const pref = dt==='sabado' ? ['sabado'] : dt==='viernes' ? ['viernes','lv'] : ['lj','lv'];
+  for(let i=0;i<pref.length;i++){ const m=cand.find(t=>t.tipo_dia===pref[i]); if(m) return m; }
+  return cand[0];
+}
+// Horas de descanso a descontar del bloque según su turno (cena/almuerzo, normalmente 1h). null = usar
+// el descuento de almuerzo por rango (comportamiento diurno original).
+function descansoDeBloque(b){
+  const t=turnoHoras(b&&b.turno||'1', STATE.fecha);
+  if(t && t.descanso_ini && t.descanso_fin){
+    const di=horasNum(t.descanso_ini); let df=horasNum(t.descanso_fin); if(df!=null&&di!=null&&df<di) df+=24;
+    if(di!=null&&df!=null) return Math.max(0, df-di);
+  }
+  return null;
+}
+// Turnos únicos disponibles (para el <select>), ordenados por número.
+function turnosDisponibles(){
+  const s=[]; STATE.turnos.forEach(t=>{ if(s.indexOf(String(t.turno))<0) s.push(String(t.turno)); });
+  return s.sort();
+}
 
 // Al teclear en el buscador NO se re-renderiza todo (eso hacía perder el foco del input y no dejaba
 // escribir). Solo se actualiza el contenedor de resultados de ese bloque; el input conserva su foco.
@@ -227,26 +274,39 @@ function setOverride(pidx, campo, v){ STATE.personas[pidx][campo]=v; }
 
 /* ---------- validaciones suaves (avisan, no bloquean) ---------- */
 function horasNum(hhmm){ if(!hhmm) return null; const p=hhmm.split(':'); if(p.length<2) return null; return Number(p[0])+Number(p[1])/60; }
-function horasTrabajadas(entrada, salida, cfg){
+// D72: `descanso` (h) opcional. Si viene (turno nocturno con cena, o diurno con almuerzo conocido) se
+// descuenta directo; si es null se cae al descuento de almuerzo por rango (diurno original). Cruce de
+// medianoche: si la salida es "menor" que la entrada se suma 24h (turnos nocturnos).
+function horasTrabajadas(entrada, salida, cfg, descanso){
   const e=horasNum(entrada), s=horasNum(salida);
   if(e==null||s==null) return null;
-  let h=s-e;
-  const almIni=horasNum(cfg.almuerzo_ini||'12:00'), almFin=horasNum(cfg.almuerzo_fin||'13:00');
-  if(almIni!=null && almFin!=null && e<=almIni && s>=almFin) h-=(almFin-almIni);
-  return h;
+  let h=s-e; if(h<0) h+=24;
+  if(descanso!=null){ h-=descanso; }
+  else {
+    const almIni=horasNum(cfg.almuerzo_ini||'12:00'), almFin=horasNum(cfg.almuerzo_fin||'13:00');
+    if(almIni!=null && almFin!=null && e<=almIni && s>=almFin) h-=(almFin-almIni);
+  }
+  return h<0?0:h;
 }
 function calcularAvisos(){
   const avisos=[];
   const cfg=STATE.config, tope=STATE.jornada.tope||0, maxExtra=parseFloat(cfg.max_extras_dia)||2;
+  let hayNocturno=false;
   STATE.bloques.forEach(b=>{
     const e=b.hora_entrada, s=b.hora_salida;
+    const t=turnoHoras(b.turno||'1', STATE.fecha), cruza=t?t.cruza_medianoche:false;
+    if(cruza) hayNocturno=true;
     if(e && s){
-      if(horasNum(e)>=horasNum(s)) avisos.push(`Bloque "${esc(b.cc)||'(sin CC)'}": la hora de entrada es mayor o igual a la de salida.`);
-      const h=horasTrabajadas(e,s,cfg);
+      // En turnos que cruzan medianoche la entrada > salida es NORMAL (no se avisa).
+      if(!cruza && horasNum(e)>=horasNum(s)) avisos.push(`Bloque "${esc(b.cc)||'(sin CC)'}": la hora de entrada es mayor o igual a la de salida.`);
+      const h=horasTrabajadas(e,s,cfg,descansoDeBloque(b));
       if(h!=null && h>tope+maxExtra) avisos.push(`Bloque "${esc(b.cc)||'(sin CC)'}": ${h.toFixed(1)}h trabajadas superan el turno (${tope}h) + extras permitidas (${maxExtra}h).`);
     }
     if(!b.cc) avisos.push('Hay un bloque sin Centro de Costo seleccionado.');
   });
+  // D72: recordatorio para turnos nocturnos — las horas se guardan crudas; el cálculo fino de recargos
+  // y extras nocturnas para el Excel Navision (columnas G–N) está pendiente de confirmar con la empresa.
+  if(hayNocturno) avisos.push('Turno nocturno en uso: las horas se guardan tal cual; los recargos/extras nocturnos del Excel se revisan aparte (mapeo pendiente de confirmar).');
   const sinAsignar=personasCuadrilla().filter(p=>p.presente && p.bloqueId==null);
   if(sinAsignar.length) avisos.push(`${sinAsignar.length} persona(s) presente(s) sin asignar a un bloque: `+sinAsignar.map(p=>esc(p.nombre)).join(', ')+'.');
   return avisos;
@@ -352,6 +412,16 @@ function bloqueHtml(b, personas){
       + `<div class="cc-results" id="cc-results-${b.id}"></div>`;   // se llena vía renderCCResults (sin re-render global)
     h+='</div>';
   }
+  // D72: selector de turno (pre-llena las horas). Solo si TURNOS está cargada y no es domingo/festivo.
+  const turnos=turnosDisponibles();
+  if(turnos.length && STATE.jornada.tipo!=='domfest'){
+    const bt=String(b.turno||'1');
+    h+='<div class="row" style="margin-top:10px;"><div class="field" style="max-width:260px;"><label>Turno</label>'
+      + `<select onchange="bloqueTurnoChange(${b.id},this.value)">`
+      + turnos.map(tn=>{ const t=turnoHoras(tn, STATE.fecha); const rango=t?` · ${esc(t.entrada)}–${esc(t.salida)}${t.cruza_medianoche?' (+1)':''}`:'';
+          return `<option value="${esc(tn)}" ${tn===bt?'selected':''}>Turno ${esc(tn)}${rango}</option>`; }).join('')
+      + '</select></div></div>';
+  }
   h+='<div class="row" style="margin-top:10px;">'
     + `<div class="field"><label>Hora entrada (bloque)</label><input type="time" value="${esc(b.hora_entrada)}" onchange="bloqueHoraChange(${b.id},'hora_entrada',this.value)"></div>`
     + `<div class="field"><label>Hora salida (bloque)</label><input type="time" value="${esc(b.hora_salida)}" onchange="bloqueHoraChange(${b.id},'hora_salida',this.value)"></div>`
@@ -397,7 +467,7 @@ async function enviar(){
       const b=STATE.bloques.find(x=>x.id===p.bloqueId);
       const he=p.hora_entrada_ov!=null?p.hora_entrada_ov:(b?b.hora_entrada:p.hora_entrada);
       const hs=p.hora_salida_ov!=null?p.hora_salida_ov:(b?b.hora_salida:p.hora_salida);
-      const h=horasTrabajadas(he,hs,cfg);
+      const h=horasTrabajadas(he,hs,cfg,descansoDeBloque(b));
       if(h!=null && h>tope+maxExtra+0.001) over.push(`  • ${p.nombre} — ${h.toFixed(1)}h`);
     });
     if(over.length){
