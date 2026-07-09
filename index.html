@@ -64,10 +64,12 @@ const USUARIOS = {
   // que los de tierras). El ROL (capataz_odt/capataz_odl) es lo que activa el modo del formulario.
   // Claves placeholder comunes por área; llaves en minúscula (login hace trim+toLowerCase).
   // ODT (transversal): Mauricio, Eduardo, Enrique. ODL (longitudinal): Jairo.
-  'mauricio':      { clave: 'dren2026',  rol: 'capataz_odt',   redirige: 'reporte-drenajes.html' },
-  'eduardo':       { clave: 'dren2026',  rol: 'capataz_odt',   redirige: 'reporte-drenajes.html' },
-  'enrique':       { clave: 'dren2026',  rol: 'capataz_odt',   redirige: 'reporte-drenajes.html' },
-  'jairo':         { clave: 'dren2026',  rol: 'capataz_odl',   redirige: 'reporte-drenajes.html' },
+  // Doble deber (D72): igual que los capataces de tierra, ahora también reportan asistencia de su
+  // personal ODT/ODL, así que aterrizan en seleccion-reporte.html (reporte de drenajes + asistencia).
+  'mauricio':      { clave: 'dren2026',  rol: 'capataz_odt',   redirige: 'seleccion-reporte.html' },
+  'eduardo':       { clave: 'dren2026',  rol: 'capataz_odt',   redirige: 'seleccion-reporte.html' },
+  'enrique':       { clave: 'dren2026',  rol: 'capataz_odt',   redirige: 'seleccion-reporte.html' },
+  'jairo':         { clave: 'dren2026',  rol: 'capataz_odl',   redirige: 'seleccion-reporte.html' },
   'residente_odt': { clave: 'Ortiz2026', rol: 'residente_odt', redirige: 'residente-drenajes.html' },
   'residente_odl': { clave: 'Ortiz2026', rol: 'residente_odl', redirige: 'residente-drenajes.html' },
   // Chequeadoras (claves: comparten una contraseña común; usuario se compara en minúsculas)
