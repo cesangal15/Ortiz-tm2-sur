@@ -48,7 +48,11 @@ const CAT_MOTIVOS_HEADERS   = ['string_motivo'];
 // CC_USADOS: subconjunto de CAT_CC que se usa a diario (≈5-20). El usuario lo mantiene (pega los CC
 // frecuentes, mismo string exacto que CAT_CC). El formulario muestra estos por defecto y deja buscar
 // el resto del catálogo completo. Si la hoja está vacía, se usa el catálogo completo como antes.
-const CC_USADOS_HEADERS     = ['string_cc'];
+// D72: `area` (col 2) opcional para servir los CC frecuentes SOLO al área que los usa (p. ej. todos
+// los `06.*` de drenajes van a ODT y no ensucian el datalist de los capataces de tierra). Celda vacía
+// = 'tierras' (retrocompatible con lo ya pegado). Al usuario "sin área" (residente general/admin) se
+// le muestran todos.
+const CC_USADOS_HEADERS     = ['string_cc','area'];
 
 /* ---------- helpers genéricos (mismo patrón que Codigo.gs) ---------- */
 function json(o){ return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
@@ -98,6 +102,20 @@ function areaDeUsuario(usuario){
 function areaDeCuadrillaMap(){
   const m={}; readSheet('CUADRILLAS', CUADRILLAS_HEADERS).forEach(r=>{ m[r.cuadrilla]=norm(r.area)||'tierras'; });
   return m;
+}
+// Área de quien REPORTA (para filtrar CC_USADOS): residente de área por su rol; capataz/mairy por sus
+// cuadrillas si todas son de la misma área. Mezcla o desconocido = '' (sin filtro: ve todas).
+function areaDeReportante(usuario){
+  const porRol=areaDeUsuario(usuario); if(porRol) return porRol;
+  const cuads=cuadrillasDeUsuario(usuario), map=areaDeCuadrillaMap(); let a=null;
+  for(let i=0;i<cuads.length;i++){ const ar=map[cuads[i]]||'tierras'; if(a===null) a=ar; else if(a!==ar) return ''; }
+  return a===null ? '' : a;
+}
+// Lee CC_USADOS y devuelve los string_cc que aplican al área dada ('' = todas). Empty en la hoja = tierras.
+function ccUsadosParaArea(area){
+  const rows=readSheet('CC_USADOS', CC_USADOS_HEADERS);
+  return rows.filter(r=> String(r.string_cc||'').trim() && (!area || (norm(r.area)||'tierras')===area))
+             .map(r=>String(r.string_cc).trim());
 }
 
 /* ---------- roster date-aware (D72) ----------
@@ -205,7 +223,7 @@ function roster(e){
     .map(p=>({ cedula:p.cedula||'', codigo:p.codigo||'', nombre:p.nombre||'', cargo:p.cargo||'', cuadrilla:p.cuadrilla||'' }));
   const jornada=jornadaDelDia(fecha, cfg, festivos);
   const catCC=readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
-  const catCCUsados=readSheet('CC_USADOS', CC_USADOS_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
+  const catCCUsados=ccUsadosParaArea(areaDeReportante(usuario));   // D72: CC frecuentes del área del reportante
   const catMotivos=readSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS).map(r=>String(r.string_motivo||'')).filter(Boolean);
   // CC usados recientemente por cada cuadrilla (últimos 60 días de ASISTENCIA), más reciente primero.
   const recientesCC={};
@@ -280,7 +298,7 @@ function asistenciaDia(e){
   const festivos=getFestivos();
   const jornada=jornadaDelDia(fecha, cfg, festivos);
   const catCC=readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
-  const catCCUsados=readSheet('CC_USADOS', CC_USADOS_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
+  const catCCUsados=ccUsadosParaArea(area);   // D72: en el resumen, CC frecuentes del área revisada ('' = todas)
   const catMotivos=readSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS).map(r=>String(r.string_motivo||'')).filter(Boolean);
   return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, jornada, catCC, catCCUsados, catMotivos });
 }
