@@ -534,9 +534,10 @@ function setupHojas(){
       ['proyecto_3701','3701| T2 - UF1 - R4513 PR 09+800 - PR 30+000']
     ]);
     cfgSh.appendRow(['proyecto_3702','PENDIENTE']); // parámetro abierto (§2 del prompt)
-    // D73: No. Recurso del admin en Navision ("código| NOMBRE"), string EXACTO. Parámetro abierto: si
-    // queda vacío, el generador NO agrega la fila del admin y avisa. NO se inventa el código.
-    cfgSh.appendRow(['admin_recurso','']);
+    // D73: No. Recurso del admin en Navision ("código| NOMBRE"), string EXACTO tal cual el listado de
+    // Trabajadores (Navision lo lee verbatim). Valor del dueño (jul-2026). Si se deja vacío, el generador
+    // NO agrega la fila del admin y avisa. OJO: debe coincidir carácter por carácter con Navision.
+    cfgSh.appendRow(['admin_recurso','77463| CESAR AUGUSTO GALVIS SANDINO']);
   }
 
   const festSh=getSheet('FESTIVOS', FESTIVOS_HEADERS);
