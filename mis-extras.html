@@ -107,7 +107,7 @@ function render(){
   const ccOrden = STATE.catCCUsados.concat(STATE.catCC.filter(cc=>STATE.catCCUsados.indexOf(cc)<0));
   const recursoVacio = !String(STATE.config.admin_recurso||'').trim();
   let h='';
-  h+='<p class="intro">Registra <b>solo tus horas extra</b> de un día puntual (máx <b>2h</b>). Tu jornada ordinaria se asume por fuera del sistema: no apareces en el Excel Navision salvo los días que registres aquí. Guardar dos veces el mismo día <b>reemplaza</b> lo anterior.</p>';
+  h+='<p class="intro">Registra <b>solo tus horas extra</b> de un día puntual (máx <b>2h</b>). El día se reporta <b>entero</b> en el Excel Navision (tu jornada ordinaria del día <b>+</b> las extras), con tu centro de costo — apareces como uno más del listado. Los días sin registro no apareces. Guardar dos veces el mismo día <b>reemplaza</b> lo anterior.</p>';
 
   if(recursoVacio){
     h+='<div class="aviso">⚠️ Falta configurar <b>admin_recurso</b> en la hoja CONFIG (tu «No. Recurso» de Navision, formato <code>código| NOMBRE</code>). Puedes guardar tus extras igual, pero <b>no se exportarán</b> al Parte hasta que lo configures.</div>';
@@ -116,11 +116,11 @@ function render(){
   h+='<div class="card">';
   h+='<div class="row">';
   h+=`<div class="field"><label>Fecha <span id="editBadge"></span></label><input type="date" id="f_fecha" value="${esc(STATE.fecha)}" onchange="onFechaChange(this.value)"></div>`;
-  h+=`<div class="field" style="max-width:150px;"><label>Horas (máx 2)</label><input type="number" id="f_horas" value="2" min="0.5" max="2" step="0.5"></div>`;
+  h+=`<div class="field" style="max-width:150px;"><label>Horas (máx 2)</label><input type="number" id="f_horas" value="2" min="0.5" max="2" step="0.5" oninput="actualizarPreview()"></div>`;
   h+='</div>';
 
   h+='<div class="row" style="margin-top:12px;">';
-  h+=`<div class="field"><label>Centro de Costo (tierras)</label><input type="text" id="f_cc" list="ccList" placeholder="Buscar CC por código o nombre…" oninput="onCCChange()"></div>`;
+  h+=`<div class="field"><label>Centro de Costo (tierras)</label><input type="text" id="f_cc" list="ccList" placeholder="Buscar CC por código o nombre…" oninput="actualizarPreview()"></div>`;
   h+=`<datalist id="ccList">${ccOrden.map(cc=>`<option value="${esc(cc)}">`).join('')}</datalist>`;
   h+='</div>';
 
@@ -133,6 +133,7 @@ function render(){
   h+='</div>';
 
   h+='<div class="proj-live" id="projLive">Proyecto derivado del CC: <b>—</b></div>';
+  h+='<div class="proj-live" id="reportePreview" style="margin-top:8px;">Se reportará: <b>—</b></div>';
 
   h+='<div class="btns">'
     + '<button class="btn" id="saveBtn" onclick="guardar()">Guardar</button>'
@@ -142,7 +143,17 @@ function render(){
   h+='</div>';
 
   document.getElementById('container').innerHTML=h;
-  onCCChange();
+  actualizarPreview();
+}
+
+// Tope de horas ordinarias del día (misma regla que el resto del módulo): 7.5 L-V / 4.5 sábado / 0 dom-fest.
+function topeDelDia(fecha){
+  const cfg=STATE.config;
+  const d=String(fecha||'').split('-'); if(d.length<3) return parseFloat(cfg.ord_lun_vie)||7.5;
+  const dt=new Date(Number(d[0]),Number(d[1])-1,Number(d[2])); const dow=dt.getDay();
+  if(dow===0 || STATE.festivos.indexOf(fecha)>=0) return 0;      // domingo/festivo
+  if(dow===6) return parseFloat(cfg.ord_sabado)||4.5;            // sábado
+  return parseFloat(cfg.ord_lun_vie)||7.5;                        // lunes-viernes
 }
 
 // GET del día: si existe registro, prellena (modo edición); si no, deja los valores por defecto
@@ -177,7 +188,7 @@ async function cargarFecha(fecha){
     document.getElementById('delBtn').disabled=true;
   }
   onTipoChange();
-  onCCChange();
+  actualizarPreview();
 }
 
 function onFechaChange(v){ STATE.fecha=v; cargarFecha(v); }
@@ -195,15 +206,30 @@ function onTipoChange(){
   } else {
     nota.innerHTML='';
   }
+  actualizarPreview();
 }
 
-function onCCChange(){
+// Actualiza el proyecto derivado del CC y la vista previa de lo que se reportará al Navision (día entero:
+// ordinarias de la jornada + las extras), para que el admin vea que NO sale "0 + extra".
+function actualizarPreview(){
   const cc=document.getElementById('f_cc').value.trim();
   const proj=proyectoFromCC(cc);
   const el=document.getElementById('projLive');
-  if(!cc){ el.innerHTML='Proyecto derivado del CC: <b>—</b>'; return; }
-  if(proj){ el.innerHTML=`Proyecto derivado del CC: <b>${esc(proj)}</b> → tu extra irá al archivo Navision <b>${esc(proj)}</b>.`; }
+  if(!cc){ el.innerHTML='Proyecto derivado del CC: <b>—</b>'; }
+  else if(proj){ el.innerHTML=`Proyecto derivado del CC: <b>${esc(proj)}</b> → tu extra irá al archivo Navision <b>${esc(proj)}</b>.`; }
   else { el.innerHTML='<span style="color:var(--error)">El CC no empieza por un código de proyecto (37xx). Revisa el CC.</span>'; }
+
+  const prev=document.getElementById('reportePreview'); if(!prev) return;
+  const horas=parseFloat(document.getElementById('f_horas').value);
+  const tipo=document.getElementById('f_tipo').value;
+  const tope=topeDelDia(STATE.fecha);
+  const hTxt=(!isNaN(horas)&&horas>0)?horas:'—';
+  if(tipo==='domfest'){
+    prev.innerHTML=`Se reportará: <b>${hTxt}h</b> en Dom/Fest (columnas G–N, <b>a mano</b>). Ese día no lleva jornada ordinaria.`;
+  } else {
+    const etq = tipo==='nocturna' ? 'extra nocturna' : 'extra diurna';
+    prev.innerHTML=`Se reportará: <b>${tope}h</b> ordinarias + <b>${hTxt}h</b> ${etq}${proj?` (proyecto <b>${esc(proj)}</b>)`:''}.`;
+  }
 }
 
 async function guardar(){

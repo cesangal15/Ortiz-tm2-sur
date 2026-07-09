@@ -470,23 +470,33 @@ function buildParteRow(f, proyectoStr, cfg, tipoJornada, catTrabajadores){
 }
 
 /* ---------- Canal "solo extras" del admin (D73) ----------
- * Parámetro abierto 2 (§2 del prompt): si un import real de Navision rechaza `0` en las horas ordinarias
- * de una fila con Ausente=No, voltear este flag a `false` para escribir celda VACÍA en vez de 0. Deja la
- * decisión centralizada en un solo lugar, fácil de cambiar. */
+ * El DÍA SE REPORTA ENTERO (decisión del dueño, jul-2026): el admin aparece como un trabajador normal
+ * más de la lista — su jornada ordinaria del día MÁS las horas extra, no "0 ordinarias + extra" (eso
+ * saldría raro). Solo registra las extras por practicidad; las ordinarias se rellenan solas con el tope
+ * de la jornada del día (7.5 L-V / 4.5 sábado, de CONFIG).
+ * Flag conmutable: si un import real de Navision rechaza el `0` en las columnas de horas no usadas de una
+ * fila con Ausente=No, voltear a `false` para escribir celda VACÍA en vez de 0 (las ordinarias siempre
+ * llevan su valor real; esto solo afecta las columnas de horas que quedan en cero). */
 const EXTRAS_ORDINARIAS_EN_CERO = true;
 
-// Fila A–R (18 columnas) de la extra del admin: todas las horas en 0 (o vacío según el flag) salvo la
-// columna del tipo de extra (E diurna / F nocturna). Dom/Fest NO se mapea (G–N parámetro abierto): las
-// horas quedan en 0 y el panel muestra aviso de revisión manual. Ausente=No, sin motivo.
-function buildAdminExtraRow(ex, proyectoStr, adminRecurso){
+// Fila A–R (18 columnas) de la extra del admin. Día entero: C = ordinarias del día (tope de la jornada)
+// + la columna del tipo de extra (E diurna / F nocturna). Dom/Fest NO se mapea (G–N parámetro abierto):
+// 0 ordinarias y el panel avisa revisión manual. Ausente=No, sin motivo. Recibe la jornada del día para
+// saber cuántas ordinarias corresponden (misma regla que el resto del módulo).
+function buildAdminExtraRow(ex, proyectoStr, adminRecurso, tipoJornada, cfg){
   const row=new Array(18).fill('');
   const cero = EXTRAS_ORDINARIAS_EN_CERO ? 0 : '';
+  const tope = tipoJornada==='sabado' ? (parseFloat(cfg.ord_sabado)||4.5)
+             : tipoJornada==='domfest' ? 0
+             : (parseFloat(cfg.ord_lun_vie)||7.5);
+  const esDomFest = ex.tipo==='domfest' || tipoJornada==='domfest';
   row[0]=adminRecurso;                 // A No. Recurso (de CONFIG.admin_recurso, string exacto)
   row[1]='';                           // B vacía
-  row[2]=cero; row[3]=cero; row[4]=cero; row[5]=cero;   // C–F horas: 0 (o vacío) salvo la del tipo
-  if(ex.tipo==='diurna')       row[4]=ex.horas;   // E Horas extras diurnas
-  else if(ex.tipo==='nocturna') row[5]=ex.horas;  // F Horas extras nocturnas
-  // domfest: no se mapea (G–N abierto) → queda en 0; el aviso naranja lo dispara generarExcel
+  row[2]= esDomFest ? cero : (tope||cero);          // C Horas ordinarias = jornada ENTERA del día
+  row[3]= cero;                                      // D Horas ordinarias dom/fest
+  row[4]= (ex.tipo==='diurna')  ? ex.horas : cero;  // E Horas extras diurnas
+  row[5]= (ex.tipo==='nocturna') ? ex.horas : cero; // F Horas extras nocturnas
+  // domfest: no se mapea (G–N abierto) → todo queda en 0; el aviso naranja lo dispara generarExcel
   row[14]=proyectoStr;                 // O No. Proyecto (string de CONFIG, igual que el resto)
   row[15]=ex.cc;                       // P Centro de coste (exacto, el guardado)
   row[16]='No';                        // Q Ausente
@@ -545,7 +555,7 @@ async function generarExcel(proyecto){
       if(!adminRecurso){ avisoAdminSinRecurso=true; }
       else {
         extrasDia.forEach(ex=>{
-          aoa.push(buildAdminExtraRow(ex, proyectoStr, adminRecurso));
+          aoa.push(buildAdminExtraRow(ex, proyectoStr, adminRecurso, tipoJornada, cfg));
           adminAgregadas++;
           if(ex.tipo==='domfest') adminDomFest.push(ex.fecha);
         });
