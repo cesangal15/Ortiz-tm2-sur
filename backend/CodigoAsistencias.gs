@@ -520,11 +520,13 @@ function setupHojas(){
 
   const cfgSh=getSheet('CONFIG', CONFIG_HEADERS);
   if(cfgSh.getLastRow()<2){
-    cfgSh.getRange(2,1,13,2).setValues([
+    cfgSh.getRange(2,1,16,2).setValues([
       ['ord_lun_vie','7.5'], ['ord_sabado','4.5'], ['ord_domingo','0'],
       ['entrada_lv','07:00'], ['salida_lv','15:30'], ['entrada_sab','07:00'], ['salida_sab','11:30'],
       ['almuerzo_ini','12:00'], ['almuerzo_fin','13:00'],
       ['max_extras_dia','2'], ['nocturno_desde','19:00'], ['nocturno_hasta','06:00'],
+      // Dom/Fest (criterio de nómina, D72): de la jornada base se reparten así las horas ordinarias.
+      ['domfest_ord_base','8'], ['domfest_ord_horas','7.33'], ['domfest_scomp_horas','0.67'],
       ['proyecto_3701','3701| T2 - UF1 - R4513 PR 09+800 - PR 30+000']
     ]);
     cfgSh.appendRow(['proyecto_3702','PENDIENTE']); // parámetro abierto (§2 del prompt)
