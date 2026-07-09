@@ -409,6 +409,18 @@ function gestionPersonal(body){
     sh.getRange(row,8).setValue('');               // limpia el retiro; conserva fecha_ingreso (col 9)
     return json({ok:true, op:'reactivar'});
   }
+  if(op==='reingreso'){
+    // D72: reingreso REAL con historial. NO reactiva la fila vieja (conservaría el hueco perdido);
+    // crea una fila NUEVA copiando los datos de la persona con fecha_ingreso = fecha del reingreso.
+    // Evita la doble digitación (no se reescribe cédula/código/nombre) y respeta los días inactivos:
+    // la fila vieja aplica hasta su retiro y la nueva desde el reingreso; el hueco no lo cubre ninguna.
+    const fechaIng=fdate(body.fecha_ingreso)||hoy;
+    const src=readSheet('PERSONAL', PERSONAL_HEADERS).find(p=>p._row===row);
+    if(!src) return json({ok:false, error:'No se encontró la persona a reingresar.'});
+    const responsable=responsableDeCuadrilla(src.cuadrilla)||src.responsable||'';
+    sh.appendRow([src.cedula||'', src.codigo||'', src.nombre||'', src.cargo||'', src.cuadrilla||'', responsable, 'activo', '', fechaIng]);
+    return json({ok:true, op:'reingreso'});
+  }
   if(op==='mover'){
     const cuadrilla=body.cuadrilla||'';
     const responsable=responsableDeCuadrilla(cuadrilla);
