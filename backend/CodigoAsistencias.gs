@@ -36,8 +36,11 @@ const PERSONAL_HEADERS      = ['cedula','codigo','nombre','cargo','cuadrilla','r
 // D72: `area` (col 3) etiqueta cada cuadrilla como tierras/odt/odl para que residente_odt/residente_odl
 // vean SOLO su área en el resumen. Celda vacía en filas viejas = 'tierras' (retrocompatible).
 const CUADRILLAS_HEADERS    = ['cuadrilla','responsables','area'];
+// D72: `turno` (col 17) guarda el turno con que se reportó cada persona, para que el export conozca la
+// jornada programada y calcule las extras (Opción A: extra = lo trabajado más allá de la salida del
+// turno). Vacío en filas viejas = turno diurno estándar (el export arma la jornada por defecto del día).
 const ASISTENCIA_HEADERS    = ['id_registro','timestamp','fecha','reporta','cuadrilla','codigo','cedula','nombre',
-  'cargo','cc','proyecto','hora_entrada','hora_salida','presente','motivo_ausencia','observacion'];
+  'cargo','cc','proyecto','hora_entrada','hora_salida','presente','motivo_ausencia','observacion','turno'];
 const CONFIG_HEADERS        = ['clave','valor'];
 const FESTIVOS_HEADERS      = ['fecha'];
 const CAT_TRABAJADORES_HEADERS = ['codigo','string_navision'];
@@ -259,7 +262,7 @@ function asistenciaDia(e){
     .map(r=>({ id_registro:r.id_registro, timestamp:r.timestamp, fecha:fdate(r.fecha), reporta:r.reporta,
       cuadrilla:r.cuadrilla, codigo:r.codigo, cedula:r.cedula, nombre:r.nombre, cargo:r.cargo, cc:r.cc,
       proyecto:r.proyecto, hora_entrada:ftime(r.hora_entrada), hora_salida:ftime(r.hora_salida),
-      presente:r.presente, motivo_ausencia:r.motivo_ausencia, observacion:r.observacion }));
+      presente:r.presente, motivo_ausencia:r.motivo_ausencia, observacion:r.observacion, turno:String(r.turno||'') }));
   const cuadrillasCat=readSheet('CUADRILLAS', CUADRILLAS_HEADERS).filter(cq=>enArea(cq.cuadrilla));
   // D72: roster date-aware + por área — "se esperaba" a esta persona en ESA fecha (no la foto de hoy).
   const personalActivo=readSheet('PERSONAL', PERSONAL_HEADERS).filter(p=>activaEnFecha(p, fecha) && enArea(p.cuadrilla));
@@ -310,7 +313,10 @@ function asistenciaDia(e){
   const catCC=readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
   const catCCUsados=ccUsadosParaArea(area);   // D72: en el resumen, CC frecuentes del área revisada ('' = todas)
   const catMotivos=readSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS).map(r=>String(r.string_motivo||'')).filter(Boolean);
-  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, jornada, catCC, catCCUsados, catMotivos });
+  const turnos=readSheet('TURNOS', TURNOS_HEADERS).map(t=>({ turno:String(t.turno||''), tipo_dia:norm(t.tipo_dia),
+    entrada:ftime(t.entrada), salida:ftime(t.salida), descanso_ini:ftime(t.descanso_ini), descanso_fin:ftime(t.descanso_fin),
+    cruza_medianoche: String(t.cruza_medianoche||'').toUpperCase()==='SI' }));
+  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, jornada, catCC, catCCUsados, catMotivos, turnos });
 }
 
 /* ---------- POST asistencia_individual: upsert por PERSONA (residente/jeisson completan faltantes) ----------
@@ -337,7 +343,7 @@ function guardarIndividual(body){
   const nuevas=incoming.map(f=>[
     Utilities.getUuid(), ts, fecha, body.reporta||usuario, f.cuadrilla||'', f.codigo||'', f.cedula||'', f.nombre||'', f.cargo||'',
     f.cc||'', f.proyecto||'', f.hora_entrada||'', f.hora_salida||'',
-    (f.presente===false||f.presente==='No')?'No':'Si', f.motivo_ausencia||'', f.observacion||''
+    (f.presente===false||f.presente==='No')?'No':'Si', f.motivo_ausencia||'', f.observacion||'', f.turno||''
   ]);
   const todas=rows.concat(nuevas);
   sh.clearContents();
@@ -366,7 +372,7 @@ function exportDia(e){
     .map(r=>({ codigo:r.codigo||'', cedula:r.cedula||'', nombre:r.nombre||'', cargo:r.cargo||'',
       cuadrilla:r.cuadrilla||'', cc:r.cc||'', proyecto:String(r.proyecto||''),
       hora_entrada:ftime(r.hora_entrada), hora_salida:ftime(r.hora_salida),
-      presente:r.presente||'Si', motivo_ausencia:r.motivo_ausencia||'', fecha:fdate(r.fecha) }));
+      presente:r.presente||'Si', motivo_ausencia:r.motivo_ausencia||'', turno:String(r.turno||''), fecha:fdate(r.fecha) }));
   // proyecto_defecto por cuadrilla: proyecto MÁS FRECUENTE históricamente (para ausentes, que no llevan CC).
   const historico=readSheet('ASISTENCIA', ASISTENCIA_HEADERS).filter(r=> r.presente==='Si' && r.proyecto);
   const conteo={}; // cuadrilla -> {proyecto:n}
@@ -379,7 +385,11 @@ function exportDia(e){
   });
   const catTrabRows=readSheet('CAT_TRABAJADORES', CAT_TRABAJADORES_HEADERS);
   const catTrabajadores={}; catTrabRows.forEach(r=>{ if(r.codigo) catTrabajadores[String(r.codigo).trim()]=r.string_navision; });
-  return json({ ok:true, fecha, filas, proyectoDefecto, catTrabajadores, config:getConfigMap(), festivos:getFestivos() });
+  // D72: catálogo de turnos, para que el export calcule ordinarias/extras según la jornada programada.
+  const turnos=readSheet('TURNOS', TURNOS_HEADERS).map(t=>({ turno:String(t.turno||''), tipo_dia:norm(t.tipo_dia),
+    entrada:ftime(t.entrada), salida:ftime(t.salida), descanso_ini:ftime(t.descanso_ini), descanso_fin:ftime(t.descanso_fin),
+    cruza_medianoche: String(t.cruza_medianoche||'').toUpperCase()==='SI' }));
+  return json({ ok:true, fecha, filas, proyectoDefecto, catTrabajadores, config:getConfigMap(), festivos:getFestivos(), turnos });
 }
 
 /* ---------- POST reporte_asistencia: escritura directa (sin bandeja), pisa fecha+cuadrilla (D03) ---------- */
@@ -396,7 +406,7 @@ function guardarAsistencia(body){
   const nuevas=(body.filas||[]).map(f=>[
     Utilities.getUuid(), ts, fecha, reporta, cuadrilla, f.codigo||'', f.cedula||'', f.nombre||'', f.cargo||'',
     f.cc||'', f.proyecto||'', f.hora_entrada||'', f.hora_salida||'',
-    f.presente===false||f.presente==='No' ? 'No':'Si', f.motivo_ausencia||'', f.observacion||''
+    f.presente===false||f.presente==='No' ? 'No':'Si', f.motivo_ausencia||'', f.observacion||'', f.turno||''
   ]);
   const todas=keep.concat(nuevas);
   sh.clearContents();
