@@ -62,6 +62,13 @@
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbymgvQX03ZqS_YzIz5l6WVesasDUMYwGOFItrggTJCdsFhcjXQvDPVz03E7mNcZQ4Nq/exec";
 const LAST_CC_KEY = 'extras_admin_last_cc';
 
+// CC por defecto del admin (dato del dueño, jul-2026): sobrecosto "JEFES DE ÁREA…", una sola cuenta.
+// El prefijo del proyecto (3701/3702) puede variar; por eso se inyectan AMBAS variantes al desplegable.
+// Este CC es de sobrecosto (no está en el catálogo de CC de tierras), así que se inyecta siempre a mano.
+const DEFAULT_CC = '3701.I010303| JEFES DE ÁREA DE PRODUCCIÓN Y RESIDENTES';
+function ccConProyecto(cc, proy){ return String(cc).replace(/^\d{4}/, proy); }   // cambia el prefijo 37xx
+const DEFAULT_CC_ALT = ccConProyecto(DEFAULT_CC, '3702');
+
 let STATE = { usuario:'', config:{}, festivos:[], catCC:[], catCCUsados:[], fecha:'', editando:false };
 
 window.onload = function(){
@@ -102,9 +109,11 @@ function tipoSugerido(fecha){
 }
 
 function render(){
-  // Los CC frecuentes (CC_USADOS) primero en el datalist; el resto del catálogo queda disponible al
-  // escribir (búsqueda nativa del datalist). Igual criterio que el resto del módulo.
-  const ccOrden = STATE.catCCUsados.concat(STATE.catCC.filter(cc=>STATE.catCCUsados.indexOf(cc)<0));
+  // CC por defecto del admin (3701/3702) primero, luego los frecuentes (CC_USADOS) y el resto del
+  // catálogo — todo disponible en el datalist (búsqueda nativa al escribir). Igual criterio del módulo.
+  const defaults=[DEFAULT_CC, DEFAULT_CC_ALT];
+  const resto = STATE.catCCUsados.concat(STATE.catCC.filter(cc=>STATE.catCCUsados.indexOf(cc)<0));
+  const ccOrden = defaults.concat(resto.filter(cc=>defaults.indexOf(cc)<0));
   const recursoVacio = !String(STATE.config.admin_recurso||'').trim();
   let h='';
   h+='<p class="intro">Registra <b>solo tus horas extra</b> de un día puntual (máx <b>2h</b>). El día se reporta <b>entero</b> en el Excel Navision (tu jornada ordinaria del día <b>+</b> las extras), con tu centro de costo — apareces como uno más del listado. Los días sin registro no apareces. Guardar dos veces el mismo día <b>reemplaza</b> lo anterior.</p>';
@@ -120,7 +129,7 @@ function render(){
   h+='</div>';
 
   h+='<div class="row" style="margin-top:12px;">';
-  h+=`<div class="field"><label>Centro de Costo (tierras)</label><input type="text" id="f_cc" list="ccList" placeholder="Buscar CC por código o nombre…" oninput="actualizarPreview()"></div>`;
+  h+=`<div class="field"><label>Centro de Costo</label><input type="text" id="f_cc" list="ccList" placeholder="Buscar CC por código o nombre…" oninput="actualizarPreview()"><div class="tipo-nota">Por defecto tu CC de sobrecosto; cambia el prefijo <b>3701</b>↔<b>3702</b> si corresponde (ambos están en la lista).</div></div>`;
   h+=`<datalist id="ccList">${ccOrden.map(cc=>`<option value="${esc(cc)}">`).join('')}</datalist>`;
   h+='</div>';
 
@@ -180,7 +189,7 @@ async function cargarFecha(fecha){
     document.getElementById('delBtn').disabled=false;
   } else {
     STATE.editando=false;
-    ccInp.value=localStorage.getItem(LAST_CC_KEY)||'';   // preselecciona el último CC usado (§6)
+    ccInp.value=localStorage.getItem(LAST_CC_KEY)||DEFAULT_CC;   // último CC usado, o el default del admin (§6)
     horasInp.value=2;
     tipoSel.value=tipoSugerido(fecha);
     document.getElementById('editBadge').innerHTML='';
