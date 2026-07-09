@@ -53,6 +53,12 @@ const CAT_MOTIVOS_HEADERS   = ['string_motivo'];
 // = 'tierras' (retrocompatible con lo ya pegado). Al usuario "sin área" (residente general/admin) se
 // le muestran todos.
 const CC_USADOS_HEADERS     = ['string_cc','area'];
+// D72: catálogo de TURNOS asignados (diurno T1 + nocturnos T2–T5). Cada fila = turno × tipo de día,
+// con entrada/salida y el descanso (almuerzo/cena) a descontar. `cruza_medianoche`='SI' cuando la
+// salida es del día siguiente (los nocturnos). Sirve para PRE-LLENAR la hora de entrada/salida del
+// reporte (captura cruda, D69b); la clasificación de extras/recargos sigue calculándose aparte y su
+// mapeo fino a las columnas G–N Navision sigue siendo parámetro abierto hasta confirmarlo la empresa.
+const TURNOS_HEADERS        = ['turno','tipo_dia','entrada','salida','descanso_ini','descanso_fin','cruza_medianoche'];
 
 /* ---------- helpers genéricos (mismo patrón que Codigo.gs) ---------- */
 function json(o){ return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
@@ -235,7 +241,11 @@ function roster(e){
     const list=recientesCC[r.cuadrilla]; if(!list) return;
     if(list.indexOf(r.cc)<0 && list.length<10) list.push(r.cc);
   });
-  return json({ ok:true, cuadrillas, personas, config:cfg, festivos, jornada, catCC, catCCUsados, catMotivos, recientesCC });
+  // D72: turnos asignados (para pre-llenar entrada/salida en el formulario). Horas por duck-typing.
+  const turnos=readSheet('TURNOS', TURNOS_HEADERS).map(t=>({ turno:String(t.turno||''), tipo_dia:norm(t.tipo_dia),
+    entrada:ftime(t.entrada), salida:ftime(t.salida), descanso_ini:ftime(t.descanso_ini), descanso_fin:ftime(t.descanso_fin),
+    cruza_medianoche: String(t.cruza_medianoche||'').toUpperCase()==='SI' }));
+  return json({ ok:true, cuadrillas, personas, config:cfg, festivos, jornada, catCC, catCCUsados, catMotivos, recientesCC, turnos });
 }
 
 /* ---------- GET asistencia: resumen del día para el residente/jeisson ---------- */
@@ -467,6 +477,25 @@ function setupHojas(){
   getSheet('CAT_CC', CAT_CC_HEADERS);
   getSheet('CC_USADOS', CC_USADOS_HEADERS);   // el usuario pega aquí los ~5-20 CC frecuentes (opcional)
   getSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS);
+
+  // D72: TURNOS asignados (5 turnos × tipo de día). Semilla fija con los horarios entregados; si el
+  // usuario ya cargó la hoja, no se pisa. Horas como texto 'HH:MM' (00:00 = medianoche, fin de cena).
+  const turSh=getSheet('TURNOS', TURNOS_HEADERS);
+  if(turSh.getLastRow()<2){
+    turSh.getRange(2,1,10,7).setValues([
+      ['1','lv',     '07:00','15:30','12:00','13:00','NO'],
+      ['1','sabado', '07:00','11:30','',     '',     'NO'],
+      ['2','lv',     '17:30','02:00','22:00','23:00','SI'],
+      ['2','sabado', '13:30','18:00','',     '',     'NO'],
+      ['3','lj',     '17:00','02:30','23:00','00:00','SI'],
+      ['3','viernes','17:00','02:00','23:00','00:00','SI'],
+      ['4','lj',     '19:00','04:30','23:00','00:00','SI'],
+      ['4','viernes','19:00','04:00','23:00','00:00','SI'],
+      ['5','lv',     '18:00','02:30','23:00','00:00','SI'],
+      ['5','sabado', '14:00','18:30','',     '',     'NO']
+    ]);
+    turSh.getRange(2,3,10,4).setNumberFormat('@'); // entrada/salida/descanso como TEXTO, no como hora
+  }
 
   const cuadSh=getSheet('CUADRILLAS', CUADRILLAS_HEADERS);
   if(cuadSh.getLastRow()<2){

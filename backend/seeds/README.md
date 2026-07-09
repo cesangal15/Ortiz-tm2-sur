@@ -23,6 +23,16 @@ directo en el Google Sheet de Asistencias** (no en los .xlsx maestros).
    **capítulo 06** (ambos proyectos), que el residente pidió mostrar como frecuentes. `area=odt`
    hace que solo los vean los usuarios de ODT (a los capataces de tierra no les ensucia el datalist).
 
+## TURNOS.tsv → hoja `TURNOS` (D72)
+
+Los 5 turnos entregados (T1 diurno + T2–T5 nocturnos), una fila por turno × tipo de día
+(`turno · tipo_dia · entrada · salida · descanso_ini · descanso_fin · cruza_medianoche`).
+`tipo_dia` ∈ {`lv` L–V, `lj` L–J, `viernes`, `sabado`}; `cruza_medianoche=SI` cuando la salida
+es del día siguiente (nocturnos). **No hace falta pegar este TSV**: `setupHojas()` ya siembra la
+hoja TURNOS con estos mismos valores (si está vacía). El TSV queda como respaldo/edición manual.
+El backend los sirve en `?action=roster` (`turnos`) para PRE-LLENAR la entrada/salida del reporte;
+la clasificación de extras/recargos nocturnos (columnas G–N Navison) sigue pendiente de confirmar.
+
 ## Notas
 
 - El **CC del capataz** es `37xx.I010305| ENCARGADOS, INSPECTORES Y CAPATACES`; el prefijo (3701/3702)
