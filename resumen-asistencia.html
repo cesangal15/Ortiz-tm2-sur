@@ -651,7 +651,8 @@ function renderPersonalTabla(){
       + `<td><span class="tag ${p.estado==='activo'?'activo':'inactivo'}">${esc(p.estado)}</span></td>`
       + '<td>' + (p.estado==='activo'
           ? `<button class="mini-btn" onclick="retirarPersona(${p._row})">Retirar</button>`
-          : `<button class="mini-btn" onclick="reactivarPersona(${p._row})">Reactivar</button>`)
+          : `<button class="mini-btn" title="Deshacer un retiro por error (misma fila, sin hueco)" onclick="reactivarPersona(${p._row})">Reactivar</button>`
+            + `<button class="mini-btn" title="Volvió tras un tiempo fuera: crea fila nueva desde una fecha, respeta los días inactivos" onclick="reingresarPersona(${p._row})">Reingresar</button>`)
         + '</td></tr>';
   });
   if(!lista.length) h+='<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:14px;">Sin coincidencias</td></tr>';
@@ -686,6 +687,16 @@ async function retirarPersona(row){
 }
 async function reactivarPersona(row){
   const r=await postPersonal({op:'reactivar', _row:row});
+  if(r.ok) cargarPersonal(); else alert('Error: '+(r.error||'desconocido'));
+}
+async function reingresarPersona(row){
+  // D72: crea una fila NUEVA con los datos de la persona (sin re-digitar) desde la fecha de reingreso;
+  // la fila retirada queda intacta, así los días del hueco no se le esperan.
+  const hoy=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
+  const fecha_ingreso=prompt('¿Desde qué fecha reingresa? (primer día que vuelve a trabajar)\nFormato AAAA-MM-DD:', hoy);
+  if(fecha_ingreso===null) return;
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha_ingreso)){ alert('Fecha inválida. Usa el formato AAAA-MM-DD.'); return; }
+  const r=await postPersonal({op:'reingreso', _row:row, fecha_ingreso});
   if(r.ok) cargarPersonal(); else alert('Error: '+(r.error||'desconocido'));
 }
 async function moverPersona(row, cuadrilla){
