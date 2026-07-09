@@ -12,6 +12,7 @@
  *   GET  ?action=estado&fecha=...        -> {reportadas:[{id_maquina,capataz}]}
  *   GET  ?action=cubicaje                -> {cubicaje:{PLACA:cubicaje,...}}  (catálogo placa→m³/viaje, D53)
  *   GET  ?action=drenajes                -> {marcadores:[ODT*],items:[ítems .06/.07]} (catálogo drenajes, D69)
+ *   GET  ?action=acumulado_drenajes[&area=] -> {acumulado:{"ELEMENTO||CCcorto":cantidad}} (acumulado oficial por ODT, D70)
  *   GET  ?action=maquinaria_produccion&fecha=...  -> cruce MAQUINARIA(CC 02.05-08) × volumen oficial DATA (2.4/D55)
  *   POST {action:'maquinaria_produccion', fecha, ajustes:[{id_registro,produccion}]} -> parcha SOLO col T de MAQUINARIA
  *   GET  ?action=debug&fecha=...
@@ -472,6 +473,32 @@ function drenajesCatalogo(){
   getBaseData();
   return json({ ok:true, marcadores:marcadores, items:_baseDrenItems||[] });
 }
+
+/* ---------- acumulado oficial de drenajes (pedido ODT, D70) ----------
+ * GET ?action=acumulado_drenajes[&area=odt|odl] -> { ok, acumulado:{ "ELEMENTO||CCcorto": cantidad } }
+ * Suma la CANTIDAD (LARGO, col O/14) de DATA por ELEMENTO (col I/8) + CC corto (col D/3), SOLO para
+ * filas de drenajes (deriveArea != tierras). Sirve para que el capataz ODT vea cuánto acero lleva
+ * reportado en una ODT (marcador) antes de sumar lo del día. Es el consolidado OFICIAL: solo lo que
+ * ya está en DATA (no lo pendiente en BANDEJA). DATA conserva el histórico completo (enviar_data solo
+ * pisa el día+área que se reenvía), así que la suma sobre todas las fechas = acumulado real. Solo lee. */
+function acumuladoDrenajes(e){
+  const areaQ=String((e&&e.parameter&&e.parameter.area)||'').trim().toLowerCase();
+  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('DATA');
+  const acum={};
+  if(sh && sh.getLastRow()>1){
+    const v=sh.getDataRange().getValues();
+    for(let i=1;i<v.length;i++){
+      const cc=v[i][3], area=deriveArea(cc);
+      if(area==='tierras') continue;
+      if(areaQ && area!==areaQ) continue;
+      const elem=String(v[i][8]==null?'':v[i][8]).trim(); if(!elem) continue;
+      const val=parseFloat(v[i][C.LARGO]); if(isNaN(val)) continue;
+      const key=elem+'||'+ccCorto(cc);
+      acum[key]=(acum[key]||0)+val;
+    }
+  }
+  return json({ ok:true, area:areaQ, acumulado:acum });
+}
 // DESCRIPCION oficial (verbatim) de la tabla de ítems de la BASE por Centro de Coste (D68).
 // Llave exacta primero ("3701.02.05") y corta después ("02.05"). Si un CC tiene varios ítems:
 //   1) separa por el discriminante "NO APRO" (02.05 aprovechable vs no aprovechable, mismo
@@ -565,6 +592,7 @@ function doGet(e){
   if(a==='estado')      return estado(e);
   if(a==='cubicaje')    return json({ok:true, cubicaje:getCubicajeMap()});
   if(a==='drenajes')    return drenajesCatalogo();
+  if(a==='acumulado_drenajes') return acumuladoDrenajes(e);
   if(a==='maquinaria_produccion') return maquinariaProduccion(e);
   if(a==='debug')       return debug(e);
   return json({ok:true, msg:'API viva', version:'v11'});

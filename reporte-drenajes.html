@@ -87,6 +87,10 @@
   .resumen-footer b{color:var(--text);}
   .resumen-warn{font-size:11px;color:var(--accent);margin-top:2px;}
   .cat-loading{font-size:12px;color:var(--muted);text-align:center;padding:14px 0;}
+  /* acumulado ya en DATA para el marcador + actividad (pedido ODT: control del acero por ODT) */
+  .acum-box{background:rgba(58,155,220,0.08);border:1px solid rgba(58,155,220,0.35);border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:var(--text);}
+  .acum-box b{color:var(--uf1);font-weight:700;}
+  .acum-box .acum-sub{display:block;font-size:10.5px;color:var(--muted);margin-top:2px;}
 </style>
 </head>
 <body>
@@ -159,6 +163,11 @@ let AREA='odt';
  * Para el dropdown se deduplican por CC corto + descripción (los dos proyectos traen el mismo
  * ítem); el CC final = proyecto derivado del PK/marcador (D04) + código corto, como en tierras. */
 let MARCADORES=[], ITEMS=[];
+/* ACUM (pedido ODT, D70): acumulado ya ENVIADO A DATA (oficial) por marcador + CC corto, para que
+ * el capataz vea cuánto acero lleva reportado en esa ODT antes de sumar lo del día. Mapa
+ * "ELEMENTO||CCcorto" -> cantidad. Se pide a ?action=acumulado_drenajes al cargar la pantalla; NO
+ * incluye lo pendiente de hoy sin enviar (es el consolidado oficial, solo lo que ya está en DATA). */
+let ACUM={};
 
 let lineaIdx=0, eqIdx=0;
 
@@ -207,10 +216,21 @@ async function cargarCatalogo(){
     ITEMS=(data.items||[]);
     document.getElementById('catLoading').style.display='none';
     document.getElementById('btnAddLinea').style.display='block';
+    cargarAcumulado();      // en paralelo; no bloquea el formulario si falla
     addLinea();
   }catch(err){
     document.getElementById('catLoading').innerHTML='⚠ No se pudo cargar el catálogo de la BASE ('+err.message+'). <a href="#" onclick="cargarCatalogo();return false;" style="color:var(--accent)">Reintentar</a>';
   }
+}
+// Acumulado oficial (DATA) por marcador+CC del área. Best-effort: si falla, el formulario sigue
+// funcionando sin el aviso de acumulado.
+async function cargarAcumulado(){
+  try{
+    const resp=await fetch(APPS_SCRIPT_URL+'?action=acumulado_drenajes&area='+AREA);
+    const data=await resp.json();
+    if(data && data.ok) ACUM=data.acumulado||{};
+    document.querySelectorAll('#cantidadesContainer .linea').forEach(b=>refreshLinea(parseInt(b.id.split('_')[1],10)));
+  }catch(err){ /* silencioso: el acumulado es informativo */ }
 }
 
 /* helpers de PK — mismos del resto de pantallas (Problema 2.12) */
@@ -239,8 +259,10 @@ function itemsArea(){
   return out;
 }
 function actividadOptions(){
+  // Pedido ODT (D70): mostrar el CC junto a la actividad para que el capataz relacione cada
+  // actividad con su centro de costo → "Descripción — 06.02 [unidad]" (CC corto, project-independiente).
   let html='<option value="">— Selecciona actividad —</option>';
-  itemsArea().forEach((it,i)=>{ html+='<option value="'+i+'">'+esc(it.desc)+(it.unidad?(' ['+esc(it.unidad)+']'):'')+'</option>'; });
+  itemsArea().forEach((it,i)=>{ const cc=it.corto||it.cc||''; html+='<option value="'+i+'">'+esc(it.desc)+(cc?(' — '+esc(cc)):'')+(it.unidad?(' ['+esc(it.unidad)+']'):'')+'</option>'; });
   return html;
 }
 function marcadorOptions(conVacio){
@@ -277,6 +299,7 @@ function addLinea(){
     +'<span class="badge unidad" id="uniBadge_'+i+'">—</span>'
     +'<span class="badge" id="ufBadge_'+i+'">UF —</span>'
     +'<span class="badge" id="ccBadge_'+i+'">—</span></div>'
+    +'<div class="acum-box" id="acum_'+i+'" style="display:none;"></div>'
     +'<div class="field"><label>Cantidad <span class="req">*</span></label>'
     +'<div class="largo-wrap"><input type="number" step="any" class="l-cant" placeholder="0" oninput="refreshAll()"><span class="largo-unit" id="cantU_'+i+'"></span></div>'
     +'<div class="item-hint" style="display:block;">Cantidad directa en la unidad contractual del ítem (sin conversiones, V1).</div></div>'
@@ -330,7 +353,8 @@ function refreshLinea(i){
   const it=sel.value!==''?itemsArea()[parseInt(sel.value,10)]:null;
   const u=ubicacionDe(b);
   document.getElementById('cantU_'+i).textContent=it?(it.unidad||''):'';
-  if(!it){ meta.style.display='none'; hint.style.display='none'; refreshAll(); return; }
+  const acumBoxEl=document.getElementById('acum_'+i);
+  if(!it){ meta.style.display='none'; hint.style.display='none'; if(acumBoxEl) acumBoxEl.style.display='none'; refreshAll(); return; }
   meta.style.display='flex';
   hint.style.display='block';
   hint.innerHTML='→ ítem: <b>'+esc(it.desc)+'</b>';
@@ -340,6 +364,24 @@ function refreshLinea(i){
   ufB.textContent=u.uf?(u.uf+' · '+u.proy):'UF —';
   const ccB=document.getElementById('ccBadge_'+i);
   ccB.textContent=u.proy?(u.proy+'.'+(it.corto||it.cc)):(it.corto||it.cc||'—');
+  // Acumulado oficial para este marcador + actividad (pedido ODT: control del acero por ODT).
+  // Solo cuando hay un MARCADOR elegido (ODT siempre; ODL solo si es descole con marcador): el
+  // acumulado por ODT se lleva contra el marcador, no contra un tramo de PK.
+  const acumBox=document.getElementById('acum_'+i);
+  if(u.marc){
+    const key=u.marc.elemento+'||'+(it.corto||it.cc||'');
+    const ya=ACUM[key];
+    if(ya!=null){
+      acumBox.style.display='block';
+      acumBox.innerHTML='Acumulado ya reportado en <b>'+esc(u.marc.elemento)+'</b> · '+esc(it.desc)+': <b>'+fmtNum(ya)+' '+esc(it.unidad||'')+'</b>'
+        +'<span class="acum-sub">Oficial (enviado a DATA). Lo que reportes hoy se suma a esto.</span>';
+    } else {
+      acumBox.style.display='block';
+      acumBox.innerHTML='Sin acumulado previo en <b>'+esc(u.marc.elemento)+'</b> para esta actividad (primer reporte).';
+    }
+  } else {
+    acumBox.style.display='none';
+  }
   refreshAll();
 }
 function refreshCounts(){
