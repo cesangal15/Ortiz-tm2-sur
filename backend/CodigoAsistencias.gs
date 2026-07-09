@@ -40,8 +40,11 @@ const PERSONAL_HEADERS      = ['cedula','codigo','nombre','cargo','cuadrilla','r
 // D72: `area` (col 3) etiqueta cada cuadrilla como tierras/odt/odl para que residente_odt/residente_odl
 // vean SOLO su área en el resumen. Celda vacía en filas viejas = 'tierras' (retrocompatible).
 const CUADRILLAS_HEADERS    = ['cuadrilla','responsables','area'];
+// D72: `turno` (col 17) guarda el turno con que se reportó cada persona, para que el export conozca la
+// jornada programada y calcule las extras (Opción A: extra = lo trabajado más allá de la salida del
+// turno). Vacío en filas viejas = turno diurno estándar (el export arma la jornada por defecto del día).
 const ASISTENCIA_HEADERS    = ['id_registro','timestamp','fecha','reporta','cuadrilla','codigo','cedula','nombre',
-  'cargo','cc','proyecto','hora_entrada','hora_salida','presente','motivo_ausencia','observacion'];
+  'cargo','cc','proyecto','hora_entrada','hora_salida','presente','motivo_ausencia','observacion','turno'];
 const CONFIG_HEADERS        = ['clave','valor'];
 const FESTIVOS_HEADERS      = ['fecha'];
 const CAT_TRABAJADORES_HEADERS = ['codigo','string_navision'];
@@ -273,7 +276,7 @@ function asistenciaDia(e){
     .map(r=>({ id_registro:r.id_registro, timestamp:r.timestamp, fecha:fdate(r.fecha), reporta:r.reporta,
       cuadrilla:r.cuadrilla, codigo:r.codigo, cedula:r.cedula, nombre:r.nombre, cargo:r.cargo, cc:r.cc,
       proyecto:r.proyecto, hora_entrada:ftime(r.hora_entrada), hora_salida:ftime(r.hora_salida),
-      presente:r.presente, motivo_ausencia:r.motivo_ausencia, observacion:r.observacion }));
+      presente:r.presente, motivo_ausencia:r.motivo_ausencia, observacion:r.observacion, turno:String(r.turno||'') }));
   const cuadrillasCat=readSheet('CUADRILLAS', CUADRILLAS_HEADERS).filter(cq=>enArea(cq.cuadrilla));
   // D72: roster date-aware + por área — "se esperaba" a esta persona en ESA fecha (no la foto de hoy).
   const personalActivo=readSheet('PERSONAL', PERSONAL_HEADERS).filter(p=>activaEnFecha(p, fecha) && enArea(p.cuadrilla));
@@ -324,10 +327,13 @@ function asistenciaDia(e){
   const catCC=readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
   const catCCUsados=ccUsadosParaArea(area);   // D72: en el resumen, CC frecuentes del área revisada ('' = todas)
   const catMotivos=readSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS).map(r=>String(r.string_motivo||'')).filter(Boolean);
+  const turnos=readSheet('TURNOS', TURNOS_HEADERS).map(t=>({ turno:String(t.turno||''), tipo_dia:norm(t.tipo_dia),
+    entrada:ftime(t.entrada), salida:ftime(t.salida), descanso_ini:ftime(t.descanso_ini), descanso_fin:ftime(t.descanso_fin),
+    cruza_medianoche: String(t.cruza_medianoche||'').toUpperCase()==='SI' }));
   // D73: indicador de extras del admin del día (solo para el residente general/admin; un residente de área
   // no las ve — son de tierras). El resumen muestra "Extras admin: registradas ✓ / sin registrar".
   const extrasAdmin = area ? [] : extrasAdminDelDia(fecha);
-  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, jornada, catCC, catCCUsados, catMotivos, extrasAdmin });
+  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, jornada, catCC, catCCUsados, catMotivos, turnos, extrasAdmin });
 }
 
 /* ---------- POST asistencia_individual: upsert por PERSONA (residente/jeisson completan faltantes) ----------
@@ -354,7 +360,7 @@ function guardarIndividual(body){
   const nuevas=incoming.map(f=>[
     Utilities.getUuid(), ts, fecha, body.reporta||usuario, f.cuadrilla||'', f.codigo||'', f.cedula||'', f.nombre||'', f.cargo||'',
     f.cc||'', f.proyecto||'', f.hora_entrada||'', f.hora_salida||'',
-    (f.presente===false||f.presente==='No')?'No':'Si', f.motivo_ausencia||'', f.observacion||''
+    (f.presente===false||f.presente==='No')?'No':'Si', f.motivo_ausencia||'', f.observacion||'', f.turno||''
   ]);
   const todas=rows.concat(nuevas);
   sh.clearContents();
@@ -383,7 +389,7 @@ function exportDia(e){
     .map(r=>({ codigo:r.codigo||'', cedula:r.cedula||'', nombre:r.nombre||'', cargo:r.cargo||'',
       cuadrilla:r.cuadrilla||'', cc:r.cc||'', proyecto:String(r.proyecto||''),
       hora_entrada:ftime(r.hora_entrada), hora_salida:ftime(r.hora_salida),
-      presente:r.presente||'Si', motivo_ausencia:r.motivo_ausencia||'', fecha:fdate(r.fecha) }));
+      presente:r.presente||'Si', motivo_ausencia:r.motivo_ausencia||'', turno:String(r.turno||''), fecha:fdate(r.fecha) }));
   // proyecto_defecto por cuadrilla: proyecto MÁS FRECUENTE históricamente (para ausentes, que no llevan CC).
   const historico=readSheet('ASISTENCIA', ASISTENCIA_HEADERS).filter(r=> r.presente==='Si' && r.proyecto);
   const conteo={}; // cuadrilla -> {proyecto:n}
@@ -396,11 +402,15 @@ function exportDia(e){
   });
   const catTrabRows=readSheet('CAT_TRABAJADORES', CAT_TRABAJADORES_HEADERS);
   const catTrabajadores={}; catTrabRows.forEach(r=>{ if(r.codigo) catTrabajadores[String(r.codigo).trim()]=r.string_navision; });
+  // D72: catálogo de turnos, para que el export calcule ordinarias/extras según la jornada programada.
+  const turnos=readSheet('TURNOS', TURNOS_HEADERS).map(t=>({ turno:String(t.turno||''), tipo_dia:norm(t.tipo_dia),
+    entrada:ftime(t.entrada), salida:ftime(t.salida), descanso_ini:ftime(t.descanso_ini), descanso_fin:ftime(t.descanso_fin),
+    cruza_medianoche: String(t.cruza_medianoche||'').toUpperCase()==='SI' }));
   // EXTRAS_ADMIN (D73): registros del admin del día para que el generador Navision inyecte su fila por
   // día×proyecto. Solo al residente general/admin (area=''); un residente de área (odt/odl) NO recibe las
   // extras del admin (son CC de tierras 3701/3702, ajenas a su archivo).
   const extrasAdmin = area ? [] : extrasAdminDelDia(fecha);
-  return json({ ok:true, fecha, filas, proyectoDefecto, catTrabajadores, config:getConfigMap(), festivos:getFestivos(), extrasAdmin });
+  return json({ ok:true, fecha, filas, proyectoDefecto, catTrabajadores, config:getConfigMap(), festivos:getFestivos(), turnos, extrasAdmin });
 }
 
 /* ---------- EXTRAS_ADMIN (D73): canal "solo extras" del admin ----------
@@ -470,7 +480,7 @@ function guardarAsistencia(body){
   const nuevas=(body.filas||[]).map(f=>[
     Utilities.getUuid(), ts, fecha, reporta, cuadrilla, f.codigo||'', f.cedula||'', f.nombre||'', f.cargo||'',
     f.cc||'', f.proyecto||'', f.hora_entrada||'', f.hora_salida||'',
-    f.presente===false||f.presente==='No' ? 'No':'Si', f.motivo_ausencia||'', f.observacion||''
+    f.presente===false||f.presente==='No' ? 'No':'Si', f.motivo_ausencia||'', f.observacion||'', f.turno||''
   ]);
   const todas=keep.concat(nuevas);
   sh.clearContents();
@@ -585,11 +595,13 @@ function setupHojas(){
 
   const cfgSh=getSheet('CONFIG', CONFIG_HEADERS);
   if(cfgSh.getLastRow()<2){
-    cfgSh.getRange(2,1,13,2).setValues([
+    cfgSh.getRange(2,1,16,2).setValues([
       ['ord_lun_vie','7.5'], ['ord_sabado','4.5'], ['ord_domingo','0'],
       ['entrada_lv','07:00'], ['salida_lv','15:30'], ['entrada_sab','07:00'], ['salida_sab','11:30'],
       ['almuerzo_ini','12:00'], ['almuerzo_fin','13:00'],
       ['max_extras_dia','2'], ['nocturno_desde','19:00'], ['nocturno_hasta','06:00'],
+      // Dom/Fest (criterio de nómina, D72): de la jornada base se reparten así las horas ordinarias.
+      ['domfest_ord_base','8'], ['domfest_ord_horas','7.33'], ['domfest_scomp_horas','0.67'],
       ['proyecto_3701','3701| T2 - UF1 - R4513 PR 09+800 - PR 30+000']
     ]);
     cfgSh.appendRow(['proyecto_3702','PENDIENTE']); // parámetro abierto (§2 del prompt)

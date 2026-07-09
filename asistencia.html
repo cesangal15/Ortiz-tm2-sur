@@ -480,13 +480,13 @@ async function enviar(){
   const filas=personas.map(p=>{
     if(!p.presente){
       return { codigo:p.codigo, cedula:p.cedula, nombre:p.nombre, cargo:p.cargo, cc:'', proyecto:'',
-        hora_entrada:'', hora_salida:'', presente:'No', motivo_ausencia:p.motivo, observacion:'' };
+        hora_entrada:'', hora_salida:'', presente:'No', motivo_ausencia:p.motivo, observacion:'', turno:'' };
     }
     const b=STATE.bloques.find(x=>x.id===p.bloqueId);
     const he = p.hora_entrada_ov!=null ? p.hora_entrada_ov : (b?b.hora_entrada:p.hora_entrada);
     const hs = p.hora_salida_ov!=null ? p.hora_salida_ov : (b?b.hora_salida:p.hora_salida);
     return { codigo:p.codigo, cedula:p.cedula, nombre:p.nombre, cargo:p.cargo, cc:b?b.cc:'', proyecto:b?b.proyecto:'',
-      hora_entrada:he||'', hora_salida:hs||'', presente:'Si', motivo_ausencia:'', observacion:'' };
+      hora_entrada:he||'', hora_salida:hs||'', presente:'Si', motivo_ausencia:'', observacion:'', turno:(b?String(b.turno||'1'):'1') };
   });
 
   STATE.enviando=true; render();
