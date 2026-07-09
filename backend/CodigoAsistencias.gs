@@ -20,6 +20,10 @@
  *                                             -> pisa fecha+cuadrilla, escribe (confirma conteo, D30)
  *   POST {action:'personal', op:'alta'|'retiro'|'mover'|'reactivar', usuario, …}
  *                                             -> valida usuario ∈ {residente, admin} antes de escribir
+ *   GET  ?action=extras_admin&fecha=…       -> registro de EXTRAS_ADMIN del día (o null) — prefill (D73)
+ *   POST {action:'extras_admin', fecha, cc, horas, tipo}
+ *                                             -> upsert por fecha en EXTRAS_ADMIN (deriva proyecto del CC)
+ *   POST {action:'extras_admin_delete', fecha} -> elimina la fila del día
  *
  * Reglas técnicas heredadas (obligatorias, ver /docs/02_REGISTRO_DECISIONES.md):
  *   - Fechas SIEMPRE por duck-typing (typeof v.getFullYear==='function'), nunca instanceof Date (D31).
@@ -49,6 +53,11 @@ const CAT_MOTIVOS_HEADERS   = ['string_motivo'];
 // frecuentes, mismo string exacto que CAT_CC). El formulario muestra estos por defecto y deja buscar
 // el resto del catálogo completo. Si la hoja está vacía, se usa el catálogo completo como antes.
 const CC_USADOS_HEADERS     = ['string_cc'];
+// EXTRAS_ADMIN (D73): canal "solo extras" del admin — una fila por día (clave lógica = `fecha`, re-guardar
+// pisa el día). El admin registra SUS horas extras de días puntuales; su jornada ordinaria se asume por
+// fuera del sistema y no aparece en el `Parte` salvo los días con extra. Aislada del roster (PERSONAL/
+// CUADRILLAS/ASISTENCIA): el admin NO está en el roster. `proyecto` se deriva del `cc` (proyectoFromCC).
+const EXTRAS_ADMIN_HEADERS  = ['fecha','cc','proyecto','horas','tipo','timestamp','reporta'];
 
 /* ---------- helpers genéricos (mismo patrón que Codigo.gs) ---------- */
 function json(o){ return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
@@ -161,6 +170,9 @@ function doGet(e){
   if(a==='asistencia') return asistenciaDia(e);
   if(a==='personal')   return personalCompleto(e);
   if(a==='export')     return exportDia(e);
+  // EXTRAS_ADMIN (D73): registro del día para prefill/edición en mis-extras.html; `extras_admin_dia`
+  // es alias (mismo handler) para el indicador del residente en resumen-asistencia.html.
+  if(a==='extras_admin' || a==='extras_admin_dia') return extrasAdminDia(e);
   return json({ok:true, msg:'API Asistencias viva'});
 }
 function doPost(e){
@@ -169,6 +181,8 @@ function doPost(e){
     if(body.action==='reporte_asistencia')  return guardarAsistencia(body);
     if(body.action==='asistencia_individual') return guardarIndividual(body);
     if(body.action==='personal')            return gestionPersonal(body);
+    if(body.action==='extras_admin')        return guardarExtrasAdmin(body);    // D73: upsert por fecha
+    if(body.action==='extras_admin_delete') return borrarExtrasAdmin(body);     // D73: borra el día
     return json({ok:false, error:'acción no reconocida'});
   }catch(err){ return json({ok:false, error:String(err)}); }
 }
@@ -282,7 +296,10 @@ function asistenciaDia(e){
   const catCC=readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
   const catCCUsados=readSheet('CC_USADOS', CC_USADOS_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
   const catMotivos=readSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS).map(r=>String(r.string_motivo||'')).filter(Boolean);
-  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, jornada, catCC, catCCUsados, catMotivos });
+  // D73: indicador de extras del admin del día (solo para el residente general/admin; un residente de área
+  // no las ve — son de tierras). El resumen muestra "Extras admin: registradas ✓ / sin registrar".
+  const extrasAdmin = area ? [] : extrasAdminDelDia(fecha);
+  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, jornada, catCC, catCCUsados, catMotivos, extrasAdmin });
 }
 
 /* ---------- POST asistencia_individual: upsert por PERSONA (residente/jeisson completan faltantes) ----------
@@ -351,7 +368,64 @@ function exportDia(e){
   });
   const catTrabRows=readSheet('CAT_TRABAJADORES', CAT_TRABAJADORES_HEADERS);
   const catTrabajadores={}; catTrabRows.forEach(r=>{ if(r.codigo) catTrabajadores[String(r.codigo).trim()]=r.string_navision; });
-  return json({ ok:true, fecha, filas, proyectoDefecto, catTrabajadores, config:getConfigMap(), festivos:getFestivos() });
+  // EXTRAS_ADMIN (D73): registros del admin del día para que el generador Navision inyecte su fila por
+  // día×proyecto. Solo al residente general/admin (area=''); un residente de área (odt/odl) NO recibe las
+  // extras del admin (son CC de tierras 3701/3702, ajenas a su archivo).
+  const extrasAdmin = area ? [] : extrasAdminDelDia(fecha);
+  return json({ ok:true, fecha, filas, proyectoDefecto, catTrabajadores, config:getConfigMap(), festivos:getFestivos(), extrasAdmin });
+}
+
+/* ---------- EXTRAS_ADMIN (D73): canal "solo extras" del admin ----------
+ * El admin registra sus horas extras de días puntuales (máx 2h/día). Aislado del roster: el admin NO
+ * está en PERSONAL/CUADRILLAS/ASISTENCIA. Clave lógica = `fecha` (una fila por día; re-guardar pisa el día,
+ * sin bandeja/staging). `proyecto` se deriva del `cc` (proyectoFromCC, misma regla D63 del resto del módulo).
+ * Fechas por duck-typing al leer/comparar (fdate), nunca instanceof Date (D31). */
+function extrasAdminDelDia(fecha){
+  const f=fdate(fecha); if(!f) return [];
+  return readSheet('EXTRAS_ADMIN', EXTRAS_ADMIN_HEADERS)
+    .filter(r=> fdate(r.fecha)===f)
+    .map(r=>({ fecha:fdate(r.fecha), cc:String(r.cc||''), proyecto:String(r.proyecto||''),
+      horas:Number(r.horas)||0, tipo:norm(r.tipo), timestamp:r.timestamp, reporta:String(r.reporta||'') }));
+}
+// GET ?action=extras_admin&fecha=YYYY-MM-DD → registro del día (o null) para prefill/edición.
+function extrasAdminDia(e){
+  const fecha=fdate(e.parameter.fecha);
+  const regs=extrasAdminDelDia(fecha);
+  return json({ ok:true, fecha, registro: regs.length? regs[0] : null });
+}
+// POST {action:'extras_admin', fecha, cc, horas, tipo} → upsert por `fecha`. Deriva `proyecto` del CC.
+function guardarExtrasAdmin(body){
+  const fecha=fdate(body.fecha);
+  const cc=String(body.cc||'').trim();
+  const horas=Number(body.horas);
+  const tipo=norm(body.tipo);
+  if(!fecha) return json({ok:false, error:'Falta la fecha.'});
+  if(!cc)    return json({ok:false, error:'Falta el centro de costo.'});
+  if(isNaN(horas) || !(horas>0 && horas<=2)) return json({ok:false, error:'Las horas deben ser un número mayor que 0 y máximo 2.'});
+  if(['diurna','nocturna','domfest'].indexOf(tipo)<0) return json({ok:false, error:'Tipo inválido (usa diurna, nocturna o domfest).'});
+  const proyecto=proyectoFromCC(cc);
+  const sh=getSheet('EXTRAS_ADMIN', EXTRAS_ADMIN_HEADERS), need=EXTRAS_ADMIN_HEADERS.length, last=sh.getLastRow();
+  let rows = last>1 ? sh.getRange(2,1,last-1,need).getValues() : [];
+  rows = rows.filter(r=> fdate(r[0])!==fecha);         // clave lógica = fecha: re-guardar pisa el día
+  rows.push([fecha, cc, proyecto, horas, tipo, new Date(), body.reporta||'admin']);
+  sh.clearContents();
+  sh.getRange(1,1,1,need).setValues([EXTRAS_ADMIN_HEADERS]);
+  if(rows.length) sh.getRange(2,1,rows.length,need).setValues(rows);
+  return json({ ok:true, msg:'Extra guardada: '+fecha+' · '+horas+'h '+tipo+' · '+cc+' (proyecto '+(proyecto||'?')+').', proyecto });
+}
+// POST {action:'extras_admin_delete', fecha} → elimina la fila del día.
+function borrarExtrasAdmin(body){
+  const fecha=fdate(body.fecha);
+  if(!fecha) return json({ok:false, error:'Falta la fecha.'});
+  const sh=getSheet('EXTRAS_ADMIN', EXTRAS_ADMIN_HEADERS), need=EXTRAS_ADMIN_HEADERS.length, last=sh.getLastRow();
+  let rows = last>1 ? sh.getRange(2,1,last-1,need).getValues() : [];
+  const antes=rows.length;
+  rows = rows.filter(r=> fdate(r[0])!==fecha);
+  sh.clearContents();
+  sh.getRange(1,1,1,need).setValues([EXTRAS_ADMIN_HEADERS]);
+  if(rows.length) sh.getRange(2,1,rows.length,need).setValues(rows);
+  const borradas=antes-rows.length;
+  return json({ ok:true, msg: borradas ? ('Extra del '+fecha+' eliminada.') : ('No había extra registrada el '+fecha+'.'), borradas });
 }
 
 /* ---------- POST reporte_asistencia: escritura directa (sin bandeja), pisa fecha+cuadrilla (D03) ---------- */
@@ -437,6 +511,7 @@ function setupHojas(){
   getSheet('CAT_CC', CAT_CC_HEADERS);
   getSheet('CC_USADOS', CC_USADOS_HEADERS);   // el usuario pega aquí los ~5-20 CC frecuentes (opcional)
   getSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS);
+  getSheet('EXTRAS_ADMIN', EXTRAS_ADMIN_HEADERS);   // D73: canal "solo extras" del admin (mis-extras.html)
 
   const cuadSh=getSheet('CUADRILLAS', CUADRILLAS_HEADERS);
   if(cuadSh.getLastRow()<2){
@@ -459,6 +534,9 @@ function setupHojas(){
       ['proyecto_3701','3701| T2 - UF1 - R4513 PR 09+800 - PR 30+000']
     ]);
     cfgSh.appendRow(['proyecto_3702','PENDIENTE']); // parámetro abierto (§2 del prompt)
+    // D73: No. Recurso del admin en Navision ("código| NOMBRE"), string EXACTO. Parámetro abierto: si
+    // queda vacío, el generador NO agrega la fila del admin y avisa. NO se inventa el código.
+    cfgSh.appendRow(['admin_recurso','']);
   }
 
   const festSh=getSheet('FESTIVOS', FESTIVOS_HEADERS);

@@ -108,6 +108,7 @@
 │  seleccion-reporte.html (capataces/mairy/jeisson: tiles según usuario) │
 │  asistencia.html         (responsable de cuadrilla + admin)           │
 │  resumen-asistencia.html (residente, admin, jeisson)                  │
+│  mis-extras.html         (SOLO admin: canal "solo extras", D73)       │
 └────────────────────────┬────────────────────────────────────────────--┘
                           │ fetch GET/POST (text/plain), URL PROPIA
                           ▼
@@ -122,11 +123,15 @@
 │  POST {reporte_asistencia,…}       → pisa fecha+cuadrilla, escritura   │
 │                                       DIRECTA (sin bandeja, D03)       │
 │  POST {personal, op, usuario,…}    → valida usuario ∈{residente,admin}│
+│  GET  ?action=extras_admin&fecha=… → registro EXTRAS_ADMIN del día(D73)│
+│  POST {extras_admin, fecha,cc,…}   → upsert por fecha (proyecto del CC) │
+│  POST {extras_admin_delete, fecha} → borra la fila del día             │
 └────────────────────────┬────────────────────────────────────────────--┘
                           ▼
 ┌── GOOGLE SHEET NUEVO (1KrhzaIg3BSspyi0oH0gHkAJnSRXaOIdel_pKaMVHX9w) ───┐
 │  PERSONAL · CUADRILLAS · ASISTENCIA · CONFIG · FESTIVOS ·              │
-│  CAT_TRABAJADORES · CAT_CC · CAT_MOTIVOS — setupHojas() de un solo uso │
+│  CAT_TRABAJADORES · CAT_CC · CAT_MOTIVOS · EXTRAS_ADMIN (D73) —        │
+│  setupHojas() de un solo uso                                          │
 └────────────────────────┬────────────────────────────────────────────--┘
                           │ SheetJS en el navegador (resumen-asistencia.html)
                           ▼
@@ -142,6 +147,14 @@ con casos de prueba manual en comentario) **al exportar**, nunca al guardar. Có
 sin bloqueo (`codigo| NOMBRE`). Retiros = `inactivo` + `fecha_retiro`, nunca se borra una fila. Columnas
 G–N y el string de `CONFIG.proyecto_3702` son parámetros abiertos (ver 03_BACKLOG). Este módulo **nunca**
 lee ni escribe BANDEJA/DATA/MAQUINARIA ni comparte Sheet/Script con `Codigo.gs`.
+
+**Canal "solo extras" del admin (D73):** hoja **`EXTRAS_ADMIN`** (`fecha·cc·proyecto·horas·tipo·timestamp·reporta`,
+clave lógica = `fecha`, re-guardar pisa el día, sin staging) aislada del roster — el admin NO está en
+PERSONAL/CUADRILLAS/ASISTENCIA y no aparece en el `Parte` salvo los días con extra. `mis-extras.html` (solo
+admin) hace el upsert/borrado; el generador de `resumen-asistencia.html` (`buildAdminExtraRow`) inyecta su
+fila al `Parte` del día×proyecto con `Ausente=No` y las horas en la columna del tipo (E diurna / F nocturna;
+Dom/Fest → aviso G–N). CONFIG gana `admin_recurso` (No. Recurso Navision, parámetro abierto: vacío ⇒ no se
+agrega la fila y avisa) y hay un flag `EXTRAS_ORDINARIAS_EN_CERO` (en el HTML) por si un import rechaza el 0.
 
 ## Mapeo de paste MAQUINARIA → Captura_Diaria (D52, verificado con el archivo real)
 

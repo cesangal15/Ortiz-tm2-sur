@@ -184,6 +184,8 @@ admin/venganza753 → menu · encargado/enc1-2 → encargado · residente/Ortiz2
 
 Nota: `alejo` (usuario real del login) y `alejandro` (nombre usado en la cuadrilla) son la misma persona; el backend (`cuadrillasDeUsuario` en `CodigoAsistencias.gs`) los trata como alias. Gestión de personal (alta/retiro/mover/reactivar) solo `residente`/`admin`, validado también en el backend. Acceso a `resumen-asistencia.html`: `residente`, `admin` y `jeisson` (sin los controles de gestión para este último).
 
+**Canal "solo extras" del admin (D73).** Tile **"Mis horas extra"** en `menu.html` (solo admin) → `mis-extras.html` (guard `rol==='admin'`): registra las horas extras del admin de días puntuales (máx 2h/día) en la hoja `EXTRAS_ADMIN`, aislada del roster. Nuevo parámetro de la hoja **CONFIG**: **`admin_recurso`** = «No. Recurso» del admin en Navision, string exacto formato `código| NOMBRE` (**parámetro abierto**: seed vacío; si queda vacío el generador Navision NO agrega la fila del admin y avisa — no se inventa el código). Flag `EXTRAS_ORDINARIAS_EN_CERO` (en `resumen-asistencia.html`, default `true`): conmutar a `false` si un import real rechaza el `0` en horas ordinarias con `Ausente=No` (escribe celda vacía).
+
 ## 8. Reglas de reconciliación automática (encargado) — CONFIRMADO
 
 - Al cargar la bandeja, las filas de **capataz** en categorías de volumen oficial
