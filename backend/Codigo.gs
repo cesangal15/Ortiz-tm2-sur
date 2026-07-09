@@ -29,7 +29,12 @@ const SHEET_ID = '1OEAZCcj_kgVS6jWXxOSgyvm57sOsJ7fA1mRTJPU-icM';
 const DATA_HEADERS = ['FECHA','ORDEN','GRUPO','CENTRO DE COSTO','CAPITULO','DESCRIPCION',
   'UNIDAD FUNCIONAL','PROYECTO','ELEMENTO','ABS INICIAL','ABS FINAL','LIBERACION','ACTA',
   'UNIDAD MEDIDA','LARGO','ESPESOR','FC','CANTIDAD','OBSERVACION','Columna1',
-  'id_registro','timestamp','capataz','rol','actividad','pk_inicial','pk_final'];
+  'id_registro','timestamp','capataz','rol','actividad','pk_inicial','pk_final',
+  // area (D71): 'tierras' | 'odt' | 'odl' — INTERNA (tras AA, no viaja al maestro; el paste es A:S).
+  // Fija el "pisado por área" (D70) para ítems cuyo CC NO deriva el área por sí solo: la DEMOLICIÓN
+  // DE ESTRUCTURAS (01.02) es drenaje pero su CC deriva 'tierras'. Filas viejas (col vacía) caen a
+  // deriveArea(CC) vía areaDeFila, así que su clasificación no cambia.
+  'area'];
 const C = { FECHA:0, LARGO:14, OBS:18 };
 
 // BANDEJA: llaves limpias (lo crudo que reportan)
@@ -169,9 +174,11 @@ function buildDataRow(c, fecha, ts, reporta, rol, idC){
   // Ubicación (UF/PROYECTO/CC) derivada del PK con el helper único (Problema 2.12, D04).
   // ABS: con match a la BASE viene del elemento (K/L verbatim, D68); sin match, del PK (abajo).
   const mi = pkMeters(c.pk_inicial), mf = pkMeters(c.pk_final);
-  // D69: las filas de DRENAJES (área derivada del CC: 06.*→ODT, 07.*→ODL) se arman en su propia
-  // rama — GRUPO/CAPITULO fijos, ELEMENTO por marcador ODT o tramo, y la red D66 NO las toca.
-  const areaFila = deriveArea(c.centro_costo);
+  // D69/D71: las filas de DRENAJES se arman en su propia rama (GRUPO/CAPITULO fijos, ELEMENTO por
+  // marcador ODT o tramo, la red D66 NO las toca). El área manda por la columna `area` de la línea
+  // (D71: la demolición de estructuras 01.02 es drenaje pero su CC deriva 'tierras'); si falta, se
+  // deriva del CC como antes (06.*→ODT, 07.*→ODL) vía areaDeFila.
+  const areaFila = areaDeFila(c.area, c.centro_costo);
   if(areaFila==='odt' || areaFila==='odl') return buildDataRowDrenajes(c, fecha, ts, reporta, rol, idC, areaFila, mi, mf);
   let uf = c.uf||'', proy = c.proyecto||'', cc = c.centro_costo||'';
   if(mi != null){                                   // D04: PK≤30→UF1/3701; >30→UF2/3702
@@ -214,7 +221,7 @@ function buildDataRow(c, fecha, ts, reporta, rol, idC){
   return [ toDate(fecha), '', grupo, cc, c.capitulo||'', desc,
     uf, proy, elem, absIni, absFin,
     c.liberacion||'CAMPO', '', c.unidad||'', (c.largo!=null?c.largo:''), '', '', '', c.observacion||'', '',
-    idC, ts, reporta||'', rol||'', c.actividad||'', c.pk_inicial||'', c.pk_final||'' ];
+    idC, ts, reporta||'', rol||'', c.actividad||'', c.pk_inicial||'', c.pk_final||'', 'tierras' ];
 }
 
 /* ---------- DATA para DRENAJES (ODT / ODL) — D69 ----------
@@ -261,11 +268,15 @@ function buildDataRowDrenajes(c, fecha, ts, reporta, rol, idC, area, mi, mf){
     absFin=(lk.elem && lk.absFin!=null && lk.absFin!=='') ? lk.absFin : (mf!=null ? mf : (c.abs_final!=null?c.abs_final:''));
   }
   const desc=lookupDescripcion(cc, c.descripcion);
-  const capitulo = (area==='odt') ? 'DRENAJE TRANSVERSAL' : 'DRENAJE LONGITUDINAL';
+  // CAPITULO fijo por área para los ítems .06/.07; pero un ítem "extra" del área (D71: DEMOLICIÓN DE
+  // ESTRUCTURAS, capítulo DEMOLICIONES Y REUBICACIONES) trae su propio capítulo verbatim. Se honra
+  // c.capitulo SOLO cuando NO es el "DRENAJE …" por defecto (red de seguridad para frontends viejos).
+  const capDefault = (area==='odt') ? 'DRENAJE TRANSVERSAL' : 'DRENAJE LONGITUDINAL';
+  const capitulo = (c.capitulo && !/^\s*drenaje/i.test(String(c.capitulo))) ? c.capitulo : capDefault;
   return [ toDate(fecha), '', 'DRENAJES Y ESTRUCTURAS', cc, capitulo, desc,
     uf, proy, elem, absIni, absFin,
     c.liberacion||'CAMPO', '', c.unidad||'', (c.largo!=null?c.largo:''), '', '', '', c.observacion||'', '',
-    idC, ts, reporta||'', rol||'', c.actividad||'', c.pk_inicial||'', c.pk_final||'' ];
+    idC, ts, reporta||'', rol||'', c.actividad||'', c.pk_inicial||'', c.pk_final||'', area ];
 }
 // Marcador ODT de la tabla de elementos de la BASE por su nombre (cruce tolerante con normTexto,
 // que NUNCA altera lo que se escribe: el elem devuelto es la celda J cruda). null si no calza.
@@ -428,6 +439,17 @@ function getBaseData(){
           const dk=ccKey+'|'+it.norm;
           if(!drenSeen[dk]){ drenSeen[dk]=1;
             _baseDrenItems.push({ cc:ccKey, corto:corto||ccKey, area:areaIt, desc:String(d), unidad:u }); }
+        } else if(corto && EXTRA_DREN[corto]){
+          // Ítems "extra" de drenajes (D71): viven bajo un CC que deriva 'tierras' pero deben ofrecerse
+          // en los reportes de drenajes con su propio capítulo. Se sirven en el catálogo para cada área
+          // configurada; el frontend filtra por área y reenvía capítulo+area (el backend re-verifica).
+          const cfg=EXTRA_DREN[corto];
+          const u=(uCol>=0 && v[i][uCol]!=null) ? String(v[i][uCol]).trim() : '';
+          cfg.areas.forEach(ar=>{
+            const dk=ar+'|'+ccKey+'|'+it.norm;
+            if(!drenSeen[dk]){ drenSeen[dk]=1;
+              _baseDrenItems.push({ cc:ccKey, corto:corto, area:ar, desc:String(d), unidad:u, capitulo:cfg.capitulo, extra:true }); }
+          });
         }
       }
     }
@@ -630,9 +652,10 @@ function guardarReporte(body){
     // D56: origen del banco de material para la fila de excavación acumulada de la chequeadora; la
     // chequeadora lo manda en c.origen (la fila acumulada ya no tiene un _linea único).
     const origenBandeja = (rol==='chequeadora') ? (c.origen||'') : '';
-    // D69: área derivada del CC de la línea ('' = tierras) + campos SOLO-WhatsApp de drenajes
-    // (personal/turno noche/nota libre por línea). Nunca pasan a DATA.
-    const areaLinea = deriveArea(c.centro_costo);
+    // D69/D71: área de la línea — manda la columna `area` que envía el reporte de drenajes (necesaria
+    // para la demolición 01.02, cuyo CC deriva 'tierras'); si falta, se deriva del CC. + campos
+    // SOLO-WhatsApp de drenajes (personal/turno noche/nota libre por línea). Nunca pasan a DATA.
+    const areaLinea = areaDeFila(c.area, c.centro_costo);
     const areaCol = (areaLinea==='tierras') ? '' : areaLinea;
     const turnoNoche = (c.turno_noche===true || String(c.turno_noche||'').toUpperCase()==='SI') ? 'SI' : '';
     // todo entra a BANDEJA; cereo (data:false) marcado como 'no_data' para que el encargado lo vea pero no lo envíe a DATA
@@ -886,6 +909,14 @@ function ccCorto(centroCosto){ const m=String(centroCosto==null?'':centroCosto).
 // Acepta CC largo ("3701.06.01") o corto ("06.01"); quita el prefijo de proyecto (37xx.) antes de
 // mirar el capítulo para no confundir "02.06" (préstamo, tierras) con "06.xx" (ODT).
 // Espejada en los frontends que la necesitan (jefe.html deriva el área en cliente).
+// Ítems "extra" de drenajes (D71): CC corto → { areas ofrecidas, capítulo verbatim de la BASE }.
+// Son actividades cuyo CC NO deriva un área de drenaje por sí solo (deriveArea → 'tierras') pero que
+// operan como drenaje. Se ofrecen en los reportes de drenajes de las áreas listadas; el área real de
+// cada línea la fija el reporte (columna `area`), no el CC. La DESCRIPCIÓN y la UNIDAD salen verbatim
+// de la BASE (no se codifican aquí). Ampliable sin tocar más código.
+const EXTRA_DREN = {
+  '01.02': { areas:['odt','odl'], capitulo:'DEMOLICIONES Y REUBICACIONES' } // Demolición de Estructuras
+};
 function deriveArea(cc){
   const c=String(cc==null?'':cc).trim();
   if(!c) return 'tierras';
@@ -1063,14 +1094,19 @@ function enviarData(body){
   const fecha=fdate(body.fecha), incluidas=body.cantidades||[], ts=new Date();
   const aB=String(body.area||'').trim().toLowerCase();
   const area=(aB==='odt'||aB==='odl'||aB==='tierras') ? aB : 'tierras';
-  // 1) DATA: borrar el día SOLO en el área que envía, y reescribir
+  // 1) DATA: borrar el día SOLO en el área que envía, y reescribir. El área de una fila de DATA la
+  // fija su columna interna `area` (D71); las filas viejas (col vacía) caen a deriveArea(CC) vía
+  // areaDeFila, así que su clasificación no cambia. Esto permite que la demolición (CC 01.02, que
+  // deriva 'tierras') se pise por ODT/ODL y NO por el envío de tierras.
   const sh=getSheet('DATA', DATA_HEADERS);
   const v=sh.getDataRange().getValues(), del=[];
-  for(let i=1;i<v.length;i++){ if(fdate(v[i][C.FECHA])===fecha && deriveArea(v[i][3])===area) del.push(i+1); }
+  const dAreaCol=DATA_HEADERS.indexOf('area');
+  for(let i=1;i<v.length;i++){ if(fdate(v[i][C.FECHA])===fecha && areaDeFila(v[i][dAreaCol], v[i][3])===area) del.push(i+1); }
   del.sort((a,b)=>b-a).forEach(r=>sh.deleteRow(r));
   // Guard: solo se escriben filas del área que envía (una fila de otra área colada en el payload
-  // duplicaría datos que este envío NO borró). Las de otra área se ignoran sin error.
-  const rows=incluidas.filter(c=>c.estado!=='no_data' && deriveArea(c.centro_costo)===area)
+  // duplicaría datos que este envío NO borró). El área de la línea manda por su columna `area`
+  // (D71); si falta, se deriva del CC. Las de otra área se ignoran sin error.
+  const rows=incluidas.filter(c=>c.estado!=='no_data' && areaDeFila(c.area, c.centro_costo)===area)
     .map(c=> buildDataRow(c, fecha, ts, c.reporta||'(encargado)', c.rol||'encargado', Utilities.getUuid()));
   if(rows.length) sh.getRange(sh.getLastRow()+1,1,rows.length,DATA_HEADERS.length).setValues(rows);
   // 2) BANDEJA: marcar incluido / descartado SOLO las filas de esa área
