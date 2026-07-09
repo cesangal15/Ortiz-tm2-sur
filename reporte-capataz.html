@@ -171,6 +171,7 @@ const ACTIVIDADES = [
   {g:'Subbase', a:'Conformación de subbase', item:'Subbase Granular', uni:'m3', cc:'03.01', medida:'m3', data:true},
   {g:'Subbase', a:'Cereo de subbase', item:'Cereo de subbase', uni:'m2', cc:'', medida:'m2_via', data:false},
   {g:'Base', a:'Base estabilizada con cemento (BTC)', item:'Base granular estabilizada con cemento', uni:'m3', cc:'03.03', medida:'m3', data:true},
+  {g:'Pavimentos', a:'Riego de imprimación con emulsión asfáltica', item:'Riego de imprimación con emulsión asfáltica', uni:'m2', cc:'04.01', medida:'directo', data:true},
   {g:'Pedraplén', a:'Pedraplén compacto', item:'Pedraplén compacto', uni:'m3', cc:'02.07', medida:'m3', data:true},
   {g:'Desmonte', a:'Desmonte y limpieza en bosque', item:'Desmonte y limpieza en bosque', uni:'Ha', cc:'02.01', medida:'m2_desmonte', data:true, maqUnidad:'m2'},
   {g:'Desmonte', a:'Descapote / zonas no boscosas', item:'Desmonte y limpieza en zonas no boscosas', uni:'Ha', cc:'02.03', medida:'m2_desmonte', data:true, maqUnidad:'m3'},
@@ -206,10 +207,11 @@ function desmonteVals(b, x){
   const prodMaq=(x.maqUnidad==='m2')?m2:m3;
   return {m2, esp, ha, m3, prodMaq, maqU:(x.maqUnidad==='m2'?'m²':'m³')};
 }
-function capFromCc(cc){ if(!cc) return ''; const p=cc.split('.')[0]; return p==='02'?'EXPLANACIONES':p==='03'?'BASES, SUBBASES Y AFIRMADOS':'ESTRUCTURAS'; }
+function capFromCc(cc){ if(!cc) return ''; const p=cc.split('.')[0]; return p==='02'?'EXPLANACIONES':p==='03'?'BASES, SUBBASES Y AFIRMADOS':p==='04'?'PAVIMENTOS ASFALTICOS':'ESTRUCTURAS'; }
 // La BASE clasifica tierras y estructuras/MSR (CC 05.*) bajo el mismo grupo: TIERRAS. El CAPITULO sí
-// distingue (capFromCc: ESTRUCTURAS para 05.*), pero el GRUPO siempre es TIERRAS en el alcance V1.
-function grupoFromCc(cc){ return 'TIERRAS'; }
+// distingue (capFromCc: ESTRUCTURAS para 05.*), pero el GRUPO es TIERRAS en el alcance V1. Excepción
+// (D71): PAVIMENTOS (CC 04.*) va en el grupo PAVIMENTOS, como lo tiene la hoja BASE.
+function grupoFromCc(cc){ return (cc && cc.split('.')[0]==='04') ? 'PAVIMENTOS' : 'TIERRAS'; }
 
 const MAQUINAS = ['BL005','BL009','EXC001','EXC013','EXC014','EXC015','FNG02','MO03','MO04','MO09','NH69','CR019','CR013','CR016','CS78B','NH403','NH404','NH420','CAT900','NH421','CR026'];
 const TIPO_EQUIPO = {'BL005':'BULLDOZER','BL009':'BULLDOZER','NH69':'BULLDOZER','EXC001':'EXCAVADORA','EXC013':'EXCAVADORA','EXC014':'EXCAVADORA','EXC015':'EXCAVADORA','MO03':'MOTONIVELADORA','MO04':'MOTONIVELADORA','MO09':'MOTONIVELADORA','FNG02':'FINISHER','CR019':'VIBROCOMPACTADOR','CR013':'VIBROCOMPACTADOR','CR016':'VIBROCOMPACTADOR','CS78B':'VIBROCOMPACTADOR','NH403':'VIBROCOMPACTADOR','NH404':'VIBROCOMPACTADOR','NH420':'VIBROCOMPACTADOR','CAT900':'VIBROCOMPACTADOR','NH421':'MINICARGADOR','CR026':'MINIBULDOZER'};

@@ -336,7 +336,10 @@ function addLinea(){
   }
   const uf=abs==null?'':(abs<=30000?'UF1':'UF2'), proy=uf==='UF1'?'3701':uf==='UF2'?'3702':'';
   STATE.cantidades.push({ id_registro:'', reporta:'(residente)', rol:sessionStorage.getItem('rol')||'residente',
-    grupo:'DRENAJES Y ESTRUCTURAS', capitulo:(AREA==='odt')?'DRENAJE TRANSVERSAL':'DRENAJE LONGITUDINAL',
+    grupo:'DRENAJES Y ESTRUCTURAS',
+    // capítulo por defecto del área; los ítems "extra" (D71: Demolición de Estructuras) traen el suyo
+    capitulo: it.capitulo || ((AREA==='odt')?'DRENAJE TRANSVERSAL':'DRENAJE LONGITUDINAL'),
+    area: AREA,   // D71: fija el área de la línea (necesaria para ítems cuyo CC deriva 'tierras')
     actividad:it.desc, descripcion:it.desc,
     centro_costo:proy?`${proy}.${it.corto||it.cc}`:(it.cc||''), unidad:it.unidad||'', uf, proyecto:proy,
     elemento, pk_inicial:pk, pk_final:'', abs_inicial:abs, abs_final:abs,

@@ -413,7 +413,9 @@ function getCantidades(){
     });
     rows.push({
       grupo:'DRENAJES Y ESTRUCTURAS',
-      capitulo:(AREA==='odt')?'DRENAJE TRANSVERSAL':'DRENAJE LONGITUDINAL',
+      // capítulo por defecto del área; los ítems "extra" (D71: Demolición de Estructuras) traen el suyo
+      capitulo: it.capitulo || ((AREA==='odt')?'DRENAJE TRANSVERSAL':'DRENAJE LONGITUDINAL'),
+      area: AREA,   // D71: fija el área de la línea (necesaria para ítems cuyo CC deriva 'tierras')
       actividad:it.desc, descripcion:it.desc, sub_actividad:'',
       centro_costo: u.proy ? (u.proy+'.'+(it.corto||it.cc)) : (it.cc||''),
       unidad:it.unidad||'', data:true, uf:u.uf||'', proyecto:u.proy||'',
