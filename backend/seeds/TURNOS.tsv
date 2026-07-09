@@ -1,0 +1,11 @@
+turno	tipo_dia	entrada	salida	descanso_ini	descanso_fin	cruza_medianoche
+1	lv	07:00	15:30	12:00	13:00	NO
+1	sabado	07:00	11:30			NO
+2	lv	17:30	02:00	22:00	23:00	SI
+2	sabado	13:30	18:00			NO
+3	lj	17:00	02:30	23:00	00:00	SI
+3	viernes	17:00	02:00	23:00	00:00	SI
+4	lj	19:00	04:30	23:00	00:00	SI
+4	viernes	19:00	04:00	23:00	00:00	SI
+5	lv	18:00	02:30	23:00	00:00	SI
+5	sabado	14:00	18:30			NO

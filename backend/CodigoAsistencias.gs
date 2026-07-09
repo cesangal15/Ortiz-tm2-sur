@@ -48,7 +48,17 @@ const CAT_MOTIVOS_HEADERS   = ['string_motivo'];
 // CC_USADOS: subconjunto de CAT_CC que se usa a diario (≈5-20). El usuario lo mantiene (pega los CC
 // frecuentes, mismo string exacto que CAT_CC). El formulario muestra estos por defecto y deja buscar
 // el resto del catálogo completo. Si la hoja está vacía, se usa el catálogo completo como antes.
-const CC_USADOS_HEADERS     = ['string_cc'];
+// D72: `area` (col 2) opcional para servir los CC frecuentes SOLO al área que los usa (p. ej. todos
+// los `06.*` de drenajes van a ODT y no ensucian el datalist de los capataces de tierra). Celda vacía
+// = 'tierras' (retrocompatible con lo ya pegado). Al usuario "sin área" (residente general/admin) se
+// le muestran todos.
+const CC_USADOS_HEADERS     = ['string_cc','area'];
+// D72: catálogo de TURNOS asignados (diurno T1 + nocturnos T2–T5). Cada fila = turno × tipo de día,
+// con entrada/salida y el descanso (almuerzo/cena) a descontar. `cruza_medianoche`='SI' cuando la
+// salida es del día siguiente (los nocturnos). Sirve para PRE-LLENAR la hora de entrada/salida del
+// reporte (captura cruda, D69b); la clasificación de extras/recargos sigue calculándose aparte y su
+// mapeo fino a las columnas G–N Navision sigue siendo parámetro abierto hasta confirmarlo la empresa.
+const TURNOS_HEADERS        = ['turno','tipo_dia','entrada','salida','descanso_ini','descanso_fin','cruza_medianoche'];
 
 /* ---------- helpers genéricos (mismo patrón que Codigo.gs) ---------- */
 function json(o){ return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
@@ -98,6 +108,20 @@ function areaDeUsuario(usuario){
 function areaDeCuadrillaMap(){
   const m={}; readSheet('CUADRILLAS', CUADRILLAS_HEADERS).forEach(r=>{ m[r.cuadrilla]=norm(r.area)||'tierras'; });
   return m;
+}
+// Área de quien REPORTA (para filtrar CC_USADOS): residente de área por su rol; capataz/mairy por sus
+// cuadrillas si todas son de la misma área. Mezcla o desconocido = '' (sin filtro: ve todas).
+function areaDeReportante(usuario){
+  const porRol=areaDeUsuario(usuario); if(porRol) return porRol;
+  const cuads=cuadrillasDeUsuario(usuario), map=areaDeCuadrillaMap(); let a=null;
+  for(let i=0;i<cuads.length;i++){ const ar=map[cuads[i]]||'tierras'; if(a===null) a=ar; else if(a!==ar) return ''; }
+  return a===null ? '' : a;
+}
+// Lee CC_USADOS y devuelve los string_cc que aplican al área dada ('' = todas). Empty en la hoja = tierras.
+function ccUsadosParaArea(area){
+  const rows=readSheet('CC_USADOS', CC_USADOS_HEADERS);
+  return rows.filter(r=> String(r.string_cc||'').trim() && (!area || (norm(r.area)||'tierras')===area))
+             .map(r=>String(r.string_cc).trim());
 }
 
 /* ---------- roster date-aware (D72) ----------
@@ -205,7 +229,7 @@ function roster(e){
     .map(p=>({ cedula:p.cedula||'', codigo:p.codigo||'', nombre:p.nombre||'', cargo:p.cargo||'', cuadrilla:p.cuadrilla||'' }));
   const jornada=jornadaDelDia(fecha, cfg, festivos);
   const catCC=readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
-  const catCCUsados=readSheet('CC_USADOS', CC_USADOS_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
+  const catCCUsados=ccUsadosParaArea(areaDeReportante(usuario));   // D72: CC frecuentes del área del reportante
   const catMotivos=readSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS).map(r=>String(r.string_motivo||'')).filter(Boolean);
   // CC usados recientemente por cada cuadrilla (últimos 60 días de ASISTENCIA), más reciente primero.
   const recientesCC={};
@@ -217,7 +241,11 @@ function roster(e){
     const list=recientesCC[r.cuadrilla]; if(!list) return;
     if(list.indexOf(r.cc)<0 && list.length<10) list.push(r.cc);
   });
-  return json({ ok:true, cuadrillas, personas, config:cfg, festivos, jornada, catCC, catCCUsados, catMotivos, recientesCC });
+  // D72: turnos asignados (para pre-llenar entrada/salida en el formulario). Horas por duck-typing.
+  const turnos=readSheet('TURNOS', TURNOS_HEADERS).map(t=>({ turno:String(t.turno||''), tipo_dia:norm(t.tipo_dia),
+    entrada:ftime(t.entrada), salida:ftime(t.salida), descanso_ini:ftime(t.descanso_ini), descanso_fin:ftime(t.descanso_fin),
+    cruza_medianoche: String(t.cruza_medianoche||'').toUpperCase()==='SI' }));
+  return json({ ok:true, cuadrillas, personas, config:cfg, festivos, jornada, catCC, catCCUsados, catMotivos, recientesCC, turnos });
 }
 
 /* ---------- GET asistencia: resumen del día para el residente/jeisson ---------- */
@@ -280,7 +308,7 @@ function asistenciaDia(e){
   const festivos=getFestivos();
   const jornada=jornadaDelDia(fecha, cfg, festivos);
   const catCC=readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
-  const catCCUsados=readSheet('CC_USADOS', CC_USADOS_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
+  const catCCUsados=ccUsadosParaArea(area);   // D72: en el resumen, CC frecuentes del área revisada ('' = todas)
   const catMotivos=readSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS).map(r=>String(r.string_motivo||'')).filter(Boolean);
   return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, jornada, catCC, catCCUsados, catMotivos });
 }
@@ -409,6 +437,18 @@ function gestionPersonal(body){
     sh.getRange(row,8).setValue('');               // limpia el retiro; conserva fecha_ingreso (col 9)
     return json({ok:true, op:'reactivar'});
   }
+  if(op==='reingreso'){
+    // D72: reingreso REAL con historial. NO reactiva la fila vieja (conservaría el hueco perdido);
+    // crea una fila NUEVA copiando los datos de la persona con fecha_ingreso = fecha del reingreso.
+    // Evita la doble digitación (no se reescribe cédula/código/nombre) y respeta los días inactivos:
+    // la fila vieja aplica hasta su retiro y la nueva desde el reingreso; el hueco no lo cubre ninguna.
+    const fechaIng=fdate(body.fecha_ingreso)||hoy;
+    const src=readSheet('PERSONAL', PERSONAL_HEADERS).find(p=>p._row===row);
+    if(!src) return json({ok:false, error:'No se encontró la persona a reingresar.'});
+    const responsable=responsableDeCuadrilla(src.cuadrilla)||src.responsable||'';
+    sh.appendRow([src.cedula||'', src.codigo||'', src.nombre||'', src.cargo||'', src.cuadrilla||'', responsable, 'activo', '', fechaIng]);
+    return json({ok:true, op:'reingreso'});
+  }
   if(op==='mover'){
     const cuadrilla=body.cuadrilla||'';
     const responsable=responsableDeCuadrilla(cuadrilla);
@@ -437,6 +477,25 @@ function setupHojas(){
   getSheet('CAT_CC', CAT_CC_HEADERS);
   getSheet('CC_USADOS', CC_USADOS_HEADERS);   // el usuario pega aquí los ~5-20 CC frecuentes (opcional)
   getSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS);
+
+  // D72: TURNOS asignados (5 turnos × tipo de día). Semilla fija con los horarios entregados; si el
+  // usuario ya cargó la hoja, no se pisa. Horas como texto 'HH:MM' (00:00 = medianoche, fin de cena).
+  const turSh=getSheet('TURNOS', TURNOS_HEADERS);
+  if(turSh.getLastRow()<2){
+    turSh.getRange(2,1,10,7).setValues([
+      ['1','lv',     '07:00','15:30','12:00','13:00','NO'],
+      ['1','sabado', '07:00','11:30','',     '',     'NO'],
+      ['2','lv',     '17:30','02:00','22:00','23:00','SI'],
+      ['2','sabado', '13:30','18:00','',     '',     'NO'],
+      ['3','lj',     '17:00','02:30','23:00','00:00','SI'],
+      ['3','viernes','17:00','02:00','23:00','00:00','SI'],
+      ['4','lj',     '19:00','04:30','23:00','00:00','SI'],
+      ['4','viernes','19:00','04:00','23:00','00:00','SI'],
+      ['5','lv',     '18:00','02:30','23:00','00:00','SI'],
+      ['5','sabado', '14:00','18:30','',     '',     'NO']
+    ]);
+    turSh.getRange(2,3,10,4).setNumberFormat('@'); // entrada/salida/descanso como TEXTO, no como hora
+  }
 
   const cuadSh=getSheet('CUADRILLAS', CUADRILLAS_HEADERS);
   if(cuadSh.getLastRow()<2){
