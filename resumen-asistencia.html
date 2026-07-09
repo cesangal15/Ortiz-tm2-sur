@@ -112,15 +112,17 @@ async function cargarPlantillaBundle(){
 
 window.onload = function(){
   const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
-  // Guard: residente, admin o jeisson (D69). La gestión de personal se oculta para jeisson en el render.
-  if(!rol || (rol!=='residente' && rol!=='admin' && rol!=='jeisson')){ window.location.href='index.html'; return; }
+  // Guard: residente, admin, jeisson (D69) o residente de área odt/odl (D72). La gestión de personal
+  // se oculta para jeisson y los residentes de área en el render (solo residente general/admin).
+  const rolesOk=['residente','admin','jeisson','residente_odt','residente_odl'];
+  if(!rol || rolesOk.indexOf(rol)<0){ window.location.href='index.html'; return; }
   STATE.usuario=usuario; STATE.rol=rol;
   document.getElementById('userDisplay').textContent=usuario;
   const bm=document.getElementById('btnBack');
   bm.style.display='inline-block';
   if(rol==='admin'){ bm.onclick=function(){location.href='menu.html';}; bm.textContent='← Menú'; }
   else if(rol==='residente'){ bm.onclick=function(){location.href='residente.html';}; }
-  else { bm.onclick=function(){location.href='seleccion-reporte.html';}; }
+  else { bm.onclick=function(){location.href='seleccion-reporte.html';}; }  // jeisson + residentes de área
   STATE.fecha=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
   restaurarPlantilla();
   cargarResumen();
@@ -140,7 +142,7 @@ function toggleLista(id, btn){
 async function cargarResumen(){
   document.getElementById('container').innerHTML='<div class="loading">⏳ Consultando…</div>';
   try{
-    const resp=await fetch(`${APPS_SCRIPT_URL}?action=asistencia&fecha=${STATE.fecha}`);
+    const resp=await fetch(`${APPS_SCRIPT_URL}?action=asistencia&fecha=${STATE.fecha}&usuario=${encodeURIComponent(STATE.usuario)}`);
     const data=await resp.json();
     if(!data.ok) throw new Error(data.error||'asistencia');
     STATE.data=data;
@@ -223,7 +225,7 @@ function render(){
  * responsable de la cuadrilla. */
 function proyectoFromCC(cc){ const m=String(cc||'').match(/^(\d{4})/); return m?m[1]:''; }
 function seccionCompletar(d){
-  if(!(STATE.rol==='residente' || STATE.rol==='admin' || STATE.rol==='jeisson')) return '';
+  if(['residente','admin','jeisson','residente_odt','residente_odl'].indexOf(STATE.rol)<0) return '';
   const faltantes=d.faltantes||[];
   const comp=[];
   // Los "presente sin CC" ya vienen en faltantes como sin_reportar (incompleto=true), así que basta
@@ -405,7 +407,7 @@ function tipoJornadaDeFecha(fechaStr, festivos){
 
 async function obtenerExport(fecha){
   if(STATE.exportCache[fecha]) return STATE.exportCache[fecha];
-  const resp=await fetch(`${APPS_SCRIPT_URL}?action=export&fecha=${fecha}`);
+  const resp=await fetch(`${APPS_SCRIPT_URL}?action=export&fecha=${fecha}&usuario=${encodeURIComponent(STATE.usuario)}`);
   const data=await resp.json();
   if(!data.ok) throw new Error(data.error||'export');
   STATE.exportCache[fecha]=data;
@@ -542,12 +544,16 @@ function renderPersonal(){
   const body=document.getElementById('gestionBody'); if(!body) return;
   const d=STATE.personal, cuadrillas=d.cuadrillas.map(c=>c.cuadrilla);
   let h='<div class="section-title" style="margin:6px 0;">Agregar persona</div>';
+  const hoy=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
   h+='<div class="row">'
     + '<div class="field"><label>Código</label><input type="text" id="altaCodigo"></div>'
     + '<div class="field"><label>Nombre</label><input type="text" id="altaNombre"></div>'
     + '<div class="field"><label>Cargo</label><input type="text" id="altaCargo"></div>'
     + '<div class="field"><label>Cuadrilla</label><select id="altaCuadrilla">'+cuadrillas.map(c=>`<option>${esc(c)}</option>`).join('')+'</select></div>'
     + '<div class="field"><label>Cédula (opcional)</label><input type="text" id="altaCedula"></div>'
+    // D72: ingreso retroactivo — si al residente se le pasó alguien, lo agrega "desde cierto día" y
+    // aparece correctamente en los días ya pasados (y no antes). Por defecto, hoy.
+    + `<div class="field" style="max-width:150px;"><label>Ingreso desde</label><input type="date" id="altaIngreso" value="${hoy}"></div>`
     + '<div class="field" style="flex:0;"><button class="btn" onclick="altaPersona()">Agregar</button></div>'
     + '</div>';
 
@@ -592,13 +598,19 @@ async function altaPersona(){
   const cargo=document.getElementById('altaCargo').value.trim();
   const cuadrilla=document.getElementById('altaCuadrilla').value;
   const cedula=document.getElementById('altaCedula').value.trim();
+  const fecha_ingreso=document.getElementById('altaIngreso').value;
   if(!nombre || !cuadrilla){ alert('Nombre y cuadrilla son obligatorios.'); return; }
-  const r=await postPersonal({op:'alta', codigo, nombre, cargo, cuadrilla, cedula});
+  const r=await postPersonal({op:'alta', codigo, nombre, cargo, cuadrilla, cedula, fecha_ingreso});
   if(r.ok) cargarPersonal(); else alert('Error: '+(r.error||'desconocido'));
 }
 async function retirarPersona(row){
-  if(!confirm('¿Retirar a esta persona? Queda inactiva (no se borra su historial).')) return;
-  const r=await postPersonal({op:'retiro', _row:row});
+  // D72: el retiro lleva la fecha efectiva que elige el residente. Es el PRIMER día NO trabajado:
+  // la persona sigue apareciendo reportable hasta el día anterior (y en días pasados no cambia nada).
+  const hoy=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
+  const fecha_retiro=prompt('Retirar desde qué fecha (primer día que YA NO trabaja)?\nFormato AAAA-MM-DD:', hoy);
+  if(fecha_retiro===null) return;                       // canceló
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha_retiro)){ alert('Fecha inválida. Usa el formato AAAA-MM-DD.'); return; }
+  const r=await postPersonal({op:'retiro', _row:row, fecha_retiro});
   if(r.ok) cargarPersonal(); else alert('Error: '+(r.error||'desconocido'));
 }
 async function reactivarPersona(row){
