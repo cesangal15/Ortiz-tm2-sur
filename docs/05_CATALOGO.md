@@ -23,6 +23,9 @@ Formato: actividad de campo → ítem contractual | unidad | CC | medición | ¿
 - Cereo de subbase → (sin ítem) | m2 | — | (PKf−PKi)×11.5 | **No** (no_data)
 - Base estabilizada con cemento (BTC) → Base granular estabilizada con cemento | m3 | 03.03 | m³ directo | Sí
 
+### Pavimentos (D71)
+- Riego de imprimación con emulsión asfáltica → ídem | m2 | 04.01 | m² directo | Sí. GRUPO **PAVIMENTOS**, CAPÍTULO **PAVIMENTOS ASFALTICOS** (así lo tiene la BASE; `grupoFromCc`/`capFromCc` mapean `04.*`). Rama de tierras normal (deriveArea=tierras). Único ítem de pavimentos ofrecido en V1 (acota el "excluye pavimentos" del alcance).
+
 ### Desmonte
 - Desmonte y limpieza en bosque → ídem | captura m² → DATA en Ha (÷10 000) | 02.01 | + genera no aprovechable (02.05, m²×espesor) → ZODME (02.08) | Sí. Máquina: producción en m².
 - Descapote / zonas no boscosas → Desmonte y limpieza en zonas no boscosas | captura m² → DATA en Ha (÷10 000) | 02.03 | + genera no aprovechable (02.05, m²×espesor) → ZODME (02.08) | Sí. Máquina: producción en m³ (m²×espesor).
@@ -87,6 +90,14 @@ Reglas:
 - Campos por línea SOLO-WhatsApp (no van a DATA): oficiales, ayudantes, turno de noche, nota libre.
 - Máquinas de drenajes: **texto libre** (id/placa + operador + horas opcionales), sin catálogo;
   `a_captura=NO` siempre (no pasan a Captura_Diaria).
+
+**Ítems "extra" de drenajes (D71) — CC que NO deriva el área por sí solo.** Config `EXTRA_DREN` en
+`Codigo.gs` (CC corto → { áreas ofrecidas, capítulo verbatim }). Se sirven en `?action=drenajes` para
+cada área listada (desc/unidad verbatim de la BASE) y el **área real de la línea la fija el reporte
+(columna `area`), no el CC** — por eso `buildDataRow`/ingesta/`enviar_data` usan `areaDeFila(c.area,cc)`.
+DATA lleva una columna interna `area` para pisar por día+área sin confundirlos con tierras.
+- **Demolición de Estructuras** → GRUPO `DRENAJES Y ESTRUCTURAS`, CAPÍTULO `DEMOLICIONES Y
+  REUBICACIONES`, CC corto `01.02`, unidad **m³** | ofrecida en **ambas** áreas (ODT y ODL).
 
 ## 2. Orígenes de material (chequeadora) — CONFIRMADO
 - Masivo 2 (PK 19) → excavación aprovechable
