@@ -29,8 +29,13 @@
 // El usuario reemplaza este placeholder si crea un Sheet nuevo; ya viene fijado al Sheet entregado.
 const SHEET_ID = '1KrhzaIg3BSspyi0oH0gHkAJnSRXaOIdel_pKaMVHX9w';
 
-const PERSONAL_HEADERS      = ['cedula','codigo','nombre','cargo','cuadrilla','responsable','estado','fecha_retiro'];
-const CUADRILLAS_HEADERS    = ['cuadrilla','responsables'];
+// D72: `fecha_ingreso` (col 9) hace el roster "date-aware": el alta puede ser retroactiva ("desde
+// cierto día") y el retiro lleva su propia fecha. Celda vacía en filas viejas = sin límite inferior
+// (siempre estuvo activa) → retrocompatible con lo ya guardado.
+const PERSONAL_HEADERS      = ['cedula','codigo','nombre','cargo','cuadrilla','responsable','estado','fecha_retiro','fecha_ingreso'];
+// D72: `area` (col 3) etiqueta cada cuadrilla como tierras/odt/odl para que residente_odt/residente_odl
+// vean SOLO su área en el resumen. Celda vacía en filas viejas = 'tierras' (retrocompatible).
+const CUADRILLAS_HEADERS    = ['cuadrilla','responsables','area'];
 const ASISTENCIA_HEADERS    = ['id_registro','timestamp','fecha','reporta','cuadrilla','codigo','cedula','nombre',
   'cargo','cc','proyecto','hora_entrada','hora_salida','presente','motivo_ausencia','observacion'];
 const CONFIG_HEADERS        = ['clave','valor'];
@@ -79,6 +84,33 @@ function readSheet(name, headers){
   return out;
 }
 function norm(s){ return String(s==null?'':s).trim().toLowerCase(); }
+
+/* ---------- área (D72) ---------- */
+// Área que revisa un usuario en el resumen: residente_odt/odl ven SOLO su área; el resto (residente
+// general, admin, jeisson) ven todas ('' = sin filtro).
+function areaDeUsuario(usuario){
+  const u=norm(usuario);
+  if(u==='residente_odt') return 'odt';
+  if(u==='residente_odl') return 'odl';
+  return '';
+}
+// Mapa cuadrilla -> área desde la hoja CUADRILLAS. Vacío o cuadrilla desconocida = 'tierras'.
+function areaDeCuadrillaMap(){
+  const m={}; readSheet('CUADRILLAS', CUADRILLAS_HEADERS).forEach(r=>{ m[r.cuadrilla]=norm(r.area)||'tierras'; });
+  return m;
+}
+
+/* ---------- roster date-aware (D72) ----------
+ * Una persona "se esperaba" en `fecha` si ya había ingresado y aún no la habían retirado a esa fecha:
+ *   [fecha_ingreso, fecha_retiro)  — el retiro cuenta como primer día NO trabajado.
+ * Comparación de strings 'yyyy-MM-dd' (orden lexicográfico = cronológico). Sin fecha_retiro se cae al
+ * `estado` actual (compat con filas viejas sin fechas). Si no llega `fecha`, no se filtra por ventana. */
+function activaEnFecha(p, fecha){
+  const ing=fdate(p.fecha_ingreso), ret=fdate(p.fecha_retiro);
+  if(ing && fecha && fecha < ing) return false;   // aún no ingresaba ese día
+  if(ret) return !(fecha && fecha >= ret);         // retiro con fecha: activa antes de esa fecha
+  return String(p.estado||'activo')!=='inactivo';  // sin fecha de retiro: usa el estado actual
+}
 
 /* ---------- CONFIG / FESTIVOS ---------- */
 function getConfigMap(){
@@ -164,12 +196,13 @@ function cuadrillasDeUsuario(usuario){
 function roster(e){
   const usuario=e.parameter.usuario||'';
   const cuadrillas=cuadrillasDeUsuario(usuario);
-  const personalTodo=readSheet('PERSONAL', PERSONAL_HEADERS);
-  const personas=personalTodo.filter(p=> p.estado==='activo' && cuadrillas.indexOf(p.cuadrilla)>=0)
-    .map(p=>({ cedula:p.cedula||'', codigo:p.codigo||'', nombre:p.nombre||'', cargo:p.cargo||'', cuadrilla:p.cuadrilla||'' }));
   const cfg=getConfigMap();
   const festivos=getFestivos();
   const fecha=e.parameter.fecha || Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy-MM-dd');
+  const personalTodo=readSheet('PERSONAL', PERSONAL_HEADERS);
+  // D72: roster date-aware — solo quien ya había ingresado y no estaba retirado a esa fecha.
+  const personas=personalTodo.filter(p=> activaEnFecha(p, fecha) && cuadrillas.indexOf(p.cuadrilla)>=0)
+    .map(p=>({ cedula:p.cedula||'', codigo:p.codigo||'', nombre:p.nombre||'', cargo:p.cargo||'', cuadrilla:p.cuadrilla||'' }));
   const jornada=jornadaDelDia(fecha, cfg, festivos);
   const catCC=readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
   const catCCUsados=readSheet('CC_USADOS', CC_USADOS_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
@@ -190,13 +223,18 @@ function roster(e){
 /* ---------- GET asistencia: resumen del día para el residente/jeisson ---------- */
 function asistenciaDia(e){
   const fecha=fdate(e.parameter.fecha);
-  const filas=readSheet('ASISTENCIA', ASISTENCIA_HEADERS).filter(r=> fdate(r.fecha)===fecha)
+  // D72: si el usuario es residente_odt/odl, se limita todo (filas, cuadrillas, faltantes) a su área.
+  const area=areaDeUsuario(e.parameter.usuario||'');
+  const cuadArea=areaDeCuadrillaMap();
+  const enArea=function(cuadrilla){ return !area || (cuadArea[cuadrilla]||'tierras')===area; };
+  const filas=readSheet('ASISTENCIA', ASISTENCIA_HEADERS).filter(r=> fdate(r.fecha)===fecha && enArea(r.cuadrilla))
     .map(r=>({ id_registro:r.id_registro, timestamp:r.timestamp, fecha:fdate(r.fecha), reporta:r.reporta,
       cuadrilla:r.cuadrilla, codigo:r.codigo, cedula:r.cedula, nombre:r.nombre, cargo:r.cargo, cc:r.cc,
       proyecto:r.proyecto, hora_entrada:ftime(r.hora_entrada), hora_salida:ftime(r.hora_salida),
       presente:r.presente, motivo_ausencia:r.motivo_ausencia, observacion:r.observacion }));
-  const cuadrillasCat=readSheet('CUADRILLAS', CUADRILLAS_HEADERS);
-  const personalActivo=readSheet('PERSONAL', PERSONAL_HEADERS).filter(p=>p.estado==='activo');
+  const cuadrillasCat=readSheet('CUADRILLAS', CUADRILLAS_HEADERS).filter(cq=>enArea(cq.cuadrilla));
+  // D72: roster date-aware + por área — "se esperaba" a esta persona en ESA fecha (no la foto de hoy).
+  const personalActivo=readSheet('PERSONAL', PERSONAL_HEADERS).filter(p=>activaEnFecha(p, fecha) && enArea(p.cuadrilla));
   // Una fila cuenta como REPORTE COMPLETO solo si: ausente con motivo, o presente CON centro de costo.
   // Presente SIN CC (el capataz la dejó pasar sin actividad) = como si NO se hubiera reportado
   // (decisión del residente, jul-2026): NO cuenta presente y va a faltantes para completarla.
@@ -254,7 +292,8 @@ function asistenciaDia(e){
  * borrar lo que ya reportó el responsable. Permitido a residente, admin y jeisson. */
 function guardarIndividual(body){
   const usuario=norm(body.usuario);
-  if(usuario!=='residente' && usuario!=='admin' && usuario!=='jeisson')
+  // D72: los residentes de área (odt/odl) también completan faltantes de SU gente.
+  if(['residente','admin','jeisson','residente_odt','residente_odl'].indexOf(usuario)<0)
     return json({ok:false, error:'No autorizado para completar faltantes.'});
   const fecha=fdate(body.fecha), ts=new Date();
   const sh=getSheet('ASISTENCIA', ASISTENCIA_HEADERS), need=ASISTENCIA_HEADERS.length, last=sh.getLastRow();
@@ -283,7 +322,7 @@ function guardarIndividual(body){
 function personalCompleto(e){
   const personal=readSheet('PERSONAL', PERSONAL_HEADERS).map(p=>({ _row:p._row, cedula:p.cedula||'', codigo:p.codigo||'',
     nombre:p.nombre||'', cargo:p.cargo||'', cuadrilla:p.cuadrilla||'', responsable:p.responsable||'',
-    estado:p.estado||'activo', fecha_retiro:fdate(p.fecha_retiro) }));
+    estado:p.estado||'activo', fecha_retiro:fdate(p.fecha_retiro), fecha_ingreso:fdate(p.fecha_ingreso) }));
   const cuadrillas=readSheet('CUADRILLAS', CUADRILLAS_HEADERS).map(c=>({ cuadrilla:c.cuadrilla||'', responsables:c.responsables||'' }));
   return json({ ok:true, personal, cuadrillas });
 }
@@ -291,7 +330,11 @@ function personalCompleto(e){
 /* ---------- GET export: crudo del día completo para el generador Navision (cliente, SheetJS) ---------- */
 function exportDia(e){
   const fecha=fdate(e.parameter.fecha);
-  const filas=readSheet('ASISTENCIA', ASISTENCIA_HEADERS).filter(r=> fdate(r.fecha)===fecha)
+  // D72: residente_odt/odl exportan SOLO su área; el residente general/admin exportan todo.
+  const area=areaDeUsuario(e.parameter.usuario||'');
+  const cuadArea=areaDeCuadrillaMap();
+  const enArea=function(cuadrilla){ return !area || (cuadArea[cuadrilla]||'tierras')===area; };
+  const filas=readSheet('ASISTENCIA', ASISTENCIA_HEADERS).filter(r=> fdate(r.fecha)===fecha && enArea(r.cuadrilla))
     .map(r=>({ codigo:r.codigo||'', cedula:r.cedula||'', nombre:r.nombre||'', cargo:r.cargo||'',
       cuadrilla:r.cuadrilla||'', cc:r.cc||'', proyecto:String(r.proyecto||''),
       hora_entrada:ftime(r.hora_entrada), hora_salida:ftime(r.hora_salida),
@@ -341,24 +384,29 @@ function gestionPersonal(body){
   const sh=getSheet('PERSONAL', PERSONAL_HEADERS);
   const op=body.op||'';
 
+  const hoy=Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy-MM-dd');
   if(op==='alta'){
     const cuadrilla=body.cuadrilla||'';
     const responsable=responsableDeCuadrilla(cuadrilla);
-    sh.appendRow([body.cedula||'', body.codigo||'', body.nombre||'', body.cargo||'', cuadrilla, responsable, 'activo', '']);
+    // D72: fecha_ingreso (col 9) permite el alta retroactiva ("desde cierto día"); por defecto, hoy.
+    const fechaIng=fdate(body.fecha_ingreso)||hoy;
+    sh.appendRow([body.cedula||'', body.codigo||'', body.nombre||'', body.cargo||'', cuadrilla, responsable, 'activo', '', fechaIng]);
     return json({ok:true, op:'alta'});
   }
   const row=Number(body._row);
   if(!row || row<2) return json({ok:false, error:'Falta identificar la persona (_row).'});
 
   if(op==='retiro'){
-    const hoy=Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy-MM-dd');
+    // D72: la fecha de retiro la elige el residente (default hoy). Es el PRIMER día NO trabajado:
+    // la persona aparece reportable hasta el día anterior (ver activaEnFecha).
+    const fechaRet=fdate(body.fecha_retiro)||hoy;
     sh.getRange(row,7).setValue('inactivo');       // col 7 = estado
-    sh.getRange(row,8).setValue(hoy);              // col 8 = fecha_retiro
+    sh.getRange(row,8).setValue(fechaRet);         // col 8 = fecha_retiro
     return json({ok:true, op:'retiro'});
   }
   if(op==='reactivar'){
     sh.getRange(row,7).setValue('activo');
-    sh.getRange(row,8).setValue('');
+    sh.getRange(row,8).setValue('');               // limpia el retiro; conserva fecha_ingreso (col 9)
     return json({ok:true, op:'reactivar'});
   }
   if(op==='mover'){
@@ -392,9 +440,12 @@ function setupHojas(){
 
   const cuadSh=getSheet('CUADRILLAS', CUADRILLAS_HEADERS);
   if(cuadSh.getLastRow()<2){
-    cuadSh.getRange(2,1,7,2).setValues([
-      ['ANGEL','angel'], ['ROBINSON','robinson'], ['ALBERT','albert'], ['ARIEL','ariel'],
-      ['ALEJANDRO','alejandro'], ['OPERADORES','jeisson'], ['VOLQUETEROS','mairy']
+    // D72: 3ª columna = área. Las cuadrillas de drenajes (ODT/ODL) las pega el usuario cuando llegue
+    // el listado real (cuadrilla · responsables(login) · odt|odl); aquí solo van las de tierras.
+    cuadSh.getRange(2,1,7,3).setValues([
+      ['ANGEL','angel','tierras'], ['ROBINSON','robinson','tierras'], ['ALBERT','albert','tierras'],
+      ['ARIEL','ariel','tierras'], ['ALEJANDRO','alejandro','tierras'], ['OPERADORES','jeisson','tierras'],
+      ['VOLQUETEROS','mairy','tierras']
     ]);
   }
 
