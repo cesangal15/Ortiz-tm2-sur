@@ -222,7 +222,8 @@ function render(){
   html+='<div class="section-title">Descargar Excel Navision</div>';
   html+=exportCardHtml();
 
-  if(STATE.rol==='residente' || STATE.rol==='admin'){
+  // D72: gestión de personal también para los residentes de área (odt/odl); el backend la limita a SU área.
+  if(['residente','admin','residente_odt','residente_odl'].indexOf(STATE.rol)>=0){
     html+='<div class="section-title">Gestión de personal</div>';
     html+='<div class="card" id="gestionCard"><button class="btn-ghost" onclick="cargarPersonal()">Cargar personal ↻</button><div id="gestionBody" style="margin-top:12px;"></div></div>';
   }
@@ -634,7 +635,7 @@ async function cargarPersonal(){
   const body=document.getElementById('gestionBody');
   body.innerHTML='<p style="color:var(--muted);font-size:13px;">⏳ Cargando…</p>';
   try{
-    const resp=await fetch(`${APPS_SCRIPT_URL}?action=personal`);
+    const resp=await fetch(`${APPS_SCRIPT_URL}?action=personal&usuario=${encodeURIComponent(STATE.usuario)}`);
     const data=await resp.json();
     if(!data.ok) throw new Error(data.error||'personal');
     STATE.personal=data;

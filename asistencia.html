@@ -122,7 +122,9 @@ async function cargarRoster(){
     STATE.cuadrillaActual=STATE.cuadrillas[0]||'';
     STATE.config=data.config||{}; STATE.festivos=data.festivos||[]; STATE.jornada=data.jornada||{};
     STATE.catCC=data.catCC||[]; STATE.catCCUsados=data.catCCUsados||[]; STATE.catMotivos=data.catMotivos||[]; STATE.recientesCC=data.recientesCC||{};
-    STATE.turnos=data.turnos||[];   // D72: catálogo de turnos para pre-llenar horas por bloque
+    // D72: catálogo de turnos para pre-llenar horas. Normaliza a HH:MM con cero (una hora "7:00" sin
+    // cero deja en blanco el <input type=time>, por eso la hora AM no se pre-llenaba).
+    STATE.turnos=(data.turnos||[]).map(t=>({ ...t, entrada:padHM(t.entrada), salida:padHM(t.salida) }));
     STATE.personas=(data.personas||[]).map((p,i)=>({ _pid:i, cedula:p.cedula, codigo:p.codigo, nombre:p.nombre,
       cargo:p.cargo, cuadrilla:p.cuadrilla, presente:true, motivo:'',
       hora_entrada: STATE.jornada.entrada||'', hora_salida: STATE.jornada.salida||'',
@@ -184,6 +186,8 @@ function proyectoFromCC(cc){ const m=String(cc||'').match(/^(\d{4})/); return m?
  * Cada turno tiene variantes por tipo de día (lv=L-V, lj=L-J, viernes, sabado). Se elige la fila que
  * mejor calza con la fecha del reporte. En domingo/festivo NO se pre-llena (jornada 0h, revisión manual).
  * La captura sigue siendo CRUDA (D69b): el turno solo rellena; el usuario puede ajustar. */
+// Normaliza "H:MM"/"HH:MM" a "HH:MM" con cero a la izquierda (requisito del <input type=time>).
+function padHM(s){ const m=String(s==null?'':s).trim().match(/(\d{1,2}):(\d{2})/); return m?('0'+m[1]).slice(-2)+':'+m[2]:String(s||''); }
 function diaTipoTurno(fecha){
   const d=String(fecha||'').split('-'); if(d.length<3) return 'lj';
   const dow=new Date(Number(d[0]),Number(d[1])-1,Number(d[2])).getDay();

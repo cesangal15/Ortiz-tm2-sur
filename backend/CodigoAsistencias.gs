@@ -85,7 +85,11 @@ function ftime(v){
   if(v === null || v === undefined || v === '') return '';
   if(typeof v === 'object' && typeof v.getHours === 'function')
     return ('0'+v.getHours()).slice(-2)+':'+('0'+v.getMinutes()).slice(-2);
-  return String(v).slice(0,5);
+  // Texto: normaliza a HH:MM con CERO a la izquierda. Una celda "7:00" (sin cero) rompía el
+  // <input type=time> del formulario y la hora AM salía en blanco (D72). "15:30" ya venía bien.
+  var s=String(v).trim(), m=s.match(/(\d{1,2}):(\d{2})/);
+  if(m) return ('0'+m[1]).slice(-2)+':'+m[2];
+  return s.slice(0,5);
 }
 function getSheet(name, headers){
   const ss=SpreadsheetApp.openById(SHEET_ID); let sh=ss.getSheetByName(name);
@@ -369,12 +373,15 @@ function guardarIndividual(body){
   return json({ok:true, filas:nuevas.length});
 }
 
-/* ---------- GET personal: gestión (solo residente/admin la usan, pero la lectura es abierta a jeisson también) ---------- */
+/* ---------- GET personal: gestión (residente general/admin ven todo; residente_odt/odl SOLO su área — D72) ---------- */
 function personalCompleto(e){
-  const personal=readSheet('PERSONAL', PERSONAL_HEADERS).map(p=>({ _row:p._row, cedula:p.cedula||'', codigo:p.codigo||'',
+  const area=areaDeUsuario(e.parameter.usuario||'');   // '' = todas (residente general/admin/jeisson)
+  const cuadArea=areaDeCuadrillaMap();
+  const enArea=function(c){ return !area || (cuadArea[c]||'tierras')===area; };
+  const personal=readSheet('PERSONAL', PERSONAL_HEADERS).filter(p=>enArea(p.cuadrilla)).map(p=>({ _row:p._row, cedula:p.cedula||'', codigo:p.codigo||'',
     nombre:p.nombre||'', cargo:p.cargo||'', cuadrilla:p.cuadrilla||'', responsable:p.responsable||'',
     estado:p.estado||'activo', fecha_retiro:fdate(p.fecha_retiro), fecha_ingreso:fdate(p.fecha_ingreso) }));
-  const cuadrillas=readSheet('CUADRILLAS', CUADRILLAS_HEADERS).map(c=>({ cuadrilla:c.cuadrilla||'', responsables:c.responsables||'' }));
+  const cuadrillas=readSheet('CUADRILLAS', CUADRILLAS_HEADERS).filter(c=>enArea(c.cuadrilla)).map(c=>({ cuadrilla:c.cuadrilla||'', responsables:c.responsables||'' }));
   return json({ ok:true, personal, cuadrillas });
 }
 
@@ -492,13 +499,19 @@ function guardarAsistencia(body){
 /* ---------- POST personal: alta / retiro / mover / reactivar — SOLO residente/admin ---------- */
 function gestionPersonal(body){
   const usuario=norm(body.usuario);
-  if(usuario!=='residente' && usuario!=='admin') return json({ok:false, error:'No autorizado: solo residente o admin.'});
+  // D72: residente general/admin gestionan TODO; los residentes de área (odt/odl) gestionan SOLO su área.
+  if(['residente','admin','residente_odt','residente_odl'].indexOf(usuario)<0)
+    return json({ok:false, error:'No autorizado: solo residente o admin.'});
+  const areaUsr=areaDeUsuario(usuario);              // '' = todas (residente general/admin)
+  const cuadArea=areaDeCuadrillaMap();
+  const okArea=function(cuadrilla){ return !areaUsr || (cuadArea[cuadrilla]||'tierras')===areaUsr; };
   const sh=getSheet('PERSONAL', PERSONAL_HEADERS);
   const op=body.op||'';
 
   const hoy=Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy-MM-dd');
   if(op==='alta'){
     const cuadrilla=body.cuadrilla||'';
+    if(!okArea(cuadrilla)) return json({ok:false, error:'Esa cuadrilla no es de tu área.'});
     const responsable=responsableDeCuadrilla(cuadrilla);
     // D72: fecha_ingreso (col 9) permite el alta retroactiva ("desde cierto día"); por defecto, hoy.
     const fechaIng=fdate(body.fecha_ingreso)||hoy;
@@ -507,6 +520,11 @@ function gestionPersonal(body){
   }
   const row=Number(body._row);
   if(!row || row<2) return json({ok:false, error:'Falta identificar la persona (_row).'});
+  // D72: un residente de área solo puede retirar/reactivar/reingresar/mover filas de SU área.
+  if(areaUsr){
+    const srcChk=readSheet('PERSONAL', PERSONAL_HEADERS).find(p=>p._row===row);
+    if(!srcChk || !okArea(srcChk.cuadrilla)) return json({ok:false, error:'Esa persona no es de tu área.'});
+  }
 
   if(op==='retiro'){
     // D72: la fecha de retiro la elige el residente (default hoy). Es el PRIMER día NO trabajado:
@@ -535,6 +553,7 @@ function gestionPersonal(body){
   }
   if(op==='mover'){
     const cuadrilla=body.cuadrilla||'';
+    if(!okArea(cuadrilla)) return json({ok:false, error:'Esa cuadrilla no es de tu área.'});
     const responsable=responsableDeCuadrilla(cuadrilla);
     sh.getRange(row,5).setValue(cuadrilla);        // col 5 = cuadrilla
     sh.getRange(row,6).setValue(responsable);       // col 6 = responsable
