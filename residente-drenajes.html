@@ -113,7 +113,9 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IV
  * &area= (el backend filtra por la columna `area`/CC), el envío a DATA pisa el día SOLO en esta
  * área (enmienda operativa de D03) y el WhatsApp usa el formato propio de drenajes. */
 let AREA='odt';
-const CAPATACES_ESPERADOS_POR_AREA={ odt:['capataz_odt'], odl:['capataz_odl'] };
+// Capataces nominales por área (D70): la sección "quién falta" del panel los compara contra los
+// que reportaron ese día. Mismo criterio que CAPATACES_ESPERADOS de tierras (encargado.html).
+const CAPATACES_ESPERADOS_POR_AREA={ odt:['mauricio','eduardo','enrique'], odl:['jairo'] };
 
 let STATE={ fecha:'', cantidades:[], maquinas:[], observaciones:[] };
 /* catálogo de la BASE (?action=drenajes) para el add-line del residente */

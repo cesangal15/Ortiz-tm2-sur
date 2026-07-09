@@ -60,9 +60,14 @@ const USUARIOS = {
   'angel':       { clave: 'capataz2025',  rol: 'capataz',    redirige: 'seleccion-reporte.html' },
   'alejo':       { clave: 'capataz2025',  rol: 'capataz',    redirige: 'seleccion-reporte.html' },
   'robinson':    { clave: 'capataz2025',  rol: 'capataz',    redirige: 'seleccion-reporte.html' },
-  // Drenajes (D70): capataces y residentes de ODT/ODL (claves placeholder; llaves en minúscula)
-  'capataz_odt':   { clave: 'dren2026',  rol: 'capataz_odt',   redirige: 'reporte-drenajes.html' },
-  'capataz_odl':   { clave: 'dren2026',  rol: 'capataz_odl',   redirige: 'reporte-drenajes.html' },
+  // Drenajes (D70): capataces NOMINALES por área (usuario propio → trazabilidad en `reporta`, igual
+  // que los de tierras). El ROL (capataz_odt/capataz_odl) es lo que activa el modo del formulario.
+  // Claves placeholder comunes por área; llaves en minúscula (login hace trim+toLowerCase).
+  // ODT (transversal): Mauricio, Eduardo, Enrique. ODL (longitudinal): Jairo.
+  'mauricio':      { clave: 'dren2026',  rol: 'capataz_odt',   redirige: 'reporte-drenajes.html' },
+  'eduardo':       { clave: 'dren2026',  rol: 'capataz_odt',   redirige: 'reporte-drenajes.html' },
+  'enrique':       { clave: 'dren2026',  rol: 'capataz_odt',   redirige: 'reporte-drenajes.html' },
+  'jairo':         { clave: 'dren2026',  rol: 'capataz_odl',   redirige: 'reporte-drenajes.html' },
   'residente_odt': { clave: 'Ortiz2026', rol: 'residente_odt', redirige: 'residente-drenajes.html' },
   'residente_odl': { clave: 'Ortiz2026', rol: 'residente_odl', redirige: 'residente-drenajes.html' },
   // Chequeadoras (claves: comparten una contraseña común; usuario se compara en minúsculas)
