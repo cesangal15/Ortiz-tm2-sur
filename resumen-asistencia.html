@@ -392,7 +392,25 @@ function clasificarHoras(tipoJornada, entrada, salida, cfg){
     }
   }
   if(extraNocturna<0) extraNocturna=0; if(extraDiurna<0) extraDiurna=0;
-  return { ordinarias:round2(ordinarias), ord_domfest:0, extra_diurna:round2(extraDiurna), extra_nocturna:round2(extraNocturna), avisoExtra, avisoDomFest:false };
+  // RECARGO NOCTURNO (columna G) — decisión de nómina: las horas ORDINARIAS trabajadas después de
+  // nocturno_desde (19:00) se reportan TAMBIÉN en la columna de recargo nocturno, EN PARALELO (no se
+  // restan de las ordinarias). Ej: 6pm-3am → C=ordinarias y G≈horas trabajadas de noche. Se calcula
+  // como el tramo trabajado de noche (total − lo trabajado antes de las 19:00), topado a las ordinarias
+  // (las extras nocturnas ya van en F). Se marca avisoNocturno para revisar el turno (la hora exacta de
+  // alimentación nocturna no está parametrizada; en turnos que cruzan la noche conviene verificar).
+  let recargoNocturno=0, avisoNocturno=false;
+  const nDesde2=horasNum(cfg.nocturno_desde||'19:00');
+  let sLin2=s; if(sLin2<e) sLin2+=24;
+  if(nDesde2!=null && sLin2>nDesde2){
+    const dayEnd=Math.min(sLin2, nDesde2);
+    let workedBeforeNight=Math.max(0, dayEnd-e);
+    if(almIni!=null && almFin!=null && e<=almIni && dayEnd>=almFin) workedBeforeNight-=(almFin-almIni);
+    const nightWorked=Math.max(0, total-workedBeforeNight);
+    recargoNocturno=round2(Math.min(nightWorked, ordinarias));
+    avisoNocturno = recargoNocturno>0;
+  }
+  return { ordinarias:round2(ordinarias), ord_domfest:0, extra_diurna:round2(extraDiurna), extra_nocturna:round2(extraNocturna),
+    recargo_nocturno:recargoNocturno, avisoExtra, avisoDomFest:false, avisoNocturno };
 }
 // PROVISIONAL (parámetro abierto, §6 cols G–N): el mapeo fino de recargos/Dom-Fest c/s compensación
 // está pendiente de confirmar con la empresa. No escribe nada; solo documenta el punto de extensión.
@@ -443,15 +461,16 @@ function buildParteRow(f, proyectoStr, cfg, tipoJornada, catTrabajadores){
   row[1]='';                                                // B Control de partes: siempre vacía
   const ausente = f.presente==='No';
   if(ausente){
-    row[2]=0; row[3]=0; row[4]=0; row[5]=0;                 // C–F en 0
+    row[2]=0; row[3]=0; row[4]=0; row[5]=0; row[6]=0;        // C–G en 0
   } else {
     const cl=clasificarHoras(tipoJornada, f.hora_entrada, f.hora_salida, cfg);
     row[2]=cl.ordinarias; row[3]=cl.ord_domfest; row[4]=cl.extra_diurna; row[5]=cl.extra_nocturna;
-    row._aviso = cl.avisoDomFest || cl.extra_nocturna>0;
-    row._avisoExtra = cl.avisoExtra;   // extras > max_extras_dia en día normal: revisar a mano
+    row[6]=cl.recargo_nocturno||'';                           // G Recargo hora nocturna ord (en paralelo)
+    row._avisoNoct = cl.avisoNocturno;    // turno con horas después de las 19:00: revisar a mano
+    row._avisoExtra = cl.avisoExtra;      // extras > max_extras_dia en día normal: revisar a mano
     row._nombre = f.nombre;
   }
-  // G–N (6..13) vacías: provisional, ver mapearColumnasEspeciales()
+  // H–N (7..13) vacías: provisional, ver mapearColumnasEspeciales()
   row[14]=proyectoStr;                                      // O No. Proyecto
   row[15]=ausente? '' : (f.cc||'');                          // P Centro de coste
   row[16]=ausente? 'Si':'No';                                // Q Ausente
@@ -487,10 +506,10 @@ async function generarExcel(proyecto){
       msg.innerHTML='<div class="aviso">No hay filas para el proyecto '+proyecto+' en esta fecha.</div>';
       return;
     }
-    let hayAvisoGN=false; const overExtra=[]; const sinCodigo=[];
+    const nocturnos=[]; const overExtra=[]; const sinCodigo=[];
     const aoa=filasProyecto.map(f=>{
       const row=buildParteRow(f, proyectoStr, cfg, tipoJornada, catTrabajadores);
-      if(row._aviso) hayAvisoGN=true;
+      if(row._avisoNoct) nocturnos.push(row._nombre);
       if(row._avisoExtra) overExtra.push(row._nombre);
       if(!String(f.codigo||'').trim()) sinCodigo.push(f.nombre);  // sin código Navision (col A queda "| NOMBRE")
       return row;
@@ -517,7 +536,7 @@ async function generarExcel(proyecto){
     const nombre=`Parte_${proyecto}_${STATE.fecha}.xlsx`;
     XLSX.writeFile(wb, nombre);
     let out=`<div class="aviso" style="color:var(--success);border-color:rgba(46,204,113,0.3);background:rgba(46,204,113,0.08);">✓ Generado <b>${nombre}</b> (${aoa.length} fila(s)).</div>`;
-    if(hayAvisoGN) out+='<div class="aviso">⚠️ Este día tiene horas nocturnas/dominicales: revisar columnas G–N a mano antes de importar (mapeo pendiente de confirmar, ver §6).</div>';
+    if(nocturnos.length) out+='<div class="aviso">🌙 Turno nocturno (horas después de las 7:00pm): <b>'+nocturnos.map(esc).join(', ')+'</b>. El recargo nocturno se llenó en la columna G en paralelo a las ordinarias; verifica a mano el tope y la hora de alimentación nocturna de estos turnos antes de importar.</div>';
     if(overExtra.length){ const mx=parseFloat(cfg.max_extras_dia)||2;
       out+='<div class="aviso">ℹ️ Estas personas trabajaron más de '+mx+' horas extra: <b>'+overExtra.map(esc).join(', ')+'</b>. El archivo reporta solo '+mx+' (el tope); el resto queda para que el residente lo sume a mano en los días que corresponda.</div>'; }
     if(sinCodigo.length) out+='<div class="aviso">⚠️ Sin código Navision (la columna A queda incompleta "| NOMBRE"): <b>'+sinCodigo.map(esc).join(', ')+'</b>. Consigue su código en Navision/RRHH y ponlo en PERSONAL antes de importar.</div>';
