@@ -71,6 +71,10 @@ const TURNOS_HEADERS        = ['turno','tipo_dia','entrada','salida','descanso_i
 // fuera del sistema y no aparece en el `Parte` salvo los días con extra. Aislada del roster (PERSONAL/
 // CUADRILLAS/ASISTENCIA): el admin NO está en el roster. `proyecto` se deriva del `cc` (proyectoFromCC).
 const EXTRAS_ADMIN_HEADERS  = ['fecha','cc','proyecto','horas','tipo','timestamp','reporta'];
+// D74: nota libre del día por cuadrilla (el capataz avisa novedades: alguien nuevo, una anomalía, etc.).
+// Clave lógica = fecha+cuadrilla (re-enviar la asistencia pisa la nota, igual que las filas, D03). Aislada
+// de ASISTENCIA; la ve el residente en el resumen. No va al Excel Navision.
+const NOTAS_ASISTENCIA_HEADERS = ['fecha','cuadrilla','reporta','nota','timestamp'];
 
 /* ---------- helpers genéricos (mismo patrón que Codigo.gs) ---------- */
 function json(o){ return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
@@ -350,7 +354,8 @@ function asistenciaDia(e){
   // D73: indicador de extras del admin del día (solo para el residente general/admin; un residente de área
   // no las ve — son de tierras). El resumen muestra "Extras admin: registradas ✓ / sin registrar".
   const extrasAdmin = area ? [] : extrasAdminDelDia(fecha);
-  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, jornada, catCC, catCCUsados, catMotivos, turnos, extrasAdmin });
+  const notas = notasDelDia(fecha).filter(n=>enArea(n.cuadrilla));   // D74: notas del día del área revisada
+  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, jornada, catCC, catCCUsados, catMotivos, turnos, extrasAdmin, notas });
 }
 
 /* ---------- POST asistencia_individual: upsert por PERSONA (residente/jeisson completan faltantes) ----------
@@ -510,7 +515,28 @@ function guardarAsistencia(body){
   sh.clearContents();
   sh.getRange(1,1,1,need).setValues([ASISTENCIA_HEADERS]);
   if(todas.length) sh.getRange(2,1,todas.length,need).setValues(todas);
+  // D74: nota libre del día por cuadrilla (pisa fecha+cuadrilla, igual que las filas).
+  upsertNotaDia(fecha, cuadrilla, reporta, body.nota, ts);
   return json({ ok:true, filas:nuevas.length });
+}
+
+/* ---------- NOTAS_ASISTENCIA (D74): nota libre del día por cuadrilla ---------- */
+// Upsert por fecha+cuadrilla. Nota vacía = borra la del día (re-envío sin nota la limpia).
+function upsertNotaDia(fecha, cuadrilla, reporta, nota, ts){
+  const f=fdate(fecha), c=cuadrilla||'', txt=String(nota==null?'':nota).trim();
+  const sh=getSheet('NOTAS_ASISTENCIA', NOTAS_ASISTENCIA_HEADERS), need=NOTAS_ASISTENCIA_HEADERS.length, last=sh.getLastRow();
+  let rows = last>1 ? sh.getRange(2,1,last-1,need).getValues() : [];
+  rows = rows.filter(r=> !(fdate(r[0])===f && String(r[1])===c));   // quita la del día+cuadrilla
+  if(txt) rows.push([f, c, reporta||'', txt, ts||new Date()]);       // si hay texto, la reescribe
+  sh.clearContents();
+  sh.getRange(1,1,1,need).setValues([NOTAS_ASISTENCIA_HEADERS]);
+  if(rows.length) sh.getRange(2,1,rows.length,need).setValues(rows);
+}
+function notasDelDia(fecha){
+  const f=fdate(fecha);
+  return readSheet('NOTAS_ASISTENCIA', NOTAS_ASISTENCIA_HEADERS)
+    .filter(r=> fdate(r.fecha)===f && String(r.nota||'').trim())
+    .map(r=>({ cuadrilla:String(r.cuadrilla||''), reporta:String(r.reporta||''), nota:String(r.nota||'') }));
 }
 
 /* ---------- POST personal: alta / retiro / mover / reactivar — SOLO residente/admin ---------- */
@@ -598,6 +624,7 @@ function setupHojas(){
   getSheet('CC_USADOS', CC_USADOS_HEADERS);   // el usuario pega aquí los ~5-20 CC frecuentes (opcional)
   getSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS);
   getSheet('EXTRAS_ADMIN', EXTRAS_ADMIN_HEADERS);   // D73: canal "solo extras" del admin (mis-extras.html)
+  getSheet('NOTAS_ASISTENCIA', NOTAS_ASISTENCIA_HEADERS);   // D74: nota libre del día por cuadrilla
 
   // D72: TURNOS asignados (5 turnos × tipo de día). Semilla fija con los horarios entregados; si el
   // usuario ya cargó la hoja, no se pisa. Horas como texto 'HH:MM' (00:00 = medianoche, fin de cena).

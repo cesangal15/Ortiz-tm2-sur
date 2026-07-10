@@ -196,6 +196,16 @@ function render(){
   });
   html+='</div>';
 
+  // D74: notas del día que dejaron los capataces (novedades, alguien nuevo, anomalías).
+  const notas=d.notas||[];
+  if(notas.length){
+    html+='<div class="section-title">📝 Notas del día</div><div class="card">';
+    notas.forEach(n=>{
+      html+=`<div class="cuad-row" style="align-items:flex-start;"><span style="flex:1;"><b style="color:var(--accent)">${esc(n.cuadrilla)}</b> <small style="color:var(--muted)">(${esc(n.reporta)})</small><br>${esc(n.nota)}</span></div>`;
+    });
+    html+='</div>';
+  }
+
   html+='<div class="section-title">Personas faltantes</div><div class="card">';
   if(!faltantes.length){ html+='<p style="color:var(--muted);font-size:13px;">No hay faltantes: todas las cuadrillas reportaron y no hay ausentes.</p>'; }
   if(sinReportar.length){
@@ -535,6 +545,12 @@ function buildAdminExtraRow(ex, proyectoStr, adminRecurso){
 async function generarExcel(proyecto){
   const msg=document.getElementById('exportMsg');
   if(!STATE.tplBuf){ msg.innerHTML='<div class="aviso">⚠️ Primero sube la plantilla oficial (.xlsx).</div>'; return; }
+  // D74 (idea 3): avisa si vas a descargar con gente SIN REPORTAR (por si se pasó a alguien).
+  const sinRep=((STATE.data&&STATE.data.faltantes)||[]).filter(f=>f.tipo==='sin_reportar');
+  if(sinRep.length){
+    const nombres=sinRep.slice(0,12).map(f=>'  • '+f.nombre).join('\n')+(sinRep.length>12?`\n  …y ${sinRep.length-12} más`:'');
+    if(!confirm(`⚠️ Hay ${sinRep.length} persona(s) SIN REPORTAR hoy:\n\n${nombres}\n\nSi descargas ahora NO quedarán en el archivo. Lo correcto es completarlas (arriba en "Completar faltantes") o marcarlas ausentes.\n\n¿Descargar de todas formas?`)) { msg.innerHTML=''; return; }
+  }
   msg.innerHTML='<div class="aviso">⏳ Generando…</div>';
   try{
     const data=await obtenerExport(STATE.fecha);
