@@ -396,15 +396,16 @@ function clasificarHoras(tipoJornada, entrada, salida, cfg, turnoRow){
   if(e==null || s0==null) return vacio;
   const Sact = s0 < e ? s0+24 : s0;                       // cruce de medianoche (nocturnos)
   if(tipoJornada==='domfest'){
-    // Criterio de nómina (jul-2026): la jornada Dom/Fest (8h) se reparte 7.33h → Horas Ordinarias
-    // Dom/Fest (col D) + 0.67h → Hora Diurna Ord. Dom/Fest SIN compensatorio (col L). Se aplica
-    // proporcional a lo trabajado (a 8h da exacto 7.33/0.67); los valores base viven en CONFIG.
-    let tot=Sact-e; if(tot<0) tot=0;
-    const base=parseFloat(cfg.domfest_ord_base)||8;
-    const fracOrd=(parseFloat(cfg.domfest_ord_horas)||7.33)/base;
-    const fracSc =(parseFloat(cfg.domfest_scomp_horas)||0.67)/base;
-    return { ordinarias:0, ord_domfest:round2(tot*fracOrd), extra_diurna:0, extra_nocturna:0, recargo_noct_ord:0,
-      domfest_diurna_scomp:round2(tot*fracSc), avisoExtra:false, avisoDomFest: tot>base+0.01 };
+    // Criterio de nómina (jul-2026, aclarado): Dom/Fest = MÁXIMO 7h, TODAS en Horas Ordinarias Dom/Fest
+    // (col D). NADA en col L (nada de 0.33/0.67). Si alguien reporta más, se capa a 7 (7 es el tope).
+    // Descuenta almuerzo si el rango lo cubre (igual que entre semana). Tope en CONFIG.domfest_tope (def. 7).
+    let tot=Sact-e;
+    const almIni=horasNum(cfg.almuerzo_ini||'12:00'), almFin=horasNum(cfg.almuerzo_fin||'13:00');
+    if(almIni!=null && almFin!=null && e<=almIni && Sact>=almFin) tot-=(almFin-almIni);
+    if(tot<0) tot=0;
+    const tope=parseFloat(cfg.domfest_tope); const cap=isNaN(tope)?7:tope;
+    return { ordinarias:0, ord_domfest:round2(Math.min(tot,cap)), extra_diurna:0, extra_nocturna:0, recargo_noct_ord:0,
+      domfest_diurna_scomp:0, avisoExtra:false, avisoDomFest: tot>cap+0.01 };
   }
   const nDesde=horasNum(cfg.nocturno_desde||'19:00'), NOC1=nDesde, NOC2=30;   // ventana nocturna [19:00, 06:00 del día siguiente)
   const jt = turnoRow || jornadaPorDefecto(tipoJornada, cfg);
@@ -619,7 +620,7 @@ async function generarExcel(proyecto){
     if(adminAgregadas) out+='<div class="aviso" style="color:var(--success);border-color:rgba(46,204,113,0.3);background:rgba(46,204,113,0.08);">✓ Incluida(s) '+adminAgregadas+' fila(s) de tus horas extra (admin) en este archivo.</div>';
     if(avisoAdminSinRecurso) out+='<div class="aviso">⚠️ Hay extras del admin para este proyecto pero <b>admin_recurso</b> está vacío en CONFIG: no se agregaron. Configúralo para exportarlas.</div>';
     if(adminDomFest.length) out+='<div class="aviso">⚠️ Extra Dom/Fest del admin el <b>'+adminDomFest.map(esc).join(', ')+'</b>: agregar a mano en las columnas G–N antes de importar (no se pudo mapear automáticamente).</div>';
-    if(hayAvisoGN) out+='<div class="aviso">⚠️ Día domingo/festivo con alguien que trabajó MÁS de la jornada base: las horas ordinarias se repartieron D/L según el criterio de nómina, pero el excedente (posibles extras Dom/Fest) puede requerir revisar H–N a mano.</div>';
+    if(hayAvisoGN) out+='<div class="aviso">⚠️ Día domingo/festivo: alguien reportó más de 7h; se registraron <b>7h (el máximo)</b> en Horas Ordinarias Dom/Fest. Revisa si ese excedente se maneja aparte.</div>';
     if(overExtra.length){ const mx=parseFloat(cfg.max_extras_dia)||2;
       out+='<div class="aviso">ℹ️ Estas personas trabajaron más de '+mx+' horas extra: <b>'+overExtra.map(esc).join(', ')+'</b>. El archivo reporta solo '+mx+' (el tope); el resto queda para que el residente lo sume a mano en los días que corresponda.</div>'; }
     if(sinCodigo.length) out+='<div class="aviso">⚠️ Sin código Navision (la columna A queda incompleta "| NOMBRE"): <b>'+sinCodigo.map(esc).join(', ')+'</b>. Consigue su código en Navision/RRHH y ponlo en PERSONAL antes de importar.</div>';
