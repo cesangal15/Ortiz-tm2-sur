@@ -95,7 +95,7 @@
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbymgvQX03ZqS_YzIz5l6WVesasDUMYwGOFItrggTJCdsFhcjXQvDPVz03E7mNcZQ4Nq/exec";
 
 let STATE = { usuario:'', rol:'', fecha:'', cuadrillas:[], cuadrillaActual:'', personas:[], bloques:[],
-  config:{}, festivos:[], jornada:{}, catCC:[], catCCUsados:[], catMotivos:[], recientesCC:{}, turnos:[], nextBloqueId:1, enviando:false };
+  config:{}, festivos:[], jornada:{}, catCC:[], catCCUsados:[], catMotivos:[], recientesCC:{}, turnos:[], nota:'', nextBloqueId:1, enviando:false };
 
 window.onload = function(){
   const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
@@ -421,6 +421,10 @@ function render(){
   STATE.bloques.filter(b=>b.cuadrilla===STATE.cuadrillaActual).forEach(b=>{ html+=bloqueHtml(b, personas); });
   html+='<button class="btn-add-bloque" onclick="agregarBloque()">+ Agregar bloque</button>';
 
+  // D74: nota libre del día (opcional) — novedades, alguien nuevo, anomalías. La ve el residente en el resumen.
+  html+='<div class="section-title">Nota del día (opcional)</div>';
+  html+=`<div class="card"><textarea id="notaDia" rows="2" placeholder="¿Alguien nuevo? ¿Alguna novedad o anomalía del día? (opcional)" oninput="STATE.nota=this.value" style="resize:vertical;">${esc(STATE.nota||'')}</textarea></div>`;
+
   html+='<div style="margin-top:22px;"><button class="btn-enviar" id="btnEnviar" onclick="enviar()" '+(STATE.enviando?'disabled':'')+'>'
     + (STATE.enviando?'Enviando…':'ENVIAR ASISTENCIA →') + '</button></div>';
   html+='<div id="confirmBox"></div>';
@@ -541,7 +545,7 @@ async function enviar(){
   STATE.enviando=true; render();
   try{
     const resp=await fetch(APPS_SCRIPT_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({ action:'reporte_asistencia', fecha:STATE.fecha, cuadrilla:STATE.cuadrillaActual, reporta:STATE.usuario, filas }) });
+      body: JSON.stringify({ action:'reporte_asistencia', fecha:STATE.fecha, cuadrilla:STATE.cuadrillaActual, reporta:STATE.usuario, filas, nota:STATE.nota||'' }) });
     const data=await resp.json();
     STATE.enviando=false;
     if(data.ok){
