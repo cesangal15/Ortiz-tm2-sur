@@ -76,7 +76,7 @@
 
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbymgvQX03ZqS_YzIz5l6WVesasDUMYwGOFItrggTJCdsFhcjXQvDPVz03E7mNcZQ4Nq/exec";
-let STATE = { usuario:'', rol:'', fecha:'', data:null, exportCache:{}, tplBuf:null, tplName:'', tplRecordada:false, tplBundle:false, filaInicio:2, personal:null, completar:{}, persQuery:'' };
+let STATE = { usuario:'', rol:'', fecha:'', data:null, exportCache:{}, tplBuf:null, tplName:'', tplRecordada:false, tplBundle:false, filaInicio:2, personal:null, completar:{}, persQuery:'', areaFiltro:'' };
 
 // Plantilla recordada entre sesiones (localStorage): así solo se sube UNA vez, no cada sesión. Se
 // guarda como base64 del .xlsx. Si es demasiado grande para localStorage, cae a "solo esta sesión".
@@ -112,9 +112,9 @@ async function cargarPlantillaBundle(){
 
 window.onload = function(){
   const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
-  // Guard: residente, admin, jeisson (D69) o residente de área odt/odl (D72). La gestión de personal
-  // se oculta para jeisson y los residentes de área en el render (solo residente general/admin).
-  const rolesOk=['residente','admin','jeisson','residente_odt','residente_odl'];
+  // Guard: residente(tierras), admin, jeisson (rol asistencia_plus, D69) o residente de área odt/odl (D72).
+  // D74b: jeisson entraba con rol 'asistencia_plus' (NO 'jeisson'), por eso lo devolvía al login.
+  const rolesOk=['residente','admin','asistencia_plus','residente_odt','residente_odl'];
   if(!rol || rolesOk.indexOf(rol)<0){ window.location.href='index.html'; return; }
   STATE.usuario=usuario; STATE.rol=rol;
   document.getElementById('userDisplay').textContent=usuario;
@@ -142,7 +142,7 @@ function toggleLista(id, btn){
 async function cargarResumen(){
   document.getElementById('container').innerHTML='<div class="loading">⏳ Consultando…</div>';
   try{
-    const resp=await fetch(`${APPS_SCRIPT_URL}?action=asistencia&fecha=${STATE.fecha}&usuario=${encodeURIComponent(STATE.usuario)}`);
+    const resp=await fetch(`${APPS_SCRIPT_URL}?action=asistencia&fecha=${STATE.fecha}&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`);
     const data=await resp.json();
     if(!data.ok) throw new Error(data.error||'asistencia');
     STATE.data=data;
@@ -152,6 +152,8 @@ async function cargarResumen(){
   }
 }
 function onFechaChange(v){ STATE.fecha=v; STATE.exportCache={}; cargarResumen(); }
+// D74b: admin cambia la vista de área (Todas/Tierras/ODT/ODL); recarga resumen y limpia caché de export.
+function onAreaFiltro(v){ STATE.areaFiltro=v; STATE.exportCache={}; STATE.personal=null; cargarResumen(); }
 
 function render(){
   const d=STATE.data;
@@ -166,6 +168,11 @@ function render(){
   let html='';
   html+='<div class="card"><div class="row">'
     + `<div class="field"><label>Fecha</label><input type="date" value="${STATE.fecha}" onchange="onFechaChange(this.value)"></div>`
+    // D74b: solo el admin puede ver TODO o filtrar por área ("ver como" tierras/ODT/ODL). Los residentes
+    // ya vienen acotados por el backend a su área, así que no necesitan el selector.
+    + (STATE.rol==='admin' ? `<div class="field" style="max-width:200px;"><label>Ver como</label><select onchange="onAreaFiltro(this.value)">`
+        + ['','tierras','odt','odl'].map(a=>`<option value="${a}" ${STATE.areaFiltro===a?'selected':''}>${a===''?'Todas las áreas':(a==='tierras'?'Tierras':a.toUpperCase())}</option>`).join('')
+        + '</select></div>' : '')
     + '</div></div>';
 
   html+='<div class="section-title">Totales del día</div>';
@@ -176,9 +183,11 @@ function render(){
     + '</div>';
   html+='<div class="card">'+Object.keys(porProyecto).sort().map(p=>`<div class="cuad-row"><span>Proyecto ${esc(p)}</span><b>${porProyecto[p]}</b></div>`).join('')+'</div>';
 
-  // Indicador de extras del admin (D73): solo lectura, para que el residente sepa si esperar antes de
-  // descargar. El backend solo envía extrasAdmin al residente general/admin (los de área no las ven).
-  if(STATE.rol==='residente' || STATE.rol==='admin'){
+  // Indicador de extras del admin (D73): solo lectura, para el residente de tierras/jeisson/admin (las
+  // extras son CC de tierras). D74b: se oculta si el admin está viendo ODT/ODL (no aplican allá).
+  const viendoTierras = (STATE.rol==='residente' || STATE.rol==='asistencia_plus'
+    || (STATE.rol==='admin' && STATE.areaFiltro!=='odt' && STATE.areaFiltro!=='odl'));
+  if(viendoTierras){
     const exAdmin=d.extrasAdmin||[];
     if(exAdmin.length){
       const detalle=exAdmin.map(e=>`${e.horas}h ${esc(e.tipo)} · ${esc(e.cc)} (proy. ${esc(e.proyecto)})`).join(' · ');
@@ -232,8 +241,9 @@ function render(){
   html+='<div class="section-title">Descargar Excel Navision</div>';
   html+=exportCardHtml();
 
-  // D72: gestión de personal también para los residentes de área (odt/odl); el backend la limita a SU área.
-  if(['residente','admin','residente_odt','residente_odl'].indexOf(STATE.rol)>=0){
+  // D72/D74b: gestión de personal para residente(tierras), admin, jeisson y residentes de área; el backend
+  // la limita a su área (jeisson = tierras, mismos permisos que el residente de tierras).
+  if(['residente','admin','asistencia_plus','residente_odt','residente_odl'].indexOf(STATE.rol)>=0){
     html+='<div class="section-title">Gestión de personal</div>';
     html+='<div class="card" id="gestionCard"><button class="btn-ghost" onclick="cargarPersonal()">Cargar personal ↻</button><div id="gestionBody" style="margin-top:12px;"></div></div>';
   }
@@ -248,7 +258,7 @@ function render(){
  * responsable de la cuadrilla. */
 function proyectoFromCC(cc){ const m=String(cc||'').match(/^(\d{4})/); return m?m[1]:''; }
 function seccionCompletar(d){
-  if(['residente','admin','jeisson','residente_odt','residente_odl'].indexOf(STATE.rol)<0) return '';
+  if(['residente','admin','asistencia_plus','residente_odt','residente_odl'].indexOf(STATE.rol)<0) return '';
   const faltantes=d.faltantes||[];
   const comp=[];
   // Los "presente sin CC" ya vienen en faltantes como sin_reportar (incompleto=true), así que basta
@@ -460,7 +470,7 @@ function tipoJornadaDeFecha(fechaStr, festivos){
 
 async function obtenerExport(fecha){
   if(STATE.exportCache[fecha]) return STATE.exportCache[fecha];
-  const resp=await fetch(`${APPS_SCRIPT_URL}?action=export&fecha=${fecha}&usuario=${encodeURIComponent(STATE.usuario)}`);
+  const resp=await fetch(`${APPS_SCRIPT_URL}?action=export&fecha=${fecha}&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`);
   const data=await resp.json();
   if(!data.ok) throw new Error(data.error||'export');
   STATE.exportCache[fecha]=data;
@@ -647,7 +657,7 @@ async function cargarPersonal(){
   const body=document.getElementById('gestionBody');
   body.innerHTML='<p style="color:var(--muted);font-size:13px;">⏳ Cargando…</p>';
   try{
-    const resp=await fetch(`${APPS_SCRIPT_URL}?action=personal&usuario=${encodeURIComponent(STATE.usuario)}`);
+    const resp=await fetch(`${APPS_SCRIPT_URL}?action=personal&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`);
     const data=await resp.json();
     if(!data.ok) throw new Error(data.error||'personal');
     STATE.personal=data;

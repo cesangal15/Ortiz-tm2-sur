@@ -122,7 +122,17 @@ function areaDeUsuario(usuario){
   const u=norm(usuario);
   if(u==='residente_odt') return 'odt';
   if(u==='residente_odl') return 'odl';
+  // D74b: el residente "general" es en realidad el de TIERRAS (ODT/ODL tienen su propio residente); jeisson
+  // hereda los permisos del residente de tierras. Solo el admin ve TODAS (y puede filtrar por área).
+  if(u==='residente' || u==='jeisson') return 'tierras';
   return '';
+}
+// Área efectiva de una petición: la forzada por el usuario; si NO tiene (admin), respeta un &area= de filtro.
+// Así el admin puede ver "como si fuera" tierras/ODT/ODL; los usuarios con área forzada no la pueden burlar.
+function areaEfectiva(e){
+  let area=areaDeUsuario((e.parameter&&e.parameter.usuario)||'');
+  if(!area){ const af=norm(e.parameter&&e.parameter.area); if(af==='tierras'||af==='odt'||af==='odl') area=af; }
+  return area;
 }
 // Mapa cuadrilla -> área desde la hoja CUADRILLAS. Vacío o cuadrilla desconocida = 'tierras'.
 function areaDeCuadrillaMap(){
@@ -289,8 +299,9 @@ function roster(e){
 /* ---------- GET asistencia: resumen del día para el residente/jeisson ---------- */
 function asistenciaDia(e){
   const fecha=fdate(e.parameter.fecha);
-  // D72: si el usuario es residente_odt/odl, se limita todo (filas, cuadrillas, faltantes) a su área.
-  const area=areaDeUsuario(e.parameter.usuario||'');
+  // D72/D74b: se limita todo (filas, cuadrillas, faltantes) al área del usuario (tierras/odt/odl); el admin
+  // ve todas o filtra por &area=. Un residente de área/tierras no puede burlar su alcance.
+  const area=areaEfectiva(e);
   const cuadArea=areaDeCuadrillaMap();
   const enArea=function(cuadrilla){ return !area || (cuadArea[cuadrilla]||'tierras')===area; };
   const filas=readSheet('ASISTENCIA', ASISTENCIA_HEADERS).filter(r=> fdate(r.fecha)===fecha && enArea(r.cuadrilla))
@@ -353,7 +364,7 @@ function asistenciaDia(e){
     cruza_medianoche: String(t.cruza_medianoche||'').toUpperCase()==='SI' }));
   // D73: indicador de extras del admin del día (solo para el residente general/admin; un residente de área
   // no las ve — son de tierras). El resumen muestra "Extras admin: registradas ✓ / sin registrar".
-  const extrasAdmin = area ? [] : extrasAdminDelDia(fecha);
+  const extrasAdmin = (area==='odt'||area==='odl') ? [] : extrasAdminDelDia(fecha);   // D74b: tierras/admin las ven; ODT/ODL no
   const notas = notasDelDia(fecha).filter(n=>enArea(n.cuadrilla));   // D74: notas del día del área revisada
   return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, jornada, catCC, catCCUsados, catMotivos, turnos, extrasAdmin, notas });
 }
@@ -393,7 +404,7 @@ function guardarIndividual(body){
 
 /* ---------- GET personal: gestión (residente general/admin ven todo; residente_odt/odl SOLO su área — D72) ---------- */
 function personalCompleto(e){
-  const area=areaDeUsuario(e.parameter.usuario||'');   // '' = todas (residente general/admin/jeisson)
+  const area=areaEfectiva(e);   // residente/jeisson=tierras, odt/odl su área, admin todo o filtra por &area=
   const cuadArea=areaDeCuadrillaMap();
   const enArea=function(c){ return !area || (cuadArea[c]||'tierras')===area; };
   const personal=readSheet('PERSONAL', PERSONAL_HEADERS).filter(p=>enArea(p.cuadrilla)).map(p=>({ _row:p._row, cedula:p.cedula||'', codigo:p.codigo||'',
@@ -406,8 +417,8 @@ function personalCompleto(e){
 /* ---------- GET export: crudo del día completo para el generador Navision (cliente, SheetJS) ---------- */
 function exportDia(e){
   const fecha=fdate(e.parameter.fecha);
-  // D72: residente_odt/odl exportan SOLO su área; el residente general/admin exportan todo.
-  const area=areaDeUsuario(e.parameter.usuario||'');
+  // D72/D74b: residente(tierras)/residente_odt/odl exportan SOLO su área; el admin todo o filtra por &area=.
+  const area=areaEfectiva(e);
   const cuadArea=areaDeCuadrillaMap();
   const enArea=function(cuadrilla){ return !area || (cuadArea[cuadrilla]||'tierras')===area; };
   const filas=readSheet('ASISTENCIA', ASISTENCIA_HEADERS).filter(r=> fdate(r.fecha)===fecha && enArea(r.cuadrilla))
@@ -434,7 +445,7 @@ function exportDia(e){
   // EXTRAS_ADMIN (D73): registros del admin del día para que el generador Navision inyecte su fila por
   // día×proyecto. Solo al residente general/admin (area=''); un residente de área (odt/odl) NO recibe las
   // extras del admin (son CC de tierras 3701/3702, ajenas a su archivo).
-  const extrasAdmin = area ? [] : extrasAdminDelDia(fecha);
+  const extrasAdmin = (area==='odt'||area==='odl') ? [] : extrasAdminDelDia(fecha);   // D74b: tierras/admin las ven; ODT/ODL no
   return json({ ok:true, fecha, filas, proyectoDefecto, catTrabajadores, config:getConfigMap(), festivos:getFestivos(), turnos, extrasAdmin });
 }
 
@@ -542,8 +553,8 @@ function notasDelDia(fecha){
 /* ---------- POST personal: alta / retiro / mover / reactivar — SOLO residente/admin ---------- */
 function gestionPersonal(body){
   const usuario=norm(body.usuario);
-  // D72: residente general/admin gestionan TODO; los residentes de área (odt/odl) gestionan SOLO su área.
-  if(['residente','admin','residente_odt','residente_odl'].indexOf(usuario)<0)
+  // D72/D74b: admin gestiona TODO; residente/jeisson gestionan tierras; residente_odt/odl gestionan su área.
+  if(['residente','admin','jeisson','residente_odt','residente_odl'].indexOf(usuario)<0)
     return json({ok:false, error:'No autorizado: solo residente o admin.'});
   const areaUsr=areaDeUsuario(usuario);              // '' = todas (residente general/admin)
   const cuadArea=areaDeCuadrillaMap();
