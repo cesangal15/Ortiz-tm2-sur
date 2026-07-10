@@ -133,11 +133,23 @@ function areaDeReportante(usuario){
   for(let i=0;i<cuads.length;i++){ const ar=map[cuads[i]]||'tierras'; if(a===null) a=ar; else if(a!==ar) return ''; }
   return a===null ? '' : a;
 }
+// D72: CC que NO deben aparecer en el selector de bloques (supervisión del encargado/capataz, p. ej.
+// `I010305 ENCARGADOS, INSPECTORES Y CAPATACES`) — confunde al reportar la actividad de la cuadrilla.
+// Lista en CONFIG.cc_excluidos_bloque (coma-separada, por código); default `I010305`. Match por substring,
+// así aplica a los dos proyectos (3701.I010305… y 3702.I010305…) y en TODAS las áreas.
+function ccExcluidosBloque(){
+  const raw=String(getConfigMap().cc_excluidos_bloque||'I010305');
+  return raw.split(',').map(function(s){return s.trim();}).filter(Boolean);
+}
+function sinCCexcluidos(list){
+  const ex=ccExcluidosBloque(); if(!ex.length) return list;
+  return list.filter(function(cc){ const s=String(cc||''); for(var i=0;i<ex.length;i++){ if(ex[i] && s.indexOf(ex[i])>=0) return false; } return true; });
+}
 // Lee CC_USADOS y devuelve los string_cc que aplican al área dada ('' = todas). Empty en la hoja = tierras.
 function ccUsadosParaArea(area){
   const rows=readSheet('CC_USADOS', CC_USADOS_HEADERS);
-  return rows.filter(r=> String(r.string_cc||'').trim() && (!area || (norm(r.area)||'tierras')===area))
-             .map(r=>String(r.string_cc).trim());
+  return sinCCexcluidos(rows.filter(r=> String(r.string_cc||'').trim() && (!area || (norm(r.area)||'tierras')===area))
+             .map(r=>String(r.string_cc).trim()));
 }
 
 /* ---------- roster date-aware (D72) ----------
@@ -249,7 +261,8 @@ function roster(e){
   const personas=personalTodo.filter(p=> activaEnFecha(p, fecha) && cuadrillas.indexOf(p.cuadrilla)>=0)
     .map(p=>({ cedula:p.cedula||'', codigo:p.codigo||'', nombre:p.nombre||'', cargo:p.cargo||'', cuadrilla:p.cuadrilla||'' }));
   const jornada=jornadaDelDia(fecha, cfg, festivos);
-  const catCC=readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
+  // D72: se excluye el CC de supervisión del encargado/capataz del picker de bloques (confunde al reportar).
+  const catCC=sinCCexcluidos(readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean));
   const catCCUsados=ccUsadosParaArea(areaDeReportante(usuario));   // D72: CC frecuentes del área del reportante
   const catMotivos=readSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS).map(r=>String(r.string_motivo||'')).filter(Boolean);
   // CC usados recientemente por cada cuadrilla (últimos 60 días de ASISTENCIA), más reciente primero.
@@ -618,13 +631,13 @@ function setupHojas(){
 
   const cfgSh=getSheet('CONFIG', CONFIG_HEADERS);
   if(cfgSh.getLastRow()<2){
-    cfgSh.getRange(2,1,16,2).setValues([
+    cfgSh.getRange(2,1,14,2).setValues([
       ['ord_lun_vie','7.5'], ['ord_sabado','4.5'], ['ord_domingo','0'],
       ['entrada_lv','07:00'], ['salida_lv','15:30'], ['entrada_sab','07:00'], ['salida_sab','11:30'],
       ['almuerzo_ini','12:00'], ['almuerzo_fin','13:00'],
       ['max_extras_dia','2'], ['nocturno_desde','19:00'], ['nocturno_hasta','06:00'],
-      // Dom/Fest (criterio de nómina, D72): de la jornada base se reparten así las horas ordinarias.
-      ['domfest_ord_base','8'], ['domfest_ord_horas','7.33'], ['domfest_scomp_horas','0.67'],
+      // Dom/Fest (criterio de nómina, D72): MÁXIMO de horas ordinarias Dom/Fest (col D); nada en col L.
+      ['domfest_tope','7'],
       ['proyecto_3701','3701| T2 - UF1 - R4513 PR 09+800 - PR 30+000']
     ]);
     cfgSh.appendRow(['proyecto_3702','PENDIENTE']); // parámetro abierto (§2 del prompt)
