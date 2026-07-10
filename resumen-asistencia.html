@@ -335,8 +335,8 @@ function onTplFile(ev){
 /* ---------- Clasificador de horas (módulo compartido) ----------
  * Entrada: tipoJornada ('lv'|'sabado'|'domfest'), hora_entrada, hora_salida (HH:MM), CONFIG.
  * Salida: {ordinarias, ord_domfest, extra_diurna, extra_nocturna, avisoExtra, avisoDomFest}.
- * Frontera nocturna = CONFIG.nocturno_desde (19:00, Ley 2466/2025). Domingo/festivo: todo a ord_domfest
- * (columnas D) y se marca avisoDomFest para que el panel avise revisar G–N a mano (parámetro abierto, §6).
+ * Frontera nocturna = CONFIG.nocturno_desde (19:00, Ley 2466/2025). Domingo/festivo: hasta CONFIG.domfest_max
+ * (7h, ley nueva) van DIRECTO a "Horas ordinarias Dom/Fest" (columna D); sin reparto a otras columnas.
  * Las extras se TOPAN a CONFIG.max_extras_dia (2) en días normales — decisión del residente (jul-2026):
  * lo que exceda no se reporta, pero avisoExtra=true para que el residente lo sume a mano aparte.
  *
@@ -346,7 +346,8 @@ function onTplFile(ev){
  *   clasificarHoras('lv','07:00','20:30',CFG) -> {ordinarias:7.5, extra_diurna:2, extra_nocturna:0, avisoExtra:true}
  *      (trabajó 12.5h netas = 5 extras, pero se TOPAN a 2; avisoExtra marca que hubo más)
  *   clasificarHoras('sabado','07:00','11:30',CFG) -> {ordinarias:4.5, extra_diurna:0}
- *   clasificarHoras('domfest','07:00','15:00',CFG) -> {ordinarias:0, ord_domfest:7, avisoDomFest:true}
+ *   clasificarHoras('domfest','07:00','15:00',CFG) -> {ordinarias:0, ord_domfest:7} (8h trabajadas topadas a 7)
+ *   clasificarHoras('domfest','06:00','12:00',CFG) -> {ordinarias:0, ord_domfest:6} (6h, sin almuerzo, bajo el tope)
  */
 function round2(n){ return Math.round(n*100)/100; }
 function horasNum(hhmm){ if(!hhmm) return null; const p=String(hhmm).split(':'); if(p.length<2) return null; const n=Number(p[0])+Number(p[1])/60; return isNaN(n)?null:n; }
@@ -359,7 +360,10 @@ function clasificarHoras(tipoJornada, entrada, salida, cfg){
   if(almIni!=null && almFin!=null && e<=almIni && s>=almFin) total-=(almFin-almIni);
   if(total<0) total=0;
   if(tipoJornada==='domfest'){
-    return { ordinarias:0, ord_domfest:round2(total), extra_diurna:0, extra_nocturna:0, avisoExtra:false, avisoDomFest:true };
+    // Domingo/festivo (ley nueva): máximo 7h, van DIRECTO a "Horas ordinarias Dom/Fest" (columna D).
+    // Nada de reparto a otras columnas. El tope es configurable (CONFIG.domfest_max, por defecto 7).
+    const cap=parseFloat(cfg.domfest_max)||7;
+    return { ordinarias:0, ord_domfest:round2(Math.min(total, cap)), extra_diurna:0, extra_nocturna:0, avisoExtra:false, avisoDomFest:false };
   }
   const tope = tipoJornada==='sabado' ? (parseFloat(cfg.ord_sabado)||4.5) : (parseFloat(cfg.ord_lun_vie)||7.5);
   const maxExtraCfg=parseFloat(cfg.max_extras_dia); const cap = isNaN(maxExtraCfg)?Infinity:maxExtraCfg;

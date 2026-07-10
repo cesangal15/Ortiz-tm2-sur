@@ -276,7 +276,7 @@ function render(){
   html+='</div>';
   const j=STATE.jornada;
   if(j.tipo==='domfest'){
-    html+=`<div class="jornada-banner">⚠️ Día <b>domingo/festivo</b>: jornada ordinaria = 0h. Todo lo trabajado va a horas Dom/Fest (revisión manual al exportar).</div>`;
+    html+=`<div class="jornada-banner">⚠️ Día <b>domingo/festivo</b>: se registran hasta <b>7h</b> en "Horas ordinarias Dom/Fest" (ley nueva). Igual marca entrada/salida reales.</div>`;
   } else {
     html+=`<div class="jornada-banner">Jornada estándar (<b>${j.tipo==='sabado'?'sábado':'lunes a viernes'}</b>): <b>${esc(j.entrada)}</b> a <b>${esc(j.salida)}</b> · tope ordinario <b>${j.tope}h</b></div>`;
   }
