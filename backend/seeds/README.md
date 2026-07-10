@@ -19,9 +19,12 @@ directo en el Google Sheet de Asistencias** (no en los .xlsx maestros).
    - `fecha_ingreso` vacío = "siempre activo" (es la plantilla base). Los ingresos NUEVOS sí llevan fecha.
 
 3. **CC_USADOS_odt.tsv** → hoja `CC_USADOS`, debajo de lo de tierras.
-   `string_cc · area`. 73 filas = los 2 CC del capataz (`I010305`, 3701 y 3702) + los 71 del
-   **capítulo 06** (ambos proyectos), que el residente pidió mostrar como frecuentes. `area=odt`
-   hace que solo los vean los usuarios de ODT (a los capataces de tierra no les ensucia el datalist).
+   `string_cc · area`. 71 filas = los del **capítulo 06** (ambos proyectos), que el residente pidió
+   mostrar como frecuentes. `area=odt` hace que solo los vean los usuarios de ODT (a los capataces de
+   tierra no les ensucia el datalist). **NO incluye el CC del capataz (`I010305`)**: aparecía en el
+   selector de CC de los bloques y confundía (es la supervisión del capataz, no la actividad de la
+   cuadrilla). Si ya lo pegaste en la hoja `CC_USADOS`, **borra esas 2 filas** (`3701.I010305…` y
+   `3702.I010305…`).
 
 ## TURNOS.tsv → hoja `TURNOS` (D72)
 

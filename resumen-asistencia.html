@@ -222,7 +222,8 @@ function render(){
   html+='<div class="section-title">Descargar Excel Navision</div>';
   html+=exportCardHtml();
 
-  if(STATE.rol==='residente' || STATE.rol==='admin'){
+  // D72: gestión de personal también para los residentes de área (odt/odl); el backend la limita a SU área.
+  if(['residente','admin','residente_odt','residente_odl'].indexOf(STATE.rol)>=0){
     html+='<div class="section-title">Gestión de personal</div>';
     html+='<div class="card" id="gestionCard"><button class="btn-ghost" onclick="cargarPersonal()">Cargar personal ↻</button><div id="gestionBody" style="margin-top:12px;"></div></div>';
   }
@@ -246,6 +247,10 @@ function seccionCompletar(d){
   if(!comp.length) return '';
   STATE._comp=comp;
   const catCC=d.catCC||[], catCCUsados=d.catCCUsados||[], catMotivos=d.catMotivos||[], j=d.jornada||{};
+  // D72: turnos para completar faltantes (mismo pre-llenado de horas que el formulario del capataz).
+  const turnos=d.turnos||[]; STATE._compTurnos=turnos;
+  const turnosUnq=[]; turnos.forEach(t=>{ if(turnosUnq.indexOf(String(t.turno))<0) turnosUnq.push(String(t.turno)); }); turnosUnq.sort();
+  const turnoOpts = turnosUnq.length ? turnosUnq.map(tn=>`<option value="${esc(tn)}">Turno ${esc(tn)}</option>`).join('') : '';
   // Los CC frecuentes (CC_USADOS) primero en el datalist; el resto del catálogo queda disponible al
   // escribir (búsqueda nativa del datalist). Así el residente ve los usuales pero puede buscar cualquiera.
   const ccOrden = catCCUsados.concat(catCC.filter(cc=>catCCUsados.indexOf(cc)<0));
@@ -262,6 +267,7 @@ function seccionCompletar(d){
      + `</div>`
      + `<div id="comp-pres-${i}" style="display:none;margin-top:8px;"><div class="row">`
      + `<div class="field"><label>Centro de Costo</label><input type="text" list="ccList" id="comp-cc-${i}" placeholder="Buscar CC…"></div>`
+     + (turnoOpts ? `<div class="field" style="max-width:140px;"><label>Turno</label><select id="comp-tur-${i}" onchange="compTurnoChange(${i})">${turnoOpts}</select></div>` : '')
      + `<div class="field" style="max-width:120px;"><label>Entrada</label><input type="time" id="comp-ent-${i}" value="${esc(j.entrada||'')}"></div>`
      + `<div class="field" style="max-width:120px;"><label>Salida</label><input type="time" id="comp-sal-${i}" value="${esc(j.salida||'')}"></div>`
      + `</div></div>`
@@ -277,6 +283,14 @@ function compToggle(i){
   document.getElementById('comp-pres-'+i).style.display = est==='Si'?'block':'none';
   document.getElementById('comp-aus-'+i).style.display  = est==='No'?'block':'none';
 }
+// D72: al elegir turno en un faltante, pre-llena su entrada/salida (igual que el formulario del capataz).
+function compTurnoChange(i){
+  const sel=document.getElementById('comp-tur-'+i); if(!sel) return;
+  const tipoJ=tipoJornadaDeFecha(STATE.fecha, (STATE.data&&STATE.data.festivos)||[]);
+  const tr=turnoRowFor(sel.value, STATE.fecha, STATE._compTurnos||[], tipoJ);
+  if(tr){ const en=document.getElementById('comp-ent-'+i), sa=document.getElementById('comp-sal-'+i);
+    if(en) en.value=tr.entrada; if(sa) sa.value=tr.salida; }
+}
 async function guardarCompletar(){
   const comp=STATE._comp||[], filas=[];
   comp.forEach((p,i)=>{
@@ -284,12 +298,13 @@ async function guardarCompletar(){
     if(!est) return;
     if(est==='Si'){
       const cc=document.getElementById('comp-cc-'+i).value.trim();
+      const turSel=document.getElementById('comp-tur-'+i);
       filas.push({ codigo:p.codigo, cedula:p.cedula, nombre:p.nombre, cargo:p.cargo, cuadrilla:p.cuadrilla,
         cc, proyecto:proyectoFromCC(cc), hora_entrada:document.getElementById('comp-ent-'+i).value,
-        hora_salida:document.getElementById('comp-sal-'+i).value, presente:'Si', motivo_ausencia:'' });
+        hora_salida:document.getElementById('comp-sal-'+i).value, presente:'Si', motivo_ausencia:'', turno:turSel?turSel.value:'1' });
     } else {
       filas.push({ codigo:p.codigo, cedula:p.cedula, nombre:p.nombre, cargo:p.cargo, cuadrilla:p.cuadrilla,
-        cc:'', proyecto:'', hora_entrada:'', hora_salida:'', presente:'No', motivo_ausencia:document.getElementById('comp-mot-'+i).value });
+        cc:'', proyecto:'', hora_entrada:'', hora_salida:'', presente:'No', motivo_ausencia:document.getElementById('comp-mot-'+i).value, turno:'' });
     }
   });
   if(!filas.length){ alert('No marcaste el estado de ninguna persona.'); return; }
@@ -346,63 +361,78 @@ function onTplFile(ev){
   reader.readAsArrayBuffer(file);
 }
 
-/* ---------- Clasificador de horas (módulo compartido) ----------
- * Entrada: tipoJornada ('lv'|'sabado'|'domfest'), hora_entrada, hora_salida (HH:MM), CONFIG.
- * Salida: {ordinarias, ord_domfest, extra_diurna, extra_nocturna, avisoExtra, avisoDomFest}.
- * Frontera nocturna = CONFIG.nocturno_desde (19:00, Ley 2466/2025). Domingo/festivo: todo a ord_domfest
- * (columnas D) y se marca avisoDomFest para que el panel avise revisar G–N a mano (parámetro abierto, §6).
- * Las extras se TOPAN a CONFIG.max_extras_dia (2) en días normales — decisión del residente (jul-2026):
- * lo que exceda no se reporta, pero avisoExtra=true para que el residente lo sume a mano aparte.
- *
- * Casos de prueba manual (verificados a mano):
- *   clasificarHoras('lv','07:00','15:30',CFG) -> {ordinarias:7.5, extra_diurna:0, extra_nocturna:0}
- *   clasificarHoras('lv','07:00','17:30',CFG) -> {ordinarias:7.5, extra_diurna:2, extra_nocturna:0}
- *   clasificarHoras('lv','07:00','20:30',CFG) -> {ordinarias:7.5, extra_diurna:2, extra_nocturna:0, avisoExtra:true}
- *      (trabajó 12.5h netas = 5 extras, pero se TOPAN a 2; avisoExtra marca que hubo más)
- *   clasificarHoras('sabado','07:00','11:30',CFG) -> {ordinarias:4.5, extra_diurna:0}
- *   clasificarHoras('domfest','07:00','15:00',CFG) -> {ordinarias:0, ord_domfest:7, avisoDomFest:true}
- */
+/* ---------- Clasificador de horas (D72, Opción A) ----------
+ * La jornada del TURNO reportado es la ORDINARIA; las extras empiezan al pasar la hora de salida del
+ * turno (extra = trabajado − programado). Recargo nocturno = horas entre nocturno_desde (19:00, Ley
+ * 2466/2025) y las 06:00 del día siguiente. Devuelve, además de las ordinarias/extras, el RECARGO
+ * NOCTURNO ORDINARIO (columna G): las horas ordinarias que caen en la ventana nocturna.
+ *   Columnas Navision que llena: C ordinarias · E extra diurna · F extra nocturna · G recargo noct ord.
+ * `turnoRow`={entrada,salida,descanso_ini,descanso_fin} del turno; si falta, se arma la jornada estándar
+ * del día (diurna) → conserva el comportamiento previo para filas sin turno (legacy / faltantes).
+ * Las extras se topan a CONFIG.max_extras_dia (2); avisoExtra marca cuando hubo más. Domingo/festivo:
+ * todo a ord_domfest + avisoDomFest (las columnas Dom/Fest H–N siguen siendo revisión manual, §6).
+ * Verificado por simulación (T1 diurno; T2/T3/T4 nocturnos con cruce de medianoche). */
 function round2(n){ return Math.round(n*100)/100; }
 function horasNum(hhmm){ if(!hhmm) return null; const p=String(hhmm).split(':'); if(p.length<2) return null; const n=Number(p[0])+Number(p[1])/60; return isNaN(n)?null:n; }
-function clasificarHoras(tipoJornada, entrada, salida, cfg){
-  const e=horasNum(entrada), s=horasNum(salida);
-  const vacio={ordinarias:0, ord_domfest:0, extra_diurna:0, extra_nocturna:0, avisoExtra:false, avisoDomFest:false};
-  if(e==null || s==null) return vacio;
-  let total=s-e; if(total<0) total+=24;
-  const almIni=horasNum(cfg.almuerzo_ini||'12:00'), almFin=horasNum(cfg.almuerzo_fin||'13:00');
-  if(almIni!=null && almFin!=null && e<=almIni && s>=almFin) total-=(almFin-almIni);
-  if(total<0) total=0;
+function ovlp(a1,a2,b1,b2){ return Math.max(0, Math.min(a2,b2)-Math.max(a1,b1)); }
+// Jornada estándar del día como "turno virtual" (para filas sin turno). L-V 07:00-15:30 (almuerzo), Sáb.
+function jornadaPorDefecto(tipoJornada, cfg){
+  if(tipoJornada==='sabado') return { entrada:cfg.entrada_sab||'07:00', salida:cfg.salida_sab||'11:30', descanso_ini:'', descanso_fin:'' };
+  return { entrada:cfg.entrada_lv||'07:00', salida:cfg.salida_lv||'15:30', descanso_ini:cfg.almuerzo_ini||'12:00', descanso_fin:cfg.almuerzo_fin||'13:00' };
+}
+// Fila de TURNOS que aplica a (turno, fecha) — misma preferencia por día que el formulario.
+function turnoRowFor(turnoNum, fecha, turnos, tipoJornada){
+  if(!turnoNum || !turnos || !turnos.length || tipoJornada==='domfest') return null;
+  const cand=turnos.filter(t=>String(t.turno)===String(turnoNum)); if(!cand.length) return null;
+  const d=String(fecha||'').split('-'); const dow=new Date(Number(d[0]),Number(d[1])-1,Number(d[2])).getDay();
+  const dt = dow===6?'sabado':dow===5?'viernes':dow===0?'domingo':'lj';
+  const pref = dt==='sabado'?['sabado']:dt==='viernes'?['viernes','lv']:['lj','lv'];
+  for(let i=0;i<pref.length;i++){ const m=cand.find(t=>t.tipo_dia===pref[i]); if(m) return m; }
+  return cand[0];
+}
+function clasificarHoras(tipoJornada, entrada, salida, cfg, turnoRow){
+  const vacio={ordinarias:0, ord_domfest:0, extra_diurna:0, extra_nocturna:0, recargo_noct_ord:0, domfest_diurna_scomp:0, avisoExtra:false, avisoDomFest:false};
+  const e=horasNum(entrada), s0=horasNum(salida);
+  if(e==null || s0==null) return vacio;
+  const Sact = s0 < e ? s0+24 : s0;                       // cruce de medianoche (nocturnos)
   if(tipoJornada==='domfest'){
-    return { ordinarias:0, ord_domfest:round2(total), extra_diurna:0, extra_nocturna:0, avisoExtra:false, avisoDomFest:true };
+    // Criterio de nómina (jul-2026): la jornada Dom/Fest (8h) se reparte 7.33h → Horas Ordinarias
+    // Dom/Fest (col D) + 0.67h → Hora Diurna Ord. Dom/Fest SIN compensatorio (col L). Se aplica
+    // proporcional a lo trabajado (a 8h da exacto 7.33/0.67); los valores base viven en CONFIG.
+    let tot=Sact-e; if(tot<0) tot=0;
+    const base=parseFloat(cfg.domfest_ord_base)||8;
+    const fracOrd=(parseFloat(cfg.domfest_ord_horas)||7.33)/base;
+    const fracSc =(parseFloat(cfg.domfest_scomp_horas)||0.67)/base;
+    return { ordinarias:0, ord_domfest:round2(tot*fracOrd), extra_diurna:0, extra_nocturna:0, recargo_noct_ord:0,
+      domfest_diurna_scomp:round2(tot*fracSc), avisoExtra:false, avisoDomFest: tot>base+0.01 };
   }
-  const tope = tipoJornada==='sabado' ? (parseFloat(cfg.ord_sabado)||4.5) : (parseFloat(cfg.ord_lun_vie)||7.5);
-  const maxExtraCfg=parseFloat(cfg.max_extras_dia); const cap = isNaN(maxExtraCfg)?Infinity:maxExtraCfg;
-  const ordinarias=Math.min(total, tope);
-  const extraFull=Math.max(0, total-tope);
-  // DECISIÓN DEL RESIDENTE (jul-2026): en días normales el archivo reporta como MÁXIMO `max_extras_dia`
-  // horas extra (2). Lo que exceda NO se reporta aquí — el residente lo maneja aparte, sumándolo a mano
-  // en los días que correspondan. `avisoExtra` sigue marcándose para que sepa quién trabajó de más.
-  const avisoExtra = extraFull > cap + 0.001;
-  const extra = Math.min(extraFull, cap);
-  // Reparto diurna/nocturna de las extras REPORTADAS (las primeras `extra` horas tras la jornada
-  // ordinaria). Las extras arrancan al terminar la jornada; en reloj eso es (salida − extraFull), lo
-  // que ya descuenta el almuerzo implícitamente. El corte nocturno es CONFIG.nocturno_desde (19:00).
-  let extraDiurna=extra, extraNocturna=0;
-  if(extra>0){
-    const nDesde=horasNum(cfg.nocturno_desde||'19:00');
-    let sLin=s; if(sLin<e) sLin+=24;
-    const extraStart = sLin - extraFull;            // reloj donde empiezan las extras (fin de jornada)
-    const capEnd = extraStart + extra;              // fin de las extras ya recortadas al tope
-    // Porción de [extraStart, capEnd] que cae en horario nocturno de la tarde (≥ nocturno_desde=19:00).
-    // Suficiente para las jornadas diurnas de la obra; el cruce de medianoche (nocturno_hasta 06:00)
-    // no se modela aquí porque G–N sigue siendo parámetro abierto y no ocurre en la práctica.
-    if(nDesde!=null){
-      const nocturnalStart=Math.max(extraStart, nDesde);
-      if(capEnd>nocturnalStart){ extraNocturna=round2(capEnd-nocturnalStart); extraDiurna=round2(extra-extraNocturna); }
-    }
+  const nDesde=horasNum(cfg.nocturno_desde||'19:00'), NOC1=nDesde, NOC2=30;   // ventana nocturna [19:00, 06:00 del día siguiente)
+  const jt = turnoRow || jornadaPorDefecto(tipoJornada, cfg);
+  const se=horasNum(jt.entrada), ss0=horasNum(jt.salida);
+  const schedGross = (ss0<se? ss0+24 : ss0) - se;         // duración bruta programada (incluye descanso)
+  // descanso programado como offset desde la entrada del turno
+  let biOff=null, bfOff=null; const bi=horasNum(jt.descanso_ini), bf=horasNum(jt.descanso_fin);
+  if(bi!=null && bf!=null){ const biL=bi<se?bi+24:bi; let bfL=bf<biL?bf+24:bf; biOff=biL-se; bfOff=bfL-se; }
+  // Ancla a la entrada REAL: fin de jornada programada y descanso desplazados por la entrada real e.
+  const schedEnd=e+schedGross, bkS=(biOff!=null)?e+biOff:null, bkE=(bfOff!=null)?e+bfOff:null;
+  const ordEnd=Math.min(Sact, schedEnd);
+  const ordBreak=(bkS!=null)?ovlp(bkS,bkE,e,ordEnd):0;
+  const ordinarias=Math.max(0, (ordEnd-e)-ordBreak);
+  // recargo nocturno ordinario = horas ordinarias dentro de la ventana nocturna (sin el descanso)
+  const ordNocGross=ovlp(e,ordEnd,NOC1,NOC2);
+  const ordNocBreak=(bkS!=null)?ovlp(Math.max(bkS,e),Math.min(bkE,ordEnd),NOC1,NOC2):0;
+  const recargoNoct=Math.max(0, ordNocGross-ordNocBreak);
+  // extras = lo trabajado tras el fin de la jornada programada (topadas a max_extras_dia)
+  let extraDiurna=0, extraNocturna=0, avisoExtra=false;
+  if(Sact>schedEnd){
+    const extraFull=Sact-schedEnd;
+    const maxCfg=parseFloat(cfg.max_extras_dia), cap=isNaN(maxCfg)?Infinity:maxCfg;
+    avisoExtra=extraFull>cap+0.001; const extra=Math.min(extraFull,cap);
+    const exNoc=ovlp(schedEnd, schedEnd+extra, NOC1, NOC2);
+    extraNocturna=exNoc; extraDiurna=extra-exNoc;
   }
-  if(extraNocturna<0) extraNocturna=0; if(extraDiurna<0) extraDiurna=0;
-  return { ordinarias:round2(ordinarias), ord_domfest:0, extra_diurna:round2(extraDiurna), extra_nocturna:round2(extraNocturna), avisoExtra, avisoDomFest:false };
+  return { ordinarias:round2(ordinarias), ord_domfest:0, extra_diurna:round2(extraDiurna<0?0:extraDiurna),
+    extra_nocturna:round2(extraNocturna), recargo_noct_ord:round2(recargoNoct), avisoExtra, avisoDomFest:false };
 }
 // PROVISIONAL (parámetro abierto, §6 cols G–N): el mapeo fino de recargos/Dom-Fest c/s compensación
 // está pendiente de confirmar con la empresa. No escribe nada; solo documenta el punto de extensión.
@@ -447,21 +477,23 @@ function mapTrabajadoresDeWb(wb){
   return map;
 }
 // Fila A–R (18 columnas) de la hoja Parte para una persona del día. Ausente: TODAS las horas en 0 (§6).
-function buildParteRow(f, proyectoStr, cfg, tipoJornada, catTrabajadores){
+function buildParteRow(f, proyectoStr, cfg, tipoJornada, catTrabajadores, turnoRow){
   const row=new Array(18).fill('');
   row[0]=noRecurso(f.codigo, f.nombre, catTrabajadores);   // A No. Recurso
   row[1]='';                                                // B Control de partes: siempre vacía
   const ausente = f.presente==='No';
   if(ausente){
-    row[2]=0; row[3]=0; row[4]=0; row[5]=0;                 // C–F en 0
+    row[2]=0; row[3]=0; row[4]=0; row[5]=0; row[6]=0;       // C–G en 0
   } else {
-    const cl=clasificarHoras(tipoJornada, f.hora_entrada, f.hora_salida, cfg);
+    const cl=clasificarHoras(tipoJornada, f.hora_entrada, f.hora_salida, cfg, turnoRow);
     row[2]=cl.ordinarias; row[3]=cl.ord_domfest; row[4]=cl.extra_diurna; row[5]=cl.extra_nocturna;
-    row._aviso = cl.avisoDomFest || cl.extra_nocturna>0;
+    row[6]=cl.recargo_noct_ord;                             // G Recargo hora nocturna ord (D72)
+    if(cl.domfest_diurna_scomp) row[11]=cl.domfest_diurna_scomp;   // L Hora Diurna Ord. Dom/Fest s/Comp (criterio nómina)
+    row._aviso = cl.avisoDomFest;      // Dom/Fest: solo avisa si hubo MÁS de la jornada base (posibles extras H–N)
     row._avisoExtra = cl.avisoExtra;   // extras > max_extras_dia en día normal: revisar a mano
     row._nombre = f.nombre;
   }
-  // G–N (6..13) vacías: provisional, ver mapearColumnasEspeciales()
+  // H–N (7..13) vacías: Dom/Fest c/comp s/comp — revisión manual solo en domingo/festivo (§6)
   row[14]=proyectoStr;                                      // O No. Proyecto
   row[15]=ausente? '' : (f.cc||'');                          // P Centro de coste
   row[16]=ausente? 'Si':'No';                                // Q Ausente
@@ -503,7 +535,7 @@ async function generarExcel(proyecto){
   msg.innerHTML='<div class="aviso">⏳ Generando…</div>';
   try{
     const data=await obtenerExport(STATE.fecha);
-    const cfg=data.config||{}, festivos=data.festivos||[];
+    const cfg=data.config||{}, festivos=data.festivos||[], turnos=data.turnos||[];
     const proyectoStr = proyecto==='3701' ? (cfg.proyecto_3701||'3701') : (cfg.proyecto_3702||'3702');
     if(proyecto==='3702' && (!cfg.proyecto_3702 || cfg.proyecto_3702==='PENDIENTE')){
       msg.innerHTML='<div class="aviso">⚠️ El string de CONFIG.proyecto_3702 sigue como "PENDIENTE" (parámetro abierto). Se usará "3702" tal cual; ajusta CONFIG cuando llegue la plantilla del 3702.</div>';
@@ -536,7 +568,8 @@ async function generarExcel(proyecto){
     }
     let hayAvisoGN=false; const overExtra=[]; const sinCodigo=[];
     const aoa=filasProyecto.map(f=>{
-      const row=buildParteRow(f, proyectoStr, cfg, tipoJornada, catTrabajadores);
+      const turnoRow=turnoRowFor(f.turno, STATE.fecha, turnos, tipoJornada);   // D72: jornada programada del reporte
+      const row=buildParteRow(f, proyectoStr, cfg, tipoJornada, catTrabajadores, turnoRow);
       if(row._aviso) hayAvisoGN=true;
       if(row._avisoExtra) overExtra.push(row._nombre);
       if(!String(f.codigo||'').trim()) sinCodigo.push(f.nombre);  // sin código Navision (col A queda "| NOMBRE")
@@ -579,7 +612,7 @@ async function generarExcel(proyecto){
     if(adminAgregadas) out+='<div class="aviso" style="color:var(--success);border-color:rgba(46,204,113,0.3);background:rgba(46,204,113,0.08);">✓ Incluida(s) '+adminAgregadas+' fila(s) de tus horas extra (admin) en este archivo.</div>';
     if(avisoAdminSinRecurso) out+='<div class="aviso">⚠️ Hay extras del admin para este proyecto pero <b>admin_recurso</b> está vacío en CONFIG: no se agregaron. Configúralo para exportarlas.</div>';
     if(adminDomFest.length) out+='<div class="aviso">⚠️ Extra Dom/Fest del admin el <b>'+adminDomFest.map(esc).join(', ')+'</b>: agregar a mano en las columnas G–N antes de importar (no se pudo mapear automáticamente).</div>';
-    if(hayAvisoGN) out+='<div class="aviso">⚠️ Este día tiene horas nocturnas/dominicales: revisar columnas G–N a mano antes de importar (mapeo pendiente de confirmar, ver §6).</div>';
+    if(hayAvisoGN) out+='<div class="aviso">⚠️ Día domingo/festivo con alguien que trabajó MÁS de la jornada base: las horas ordinarias se repartieron D/L según el criterio de nómina, pero el excedente (posibles extras Dom/Fest) puede requerir revisar H–N a mano.</div>';
     if(overExtra.length){ const mx=parseFloat(cfg.max_extras_dia)||2;
       out+='<div class="aviso">ℹ️ Estas personas trabajaron más de '+mx+' horas extra: <b>'+overExtra.map(esc).join(', ')+'</b>. El archivo reporta solo '+mx+' (el tope); el resto queda para que el residente lo sume a mano en los días que corresponda.</div>'; }
     if(sinCodigo.length) out+='<div class="aviso">⚠️ Sin código Navision (la columna A queda incompleta "| NOMBRE"): <b>'+sinCodigo.map(esc).join(', ')+'</b>. Consigue su código en Navision/RRHH y ponlo en PERSONAL antes de importar.</div>';
@@ -595,7 +628,7 @@ async function cargarPersonal(){
   const body=document.getElementById('gestionBody');
   body.innerHTML='<p style="color:var(--muted);font-size:13px;">⏳ Cargando…</p>';
   try{
-    const resp=await fetch(`${APPS_SCRIPT_URL}?action=personal`);
+    const resp=await fetch(`${APPS_SCRIPT_URL}?action=personal&usuario=${encodeURIComponent(STATE.usuario)}`);
     const data=await resp.json();
     if(!data.ok) throw new Error(data.error||'personal');
     STATE.personal=data;
