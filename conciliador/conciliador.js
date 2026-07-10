@@ -151,7 +151,9 @@ function configSeed(){
       origen:['origen','sitio de procedencia','cargue','pk origen uf1','pk inicial'],
       destino:['obra','destino','sitio de descargue','descargue','pk final uf1','pk final']
     },
-    areasExcluyentes:['PLANTA','PUENTE','TM1','AMP','RCD','ZODME - RCD','DIVISO - PUENTE'],
+    // Áreas OBSERVADAS: van al acta normalmente, con observación "área X" visible.
+    // (Decisión jul-2026: solo excluyen UF3 y ASFALTO; PLANTA/PUENTE/TM1/ODT… se incluyen con nota.)
+    areasObservadas:['PLANTA','PUENTE','TM1','AMP','RCD','ZODME - RCD','DIVISO - PUENTE'],
     areasNeutras:['DIVISO'],
     empresasVetadas:['ORTIZ','VOLKETSA','BETULIA'],
     // Mapeo del bloque del acta (§3.4): campo null = columna derivada, se exporta VACÍA.
@@ -194,7 +196,14 @@ function configSeed(){
 function cargarConfig(){
   try{
     const raw=(typeof localStorage!=='undefined')?localStorage.getItem(LS_CONFIG):null;
-    if(raw){ const c=JSON.parse(raw); if(c && c.contratistas && c.actaLayout) return c; }
+    if(raw){
+      const c=JSON.parse(raw);
+      if(c && c.contratistas && c.actaLayout){
+        // migración: antes las áreas EXCLUÍAN; ahora solo se OBSERVAN (excluyen solo UF3 y asfalto)
+        if(c.areasExcluyentes && !c.areasObservadas){ c.areasObservadas=c.areasExcluyentes; delete c.areasExcluyentes; }
+        return c;
+      }
+    }
   }catch(e){ console.warn('config localStorage ilegible',e); }
   return configSeed();
 }
@@ -327,7 +336,7 @@ function mkReclamo(o){
     ambito:o.ambito, modo:o.modo||null,
     secundarios:o.secundarios||{}, obs:o.obs||'',
     marcas:[], estado:'PENDIENTE', subtipo:null,
-    candidato:null, candidatos:[], sugerencias:[],
+    candidato:null, candidatos:[], sugerencias:[], sugerenciasOtraBase:[],
     tokensPendientes:o.tokensPendientes||null,
     evidencia:null, historial:[], decisionManual:false, notaReconciliacion:false, dupDe:null
   };
@@ -393,13 +402,14 @@ function snap(row){
     m3km:row.m3km!==''?row.m3km:'',unidad:row.unidad||'',empresa:row.empresa||''};
 }
 
-function areaExcluyente(areaNorm,cfg){
+// ¿El área amerita OBSERVACIÓN? (no excluye: la remisión va al acta con nota "área X")
+function areaObservada(areaNorm,cfg){
   if(!areaNorm) return false;                                   // vacío = neutro
   const neutras=(cfg.areasNeutras||[]).map(normTexto);
-  if(neutras.indexOf(areaNorm)>=0) return false;                // DIVISO = neutro, NO excluye
-  if(areaNorm.indexOf('ODT')===0) return true;                  // ODT… siempre excluye
-  const exc=(cfg.areasExcluyentes||[]).map(normTexto);
-  return exc.indexOf(areaNorm)>=0;
+  if(neutras.indexOf(areaNorm)>=0) return false;                // DIVISO = neutro
+  if(areaNorm.indexOf('ODT')===0) return true;                  // ODT… siempre se observa
+  const obs=(cfg.areasObservadas||cfg.areasExcluyentes||[]).map(normTexto);
+  return obs.indexOf(areaNorm)>=0;
 }
 
 function aliasNormActivo(){
@@ -468,19 +478,29 @@ function conciliarReclamo(rc,cfg){
   // Sugerencia gris: existe con otra empresa (informativo, jamás auto-match).
   const otras=buscarCandidatos(rc.remision,ambitos,aliasNorm,cfg,false);
   rc.sugerencias=otras.slice(0,6).map(snap);
+  // Sugerencia fuerte: existe en LA OTRA BASE cumpliendo empresa+fecha (¿hoja mal clasificada?).
+  // Se muestra para que César la use con un clic; jamás match automático.
+  rc.sugerenciasOtraBase=[];
+  if(rc.ambito!=='AMBAS'){
+    const otro=rc.ambito==='GRANULARES'?'TERRAPLEN':'GRANULARES';
+    rc.sugerenciasOtraBase=buscarCandidatos(rc.remision,[otro],aliasNorm,cfg,true).slice(0,4).map(snap);
+  }
   setEstado(rc,'NO_ENCONTRADA',null,true);
 }
 
-// Clasificador del candidato único (§6.3), también usado al elegir manualmente.
+// Clasificador del candidato único (§6.3 enmendado jul-2026), también usado al elegir manualmente.
+// Solo excluye UF3 (el asfalto se marca en investigación). Las áreas (PLANTA, PUENTE, TM1,
+// ODT…) NO excluyen: la remisión va al acta con marca y observación "área X".
 function clasificar(rc,row,cfg,auto,notaExtra){
   rc.candidato=snap(row);
-  rc.marcas=rc.marcas.filter(m=>m!=='REZAGO'&&m!=='INTERNO_MAYOR_3KM');
+  rc.marcas=rc.marcas.filter(m=>m!=='REZAGO'&&m!=='INTERNO_MAYOR_3KM'&&m!=='AREA_OBSERVADA');
+  rc.subtipo=null;
   if(rc.candidato.fecha && S.corte && S.corte.quincena.inicio && rc.candidato.fecha<S.corte.quincena.inicio)
     addMarca(rc,'REZAGO');   // marca informativa: NUNCA excluye
   if(rc.candidato.ufNorm==='UF3'){ rc.subtipo='UF3'; setEstado(rc,'EXCLUIDA_UF3',notaExtra,auto); return; }
-  if(areaExcluyente(rc.candidato.areaNorm,cfg)){
+  if(areaObservada(rc.candidato.areaNorm,cfg)){
     rc.subtipo=rc.candidato.area||rc.candidato.areaNorm;
-    setEstado(rc,'EXCLUIDA_OTRA_AREA','área '+rc.subtipo+(notaExtra?' · '+notaExtra:''),auto); return;
+    addMarca(rc,'AREA_OBSERVADA');
   }
   if(rc.modo==='interno'){
     const d=parseNum(rc.candidato.kmTot);
@@ -541,6 +561,10 @@ function reconciliar(){
     } else {
       // sigue sin aparecer: refrescar sugerencias, conservar estado
       rc.sugerencias=buscarCandidatos(rc.remision,ambitos,aliasNorm,cfg,false).slice(0,6).map(snap);
+      if(rc.ambito!=='AMBAS'){
+        const otro=rc.ambito==='GRANULARES'?'TERRAPLEN':'GRANULARES';
+        rc.sugerenciasOtraBase=buscarCandidatos(rc.remision,[otro],aliasNorm,cfg,true).slice(0,4).map(snap);
+      }
     }
   }
   return {revisadas,resueltas};
@@ -554,6 +578,38 @@ function setEstado(rc,nuevo,nota,auto){
   rc.historial.push({ts:nowISO(),de:rc.estado,a:nuevo,nota:nota||null,auto:!!auto});
   rc.estado=nuevo;
   if(!auto) rc.decisionManual=true;
+}
+
+// Vuelve un reclamo a PENDIENTE (para re-conciliar tras cambiar el ámbito de su hoja).
+function resetReclamo(rc,nota){
+  rc.historial.push({ts:nowISO(),de:rc.estado,a:'PENDIENTE',nota:nota||null,auto:true});
+  rc.estado='PENDIENTE';
+  rc.candidato=null; rc.candidatos=[]; rc.sugerencias=[]; rc.sugerenciasOtraBase=[];
+  rc.subtipo=null; rc.notaReconciliacion=false;
+  rc.marcas=rc.marcas.filter(m=>m==='CELDA_MULTIPLE');
+}
+
+// Hojas con pinta de estar en la base equivocada (caso real: hoja "CORTE CLIENTE 2026"
+// dentro de un archivo de PUTANA → el patrón CORTE la mandó a TERRAPLÉN). El sistema
+// NO se auto-corrige: muestra la evidencia y César decide con un clic.
+function hojasSospechosas(){
+  if(!S.corte) return [];
+  const cfg=S.config; const aliasNorm=aliasNormActivo(); const out=[];
+  for(const pf of S.corte.proformas){
+    for(let i=0;i<pf.hojas.length;i++){
+      const h=pf.hojas[i];
+      if(h.estado!=='ok'||h.ambito==='AMBAS') continue;
+      const otro=h.ambito==='GRANULARES'?'TERRAPLEN':'GRANULARES';
+      if(!S.bases[otro]) continue;
+      const claims=S.corte.reclamos.filter(r=>r.archivo===pf.archivo&&r.hoja===h.nombre&&r.remision);
+      const noEnc=claims.filter(r=>r.estado==='NO_ENCONTRADA');
+      if(claims.length<5||noEnc.length<claims.length*0.5) continue;
+      let hallados=0;
+      for(const r of noEnc) if(buscarCandidatos(r.remision,[otro],aliasNorm,cfg,true).length) hallados++;
+      if(hallados>=Math.max(3,noEnc.length*0.5)) out.push({pfIdx:pf.idx,hIdx:i,archivo:pf.archivo,hoja:h.nombre,ambito:h.ambito,otro,noEnc:noEnc.length,hallados});
+    }
+  }
+  return out;
 }
 
 function conteoEstados(){
@@ -640,7 +696,7 @@ function render(){
     case 2: m.innerHTML=vistaPaso2(); break;
     case 3: m.innerHTML=vistaPaso3(); break;
     case 4: m.innerHTML=vistaPaso4(); break;
-    case 5: m.innerHTML=vistaPaso5(); Paso5.postRender(); break;
+    case 5: Paso5.recruzar(); m.innerHTML=vistaPaso5(); Paso5.postRender(); break;
     case 6: m.innerHTML=vistaPaso6(); break;
     case 7: m.innerHTML=vistaPaso7(); break;
     case 'config': m.innerHTML=vistaConfig(); break;
@@ -783,7 +839,8 @@ function vistaPaso3(){
       const h=pf.hojas[i];
       let amb, extra='';
       if(h.estado==='ok'){
-        amb=`<b>${h.ambito}</b>${h.modo?' <span class="marca">interno</span>':''}`;
+        amb=`<b>${h.ambito}</b>${h.modo?' <span class="marca">interno</span>':''}
+          <button class="btn sec mini" onclick="Paso3.cambiarAmbitoUI(${pf.idx},${i})" title="reasignar la base de esta hoja y re-conciliar">cambiar</button>`;
       } else if(h.estado==='ignorada'){
         amb='<span class="note">IGNORADA</span>';
       } else if(h.estado==='sin_ambito'){
@@ -806,10 +863,16 @@ function vistaPaso3(){
     }
     lista+=`</table></div></div>`;
   }
+  const sosp=hojasSospechosas();
+  const alertaSosp=sosp.map(s=>`<div class="alert warn">⚠️ La hoja <b>${escapeHtml(s.hoja)}</b> (${escapeHtml(s.archivo)})
+    está asignada a <b>${s.ambito}</b>, pero ${s.hallados} de sus ${s.noEnc} no-encontradas SÍ existen en <b>${s.otro}</b>
+    con tu contratista y fechas válidas. ¿Hoja mal clasificada?
+    <button class="btn mini" onclick="Paso3.aplicarAmbito(${s.pfIdx},${s.hIdx},'${s.otro}',null,true)">Cambiar a ${s.otro} y re-conciliar</button></div>`).join('');
   return `<div class="paso-title">Paso 3 · Cargar proforma — ${escapeHtml(c.nombre)}</div>
   <div class="paso-desc">Uno o varios .xlsx del contratista, cada uno con su formato. El encabezado y la columna de remisión
   se auto-detectan con los alias de la configuración; las hojas se enrutan por los patrones del contratista. Si una hoja
   no se reconoce, la señalas tú (y puedes guardar la regla).</div>
+  ${alertaSosp}
   <div class="card">
     <label class="filebox"><input type="file" multiple accept=".xlsx,.xlsm,.xls" onchange="Paso3.cargar(this)">
       <div class="fb-title">Agregar archivo(s) de proforma</div><div class="fb-sub">se concilia automáticamente al cargar</div></label>
@@ -940,6 +1003,51 @@ const Paso3={
     for(const rc of out.reclamos) S.corte.reclamos.push(rc);
     Paso3._finCarga();
   },
+  cambiarAmbitoUI(pfIdx,hIdx){
+    const pf=S.corte.proformas[pfIdx]; const meta=pf.hojas[hIdx];
+    const cur=meta.modo==='interno'?'TERRAPLEN_INTERNO':meta.ambito;
+    const op=(v,l)=>`<option value="${v}" ${cur===v?'selected':''}>${l}</option>`;
+    abrirModal(`<h3>Cambiar ámbito — ${escapeHtml(meta.nombre)}</h3>
+      <div class="note" style="margin-bottom:10px">Las reclamaciones de esta hoja que NO tengan decisión manual vuelven a
+      PENDIENTE y se re-concilian contra la base elegida. Las decididas a mano no se tocan.</div>
+      <select id="selNuevoAmb">${op('GRANULARES','GRANULARES')}${op('TERRAPLEN','TERRAPLEN')}${op('TERRAPLEN_INTERNO','TERRAPLEN (interno)')}${op('AMBAS','AMBAS')}</select>
+      <div style="margin-top:10px"><label style="font-size:12px"><input type="checkbox" id="chkReglaAmb" checked> guardar regla para esta hoja en la config del contratista</label></div>
+      <div class="flexrow" style="margin-top:14px">
+        <button class="btn" onclick="Paso3.aplicarAmbitoDesdeModal(${pfIdx},${hIdx})">Aplicar y re-conciliar</button>
+        <button class="btn sec" onclick="cerrarModal()">Cancelar</button></div>`);
+  },
+  aplicarAmbitoDesdeModal(pfIdx,hIdx){
+    const v=$('selNuevoAmb').value;
+    const guardar=$('chkReglaAmb').checked;
+    cerrarModal();
+    const ambito=v==='TERRAPLEN_INTERNO'?'TERRAPLEN':v;
+    const modo=v==='TERRAPLEN_INTERNO'?'interno':null;
+    this.aplicarAmbito(pfIdx,hIdx,ambito,modo,guardar);
+  },
+  aplicarAmbito(pfIdx,hIdx,ambito,modo,guardarRegla){
+    const pf=S.corte.proformas[pfIdx]; const meta=pf.hojas[hIdx]; if(!pf||!meta) return;
+    const de=meta.ambito+(meta.modo?' interno':'');
+    meta.ambito=ambito; meta.modo=modo||null;
+    if(guardarRegla){
+      const c=getContratista(S.corte.contratistaId);
+      const pat='^'+normTexto(meta.nombre).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$';
+      c.hojas=c.hojas.filter(h=>h.patron!==pat);
+      c.hojas.unshift(Object.assign({patron:pat,ambito},modo?{modo:'interno'}:{}));
+      guardarConfig();
+    }
+    let n=0;
+    for(const rc of S.corte.reclamos){
+      if(rc.archivo!==pf.archivo||rc.hoja!==meta.nombre) continue;
+      if(rc.decisionManual||!rc.remision) continue;
+      rc.ambito=ambito; rc.modo=modo||null;
+      resetReclamo(rc,'ámbito de hoja cambiado: '+de+' → '+ambito+(modo?' interno':''));
+      n++;
+    }
+    conciliarPendientes();
+    autosave(); render();
+    const cnt=conteoEstados();
+    toast('✅ Hoja "'+meta.nombre+'" → '+ambito+(modo?' (interno)':'')+': '+n+' reclamaciones re-conciliadas · '+cnt.ENCONTRADA+' encontradas · '+cnt.NO_ENCONTRADA+' no encontradas');
+  },
   reemplazarClick(){
     if(!S.corte.reclamos.length){ toast('No hay proforma que reemplazar; carga archivos normalmente.'); return; }
     if(!confirm('Reemplazar proforma: se borran las reclamaciones NO decididas manualmente y se re-concilia con los archivos que cargues ahora. ¿Continuar?')) return;
@@ -975,9 +1083,15 @@ function vistaPaso4(){
     `<div class="estado-card ${S.ui.filtroEstado===e?'sel':''}" onclick="Paso4.filtrar('${e}')">
       <div class="cnt" style="color:${colorEstado(e)}">${c[e]}</div><div class="lbl">${ETIQUETA[e]}</div></div>`).join('');
   const basesOk=S.bases.GRANULARES&&S.bases.TERRAPLEN;
+  const sosp=hojasSospechosas();
+  const alertaSosp=sosp.map(s=>`<div class="alert warn">⚠️ La hoja <b>${escapeHtml(s.hoja)}</b> parece de <b>${s.otro}</b>
+    (${s.hallados}/${s.noEnc} no-encontradas existen allá con tu contratista).
+    <button class="btn mini" onclick="Paso3.aplicarAmbito(${s.pfIdx},${s.hIdx},'${s.otro}',null,true)">Cambiar a ${s.otro} y re-conciliar</button></div>`).join('');
   return `<div class="paso-title">Paso 4 · Conciliación</div>
-  <div class="paso-desc">Automática al cargar. Haz clic en un estado para filtrar; clic en una fila para ver el detalle y decidir.</div>
+  <div class="paso-desc">Automática al cargar. Haz clic en un estado para filtrar; clic en una fila para ver el detalle y decidir.
+  Las remisiones de áreas PLANTA/PUENTE/TM1/ODT… van al acta normalmente con la observación “área X” (solo excluyen UF3 y asfalto).</div>
   ${basesOk?'':'<div class="alert err">⚠️ Faltan bases por cargar: hay reclamaciones sin conciliar. Ve al Paso 1.</div>'}
+  ${alertaSosp}
   <div class="tablero">${cards}</div>
   <div class="flexrow" style="margin-bottom:10px">
     <button class="btn sec mini" onclick="Paso4.recargarBases()">🔁 Recargar bases y re-conciliar</button>
@@ -1001,7 +1115,7 @@ function tablaReclamos(lista){
       <td class="mono"><b>${escapeHtml(rc.remision||('['+(rc.raw||'vacía')+']'))}</b></td>
       <td class="note">${escapeHtml(rc.hoja)}${rc.modo?' <span class="marca">interno</span>':''}</td>
       <td>${rc.ambito}</td>
-      <td><span class="chip ${rc.estado}">${ETIQUETA[rc.estado]}</span>${rc.subtipo&&rc.estado==='EXCLUIDA_OTRA_AREA'?' <span class="marca">'+escapeHtml(rc.subtipo)+'</span>':''}</td>
+      <td><span class="chip ${rc.estado}">${ETIQUETA[rc.estado]}</span>${rc.subtipo?' <span class="marca">'+escapeHtml(rc.subtipo)+'</span>':''}</td>
       <td>${rc.marcas.map(m=>`<span class="marca ${m}">${m.replace(/_/g,' ')}</span>`).join('')}</td>
       <td class="note">${cd?fmtFecha(cd.fecha)+' · '+escapeHtml(cd.placa)+' · '+escapeHtml(String(cd.cantidad)):(rc.sugerencias.length?'≈ existe con otra empresa':'')}</td>
     </tr>`;
@@ -1020,8 +1134,8 @@ const Paso4={
 function abrirModal(html){ $('modal').innerHTML=html; $('modal-bg').classList.add('open'); }
 function cerrarModal(){ $('modal-bg').classList.remove('open'); S.ui.detalle=null; }
 
-function cardCandidato(cd,idx,rcId,esSugerencia){
-  const btn=esSugerencia?'' :`<div style="margin-top:8px"><button class="btn mini ok" onclick="Acciones.usarCandidato('${rcId}',${idx})">Usar este candidato</button></div>`;
+function cardCandidato(cd,idx,rcId,esSugerencia,src){
+  const btn=esSugerencia?'' :`<div style="margin-top:8px"><button class="btn mini ok" onclick="Acciones.usarCandidato('${rcId}',${idx},'${src||'candidatos'}')">Usar este candidato</button></div>`;
   return `<div class="cand-card ${esSugerencia?'sug':''}">
     <div class="row"><span class="k">Base</span><b>${cd.ambito}</b></div>
     ${esSugerencia?`<div class="row"><span class="k">Empresa</span><b>${escapeHtml(cd.empresa)}</b></div>`:''}
@@ -1047,6 +1161,10 @@ const Acciones={
     if(rc.candidatos&&rc.candidatos.length){
       cuerpo+=`<h4 style="font-size:12px;color:var(--muted);margin:10px 0 6px">CANDIDATOS (elige o rechaza — el sistema no adivina)</h4>
         <div class="cand-grid">${rc.candidatos.map((cd,i)=>cardCandidato(cd,i,rc.id,false)).join('')}</div>`;
+    }
+    if(rc.sugerenciasOtraBase&&rc.sugerenciasOtraBase.length){
+      cuerpo+=`<h4 style="font-size:12px;color:#ffb84d;margin:10px 0 6px">⚠️ EXISTE EN LA OTRA BASE (${rc.sugerenciasOtraBase[0].ambito}) CON TU CONTRATISTA — ¿hoja mal clasificada? Puedes usarlo, o cambiar el ámbito de toda la hoja en el Paso 3</h4>
+        <div class="cand-grid">${rc.sugerenciasOtraBase.map((cd,i)=>cardCandidato(cd,i,rc.id,false,'sugerenciasOtraBase')).join('')}</div>`;
     }
     if(rc.sugerencias&&rc.sugerencias.length){
       cuerpo+=`<h4 style="font-size:12px;color:var(--muted);margin:10px 0 6px">EXISTE CON OTRA EMPRESA (solo informativo)</h4>
@@ -1107,9 +1225,9 @@ const Acciones={
     setEstado(rc,estado,nota||null,false);
     autosave(); cerrarModal(); render();
   },
-  usarCandidato(id,idx){
+  usarCandidato(id,idx,srcArr){
     const rc=this._rc(id); if(!rc) return;
-    const cd=rc.candidatos[idx]; if(!cd) return;
+    const cd=(rc[srcArr||'candidatos']||[])[idx]; if(!cd) return;
     // reconstruir un "row" mínimo desde el snapshot para el clasificador
     const row=Object.assign({tipo:cd.ambito},cd);
     const nota=($('notaManual')&&$('notaManual').value.trim())||('candidato elegido a mano ('+cd.ambito+' fila '+cd.fila+')');
@@ -1186,7 +1304,8 @@ function vistaPaso5(){
     <div class="progress-wrap" style="margin-top:8px"><div class="progress-bar" id="ocrBar" style="width:${S.ocr.total?Math.round(100*S.ocr.hecho/S.ocr.total):0}%"></div></div>
     <div class="note" style="margin-top:6px">Pasada A: franjas rojas (número impreso arriba-derecha, 1–3 partes por página).
     Pasada B (respaldo / AVENSA): página completa en gris. Coincidencia exacta = <span class="badge verde">verde</span>,
-    un dígito de diferencia = <span class="badge naranja">naranja</span>. Resultados en caché de la sesión.</div>`}
+    un dígito de diferencia = <span class="badge naranja">naranja</span>. Las páginas ya procesadas quedan en caché y se
+    re-cruzan solas si cambian las faltantes; vuelve a pulsar “Buscar” solo si agregaste PDFs nuevos.</div>`}
   </div>
   <div class="p5-layout">
     <div><h3 style="font-size:13px;color:var(--accent);margin-bottom:8px">Faltantes (${falt.length})</h3>${lista||'<div class="note">Ninguna 🎉</div>'}</div>
@@ -1196,6 +1315,17 @@ function vistaPaso5(){
 
 const Paso5={
   _thumbCancel:false,
+  // Las páginas ya OCR-eadas quedan en caché; si después cambian las faltantes (nueva
+  // proforma, cambio de ámbito de hoja, re-conciliación), se re-cruzan sin repetir OCR.
+  recruzar(){
+    const falt=faltantes(); if(!falt.length) return;
+    for(const key of Object.keys(S.ocr.paginas)){
+      const i=key.lastIndexOf('#'); if(i<0) continue;
+      const name=key.slice(0,i), pg=+key.slice(i+1);
+      const fi=S.pdfs.findIndex(p=>p.name===name);
+      this._cruzar(name,pg,fi,S.ocr.paginas[key]||[],falt);
+    }
+  },
   postRender(){
     if(S.ui.faltanteSel) this._renderCandidatos(S.ui.faltanteSel);
   },
@@ -1471,6 +1601,7 @@ function vistaPaso6(){
 
 function obsReclamo(rc){
   const o=[];
+  if(rc.marcas.indexOf('AREA_OBSERVADA')>=0&&rc.subtipo) o.push('área '+rc.subtipo);
   if(rc.marcas.indexOf('REZAGO')>=0&&rc.candidato&&rc.candidato.fecha) o.push('rezago '+fmtRezago(rc.candidato.fecha));
   if(rc.estado==='ACEPTADA_MANUAL') o.push('resuelta manual');
   if(rc.notaReconciliacion) o.push('resuelta en re-conciliación');
@@ -1546,8 +1677,9 @@ function resumenCorte(){
   for(const e of ESTADOS){ if(c[e]) lin.push('  '+ETIQUETA[e]+': '+c[e]); }
   const listar=(titulo,arr,fmt)=>{ if(arr.length){ lin.push(''); lin.push(titulo+' ('+arr.length+'):'); for(const rc of arr) lin.push('  '+(fmt?fmt(rc):rc.remision)); } };
   listar('EXCLUIDAS UF3',S.corte.reclamos.filter(r=>r.estado==='EXCLUIDA_UF3'));
-  listar('EXCLUIDAS OTRA ÁREA',S.corte.reclamos.filter(r=>r.estado==='EXCLUIDA_OTRA_AREA'),rc=>rc.remision+' ['+(rc.subtipo||'')+']');
   listar('EXCLUIDAS ASFALTO',S.corte.reclamos.filter(r=>r.estado==='EXCLUIDA_ASFALTO'));
+  listar('CON ÁREA OBSERVADA (van al acta con nota)',S.corte.reclamos.filter(r=>r.marcas.indexOf('AREA_OBSERVADA')>=0),rc=>rc.remision+' ['+(rc.subtipo||'')+']');
+  listar('EXCLUIDAS OTRA ÁREA (legado/manual)',S.corte.reclamos.filter(r=>r.estado==='EXCLUIDA_OTRA_AREA'),rc=>rc.remision+' ['+(rc.subtipo||'')+']');
   listar('RECHAZADAS',S.corte.reclamos.filter(r=>r.estado==='RECHAZADA'),rc=>(rc.remision||rc.raw));
   listar('DUPLICADAS',S.corte.reclamos.filter(r=>r.estado==='DUPLICADA_EN_PROFORMA'));
   listar('REZAGOS',S.corte.reclamos.filter(r=>r.marcas.indexOf('REZAGO')>=0),rc=>rc.remision+' ('+(rc.candidato?fmtFecha(rc.candidato.fecha):'')+')');
@@ -1634,7 +1766,8 @@ const Exportes={
     aoa.push([]); aoa.push(['Remisión','Estado','Subtipo/Marcas','Fecha base','Hoja','Observación']);
     for(const rc of S.corte.reclamos){
       if(['EXCLUIDA_UF3','EXCLUIDA_OTRA_AREA','EXCLUIDA_ASFALTO','RECHAZADA','DUPLICADA_EN_PROFORMA'].indexOf(rc.estado)>=0
-        || rc.marcas.indexOf('REZAGO')>=0 || rc.marcas.indexOf('INTERNO_MAYOR_3KM')>=0){
+        || rc.marcas.indexOf('REZAGO')>=0 || rc.marcas.indexOf('INTERNO_MAYOR_3KM')>=0
+        || rc.marcas.indexOf('AREA_OBSERVADA')>=0){
         aoa.push([rc.remision||rc.raw,ETIQUETA[rc.estado],[rc.subtipo].concat(rc.marcas).filter(Boolean).join(' · '),
           rc.candidato?fmtFecha(rc.candidato.fecha):'',rc.hoja,rc.obs||'']);
       }
@@ -1820,8 +1953,9 @@ if(typeof module!=='undefined'&&module.exports){
     BASES_DEF,leerBase,
     resolverAmbitoHoja,detectarEncabezado,detectarSecundarias,extraerTokens,esParSospechoso,
     mkReclamo,extraerReclamosHoja,
-    snap,areaExcluyente,buscarCandidatos,buscarSinCeros,conciliarReclamo,clasificar,
+    snap,areaObservada,buscarCandidatos,buscarSinCeros,conciliarReclamo,clasificar,
     marcarDuplicadas,conciliarPendientes,reconciliar,setEstado,conteoEstados,
+    resetReclamo,hojasSospechosas,
     obsReclamo,filasActa,resumenCorte,
     S,ESTADOS,ESTADOS_ACTA
   };
