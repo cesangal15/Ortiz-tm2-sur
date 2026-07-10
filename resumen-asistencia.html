@@ -502,33 +502,28 @@ function buildParteRow(f, proyectoStr, cfg, tipoJornada, catTrabajadores, turnoR
 }
 
 /* ---------- Canal "solo extras" del admin (D73) ----------
- * El DÍA SE REPORTA ENTERO (decisión del dueño, jul-2026): el admin aparece como un trabajador normal
- * más de la lista — su jornada ordinaria del día MÁS las horas extra, no "0 ordinarias + extra" (eso
- * saldría raro). Solo registra las extras por practicidad; las ordinarias se rellenan solas con el tope
- * de la jornada del día (7.5 L-V / 4.5 sábado, de CONFIG).
- * Flag conmutable: si un import real de Navision rechaza el `0` en las columnas de horas no usadas de una
- * fila con Ausente=No, voltear a `false` para escribir celda VACÍA en vez de 0 (las ordinarias siempre
- * llevan su valor real; esto solo afecta las columnas de horas que quedan en cero). */
+ * Días normales (diurna/nocturna): al admin NO se le ponen horas ordinarias — solo sus 1–2 horas en la
+ * columna de extras (E diurna / F nocturna), el resto en 0 (confirmado con Navision, jul-2026).
+ * Domingo/festivo: las horas van a **D Horas ordinarias dom/fest** (NO a extras), con tope de **7h** ese
+ * día (aclaración del dueño, jul-2026). Ausente=No.
+ * Flag conmutable: si un import real de Navision rechaza el `0` en las horas ordinarias de una fila con
+ * Ausente=No, voltear a `false` para escribir celda VACÍA en vez de 0. */
 const EXTRAS_ORDINARIAS_EN_CERO = true;
+const MAX_HORAS_EXTRA   = 2;   // tope de horas extra en día normal (diurna/nocturna)
+const MAX_HORAS_DOMFEST = 7;   // tope de horas en domingo/festivo (van a ordinarias dom/fest, col D)
 
-// Fila A–R (18 columnas) de la extra del admin. Día entero: C = ordinarias del día (tope de la jornada)
-// + la columna del tipo de extra (E diurna / F nocturna). Dom/Fest NO se mapea (G–N parámetro abierto):
-// 0 ordinarias y el panel avisa revisión manual. Ausente=No, sin motivo. Recibe la jornada del día para
-// saber cuántas ordinarias corresponden (misma regla que el resto del módulo).
-function buildAdminExtraRow(ex, proyectoStr, adminRecurso, tipoJornada, cfg){
+// Fila A–R (18 columnas) de la extra del admin. Día normal: todas las horas en 0 (o vacío según el flag)
+// salvo la columna del tipo (E diurna / F nocturna), sin ordinarias. Dom/Fest: las horas van a D (Horas
+// ordinarias dom/fest), topadas a 7h. Ausente=No, sin motivo.
+function buildAdminExtraRow(ex, proyectoStr, adminRecurso){
   const row=new Array(18).fill('');
   const cero = EXTRAS_ORDINARIAS_EN_CERO ? 0 : '';
-  const tope = tipoJornada==='sabado' ? (parseFloat(cfg.ord_sabado)||4.5)
-             : tipoJornada==='domfest' ? 0
-             : (parseFloat(cfg.ord_lun_vie)||7.5);
-  const esDomFest = ex.tipo==='domfest' || tipoJornada==='domfest';
   row[0]=adminRecurso;                 // A No. Recurso (de CONFIG.admin_recurso, string exacto)
   row[1]='';                           // B vacía
-  row[2]= esDomFest ? cero : (tope||cero);          // C Horas ordinarias = jornada ENTERA del día
-  row[3]= cero;                                      // D Horas ordinarias dom/fest
-  row[4]= (ex.tipo==='diurna')  ? ex.horas : cero;  // E Horas extras diurnas
-  row[5]= (ex.tipo==='nocturna') ? ex.horas : cero; // F Horas extras nocturnas
-  // domfest: no se mapea (G–N abierto) → todo queda en 0; el aviso naranja lo dispara generarExcel
+  row[2]=cero; row[3]=cero; row[4]=cero; row[5]=cero;   // C–F horas: 0 (o vacío) salvo la que aplique
+  if(ex.tipo==='diurna')        row[4]=Math.min(ex.horas, MAX_HORAS_EXTRA);   // E Horas extras diurnas
+  else if(ex.tipo==='nocturna') row[5]=Math.min(ex.horas, MAX_HORAS_EXTRA);   // F Horas extras nocturnas
+  else if(ex.tipo==='domfest')  row[3]=Math.min(ex.horas, MAX_HORAS_DOMFEST); // D Horas ordinarias dom/fest (tope 7h)
   row[14]=proyectoStr;                 // O No. Proyecto (string de CONFIG, igual que el resto)
   row[15]=ex.cc;                       // P Centro de coste (exacto, el guardado)
   row[16]='No';                        // Q Ausente
@@ -588,7 +583,7 @@ async function generarExcel(proyecto){
       if(!adminRecurso){ avisoAdminSinRecurso=true; }
       else {
         extrasDia.forEach(ex=>{
-          aoa.push(buildAdminExtraRow(ex, proyectoStr, adminRecurso, tipoJornada, cfg));
+          aoa.push(buildAdminExtraRow(ex, proyectoStr, adminRecurso));
           adminAgregadas++;
           if(ex.tipo==='domfest') adminDomFest.push(ex.fecha);
         });
@@ -618,7 +613,7 @@ async function generarExcel(proyecto){
     let out=`<div class="aviso" style="color:var(--success);border-color:rgba(46,204,113,0.3);background:rgba(46,204,113,0.08);">✓ Generado <b>${nombre}</b> (${aoa.length} fila(s)).</div>`;
     if(adminAgregadas) out+='<div class="aviso" style="color:var(--success);border-color:rgba(46,204,113,0.3);background:rgba(46,204,113,0.08);">✓ Incluida(s) '+adminAgregadas+' fila(s) de tus horas extra (admin) en este archivo.</div>';
     if(avisoAdminSinRecurso) out+='<div class="aviso">⚠️ Hay extras del admin para este proyecto pero <b>admin_recurso</b> está vacío en CONFIG: no se agregaron. Configúralo para exportarlas.</div>';
-    if(adminDomFest.length) out+='<div class="aviso">⚠️ Extra Dom/Fest del admin el <b>'+adminDomFest.map(esc).join(', ')+'</b>: agregar a mano en las columnas G–N antes de importar (no se pudo mapear automáticamente).</div>';
+    if(adminDomFest.length) out+='<div class="aviso" style="color:var(--success);border-color:rgba(46,204,113,0.3);background:rgba(46,204,113,0.08);">ℹ️ Extra del admin en domingo/festivo el <b>'+adminDomFest.map(esc).join(', ')+'</b>: se reportó en <b>D Horas ordinarias dom/fest</b> (tope 7h), no en extras.</div>';
     if(hayAvisoGN) out+='<div class="aviso">⚠️ Día domingo/festivo con alguien que trabajó MÁS de la jornada base: las horas ordinarias se repartieron D/L según el criterio de nómina, pero el excedente (posibles extras Dom/Fest) puede requerir revisar H–N a mano.</div>';
     if(overExtra.length){ const mx=parseFloat(cfg.max_extras_dia)||2;
       out+='<div class="aviso">ℹ️ Estas personas trabajaron más de '+mx+' horas extra: <b>'+overExtra.map(esc).join(', ')+'</b>. El archivo reporta solo '+mx+' (el tope); el resto queda para que el residente lo sume a mano en los días que corresponda.</div>'; }
