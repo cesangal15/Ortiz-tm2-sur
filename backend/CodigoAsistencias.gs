@@ -632,6 +632,10 @@ function setupHojas(){
     // Trabajadores (Navision lo lee verbatim). Valor del dueño (jul-2026). Si se deja vacío, el generador
     // NO agrega la fila del admin y avisa. OJO: debe coincidir carácter por carácter con Navision.
     cfgSh.appendRow(['admin_recurso','77463| CESAR AUGUSTO GALVIS SANDINO']);
+    // Corrección jul-2026 (extiende D72f): SUFIJO del CC propio del capataz (sin prefijo de proyecto).
+    // El frontend antepone el prefijo 3701/3702 por mayoría de UF. Si esta clave no existe, asistencia.html
+    // usa su valor por defecto (mismo string), así que NO exige redeploy en instalaciones ya andando.
+    cfgSh.appendRow(['cc_capataz','I010305| ENCARGADOS, INSPECTORES Y CAPATACES']);
   }
 
   const festSh=getSheet('FESTIVOS', FESTIVOS_HEADERS);
