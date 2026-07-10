@@ -152,11 +152,11 @@ lee ni escribe BANDEJA/DATA/MAQUINARIA ni comparte Sheet/Script con `Codigo.gs`.
 clave lógica = `fecha`, re-guardar pisa el día, sin staging) aislada del roster — el admin NO está en
 PERSONAL/CUADRILLAS/ASISTENCIA y no aparece en el `Parte` salvo los días con extra. `mis-extras.html` (solo
 admin) hace el upsert/borrado; el generador de `resumen-asistencia.html` (`buildAdminExtraRow`) inyecta su
-fila al `Parte` del día×proyecto con `Ausente=No`. **El día se reporta entero:** C = jornada ordinaria del
-día (7.5 L-V / 4.5 sábado, de CONFIG) + las horas en la columna del tipo (E diurna / F nocturna) — aparece
-como un trabajador normal más, no "0 + extra"; Dom/Fest → 0 ordinarias + aviso G–N. CONFIG gana `admin_recurso`
-(No. Recurso Navision, parámetro abierto: vacío ⇒ no se agrega la fila y avisa) y hay un flag
-`EXTRAS_ORDINARIAS_EN_CERO` (en el HTML) por si un import rechaza el 0 en las columnas de horas no usadas.
+fila al `Parte` del día×proyecto con `Ausente=No`. Día normal: **solo la extra, sin ordinarias** (confirmado
+con Navision) — todas las horas en 0 salvo la columna del tipo (E diurna / F nocturna), tope 2h. Domingo/
+festivo: las horas van a **D ordinarias dom/fest** (no a extras), tope 7h (`MAX_HORAS_EXTRA`/`MAX_HORAS_DOMFEST`).
+CONFIG gana `admin_recurso` (No. Recurso Navision, parámetro abierto: vacío ⇒ no se agrega la fila y avisa)
+y hay un flag `EXTRAS_ORDINARIAS_EN_CERO` (en el HTML) por si un import rechaza el 0 en las ordinarias.
 
 ## Mapeo de paste MAQUINARIA → Captura_Diaria (D52, verificado con el archivo real)
 

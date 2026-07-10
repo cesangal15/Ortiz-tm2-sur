@@ -112,6 +112,38 @@ function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function pid(p){ return p._pid; }
 
+/* ---------- CAPATAZ: CC propio de supervisión (no va a bloques de actividad) ----------
+ * Corrección jul-2026 (extiende D72f): el capataz NO se asigna a un bloque/CC de actividad — tiene su
+ * CENTRO DE COSTO PROPIO de supervisión ("37xx.I010305| ENCARGADOS, INSPECTORES Y CAPATACES"),
+ * independiente de la actividad de su gente. Basta con marcarlo PRESENTE: el sistema le pone su CC
+ * automáticamente. Se identifica por el campo `cargo` (contiene "capataz"; lo llena el residente en
+ * PERSONAL). Por eso el capataz se excluye de la lista de miembros de los bloques y de los avisos de
+ * "sin asignar". El PREFIJO de proyecto (3701/3702) sale de la UF MAYORITARIA de su cuadrilla ese día. */
+const CC_CAPATAZ_SUFIJO_DEFAULT='I010305| ENCARGADOS, INSPECTORES Y CAPATACES';
+function ncargo(s){ return String(s==null?'':s).trim().toLowerCase(); }
+function esCapataz(p){ return /capataz|capataces/.test(ncargo(p&&p.cargo)); }
+// Sufijo del CC del capataz: configurable por CONFIG.cc_capataz (por si el string Navision cambia);
+// si no está, el valor por defecto de arriba (no exige redeploy del Apps Script).
+function ccCapatazSufijo(){ const c=STATE.config&&STATE.config.cc_capataz; return c?String(c).trim():CC_CAPATAZ_SUFIJO_DEFAULT; }
+// Prefijo (3701/3702) por MAYORÍA de UF de los presentes asignados a bloques de la cuadrilla (D72f).
+// Sin bloques con UF, cae al proyecto del CC más reciente de la cuadrilla; si tampoco, a 3701.
+function prefijoCapataz(){
+  const conteo={};
+  personasCuadrilla().forEach(p=>{
+    if(!p.presente || esCapataz(p)) return;
+    const b=STATE.bloques.find(x=>x.id===p.bloqueId);
+    const uf=b&&b.uf?b.uf:'';
+    if(uf) conteo[uf]=(conteo[uf]||0)+1;
+  });
+  let best='', bestN=0;
+  Object.keys(conteo).forEach(uf=>{ if(conteo[uf]>bestN){ bestN=conteo[uf]; best=uf; } });
+  if(best) return best;
+  const rec=(STATE.recientesCC&&STATE.recientesCC[STATE.cuadrillaActual])||[];
+  for(let i=0;i<rec.length;i++){ const pr=proyectoFromCC(rec[i]); if(pr) return pr; }
+  return '3701';
+}
+function ccCapataz(){ return prefijoCapataz()+'.'+ccCapatazSufijo(); }
+
 async function cargarRoster(){
   document.getElementById('container').innerHTML='<div class="loading">⏳ Cargando roster…</div>';
   try{
@@ -311,7 +343,7 @@ function calcularAvisos(){
   // D72: recordatorio para turnos nocturnos — las horas se guardan crudas; el cálculo fino de recargos
   // y extras nocturnas para el Excel Navision (columnas G–N) está pendiente de confirmar con la empresa.
   if(hayNocturno) avisos.push('Turno nocturno en uso: las horas se guardan tal cual; los recargos/extras nocturnos del Excel se revisan aparte (mapeo pendiente de confirmar).');
-  const sinAsignar=personasCuadrilla().filter(p=>p.presente && p.bloqueId==null);
+  const sinAsignar=personasCuadrilla().filter(p=>p.presente && p.bloqueId==null && !esCapataz(p));
   if(sinAsignar.length) avisos.push(`${sinAsignar.length} persona(s) presente(s) sin asignar a un bloque: `+sinAsignar.map(p=>esc(p.nombre)).join(', ')+'.');
   return avisos;
 }
@@ -323,7 +355,8 @@ function render(){
     return;
   }
   const personas=personasCuadrilla();
-  const sinAsignar=personas.filter(p=>p.presente && p.bloqueId==null);
+  // Capataces excluidos: tienen CC propio, no se asignan a bloques (no son "sin asignar").
+  const sinAsignar=personas.filter(p=>p.presente && p.bloqueId==null && !esCapataz(p));
   const avisos=calcularAvisos();
 
   let html='';
@@ -363,6 +396,10 @@ function render(){
       html+='<select class="motivo-sel" onchange="setMotivo('+p._pid+',this.value)"><option value="">Motivo de ausencia…</option>'
         + STATE.catMotivos.map(m=>`<option value="${esc(m)}" ${p.motivo===m?'selected':''}>${esc(m)}</option>`).join('')
         + '</select>';
+    } else if(esCapataz(p)){
+      // Capataz presente: CC propio de supervisión, no se asigna a bloques (corrección jul-2026).
+      const cc=ccCapataz();
+      html+=`<span class="badge asig" title="Centro de costo propio de supervisión del capataz (no es la actividad de la cuadrilla)">👷 ${esc(cc.split('|')[0].trim())}</span>`;
     } else if(bloque){
       html+=`<span class="badge asig">${esc(bloque.cc)||'CC pend.'}</span>`;
     } else {
@@ -395,7 +432,8 @@ function render(){
 }
 
 function bloqueHtml(b, personas){
-  const elegibles=personas.filter(p=>p.presente && (p.bloqueId===b.id || p.bloqueId==null));
+  // Capataces fuera: no se asignan a una actividad, llevan su CC de supervisión propio.
+  const elegibles=personas.filter(p=>p.presente && !esCapataz(p) && (p.bloqueId===b.id || p.bloqueId==null));
   let h='<div class="bloque"><div class="bloque-head">'
     + `<span class="tag">Bloque #${b.id}</span>`
     + `<button class="btn-x" onclick="quitarBloque(${b.id})">✕ Quitar</button></div>`;
@@ -457,7 +495,7 @@ async function enviar(){
 
   // SUPER AVISO 1: personas PRESENTES sin actividad/CC. Lo correcto es asignarlas a un bloque con CC
   // o marcarlas AUSENTES con motivo. Se permite forzar (escape hatch) pero exige confirmación explícita.
-  const sinCC=personas.filter(p=>{ if(!p.presente) return false; const b=STATE.bloques.find(x=>x.id===p.bloqueId); return !b || !b.cc; });
+  const sinCC=personas.filter(p=>{ if(!p.presente || esCapataz(p)) return false; const b=STATE.bloques.find(x=>x.id===p.bloqueId); return !b || !b.cc; });
   if(sinCC.length){
     const nombres=sinCC.map(p=>'  • '+p.nombre).join('\n');
     if(!confirm(`⚠️ ATENCIÓN — ${sinCC.length} persona(s) PRESENTES sin actividad / Centro de Costo:\n\n${nombres}\n\nLo correcto es asignarlas a un bloque con CC, o marcarlas AUSENTES con motivo.\n\nSi las envías así quedarán SIN CC en el reporte (habrá que corregirlas después).\n\n¿Enviar de todas formas?`)) return;
@@ -467,7 +505,7 @@ async function enviar(){
   // domingo/festivo todas las horas van a Dom/Fest y el tope de extras no aplica).
   if(STATE.jornada.tipo!=='domfest'){
     const over=[];
-    personas.filter(p=>p.presente).forEach(p=>{
+    personas.filter(p=>p.presente && !esCapataz(p)).forEach(p=>{
       const b=STATE.bloques.find(x=>x.id===p.bloqueId);
       const he=p.hora_entrada_ov!=null?p.hora_entrada_ov:(b?b.hora_entrada:p.hora_entrada);
       const hs=p.hora_salida_ov!=null?p.hora_salida_ov:(b?b.hora_salida:p.hora_salida);
@@ -485,6 +523,13 @@ async function enviar(){
     if(!p.presente){
       return { codigo:p.codigo, cedula:p.cedula, nombre:p.nombre, cargo:p.cargo, cc:'', proyecto:'',
         hora_entrada:'', hora_salida:'', presente:'No', motivo_ausencia:p.motivo, observacion:'', turno:'' };
+    }
+    if(esCapataz(p)){
+      // Capataz presente: CC propio de supervisión (37xx.I010305), prefijo por mayoría; jornada estándar
+      // del día (turno 1). No se asigna a bloques de actividad (corrección jul-2026, extiende D72f).
+      const cc=ccCapataz();
+      return { codigo:p.codigo, cedula:p.cedula, nombre:p.nombre, cargo:p.cargo, cc:cc, proyecto:proyectoFromCC(cc),
+        hora_entrada:STATE.jornada.entrada||'', hora_salida:STATE.jornada.salida||'', presente:'Si', motivo_ausencia:'', observacion:'', turno:'1' };
     }
     const b=STATE.bloques.find(x=>x.id===p.bloqueId);
     const he = p.hora_entrada_ov!=null ? p.hora_entrada_ov : (b?b.hora_entrada:p.hora_entrada);

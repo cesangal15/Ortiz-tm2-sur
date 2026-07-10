@@ -116,7 +116,7 @@ function render(){
   const ccOrden = defaults.concat(resto.filter(cc=>defaults.indexOf(cc)<0));
   const recursoVacio = !String(STATE.config.admin_recurso||'').trim();
   let h='';
-  h+='<p class="intro">Registra <b>solo tus horas extra</b> de un día puntual (máx <b>2h</b>). El día se reporta <b>entero</b> en el Excel Navision (tu jornada ordinaria del día <b>+</b> las extras), con tu centro de costo — apareces como uno más del listado. Los días sin registro no apareces. Guardar dos veces el mismo día <b>reemplaza</b> lo anterior.</p>';
+  h+='<p class="intro">Registra tus horas de un día puntual. En <b>día normal</b>: solo la extra (máx <b>2h</b>, columna E/F, sin ordinarias). En <b>domingo/festivo</b>: van a <b>ordinarias dom/fest</b> (columna D, máx <b>7h</b>). Con tu centro de costo; tu jornada normal va por fuera del sistema. Los días sin registro no apareces. Guardar dos veces el mismo día <b>reemplaza</b> lo anterior.</p>';
 
   if(recursoVacio){
     h+='<div class="aviso">⚠️ Falta configurar <b>admin_recurso</b> en la hoja CONFIG (tu «No. Recurso» de Navision, formato <code>código| NOMBRE</code>). Puedes guardar tus extras igual, pero <b>no se exportarán</b> al Parte hasta que lo configures.</div>';
@@ -125,7 +125,7 @@ function render(){
   h+='<div class="card">';
   h+='<div class="row">';
   h+=`<div class="field"><label>Fecha <span id="editBadge"></span></label><input type="date" id="f_fecha" value="${esc(STATE.fecha)}" onchange="onFechaChange(this.value)"></div>`;
-  h+=`<div class="field" style="max-width:150px;"><label>Horas (máx 2)</label><input type="number" id="f_horas" value="2" min="0.5" max="2" step="0.5" oninput="actualizarPreview()"></div>`;
+  h+=`<div class="field" style="max-width:150px;"><label id="horasLabel">Horas (máx 2)</label><input type="number" id="f_horas" value="2" min="0.5" max="2" step="0.5" oninput="actualizarPreview()"></div>`;
   h+='</div>';
 
   h+='<div class="row" style="margin-top:12px;">';
@@ -153,16 +153,6 @@ function render(){
 
   document.getElementById('container').innerHTML=h;
   actualizarPreview();
-}
-
-// Tope de horas ordinarias del día (misma regla que el resto del módulo): 7.5 L-V / 4.5 sábado / 0 dom-fest.
-function topeDelDia(fecha){
-  const cfg=STATE.config;
-  const d=String(fecha||'').split('-'); if(d.length<3) return parseFloat(cfg.ord_lun_vie)||7.5;
-  const dt=new Date(Number(d[0]),Number(d[1])-1,Number(d[2])); const dow=dt.getDay();
-  if(dow===0 || STATE.festivos.indexOf(fecha)>=0) return 0;      // domingo/festivo
-  if(dow===6) return parseFloat(cfg.ord_sabado)||4.5;            // sábado
-  return parseFloat(cfg.ord_lun_vie)||7.5;                        // lunes-viernes
 }
 
 // GET del día: si existe registro, prellena (modo edición); si no, deja los valores por defecto
@@ -202,13 +192,22 @@ async function cargarFecha(fecha){
 
 function onFechaChange(v){ STATE.fecha=v; cargarFecha(v); }
 
+// Tope de horas según el tipo: día normal (diurna/nocturna) 2h; domingo/festivo 7h.
+function maxHorasDeTipo(tipo){ return tipo==='domfest' ? 7 : 2; }
+
 function onTipoChange(){
   const tipo=document.getElementById('f_tipo').value;
   const nota=document.getElementById('tipoNota');
   const sug=tipoSugerido(STATE.fecha);
+  // Ajusta el tope del campo de horas (2h normal / 7h dom-fest) y recorta si el valor lo excede.
+  const maxH=maxHorasDeTipo(tipo);
+  const horasInp=document.getElementById('f_horas');
+  horasInp.max=maxH;
+  if(parseFloat(horasInp.value)>maxH) horasInp.value=maxH;
+  document.getElementById('horasLabel').textContent='Horas (máx '+maxH+')';
   if(tipo==='domfest'){
-    nota.innerHTML='⚠️ Dom/Fest no se puede mapear automáticamente (columnas G–N son parámetro abierto). Se guarda, pero el residente deberá agregarla a mano antes de importar.';
-    nota.style.color='var(--accent)';
+    nota.innerHTML='ℹ️ Domingo/festivo: las horas van a <b>ordinarias dom/fest</b> (columna D del Parte), no a extras. Tope <b>7h</b> ese día.';
+    nota.style.color='var(--muted)';
   } else if(sug==='domfest'){
     nota.innerHTML='ℹ️ Este día es domingo/festivo: quizá quieras marcarlo como «Dom-Fest».';
     nota.style.color='var(--muted)';
@@ -218,8 +217,8 @@ function onTipoChange(){
   actualizarPreview();
 }
 
-// Actualiza el proyecto derivado del CC y la vista previa de lo que se reportará al Navision (día entero:
-// ordinarias de la jornada + las extras), para que el admin vea que NO sale "0 + extra".
+// Actualiza el proyecto derivado del CC y la vista previa de lo que se reportará al Navision (SOLO la
+// extra, sin ordinarias), para que el admin vea exactamente qué fila queda.
 function actualizarPreview(){
   const cc=document.getElementById('f_cc').value.trim();
   const proj=proyectoFromCC(cc);
@@ -231,13 +230,12 @@ function actualizarPreview(){
   const prev=document.getElementById('reportePreview'); if(!prev) return;
   const horas=parseFloat(document.getElementById('f_horas').value);
   const tipo=document.getElementById('f_tipo').value;
-  const tope=topeDelDia(STATE.fecha);
   const hTxt=(!isNaN(horas)&&horas>0)?horas:'—';
   if(tipo==='domfest'){
-    prev.innerHTML=`Se reportará: <b>${hTxt}h</b> en Dom/Fest (columnas G–N, <b>a mano</b>). Ese día no lleva jornada ordinaria.`;
+    prev.innerHTML=`Se reportará: <b>${hTxt}h</b> en <b>ordinarias dom/fest</b> (columna D, tope 7h)${proj?` (proyecto <b>${esc(proj)}</b>)`:''}.`;
   } else {
     const etq = tipo==='nocturna' ? 'extra nocturna' : 'extra diurna';
-    prev.innerHTML=`Se reportará: <b>${tope}h</b> ordinarias + <b>${hTxt}h</b> ${etq}${proj?` (proyecto <b>${esc(proj)}</b>)`:''}.`;
+    prev.innerHTML=`Se reportará: <b>${hTxt}h</b> ${etq}, sin ordinarias${proj?` (proyecto <b>${esc(proj)}</b>)`:''}.`;
   }
 }
 
@@ -248,7 +246,8 @@ async function guardar(){
   const tipo=document.getElementById('f_tipo').value;
   const msg=document.getElementById('msg');
   if(!cc){ msg.innerHTML='<div class="err">Falta el Centro de Costo.</div>'; return; }
-  if(isNaN(horas) || horas<=0 || horas>2){ msg.innerHTML='<div class="err">Las horas deben ser mayor que 0 y máximo 2.</div>'; return; }
+  const maxH=maxHorasDeTipo(tipo);
+  if(isNaN(horas) || horas<=0 || horas>maxH){ msg.innerHTML='<div class="err">Las horas deben ser mayor que 0 y máximo '+maxH+' ('+(tipo==='domfest'?'domingo/festivo':'día normal')+').</div>'; return; }
   msg.innerHTML='<div class="aviso">⏳ Guardando…</div>';
   const saveBtn=document.getElementById('saveBtn'); saveBtn.disabled=true;
   try{
