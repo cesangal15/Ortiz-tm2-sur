@@ -222,7 +222,7 @@ const S={
   basePendiente:{},           // tipo -> {wb, archivo, hojas:[]}
   corte:null,                 // ver abrirCorte()
   pdfs:[],                    // {name, kind:'pdf'|'img', bytes:Uint8Array, numPages, doc?, url?, error?}
-  ocr:{running:false,cancel:false,hecho:0,total:0,paginas:{},candidatos:{},descartados:{}},
+  ocr:{running:false,cancel:false,hecho:0,total:0,paginas:{},candidatos:{},descartados:{},editadas:{}},
   ui:{paso:1,filtroEstado:null,faltanteSel:null,detalle:null,soloRevision:false,tsvHeader:false,avisoLS:false}
 };
 
@@ -817,7 +817,7 @@ const Paso2={
     if(S.corte&&S.corte.reclamos.length&&!confirm('Hay un corte abierto con '+S.corte.reclamos.length+' reclamadas. ¿Descartarlo y abrir uno nuevo?')) return;
     S.corte={contratistaId:id,quincena:{inicio:ini,fin:fin},abiertoEn:nowISO(),
       proformas:[],reclamos:[],yaNoReclamadas:[],secuencia:0};
-    S.ocr={running:false,cancel:false,hecho:0,total:0,paginas:{},candidatos:{},descartados:{}};
+    S.ocr={running:false,cancel:false,hecho:0,total:0,paginas:{},candidatos:{},descartados:{},editadas:{}};
     S.pdfs=[];
     S.config.quincenaActual={inicio:ini,fin:fin}; guardarConfig();
     autosave();
@@ -1369,7 +1369,7 @@ function cardPaginasRevisar(){
     </div>
     ${nRev?`<div class="flexrow" style="margin-top:10px">
       <button class="btn sec mini" onclick="Paso5.toggleRevisar()">${S.ui.verRevisar?'Ocultar':'Ver'} las ${nRev} páginas por revisar</button>
-      <span class="note">son partes que el sistema NO pudo cruzar: míralas y asígnalas a mano (selecciona antes la faltante a la izquierda)</span></div>
+      <span class="note">son partes que el sistema NO pudo cruzar: míralas, corrige la lectura con ✏️ si el OCR leyó mal, o asígnalas a mano (selecciona antes la faltante a la izquierda)</span></div>
       ${S.ui.verRevisar?'<div class="thumbs" id="revGrid" style="margin-top:10px"></div>':''}`
       :'<div class="note" style="margin-top:8px">Todas las páginas quedaron cruzadas: no hay partes sin reconocer.</div>'}
   </div>`;
@@ -1393,6 +1393,54 @@ const Paso5={
     if(S.ui.verRevisar) this._renderRevisar();
   },
   toggleRevisar(){ S.ui.verRevisar=!S.ui.verRevisar; render(); },
+  // Corregir a mano lo que el OCR leyó en una página. La lectura corregida REEMPLAZA
+  // a la del OCR para todos los cruces (candidatos, cobertura, resumen).
+  async editarLectura(fileIdx,pg){
+    const p=S.pdfs[fileIdx]; if(!p) return;
+    const key=p.name+'#'+pg;
+    const toks=S.ocr.paginas[key]||[];
+    abrirModal(`<h3>✏️ Corregir lectura — ${escapeHtml(p.name)} · página ${pg}</h3>
+      <div class="note" style="margin-bottom:8px">Escribe el/los números de remisión que se ven en la página, separados por coma o espacio
+      (una página puede tener 1–3 partes). Si el número corregido resulta ser una faltante, aparecerá como candidato para que lo confirmes;
+      si es de una remisión ya conciliada, la página se descarta de la lista de revisión.</div>
+      <input type="text" id="lecturaEdit" class="mono" value="${escapeHtml(toks.join(', '))}" placeholder="ej: 23009, 23014">
+      <div class="flexrow" style="margin-top:10px">
+        <button class="btn" onclick="Paso5.guardarLectura(${fileIdx},${pg})">Guardar y re-cruzar</button>
+        <button class="btn sec" onclick="cerrarModal()">Cancelar</button>
+        ${S.ocr.editadas[key]?'<span class="note">esta lectura ya fue corregida a mano antes</span>':''}
+      </div>
+      <div class="pagina-view" id="pgEdit" style="margin-top:12px"><div class="note">renderizando página…</div></div>`);
+    const inp=$('lecturaEdit'); if(inp){ inp.focus(); inp.onkeydown=e=>{ if(e.key==='Enter') Paso5.guardarLectura(fileIdx,pg); }; }
+    try{
+      const c=await this.renderPagina(fileIdx,pg,1.4);
+      const cont=$('pgEdit'); if(cont&&c){ cont.innerHTML=''; cont.appendChild(c); }
+    }catch(e){ const cont=$('pgEdit'); if(cont) cont.textContent='no se pudo renderizar: '+e.message; }
+  },
+  guardarLectura(fileIdx,pg){
+    const p=S.pdfs[fileIdx]; if(!p) return;
+    const key=p.name+'#'+pg;
+    const raw=($('lecturaEdit')&&$('lecturaEdit').value)||'';
+    const toks=extraerTokens(raw).map(normRem);
+    S.ocr.paginas[key]=toks;
+    S.ocr.editadas[key]=true;
+    // limpiar candidatos viejos de esta página (venían de la lectura errada) y re-cruzar
+    for(const rem of Object.keys(S.ocr.candidatos))
+      S.ocr.candidatos[rem]=S.ocr.candidatos[rem].filter(c=>c.key!==key);
+    this.recruzar();
+    // ¿en qué quedó la página?
+    const falt=faltantes();
+    const hitFalt=falt.filter(rc=>toks.some(t=>t===rc.remision||sinCeros(t)===rc.remSC));
+    let msg;
+    if(hitFalt.length){ msg='🟢 ¡'+hitFalt.map(r=>r.remision).join(', ')+' es faltante! Revisa sus candidatos y confirma el comprobante.'; }
+    else{
+      const claims=S.corte?S.corte.reclamos.filter(r=>r.remision):[];
+      const hitClaim=toks.some(t=>claims.some(r=>t===r.remision||sinCeros(t)===r.remSC));
+      msg=hitClaim?'✅ Coincide con una remisión ya conciliada: la página sale de la lista de revisión.'
+        :(toks.length?'⚠️ Sigue sin coincidir con nada reclamado (quedó registrada la lectura corregida).':'❌ Sin números: la página queda como "sin lectura".');
+    }
+    autosave(); cerrarModal(); render();
+    toast(msg,6000);
+  },
   async _renderRevisar(){
     const grid=$('revGrid'); if(!grid) return;
     const {paginas}=clasificarPaginas();
@@ -1401,10 +1449,13 @@ const Paso5={
     for(const x of rev){
       if(!document.body.contains(grid)) break;
       const d=document.createElement('div'); d.className='thumb';
-      const lab=x.cat==='sin_lectura'?'sin lectura':'leyó: '+x.toks.slice(0,3).join(', ')+(x.toks.length>3?'…':'');
-      d.innerHTML=`<div class="tlab" style="color:${x.cat==='sin_lectura'?'var(--error)':'#ffb84d'}">${escapeHtml(x.archivo)} p.${x.pg} · ${escapeHtml(lab)}</div>`;
+      const editada=S.ocr.editadas[x.archivo+'#'+x.pg];
+      const lab=(x.cat==='sin_lectura'?'sin lectura':'leyó: '+x.toks.slice(0,3).join(', ')+(x.toks.length>3?'…':''))+(editada?' ✏️':'');
+      d.innerHTML=`<div class="tlab" style="color:${x.cat==='sin_lectura'?'var(--error)':'#ffb84d'}">${escapeHtml(x.archivo)} p.${x.pg} · ${escapeHtml(lab)}</div>
+        <button class="btn mini sec" style="position:absolute;top:2px;right:2px" title="corregir la lectura del OCR">✏️</button>`;
       d.title=x.archivo+' página '+x.pg+' — clic para ver en grande y asignar a mano';
       d.onclick=()=>Paso5.verGrande(x.fi,x.pg);
+      d.querySelector('button').onclick=(e)=>{ e.stopPropagation(); Paso5.editarLectura(x.fi,x.pg); };
       grid.appendChild(d);
       try{
         const c=await this.renderPagina(x.fi,x.pg,0.3);
@@ -1657,6 +1708,7 @@ const Paso5={
       <div class="flexrow" style="margin-bottom:8px">
         ${rc?`<button class="btn mini ok" onclick="Paso5.confirmar('${rc.id}',${fileIdx},${page})">✔ Confirmar para ${escapeHtml(rc.remision)}</button>
         <button class="btn mini sec" onclick="Paso5.esAsfalto('${rc.id}',${fileIdx},${page})">Es ASFALTO</button>`:'<span class="note">Selecciona una faltante en el Paso 5 para poder asignar esta página.</span>'}
+        <button class="btn sec mini" onclick="Paso5.editarLectura(${fileIdx},${page})">✏️ Corregir lectura OCR</button>
         <button class="btn sec mini" onclick="Paso5.verPaginas(${fileIdx})">← Volver a miniaturas</button>
       </div>
       <div class="pagina-view" id="pgGrande"><div class="note">renderizando…</div></div>`);
@@ -1775,7 +1827,7 @@ function resumenCorte(){
     const rev=paginas.filter(x=>x.cat==='sin_lectura'||x.cat==='sin_coincidencia');
     if(rev.length){
       lin.push(''); lin.push('PÁGINAS DE PDF POR REVISAR ('+rev.length+' de '+paginas.length+'):');
-      for(const x of rev) lin.push('  '+x.archivo+' p.'+x.pg+' — '+(x.cat==='sin_lectura'?'OCR sin lectura':'leyó '+x.toks.join(',')+' (no coincide con nada reclamado)'));
+      for(const x of rev) lin.push('  '+x.archivo+' p.'+x.pg+' — '+(x.cat==='sin_lectura'?'OCR sin lectura':'leyó '+x.toks.join(',')+' (no coincide con nada reclamado)')+(S.ocr.editadas[x.archivo+'#'+x.pg]?' [lectura corregida a mano]':''));
     }
     if(counts.sin_procesar) lin.push('  ('+counts.sin_procesar+' páginas sin procesar: corre el OCR en el Paso 5)');
   }
@@ -1937,7 +1989,7 @@ function sesionSerializable(){
       TERRAPLEN:S.bases.TERRAPLEN?{archivo:S.bases.TERRAPLEN.archivo,hoja:S.bases.TERRAPLEN.hoja,utiles:S.bases.TERRAPLEN.utiles}:null
     },
     pdfMeta:S.pdfs.map(p=>({name:p.name,pages:p.numPages,kind:p.kind})),
-    ocr:{paginas:S.ocr.paginas,candidatos:S.ocr.candidatos,descartados:S.ocr.descartados}
+    ocr:{paginas:S.ocr.paginas,candidatos:S.ocr.candidatos,descartados:S.ocr.descartados,editadas:S.ocr.editadas}
   };
 }
 
@@ -1980,7 +2032,8 @@ const Sesion={
   _aplicar(s){
     S.corte=s.corte;
     S.ocr={running:false,cancel:false,hecho:0,total:0,
-      paginas:(s.ocr&&s.ocr.paginas)||{},candidatos:(s.ocr&&s.ocr.candidatos)||{},descartados:(s.ocr&&s.ocr.descartados)||{}};
+      paginas:(s.ocr&&s.ocr.paginas)||{},candidatos:(s.ocr&&s.ocr.candidatos)||{},
+      descartados:(s.ocr&&s.ocr.descartados)||{},editadas:(s.ocr&&s.ocr.editadas)||{}};
     S.pdfs=[]; // binarios no serializados: re-seleccionar
     S._esperado={bases:s.basesMeta||{},pdfs:s.pdfMeta||[]};
     S.ui.paso=4; render();
@@ -1988,7 +2041,7 @@ const Sesion={
   descartarAuto(){
     localStorage.removeItem(LS_SESION);
     S.corte=null; S.pdfs=[];
-    S.ocr={running:false,cancel:false,hecho:0,total:0,paginas:{},candidatos:{},descartados:{}};
+    S.ocr={running:false,cancel:false,hecho:0,total:0,paginas:{},candidatos:{},descartados:{},editadas:{}};
     render();
   }
 };
