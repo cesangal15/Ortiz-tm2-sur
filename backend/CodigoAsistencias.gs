@@ -421,7 +421,8 @@ function exportDia(e){
 }
 
 /* ---------- EXTRAS_ADMIN (D73): canal "solo extras" del admin ----------
- * El admin registra sus horas extras de días puntuales (máx 2h/día). Aislado del roster: el admin NO
+ * El admin registra sus horas de días puntuales (máx 2h extra en día normal; máx 7h en dom/festivo, que
+ * van a las ordinarias dom/fest col D del Parte). Aislado del roster: el admin NO
  * está en PERSONAL/CUADRILLAS/ASISTENCIA. Clave lógica = `fecha` (una fila por día; re-guardar pisa el día,
  * sin bandeja/staging). `proyecto` se deriva del `cc` (proyectoFromCC, misma regla D63 del resto del módulo).
  * Fechas por duck-typing al leer/comparar (fdate), nunca instanceof Date (D31). */
@@ -446,8 +447,11 @@ function guardarExtrasAdmin(body){
   const tipo=norm(body.tipo);
   if(!fecha) return json({ok:false, error:'Falta la fecha.'});
   if(!cc)    return json({ok:false, error:'Falta el centro de costo.'});
-  if(isNaN(horas) || !(horas>0 && horas<=2)) return json({ok:false, error:'Las horas deben ser un número mayor que 0 y máximo 2.'});
   if(['diurna','nocturna','domfest'].indexOf(tipo)<0) return json({ok:false, error:'Tipo inválido (usa diurna, nocturna o domfest).'});
+  // Tope según el tipo: día normal (diurna/nocturna) máx 2h extra; domingo/festivo máx 7h (van a las
+  // ordinarias dom/fest, no a extras — aclaración del dueño, D73).
+  const maxH = (tipo==='domfest') ? 7 : 2;
+  if(isNaN(horas) || !(horas>0 && horas<=maxH)) return json({ok:false, error:'Las horas deben ser un número mayor que 0 y máximo '+maxH+' ('+(tipo==='domfest'?'domingo/festivo':'día normal')+').'});
   const proyecto=proyectoFromCC(cc);
   const sh=getSheet('EXTRAS_ADMIN', EXTRAS_ADMIN_HEADERS), need=EXTRAS_ADMIN_HEADERS.length, last=sh.getLastRow();
   let rows = last>1 ? sh.getRange(2,1,last-1,need).getValues() : [];
