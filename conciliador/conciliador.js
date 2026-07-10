@@ -1272,6 +1272,46 @@ async function ensurePdfjs(){
 
 function faltantes(){ return S.corte?S.corte.reclamos.filter(r=>r.estado==='NO_ENCONTRADA'&&r.remision):[]; }
 
+// Vista INVERSA del OCR: clasifica cada página de cada PDF cargado.
+//   evidencia        → ya confirmada como comprobante de alguna remisión
+//   candidata        → algún token coincide (exacto o a 1 dígito) con una faltante actual
+//   reconocida       → el número leído es de una remisión reclamada ya conciliada (normal)
+//   sin_coincidencia → leyó números pero ninguno corresponde a nada reclamado → REVISAR
+//   sin_lectura      → el OCR no pudo leer ningún número en la página → REVISAR
+//   sin_procesar     → aún no se le ha corrido OCR
+function clasificarPaginas(){
+  const claims=S.corte?S.corte.reclamos.filter(r=>r.remision):[];
+  const faltSet=new Set(),faltSC=new Set(),allSet=new Set(),allSC=new Set();
+  for(const rc of claims){
+    allSet.add(rc.remision); allSC.add(rc.remSC);
+    if(rc.estado==='NO_ENCONTRADA'){ faltSet.add(rc.remision); faltSC.add(rc.remSC); }
+  }
+  const evid=new Set();
+  if(S.corte) for(const rc of S.corte.reclamos) if(rc.evidencia) evid.add(rc.evidencia.archivo+'#'+rc.evidencia.pagina);
+  const coincide=(t,set,setSC)=>set.has(t)||setSC.has(sinCeros(t))||set.has(sinCeros(t));
+  const esFalt=t=>{ if(coincide(t,faltSet,faltSC)) return true; for(const f of faltSet) if(dist1(t,f)<=1) return true; return false; };
+  const paginas=[]; const counts={evidencia:0,candidata:0,reconocida:0,sin_coincidencia:0,sin_lectura:0,sin_procesar:0};
+  for(let fi=0;fi<S.pdfs.length;fi++){
+    const p=S.pdfs[fi]; if(p.error) continue;
+    for(let pg=1;pg<=p.numPages;pg++){
+      const key=p.name+'#'+pg;
+      let cat,toks=[];
+      if(evid.has(key)) cat='evidencia';
+      else if(!(key in S.ocr.paginas)) cat='sin_procesar';
+      else{
+        toks=S.ocr.paginas[key]||[];
+        if(toks.some(esFalt)) cat='candidata';
+        else if(toks.some(t=>coincide(t,allSet,allSC))) cat='reconocida';
+        else if(toks.length) cat='sin_coincidencia';
+        else cat='sin_lectura';
+      }
+      counts[cat]++;
+      paginas.push({fi,pg,archivo:p.name,cat,toks});
+    }
+  }
+  return {paginas,counts};
+}
+
 function vistaPaso5(){
   if(!S.corte||!S.corte.reclamos.length) return `<div class="paso-title">Paso 5 · Investigación PDF</div><div class="alert warn">Carga y concilia una proforma primero.</div>`;
   const falt=faltantes();
@@ -1307,9 +1347,31 @@ function vistaPaso5(){
     un dígito de diferencia = <span class="badge naranja">naranja</span>. Las páginas ya procesadas quedan en caché y se
     re-cruzan solas si cambian las faltantes; vuelve a pulsar “Buscar” solo si agregaste PDFs nuevos.</div>`}
   </div>
+  ${cardPaginasRevisar()}
   <div class="p5-layout">
     <div><h3 style="font-size:13px;color:var(--accent);margin-bottom:8px">Faltantes (${falt.length})</h3>${lista||'<div class="note">Ninguna 🎉</div>'}</div>
     <div id="p5derecha"><div class="note">Selecciona una faltante a la izquierda, o usa “Hojear” sobre un archivo.</div></div>
+  </div>`;
+}
+
+function cardPaginasRevisar(){
+  if(!S.pdfs.length||!Object.keys(S.ocr.paginas).length) return '';
+  const {counts}=clasificarPaginas();
+  const nRev=counts.sin_lectura+counts.sin_coincidencia;
+  return `<div class="card"><h3>🧐 Cobertura del OCR por página</h3>
+    <div class="kv">
+      <span>✅ Confirmadas como comprobante: <b>${counts.evidencia}</b></span>
+      <span>🟢 Con candidato para faltante: <b>${counts.candidata}</b></span>
+      <span>Número de remisión ya conciliada: <b>${counts.reconocida}</b></span>
+      <span style="color:${counts.sin_coincidencia?'#ffb84d':'inherit'}">⚠️ Leídas SIN coincidencia con nada reclamado: <b>${counts.sin_coincidencia}</b></span>
+      <span style="color:${counts.sin_lectura?'var(--error)':'inherit'}">❌ Sin lectura (OCR no leyó ningún número): <b>${counts.sin_lectura}</b></span>
+      ${counts.sin_procesar?`<span>⏳ Sin procesar (pulsa Buscar): <b>${counts.sin_procesar}</b></span>`:''}
+    </div>
+    ${nRev?`<div class="flexrow" style="margin-top:10px">
+      <button class="btn sec mini" onclick="Paso5.toggleRevisar()">${S.ui.verRevisar?'Ocultar':'Ver'} las ${nRev} páginas por revisar</button>
+      <span class="note">son partes que el sistema NO pudo cruzar: míralas y asígnalas a mano (selecciona antes la faltante a la izquierda)</span></div>
+      ${S.ui.verRevisar?'<div class="thumbs" id="revGrid" style="margin-top:10px"></div>':''}`
+      :'<div class="note" style="margin-top:8px">Todas las páginas quedaron cruzadas: no hay partes sin reconocer.</div>'}
   </div>`;
 }
 
@@ -1328,6 +1390,27 @@ const Paso5={
   },
   postRender(){
     if(S.ui.faltanteSel) this._renderCandidatos(S.ui.faltanteSel);
+    if(S.ui.verRevisar) this._renderRevisar();
+  },
+  toggleRevisar(){ S.ui.verRevisar=!S.ui.verRevisar; render(); },
+  async _renderRevisar(){
+    const grid=$('revGrid'); if(!grid) return;
+    const {paginas}=clasificarPaginas();
+    const rev=paginas.filter(x=>x.cat==='sin_lectura'||x.cat==='sin_coincidencia');
+    rev.sort((a,b)=>a.cat==='sin_lectura'&&b.cat!=='sin_lectura'?-1:b.cat==='sin_lectura'&&a.cat!=='sin_lectura'?1:0);
+    for(const x of rev){
+      if(!document.body.contains(grid)) break;
+      const d=document.createElement('div'); d.className='thumb';
+      const lab=x.cat==='sin_lectura'?'sin lectura':'leyó: '+x.toks.slice(0,3).join(', ')+(x.toks.length>3?'…':'');
+      d.innerHTML=`<div class="tlab" style="color:${x.cat==='sin_lectura'?'var(--error)':'#ffb84d'}">${escapeHtml(x.archivo)} p.${x.pg} · ${escapeHtml(lab)}</div>`;
+      d.title=x.archivo+' página '+x.pg+' — clic para ver en grande y asignar a mano';
+      d.onclick=()=>Paso5.verGrande(x.fi,x.pg);
+      grid.appendChild(d);
+      try{
+        const c=await this.renderPagina(x.fi,x.pg,0.3);
+        if(c) d.insertBefore(c,d.firstChild);
+      }catch(_){}
+    }
   },
   cargar(input){
     const files=Array.from(input.files||[]); if(!files.length) return;
@@ -1686,6 +1769,16 @@ function resumenCorte(){
   listar('INTERNOS > 3 KM (verificar acuerdo aparte)',S.corte.reclamos.filter(r=>r.marcas.indexOf('INTERNO_MAYOR_3KM')>=0),rc=>rc.remision+' ('+(rc.candidato?rc.candidato.kmTot:'')+' km)');
   const yn=S.corte.yaNoReclamadas||[];
   if(yn.length){ lin.push(''); lin.push('YA NO RECLAMADAS tras reemplazo de proforma ('+yn.length+'): '+yn.join(', ')); }
+  // páginas de PDF que el OCR no pudo cruzar (partes sin reconocer)
+  if(S.pdfs.length&&Object.keys(S.ocr.paginas).length){
+    const {paginas,counts}=clasificarPaginas();
+    const rev=paginas.filter(x=>x.cat==='sin_lectura'||x.cat==='sin_coincidencia');
+    if(rev.length){
+      lin.push(''); lin.push('PÁGINAS DE PDF POR REVISAR ('+rev.length+' de '+paginas.length+'):');
+      for(const x of rev) lin.push('  '+x.archivo+' p.'+x.pg+' — '+(x.cat==='sin_lectura'?'OCR sin lectura':'leyó '+x.toks.join(',')+' (no coincide con nada reclamado)'));
+    }
+    if(counts.sin_procesar) lin.push('  ('+counts.sin_procesar+' páginas sin procesar: corre el OCR en el Paso 5)');
+  }
   return lin.join('\n');
 }
 
