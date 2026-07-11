@@ -63,8 +63,8 @@ const CC_USADOS_HEADERS     = ['string_cc','area'];
 // D72: catálogo de TURNOS asignados (diurno T1 + nocturnos T2–T5). Cada fila = turno × tipo de día,
 // con entrada/salida y el descanso (almuerzo/cena) a descontar. `cruza_medianoche`='SI' cuando la
 // salida es del día siguiente (los nocturnos). Sirve para PRE-LLENAR la hora de entrada/salida del
-// reporte (captura cruda, D69b); la clasificación de extras/recargos sigue calculándose aparte y su
-// mapeo fino a las columnas G–N Navision sigue siendo parámetro abierto hasta confirmarlo la empresa.
+// reporte (captura cruda, D69b) y como ESTÁNDAR de ordinarias del clasificador del export (D72e/D77:
+// columnas C–G calculadas por turno; solo el mapeo H–N Dom/Fest c/s compensación sigue abierto).
 const TURNOS_HEADERS        = ['turno','tipo_dia','entrada','salida','descanso_ini','descanso_fin','cruza_medianoche'];
 // EXTRAS_ADMIN (D73): canal "solo extras" del admin — una fila por día (clave lógica = `fecha`, re-guardar
 // pisa el día). El admin registra SUS horas extras de días puntuales; su jornada ordinaria se asume por
@@ -211,7 +211,7 @@ function tipoJornada(fecha, festivos){
 function jornadaDelDia(fecha, cfg, festivos){
   const tipo=tipoJornada(fecha, festivos);
   if(tipo==='sabado') return { tipo, entrada:cfg.entrada_sab||'07:00', salida:cfg.salida_sab||'11:30', tope:parseFloat(cfg.ord_sabado)||4.5 };
-  // D76: domfest con horario típico pre-llenado (07:00–15:00; 8h − 1h almuerzo = 7h Dom/Fest, dueño
+  // D77: domfest con horario típico pre-llenado (07:00–15:00; 8h − 1h almuerzo = 7h Dom/Fest, dueño
   // jul-2026). El tope ordinario L-V sigue en 0: esas horas van a la col D Dom/Fest, no a ordinarias.
   if(tipo==='domfest') return { tipo, entrada:cfg.entrada_dom||'07:00', salida:cfg.salida_dom||'15:00', tope:parseFloat(cfg.ord_domingo)||0 };
   return { tipo, entrada:cfg.entrada_lv||'07:00', salida:cfg.salida_lv||'15:30', tope:parseFloat(cfg.ord_lun_vie)||7.5 };
@@ -368,7 +368,9 @@ function asistenciaDia(e){
   // no las ve — son de tierras). El resumen muestra "Extras admin: registradas ✓ / sin registrar".
   const extrasAdmin = (area==='odt'||area==='odl') ? [] : extrasAdminDelDia(fecha);   // D74b: tierras/admin las ven; ODT/ODL no
   const notas = notasDelDia(fecha).filter(n=>enArea(n.cuadrilla));   // D74: notas del día del área revisada
-  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, jornada, catCC, catCCUsados, catMotivos, turnos, extrasAdmin, notas });
+  // D76: config + festivos también en el resumen, para que el detalle por cuadrilla clasifique ordinarias/
+  // extras EXACTO como el Parte de Navision (mismo clasificarHoras que el export), sin otra llamada.
+  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, jornada, catCC, catCCUsados, catMotivos, turnos, extrasAdmin, notas, config:cfg, festivos });
 }
 
 /* ---------- POST asistencia_individual: upsert por PERSONA (residente/jeisson completan faltantes) ----------
@@ -678,7 +680,7 @@ function setupHojas(){
       ['max_extras_dia','2'], ['nocturno_desde','19:00'], ['nocturno_hasta','06:00'],
       // Dom/Fest (criterio de nómina, D72): MÁXIMO de horas ordinarias Dom/Fest (col D); nada en col L.
       ['domfest_tope','7'],
-      // D76: horario típico de domingo/festivo (07:00–15:00 = 8h − 1h almuerzo = 7h Dom/Fest). Solo
+      // D77: horario típico de domingo/festivo (07:00–15:00 = 8h − 1h almuerzo = 7h Dom/Fest). Solo
       // pre-llena el formulario; instalaciones viejas sin estas claves usan el mismo default del cliente.
       ['entrada_dom','07:00'], ['salida_dom','15:00'],
       ['proyecto_3701','3701| T2 - UF1 - R4513 PR 09+800 - PR 30+000']

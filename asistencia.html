@@ -153,7 +153,7 @@ async function cargarRoster(){
     STATE.cuadrillas=data.cuadrillas||[];
     STATE.cuadrillaActual=STATE.cuadrillas[0]||'';
     STATE.config=data.config||{}; STATE.festivos=data.festivos||[]; STATE.jornada=data.jornada||{};
-    // D76: domingo/festivo con horario típico pre-llenado (07:00–15:00; 8h − 1h almuerzo = 7h Dom/Fest,
+    // D77: domingo/festivo con horario típico pre-llenado (07:00–15:00; 8h − 1h almuerzo = 7h Dom/Fest,
     // confirmado por el dueño jul-2026). Configurable en CONFIG.entrada_dom/salida_dom; si el Apps Script
     // aún no manda horas para domfest (backend viejo), este default del cliente cubre sin redeploy.
     if(STATE.jornada.tipo==='domfest' && !STATE.jornada.entrada){
@@ -180,7 +180,7 @@ function onFechaChange(v){
   // recalcula jornada estándar del día en cliente (mismo criterio que el backend: L-V/sábado/dom-fest)
   const d=v.split('-'); const dt=new Date(Number(d[0]),Number(d[1])-1,Number(d[2])); const dow=dt.getDay();
   const cfg=STATE.config, festivo=STATE.festivos.indexOf(v)>=0;
-  // D76: domfest con horario típico 07:00–15:00 pre-llenado (8h − 1h almuerzo = 7h Dom/Fest).
+  // D77: domfest con horario típico 07:00–15:00 pre-llenado (8h − 1h almuerzo = 7h Dom/Fest).
   if(festivo || dow===0) STATE.jornada={tipo:'domfest', entrada:cfg.entrada_dom||'07:00', salida:cfg.salida_dom||'15:00', tope:parseFloat(cfg.ord_domingo)||0};
   else if(dow===6) STATE.jornada={tipo:'sabado', entrada:cfg.entrada_sab||'07:00', salida:cfg.salida_sab||'11:30', tope:parseFloat(cfg.ord_sabado)||4.5};
   else STATE.jornada={tipo:'lv', entrada:cfg.entrada_lv||'07:00', salida:cfg.salida_lv||'15:30', tope:parseFloat(cfg.ord_lun_vie)||7.5};
@@ -234,7 +234,7 @@ function diaTipoTurno(fecha){
   if(dow===6) return 'sabado'; if(dow===5) return 'viernes'; if(dow===0) return 'domingo'; return 'lj';
 }
 // Fila de TURNOS que aplica a (turno, fecha), respetando la preferencia por día. null si no hay match.
-// D76: en sábado, un turno SIN variante de sábado usa su horario de semana (lj/lv) — el turno no deja
+// D77: en sábado, un turno SIN variante de sábado usa su horario de semana (lj/lv) — el turno no deja
 // de existir el sábado, solo que (aún) no tiene horario propio ese día. Antes caía a cand[0] por azar.
 function turnoHoras(turno, fecha){
   if(STATE.jornada && STATE.jornada.tipo==='domfest') return null;  // domingo/festivo: sin pre-llenado
@@ -255,7 +255,7 @@ function descansoDeTurnoRow(t){
   return null;
 }
 function descansoDeBloque(b){ return descansoDeTurnoRow(turnoHoras(b&&b.turno||'1', STATE.fecha)); }
-// D76: tope de horas ORDINARIAS del turno elegido — el ESTÁNDAR del día es el del TURNO del bloque,
+// D77: tope de horas ORDINARIAS del turno elegido — el ESTÁNDAR del día es el del TURNO del bloque,
 // no siempre el del turno 1 (p. ej. turno 4 L-J: 19:00–04:30 − 1h cena = 8.5h ordinarias; las extras
 // empiezan después). Duración programada entrada→salida (cruce de medianoche incluido) menos descanso.
 // Sin fila de TURNOS aplicable se cae al tope de la jornada estándar del día (comportamiento previo).
@@ -366,14 +366,14 @@ function calcularAvisos(){
     if(e && s){
       // En turnos que cruzan medianoche la entrada > salida es NORMAL (no se avisa).
       if(!cruza && horasNum(e)>=horasNum(s)) avisos.push(`Bloque "${esc(b.cc)||'(sin CC)'}": la hora de entrada es mayor o igual a la de salida.`);
-      // D76: el estándar contra el que se comparan las horas es el del TURNO del bloque (no el turno 1).
+      // D77: el estándar contra el que se comparan las horas es el del TURNO del bloque (no el turno 1).
       const topeB=topeDeTurno(b.turno);
       const h=horasTrabajadas(e,s,cfg,descansoDeBloque(b));
       if(h!=null && h>topeB+maxExtra+0.001) avisos.push(`Bloque "${esc(b.cc)||'(sin CC)'}": ${h.toFixed(1)}h trabajadas superan el turno ${esc(b.turno||'1')} (${topeB}h ordinarias) + extras permitidas (${maxExtra}h).`);
     }
     if(!b.cc) avisos.push('Hay un bloque sin Centro de Costo seleccionado.');
   });
-  // D76: los turnos nocturnos ya se clasifican solos en el Excel (ordinarias del turno, recargo nocturno
+  // D77: los turnos nocturnos ya se clasifican solos en el Excel (ordinarias del turno, recargo nocturno
   // col G y extras diurnas/nocturnas cols E/F, con corte nocturno a las 06:00). Solo se recuerda el corte.
   if(hayNocturno) avisos.push('Turno nocturno en uso: el Excel calcula solo las ordinarias del turno, el recargo nocturno y las extras (la parte de la extra después de las 06:00 cuenta como extra diurna).');
   const sinAsignar=personasCuadrilla().filter(p=>p.presente && p.bloqueId==null && !esCapataz(p));
@@ -560,7 +560,7 @@ async function enviar(){
       const baseSal=esCapataz(p)?(STATE.jornada.salida||''):(b?b.hora_salida:p.hora_salida);
       const he=p.hora_entrada_ov!=null?p.hora_entrada_ov:baseEnt;
       const hs=p.hora_salida_ov!=null?p.hora_salida_ov:baseSal;
-      // D76: cada persona se compara contra el ESTÁNDAR de SU turno (el del bloque; capataz = turno 1).
+      // D77: cada persona se compara contra el ESTÁNDAR de SU turno (el del bloque; capataz = turno 1).
       const topeP=esCapataz(p)?topeDeTurno('1'):topeDeTurno(b?b.turno:'1');
       const h=horasTrabajadas(he,hs,cfg,descansoDeBloque(b));
       if(h!=null && h>topeP+maxExtra+0.001) over.push(`  • ${p.nombre} — ${h.toFixed(1)}h (su turno: ${topeP}h + ${maxExtra}h extra)`);
