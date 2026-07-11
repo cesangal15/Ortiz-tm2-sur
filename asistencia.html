@@ -307,6 +307,14 @@ function toggleOverride(pidx){
   render();
 }
 function setOverride(pidx, campo, v){ STATE.personas[pidx][campo]=v; }
+// Capataz: activa/desactiva su horario editable. Al activarlo, siembra la jornada estándar del día
+// (entrada/salida del turno) para que el usuario solo extienda la salida si trabajó extras.
+function toggleOverrideCapataz(pidx){
+  const p=STATE.personas[pidx];
+  if(p.hora_entrada_ov==null){ p.hora_entrada_ov=STATE.jornada.entrada||''; p.hora_salida_ov=STATE.jornada.salida||''; }
+  else { p.hora_entrada_ov=null; p.hora_salida_ov=null; }
+  render();
+}
 
 /* ---------- validaciones suaves (avisan, no bloquean) ---------- */
 function horasNum(hhmm){ if(!hhmm) return null; const p=hhmm.split(':'); if(p.length<2) return null; return Number(p[0])+Number(p[1])/60; }
@@ -389,6 +397,7 @@ function render(){
   if(!personas.length){ html+='<p style="color:var(--muted);font-size:13px;">Sin personas activas en esta cuadrilla.</p>'; }
   personas.forEach(p=>{
     const bloque=STATE.bloques.find(b=>b.id===p.bloqueId);
+    let capatazOv='';   // horario editable del capataz (se anexa tras cerrar la fila si está activo)
     html+='<div class="persona-row">'
       + `<label class="chk-presente"><input type="checkbox" ${p.presente?'checked':''} onchange="togglePresente(${p._pid},this.checked)"> Presente</label>`
       + `<div class="nombre"><b>${esc(p.nombre)}</b><small>${esc(p.codigo||'s/cód.')} · ${esc(p.cargo)}</small></div>`;
@@ -398,14 +407,24 @@ function render(){
         + '</select>';
     } else if(esCapataz(p)){
       // Capataz presente: CC propio de supervisión, no se asigna a bloques (corrección jul-2026).
+      // Horario editable (jul-2026): por defecto la jornada estándar del día (sin extras); "ajustar
+      // horario" permite teclearle su entrada/salida reales para reconocerle extras (se calculan igual
+      // que a un trabajador, columnas E/F del Parte) o su jornada de domingo/festivo.
       const cc=ccCapataz();
+      const tieneOv=p.hora_entrada_ov!=null;
       html+=`<span class="badge asig" title="Centro de costo propio de supervisión del capataz (no es la actividad de la cuadrilla)">👷 ${esc(cc.split('|')[0].trim())}</span>`;
+      html+=` <button class="link-ov" onclick="toggleOverrideCapataz(${p._pid})">${tieneOv?'usar jornada estándar':'ajustar horario'}</button>`;
+      if(tieneOv){
+        capatazOv=`<div class="miembro-ov"><input type="time" value="${esc(p.hora_entrada_ov)}" onchange="setOverride(${p._pid},'hora_entrada_ov',this.value)">`
+          + `<input type="time" value="${esc(p.hora_salida_ov)}" onchange="setOverride(${p._pid},'hora_salida_ov',this.value)"></div>`;
+      }
     } else if(bloque){
       html+=`<span class="badge asig">${esc(bloque.cc)||'CC pend.'}</span>`;
     } else {
       html+='<span class="badge sin">Sin asignar</span>';
     }
     html+='</div>';
+    html+=capatazOv;
   });
   html+='</div>';
 
@@ -509,10 +528,13 @@ async function enviar(){
   // domingo/festivo todas las horas van a Dom/Fest y el tope de extras no aplica).
   if(STATE.jornada.tipo!=='domfest'){
     const over=[];
-    personas.filter(p=>p.presente && !esCapataz(p)).forEach(p=>{
+    personas.filter(p=>p.presente).forEach(p=>{
       const b=STATE.bloques.find(x=>x.id===p.bloqueId);
-      const he=p.hora_entrada_ov!=null?p.hora_entrada_ov:(b?b.hora_entrada:p.hora_entrada);
-      const hs=p.hora_salida_ov!=null?p.hora_salida_ov:(b?b.hora_salida:p.hora_salida);
+      // Capataz: no tiene bloque; sus horas salen de su override o de la jornada estándar del día.
+      const baseEnt=esCapataz(p)?(STATE.jornada.entrada||''):(b?b.hora_entrada:p.hora_entrada);
+      const baseSal=esCapataz(p)?(STATE.jornada.salida||''):(b?b.hora_salida:p.hora_salida);
+      const he=p.hora_entrada_ov!=null?p.hora_entrada_ov:baseEnt;
+      const hs=p.hora_salida_ov!=null?p.hora_salida_ov:baseSal;
       const h=horasTrabajadas(he,hs,cfg,descansoDeBloque(b));
       if(h!=null && h>tope+maxExtra+0.001) over.push(`  • ${p.nombre} — ${h.toFixed(1)}h`);
     });
@@ -529,11 +551,14 @@ async function enviar(){
         hora_entrada:'', hora_salida:'', presente:'No', motivo_ausencia:p.motivo, observacion:'', turno:'' };
     }
     if(esCapataz(p)){
-      // Capataz presente: CC propio de supervisión (37xx.I010305), prefijo por mayoría; jornada estándar
-      // del día (turno 1). No se asigna a bloques de actividad (corrección jul-2026, extiende D72f).
+      // Capataz presente: CC propio de supervisión (37xx.I010305), prefijo por mayoría. Por defecto la
+      // jornada estándar del día (turno 1); si se le ajustó el horario, van sus horas reales para que el
+      // Parte le calcule extras/dom-fest igual que a un trabajador. No entra a bloques (extiende D72f).
       const cc=ccCapataz();
+      const he=p.hora_entrada_ov!=null?p.hora_entrada_ov:(STATE.jornada.entrada||'');
+      const hs=p.hora_salida_ov!=null?p.hora_salida_ov:(STATE.jornada.salida||'');
       return { codigo:p.codigo, cedula:p.cedula, nombre:p.nombre, cargo:p.cargo, cc:cc, proyecto:proyectoFromCC(cc),
-        hora_entrada:STATE.jornada.entrada||'', hora_salida:STATE.jornada.salida||'', presente:'Si', motivo_ausencia:'', observacion:'', turno:'1' };
+        hora_entrada:he, hora_salida:hs, presente:'Si', motivo_ausencia:'', observacion:'', turno:'1' };
     }
     const b=STATE.bloques.find(x=>x.id===p.bloqueId);
     const he = p.hora_entrada_ov!=null ? p.hora_entrada_ov : (b?b.hora_entrada:p.hora_entrada);
