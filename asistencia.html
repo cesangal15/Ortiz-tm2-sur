@@ -153,6 +153,13 @@ async function cargarRoster(){
     STATE.cuadrillas=data.cuadrillas||[];
     STATE.cuadrillaActual=STATE.cuadrillas[0]||'';
     STATE.config=data.config||{}; STATE.festivos=data.festivos||[]; STATE.jornada=data.jornada||{};
+    // D76: domingo/festivo con horario típico pre-llenado (07:00–15:00; 8h − 1h almuerzo = 7h Dom/Fest,
+    // confirmado por el dueño jul-2026). Configurable en CONFIG.entrada_dom/salida_dom; si el Apps Script
+    // aún no manda horas para domfest (backend viejo), este default del cliente cubre sin redeploy.
+    if(STATE.jornada.tipo==='domfest' && !STATE.jornada.entrada){
+      STATE.jornada.entrada=STATE.config.entrada_dom||'07:00';
+      STATE.jornada.salida=STATE.config.salida_dom||'15:00';
+    }
     STATE.catCC=data.catCC||[]; STATE.catCCUsados=data.catCCUsados||[]; STATE.catMotivos=data.catMotivos||[]; STATE.recientesCC=data.recientesCC||{};
     // D72: catálogo de turnos para pre-llenar horas. Normaliza a HH:MM con cero (una hora "7:00" sin
     // cero deja en blanco el <input type=time>, por eso la hora AM no se pre-llenaba).
@@ -173,7 +180,8 @@ function onFechaChange(v){
   // recalcula jornada estándar del día en cliente (mismo criterio que el backend: L-V/sábado/dom-fest)
   const d=v.split('-'); const dt=new Date(Number(d[0]),Number(d[1])-1,Number(d[2])); const dow=dt.getDay();
   const cfg=STATE.config, festivo=STATE.festivos.indexOf(v)>=0;
-  if(festivo || dow===0) STATE.jornada={tipo:'domfest', entrada:'', salida:'', tope:parseFloat(cfg.ord_domingo)||0};
+  // D76: domfest con horario típico 07:00–15:00 pre-llenado (8h − 1h almuerzo = 7h Dom/Fest).
+  if(festivo || dow===0) STATE.jornada={tipo:'domfest', entrada:cfg.entrada_dom||'07:00', salida:cfg.salida_dom||'15:00', tope:parseFloat(cfg.ord_domingo)||0};
   else if(dow===6) STATE.jornada={tipo:'sabado', entrada:cfg.entrada_sab||'07:00', salida:cfg.salida_sab||'11:30', tope:parseFloat(cfg.ord_sabado)||4.5};
   else STATE.jornada={tipo:'lv', entrada:cfg.entrada_lv||'07:00', salida:cfg.salida_lv||'15:30', tope:parseFloat(cfg.ord_lun_vie)||7.5};
   render();
@@ -226,24 +234,39 @@ function diaTipoTurno(fecha){
   if(dow===6) return 'sabado'; if(dow===5) return 'viernes'; if(dow===0) return 'domingo'; return 'lj';
 }
 // Fila de TURNOS que aplica a (turno, fecha), respetando la preferencia por día. null si no hay match.
+// D76: en sábado, un turno SIN variante de sábado usa su horario de semana (lj/lv) — el turno no deja
+// de existir el sábado, solo que (aún) no tiene horario propio ese día. Antes caía a cand[0] por azar.
 function turnoHoras(turno, fecha){
   if(STATE.jornada && STATE.jornada.tipo==='domfest') return null;  // domingo/festivo: sin pre-llenado
   const cand=STATE.turnos.filter(t=>String(t.turno)===String(turno));
   if(!cand.length) return null;
   const dt=diaTipoTurno(fecha);
-  const pref = dt==='sabado' ? ['sabado'] : dt==='viernes' ? ['viernes','lv'] : ['lj','lv'];
+  const pref = dt==='sabado' ? ['sabado','lj','lv'] : dt==='viernes' ? ['viernes','lv'] : ['lj','lv'];
   for(let i=0;i<pref.length;i++){ const m=cand.find(t=>t.tipo_dia===pref[i]); if(m) return m; }
   return cand[0];
 }
-// Horas de descanso a descontar del bloque según su turno (cena/almuerzo, normalmente 1h). null = usar
-// el descuento de almuerzo por rango (comportamiento diurno original).
-function descansoDeBloque(b){
-  const t=turnoHoras(b&&b.turno||'1', STATE.fecha);
+// Descanso (h) de una fila de TURNOS (cena/almuerzo, normalmente 1h). null = sin descanso definido →
+// usar el descuento de almuerzo por rango (comportamiento diurno original).
+function descansoDeTurnoRow(t){
   if(t && t.descanso_ini && t.descanso_fin){
     const di=horasNum(t.descanso_ini); let df=horasNum(t.descanso_fin); if(df!=null&&di!=null&&df<di) df+=24;
     if(di!=null&&df!=null) return Math.max(0, df-di);
   }
   return null;
+}
+function descansoDeBloque(b){ return descansoDeTurnoRow(turnoHoras(b&&b.turno||'1', STATE.fecha)); }
+// D76: tope de horas ORDINARIAS del turno elegido — el ESTÁNDAR del día es el del TURNO del bloque,
+// no siempre el del turno 1 (p. ej. turno 4 L-J: 19:00–04:30 − 1h cena = 8.5h ordinarias; las extras
+// empiezan después). Duración programada entrada→salida (cruce de medianoche incluido) menos descanso.
+// Sin fila de TURNOS aplicable se cae al tope de la jornada estándar del día (comportamiento previo).
+function topeDeTurno(turno){
+  const t=turnoHoras(turno||'1', STATE.fecha);
+  if(!t) return STATE.jornada.tope||0;
+  const e=horasNum(t.entrada), s=horasNum(t.salida);
+  if(e==null||s==null) return STATE.jornada.tope||0;
+  let h=s-e; if(h<0) h+=24;
+  const d=descansoDeTurnoRow(t);
+  return Math.max(0, h-(d||0));
 }
 // Turnos únicos disponibles (para el <select>), ordenados por número.
 function turnosDisponibles(){
@@ -334,7 +357,7 @@ function horasTrabajadas(entrada, salida, cfg, descanso){
 }
 function calcularAvisos(){
   const avisos=[];
-  const cfg=STATE.config, tope=STATE.jornada.tope||0, maxExtra=parseFloat(cfg.max_extras_dia)||2;
+  const cfg=STATE.config, maxExtra=parseFloat(cfg.max_extras_dia)||2;
   let hayNocturno=false;
   STATE.bloques.forEach(b=>{
     const e=b.hora_entrada, s=b.hora_salida;
@@ -343,14 +366,16 @@ function calcularAvisos(){
     if(e && s){
       // En turnos que cruzan medianoche la entrada > salida es NORMAL (no se avisa).
       if(!cruza && horasNum(e)>=horasNum(s)) avisos.push(`Bloque "${esc(b.cc)||'(sin CC)'}": la hora de entrada es mayor o igual a la de salida.`);
+      // D76: el estándar contra el que se comparan las horas es el del TURNO del bloque (no el turno 1).
+      const topeB=topeDeTurno(b.turno);
       const h=horasTrabajadas(e,s,cfg,descansoDeBloque(b));
-      if(h!=null && h>tope+maxExtra) avisos.push(`Bloque "${esc(b.cc)||'(sin CC)'}": ${h.toFixed(1)}h trabajadas superan el turno (${tope}h) + extras permitidas (${maxExtra}h).`);
+      if(h!=null && h>topeB+maxExtra+0.001) avisos.push(`Bloque "${esc(b.cc)||'(sin CC)'}": ${h.toFixed(1)}h trabajadas superan el turno ${esc(b.turno||'1')} (${topeB}h ordinarias) + extras permitidas (${maxExtra}h).`);
     }
     if(!b.cc) avisos.push('Hay un bloque sin Centro de Costo seleccionado.');
   });
-  // D72: recordatorio para turnos nocturnos — las horas se guardan crudas; el cálculo fino de recargos
-  // y extras nocturnas para el Excel Navision (columnas G–N) está pendiente de confirmar con la empresa.
-  if(hayNocturno) avisos.push('Turno nocturno en uso: las horas se guardan tal cual; los recargos/extras nocturnos del Excel se revisan aparte (mapeo pendiente de confirmar).');
+  // D76: los turnos nocturnos ya se clasifican solos en el Excel (ordinarias del turno, recargo nocturno
+  // col G y extras diurnas/nocturnas cols E/F, con corte nocturno a las 06:00). Solo se recuerda el corte.
+  if(hayNocturno) avisos.push('Turno nocturno en uso: el Excel calcula solo las ordinarias del turno, el recargo nocturno y las extras (la parte de la extra después de las 06:00 cuenta como extra diurna).');
   const sinAsignar=personasCuadrilla().filter(p=>p.presente && p.bloqueId==null && !esCapataz(p));
   if(sinAsignar.length) avisos.push(`${sinAsignar.length} persona(s) presente(s) sin asignar a un bloque: `+sinAsignar.map(p=>esc(p.nombre)).join(', ')+'.');
   return avisos;
@@ -381,7 +406,7 @@ function render(){
   html+='</div>';
   const j=STATE.jornada;
   if(j.tipo==='domfest'){
-    html+=`<div class="jornada-banner">⚠️ Día <b>domingo/festivo</b>: jornada ordinaria = 0h. Todo lo trabajado va a horas Dom/Fest (revisión manual al exportar).</div>`;
+    html+=`<div class="jornada-banner">⚠️ Día <b>domingo/festivo</b>: horario típico <b>${esc(j.entrada||'07:00')}</b> a <b>${esc(j.salida||'15:00')}</b> (se descuenta 1h de almuerzo → 7h). Todo lo trabajado va a horas Dom/Fest (tope ${parseFloat(STATE.config.domfest_tope)||7}h).</div>`;
   } else {
     html+=`<div class="jornada-banner">Jornada estándar (<b>${j.tipo==='sabado'?'sábado':'lunes a viernes'}</b>): <b>${esc(j.entrada)}</b> a <b>${esc(j.salida)}</b> · tope ordinario <b>${j.tope}h</b></div>`;
   }
@@ -514,7 +539,7 @@ async function enviar(){
   const faltaMotivo=personas.some(p=>!p.presente && !p.motivo);
   if(faltaMotivo){ alert('Falta el motivo de ausencia de alguna persona.'); return; }
 
-  const cfg=STATE.config, tope=STATE.jornada.tope||0, maxExtra=parseFloat(cfg.max_extras_dia)||2;
+  const cfg=STATE.config, maxExtra=parseFloat(cfg.max_extras_dia)||2;
 
   // SUPER AVISO 1: personas PRESENTES sin actividad/CC. Lo correcto es asignarlas a un bloque con CC
   // o marcarlas AUSENTES con motivo. Se permite forzar (escape hatch) pero exige confirmación explícita.
@@ -535,11 +560,13 @@ async function enviar(){
       const baseSal=esCapataz(p)?(STATE.jornada.salida||''):(b?b.hora_salida:p.hora_salida);
       const he=p.hora_entrada_ov!=null?p.hora_entrada_ov:baseEnt;
       const hs=p.hora_salida_ov!=null?p.hora_salida_ov:baseSal;
+      // D76: cada persona se compara contra el ESTÁNDAR de SU turno (el del bloque; capataz = turno 1).
+      const topeP=esCapataz(p)?topeDeTurno('1'):topeDeTurno(b?b.turno:'1');
       const h=horasTrabajadas(he,hs,cfg,descansoDeBloque(b));
-      if(h!=null && h>tope+maxExtra+0.001) over.push(`  • ${p.nombre} — ${h.toFixed(1)}h`);
+      if(h!=null && h>topeP+maxExtra+0.001) over.push(`  • ${p.nombre} — ${h.toFixed(1)}h (su turno: ${topeP}h + ${maxExtra}h extra)`);
     });
     if(over.length){
-      if(!confirm(`⚠️ ATENCIÓN — estas personas superan el turno (${tope}h) + máximo de extras (${maxExtra}h):\n\n${over.join('\n')}\n\nEn días normales solo se reconocen ${maxExtra} horas extra. Revisa las horas de entrada/salida.\n\n¿Enviar de todas formas?`)) return;
+      if(!confirm(`⚠️ ATENCIÓN — estas personas superan las horas ordinarias de su turno + máximo de extras (${maxExtra}h):\n\n${over.join('\n')}\n\nEn días normales solo se reconocen ${maxExtra} horas extra sobre el turno. Revisa las horas de entrada/salida.\n\n¿Enviar de todas formas?`)) return;
     }
   }
 

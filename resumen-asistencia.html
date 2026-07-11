@@ -266,7 +266,10 @@ function seccionCompletar(d){
   faltantes.filter(f=>f.tipo==='sin_reportar').forEach(f=>comp.push({codigo:f.codigo,cedula:f.cedula,nombre:f.nombre,cargo:f.cargo,cuadrilla:f.cuadrilla,tag: f.incompleto?'presente sin CC':'sin reportar'}));
   if(!comp.length) return '';
   STATE._comp=comp;
-  const catCC=d.catCC||[], catCCUsados=d.catCCUsados||[], catMotivos=d.catMotivos||[], j=d.jornada||{};
+  const catCC=d.catCC||[], catCCUsados=d.catCCUsados||[], catMotivos=d.catMotivos||[], j=Object.assign({},d.jornada||{});
+  // D76: en domingo/festivo el backend puede mandar la jornada vacía; se pre-llena el horario típico
+  // (07:00–15:00; 8h − 1h almuerzo = 7h Dom/Fest) para completar faltantes sin teclear las horas.
+  if(j.tipo==='domfest' && !j.entrada){ j.entrada='07:00'; j.salida='15:00'; }
   // D72: turnos para completar faltantes (mismo pre-llenado de horas que el formulario del capataz).
   const turnos=d.turnos||[]; STATE._compTurnos=turnos;
   const turnosUnq=[]; turnos.forEach(t=>{ if(turnosUnq.indexOf(String(t.turno))<0) turnosUnq.push(String(t.turno)); }); turnosUnq.sort();
@@ -401,12 +404,14 @@ function jornadaPorDefecto(tipoJornada, cfg){
   return { entrada:cfg.entrada_lv||'07:00', salida:cfg.salida_lv||'15:30', descanso_ini:cfg.almuerzo_ini||'12:00', descanso_fin:cfg.almuerzo_fin||'13:00' };
 }
 // Fila de TURNOS que aplica a (turno, fecha) — misma preferencia por día que el formulario.
+// D76: en sábado, un turno SIN variante de sábado usa su horario de semana (lj/lv) como estándar —
+// el turno sigue existiendo el sábado aunque no tenga horario propio ese día (antes caía a cand[0]).
 function turnoRowFor(turnoNum, fecha, turnos, tipoJornada){
   if(!turnoNum || !turnos || !turnos.length || tipoJornada==='domfest') return null;
   const cand=turnos.filter(t=>String(t.turno)===String(turnoNum)); if(!cand.length) return null;
   const d=String(fecha||'').split('-'); const dow=new Date(Number(d[0]),Number(d[1])-1,Number(d[2])).getDay();
   const dt = dow===6?'sabado':dow===5?'viernes':dow===0?'domingo':'lj';
-  const pref = dt==='sabado'?['sabado']:dt==='viernes'?['viernes','lv']:['lj','lv'];
+  const pref = dt==='sabado'?['sabado','lj','lv']:dt==='viernes'?['viernes','lv']:['lj','lv'];
   for(let i=0;i<pref.length;i++){ const m=cand.find(t=>t.tipo_dia===pref[i]); if(m) return m; }
   return cand[0];
 }
@@ -427,7 +432,11 @@ function clasificarHoras(tipoJornada, entrada, salida, cfg, turnoRow){
     return { ordinarias:0, ord_domfest:round2(Math.min(tot,cap)), extra_diurna:0, extra_nocturna:0, recargo_noct_ord:0,
       domfest_diurna_scomp:0, avisoExtra:false, avisoDomFest: tot>cap+0.01 };
   }
-  const nDesde=horasNum(cfg.nocturno_desde||'19:00'), NOC1=nDesde, NOC2=30;   // ventana nocturna [19:00, 06:00 del día siguiente)
+  // Ventana nocturna [nocturno_desde, nocturno_hasta del día siguiente) — por defecto [19:00, 06:00).
+  // D76: el fin de la ventana sale de CONFIG.nocturno_hasta (antes 06:00 fijo). Lo que una extra pase
+  // de esa hora cuenta como EXTRA DIURNA (p. ej. turno 4 hasta 06:30 → 1.5h extra noct + 0.5h diurna).
+  const nDesde=horasNum(cfg.nocturno_desde||'19:00'), NOC1=nDesde;
+  const nHasta=horasNum(cfg.nocturno_hasta||'06:00'), NOC2=(nHasta==null?6:nHasta)+24;
   const jt = turnoRow || jornadaPorDefecto(tipoJornada, cfg);
   const se=horasNum(jt.entrada), ss0=horasNum(jt.salida);
   const schedGross = (ss0<se? ss0+24 : ss0) - se;         // duración bruta programada (incluye descanso)

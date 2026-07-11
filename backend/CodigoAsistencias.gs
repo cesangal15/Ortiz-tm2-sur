@@ -211,7 +211,9 @@ function tipoJornada(fecha, festivos){
 function jornadaDelDia(fecha, cfg, festivos){
   const tipo=tipoJornada(fecha, festivos);
   if(tipo==='sabado') return { tipo, entrada:cfg.entrada_sab||'07:00', salida:cfg.salida_sab||'11:30', tope:parseFloat(cfg.ord_sabado)||4.5 };
-  if(tipo==='domfest') return { tipo, entrada:'', salida:'', tope:parseFloat(cfg.ord_domingo)||0 };
+  // D76: domfest con horario típico pre-llenado (07:00–15:00; 8h − 1h almuerzo = 7h Dom/Fest, dueño
+  // jul-2026). El tope ordinario L-V sigue en 0: esas horas van a la col D Dom/Fest, no a ordinarias.
+  if(tipo==='domfest') return { tipo, entrada:cfg.entrada_dom||'07:00', salida:cfg.salida_dom||'15:00', tope:parseFloat(cfg.ord_domingo)||0 };
   return { tipo, entrada:cfg.entrada_lv||'07:00', salida:cfg.salida_lv||'15:30', tope:parseFloat(cfg.ord_lun_vie)||7.5 };
 }
 function proyectoFromCC(cc){
@@ -669,13 +671,16 @@ function setupHojas(){
 
   const cfgSh=getSheet('CONFIG', CONFIG_HEADERS);
   if(cfgSh.getLastRow()<2){
-    cfgSh.getRange(2,1,14,2).setValues([
+    cfgSh.getRange(2,1,16,2).setValues([
       ['ord_lun_vie','7.5'], ['ord_sabado','4.5'], ['ord_domingo','0'],
       ['entrada_lv','07:00'], ['salida_lv','15:30'], ['entrada_sab','07:00'], ['salida_sab','11:30'],
       ['almuerzo_ini','12:00'], ['almuerzo_fin','13:00'],
       ['max_extras_dia','2'], ['nocturno_desde','19:00'], ['nocturno_hasta','06:00'],
       // Dom/Fest (criterio de nómina, D72): MÁXIMO de horas ordinarias Dom/Fest (col D); nada en col L.
       ['domfest_tope','7'],
+      // D76: horario típico de domingo/festivo (07:00–15:00 = 8h − 1h almuerzo = 7h Dom/Fest). Solo
+      // pre-llena el formulario; instalaciones viejas sin estas claves usan el mismo default del cliente.
+      ['entrada_dom','07:00'], ['salida_dom','15:00'],
       ['proyecto_3701','3701| T2 - UF1 - R4513 PR 09+800 - PR 30+000']
     ]);
     cfgSh.appendRow(['proyecto_3702','PENDIENTE']); // parámetro abierto (§2 del prompt)
