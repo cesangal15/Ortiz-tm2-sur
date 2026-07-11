@@ -366,7 +366,9 @@ function asistenciaDia(e){
   // no las ve — son de tierras). El resumen muestra "Extras admin: registradas ✓ / sin registrar".
   const extrasAdmin = (area==='odt'||area==='odl') ? [] : extrasAdminDelDia(fecha);   // D74b: tierras/admin las ven; ODT/ODL no
   const notas = notasDelDia(fecha).filter(n=>enArea(n.cuadrilla));   // D74: notas del día del área revisada
-  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, jornada, catCC, catCCUsados, catMotivos, turnos, extrasAdmin, notas });
+  // D75: config + festivos también en el resumen, para que el detalle por cuadrilla clasifique ordinarias/
+  // extras EXACTO como el Parte de Navision (mismo clasificarHoras que el export), sin otra llamada.
+  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, jornada, catCC, catCCUsados, catMotivos, turnos, extrasAdmin, notas, config:cfg, festivos });
 }
 
 /* ---------- POST asistencia_individual: upsert por PERSONA (residente/jeisson completan faltantes) ----------

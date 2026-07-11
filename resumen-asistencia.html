@@ -197,11 +197,23 @@ function render(){
     }
   }
 
+  // D75: cada cuadrilla se puede DESPLEGAR para ver el detalle por persona de cómo se reportó (horas,
+  // CC, ordinarias/extras) y editar en el sitio. Datalist de CC compartido (lo usa también "Completar").
+  const ccOrdenTop=(d.catCCUsados||[]).concat((d.catCC||[]).filter(cc=>(d.catCCUsados||[]).indexOf(cc)<0));
+  html+='<datalist id="ccList">'+ccOrdenTop.map(cc=>`<option value="${esc(cc)}">`).join('')+'</datalist>';
+  STATE._detalle={}; STATE._detIdx=0;
   html+='<div class="section-title">Cuadrillas</div><div class="card">';
-  cuadrillas.forEach(c=>{
-    html+=`<div class="cuad-row"><span>${esc(c.cuadrilla)} <small style="color:var(--muted)">(${esc(c.responsables)})</small></span>`
+  cuadrillas.forEach((c,ci)=>{
+    const detId='detCuad'+ci;
+    const filasCuad=filas.filter(f=>f.cuadrilla===c.cuadrilla);
+    const tieneDet=filasCuad.length>0;
+    html+=`<div class="cuad-row" ${tieneDet?`style="cursor:pointer;" onclick="toggleCuad('${detId}',this)"`:''}>`
+      + `<span>${esc(c.cuadrilla)} <small style="color:var(--muted)">(${esc(c.responsables)})</small></span>`
+      + '<span style="display:flex;gap:10px;align-items:center;">'
       + (c.reporto ? `<span class="ok">✓ Reportó — ${esc(c.reporta)}</span>` : `<span class="no">✗ No ha reportado</span>`)
-      + '</div>';
+      + (tieneDet ? `<button class="mini-btn detToggle" onclick="event.stopPropagation();toggleCuad('${detId}',this.closest('.cuad-row'))">Ver detalle</button>` : '')
+      + '</span></div>';
+    if(tieneDet) html+=`<div id="${detId}" style="display:none;">`+detalleCuadrillaHtml(c, filasCuad)+'</div>';
   });
   html+='</div>';
 
@@ -252,6 +264,134 @@ function render(){
   if(STATE.personal) renderPersonal();
 }
 
+/* ================= DETALLE POR CUADRILLA (D75) =================
+ * Despliega, dentro del listado de "Cuadrillas", CÓMO reportó cada persona: presente/ausente, turno,
+ * entrada–salida, CC y el desglose ordinarias/extras EXACTO del Parte (mismo clasificarHoras que el
+ * export). Así la residente revisa de un vistazo quién lleva horas extra o de más/de menos, sin abrir
+ * el Excel. Cada persona se puede EDITAR en el sitio (reusa asistencia_individual, no pisa la cuadrilla).
+ * Estándar para todas las áreas (tierras/ODT/ODL): usa los mismos `filas` del resumen. */
+function toggleCuad(id, rowEl){
+  const el=document.getElementById(id); if(!el) return;
+  const show = el.style.display==='none';
+  el.style.display = show ? 'block' : 'none';
+  const b=rowEl.querySelector('.detToggle'); if(b) b.textContent = show ? 'Ocultar' : 'Ver detalle';
+}
+function turnoOptsHtml(turnos, sel){
+  const unq=[]; (turnos||[]).forEach(t=>{ const tn=String(t.turno); if(unq.indexOf(tn)<0) unq.push(tn); }); unq.sort();
+  return unq.map(tn=>`<option value="${esc(tn)}" ${String(sel==null?'':sel)===tn?'selected':''}>Turno ${esc(tn)}</option>`).join('');
+}
+function fmtH(n){ return (Math.round(n*100)/100).toString(); }
+function detalleCuadrillaHtml(c, filasCuad){
+  const d=STATE.data, cfg=d.config||{}, festivos=d.festivos||[], turnos=d.turnos||[];
+  const tipoJornada=tipoJornadaDeFecha(STATE.fecha, festivos);
+  // Totales de la cuadrilla (para el ojo rápido de la residente): presentes, ausentes, sin CC y Σ extras.
+  let nPres=0, nAus=0, nSinCC=0, sumExtra=0;
+  let filasHtml='';
+  filasCuad.forEach(f=>{
+    const idx=STATE._detIdx++; STATE._detalle[idx]=f;
+    const ausente = f.presente==='No';
+    const conCC   = !ausente && !!String(f.cc||'').trim();
+    let linea='', extraTag='', motivoStr='';
+    if(ausente){
+      nAus++;
+      motivoStr=f.motivo_ausencia||'(sin motivo)';
+      linea=`<span class="badge aus">Ausente · ${esc(motivoStr)}</span>`;
+    } else if(!conCC){
+      nSinCC++;
+      linea=`<span class="badge sin">Presente · sin CC</span> <small style="color:var(--muted)">${esc(f.hora_entrada||'')}–${esc(f.hora_salida||'')}</small>`;
+    } else {
+      nPres++;
+      const tr=turnoRowFor(f.turno, STATE.fecha, turnos, tipoJornada);
+      const cl=clasificarHoras(tipoJornada, f.hora_entrada, f.hora_salida, cfg, tr);
+      const extra=(cl.extra_diurna||0)+(cl.extra_nocturna||0); sumExtra+=extra;
+      const partes=[];
+      if(cl.ordinarias)   partes.push(`${fmtH(cl.ordinarias)}h ord`);
+      if(cl.ord_domfest)  partes.push(`${fmtH(cl.ord_domfest)}h dom/fest`);
+      if(cl.recargo_noct_ord) partes.push(`${fmtH(cl.recargo_noct_ord)}h rec.noct`);
+      if(extra)  extraTag=`<span class="badge" style="border-color:rgba(245,166,35,0.5);color:var(--accent);">⏱️ +${fmtH(extra)}h extra${cl.avisoExtra?' (revisar)':''}</span>`;
+      linea=`<small style="color:var(--muted)">T${esc(f.turno||'?')} · ${esc(f.hora_entrada||'')}–${esc(f.hora_salida||'')} · ${esc(f.cc||'')}</small>`
+        + (partes.length?` <span style="color:var(--text)">${partes.join(' · ')}</span>`:'')
+        + (extraTag?' '+extraTag:'');
+    }
+    // Cabecera de la persona + botón editar; el editor va oculto debajo.
+    filasHtml+=`<div style="border-bottom:1px solid rgba(46,52,80,0.5);padding:9px 0;">`
+      + `<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;">`
+      + `<div class="nm" style="flex:1;min-width:160px;"><b>${esc(f.nombre)}</b> <small style="color:var(--muted)">${esc(f.cargo)}</small><br>${linea}</div>`
+      + `<button class="mini-btn" onclick="detEditar(${idx})" id="det-btn-${idx}">Editar</button>`
+      + `</div>`
+      + detEditorHtml(idx, f, turnos)
+      + `</div>`;
+  });
+  const resumen=`<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">`
+    + `${nPres} presente(s)${sumExtra?` · <span style="color:var(--accent)">Σ ${fmtH(sumExtra)}h extra</span>`:''}`
+    + (nAus?` · ${nAus} ausente(s)`:'') + (nSinCC?` · <span class="no">${nSinCC} sin CC</span>`:'') + '</div>';
+  return `<div class="card" style="background:var(--surface2);margin-bottom:8px;">${resumen}${filasHtml}</div>`;
+}
+function detEditorHtml(idx, f, turnos){
+  const d=STATE.data, j=d.jornada||{}, catMotivos=d.catMotivos||[];
+  const ausente = f.presente==='No';
+  const est = ausente ? 'No' : 'Si';
+  const turnoOpts = turnoOptsHtml(turnos, f.turno||'1');
+  return `<div id="det-edit-${idx}" style="display:none;margin-top:8px;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:10px;">`
+    + `<div class="row"><div class="field" style="max-width:170px;"><label>Estado</label>`
+    +   `<select id="det-est-${idx}" onchange="detToggleEstado(${idx})"><option value="Si" ${est==='Si'?'selected':''}>Presente</option><option value="No" ${est==='No'?'selected':''}>Ausente</option></select></div></div>`
+    + `<div id="det-pres-${idx}" style="display:${est==='Si'?'block':'none'};margin-top:8px;"><div class="row">`
+    +   `<div class="field"><label>Centro de Costo</label><input type="text" list="ccList" id="det-cc-${idx}" value="${esc(f.cc||'')}" placeholder="Buscar CC…"></div>`
+    +   (turnoOpts?`<div class="field" style="max-width:140px;"><label>Turno</label><select id="det-tur-${idx}" onchange="detTurnoChange(${idx})">${turnoOpts}</select></div>`:'')
+    +   `<div class="field" style="max-width:120px;"><label>Entrada</label><input type="time" id="det-ent-${idx}" value="${esc(f.hora_entrada||j.entrada||'')}"></div>`
+    +   `<div class="field" style="max-width:120px;"><label>Salida</label><input type="time" id="det-sal-${idx}" value="${esc(f.hora_salida||j.salida||'')}"></div>`
+    +   `</div></div>`
+    + `<div id="det-aus-${idx}" style="display:${est==='No'?'block':'none'};margin-top:8px;"><select id="det-mot-${idx}"><option value="">Motivo de ausencia…</option>`
+    +   catMotivos.map(m=>`<option value="${esc(m)}" ${f.motivo_ausencia===m?'selected':''}>${esc(m)}</option>`).join('')+`</select></div>`
+    + `<div style="display:flex;gap:8px;margin-top:10px;"><button class="btn" onclick="guardarDetalle(${idx})">Guardar cambios →</button>`
+    +   `<button class="btn-ghost" onclick="detEditar(${idx})">Cancelar</button></div><div id="det-msg-${idx}" style="margin-top:8px;"></div></div>`;
+}
+function detEditar(idx){
+  const el=document.getElementById('det-edit-'+idx), btn=document.getElementById('det-btn-'+idx);
+  if(!el) return;
+  const show=el.style.display==='none';
+  el.style.display=show?'block':'none';
+  if(btn) btn.textContent=show?'Cerrar':'Editar';
+}
+function detToggleEstado(idx){
+  const est=document.getElementById('det-est-'+idx).value;
+  document.getElementById('det-pres-'+idx).style.display = est==='Si'?'block':'none';
+  document.getElementById('det-aus-'+idx).style.display  = est==='No'?'block':'none';
+}
+function detTurnoChange(idx){
+  const sel=document.getElementById('det-tur-'+idx); if(!sel) return;
+  const tipoJ=tipoJornadaDeFecha(STATE.fecha, (STATE.data&&STATE.data.festivos)||[]);
+  const tr=turnoRowFor(sel.value, STATE.fecha, (STATE.data&&STATE.data.turnos)||[], tipoJ);
+  if(tr){ const en=document.getElementById('det-ent-'+idx), sa=document.getElementById('det-sal-'+idx);
+    if(en) en.value=tr.entrada; if(sa) sa.value=tr.salida; }
+}
+async function guardarDetalle(idx){
+  const f=STATE._detalle[idx]; if(!f) return;
+  const est=document.getElementById('det-est-'+idx).value;
+  let fila;
+  if(est==='Si'){
+    const cc=document.getElementById('det-cc-'+idx).value.trim();
+    if(!cc){ alert('Falta el Centro de Costo.'); return; }
+    const tur=document.getElementById('det-tur-'+idx);
+    fila={ codigo:f.codigo, cedula:f.cedula, nombre:f.nombre, cargo:f.cargo, cuadrilla:f.cuadrilla,
+      cc, proyecto:proyectoFromCC(cc), hora_entrada:document.getElementById('det-ent-'+idx).value,
+      hora_salida:document.getElementById('det-sal-'+idx).value, presente:'Si', motivo_ausencia:'', turno:tur?tur.value:'1' };
+  } else {
+    const mot=document.getElementById('det-mot-'+idx).value;
+    if(!mot){ alert('Falta el motivo de ausencia.'); return; }
+    fila={ codigo:f.codigo, cedula:f.cedula, nombre:f.nombre, cargo:f.cargo, cuadrilla:f.cuadrilla,
+      cc:'', proyecto:'', hora_entrada:'', hora_salida:'', presente:'No', motivo_ausencia:mot, turno:'' };
+  }
+  const msg=document.getElementById('det-msg-'+idx); msg.innerHTML='<div class="aviso">⏳ Guardando…</div>';
+  try{
+    const resp=await fetch(APPS_SCRIPT_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'asistencia_individual', fecha:STATE.fecha, reporta:STATE.usuario, usuario:STATE.usuario, filas:[fila] }) });
+    const data=await resp.json();
+    if(data.ok){ STATE.exportCache={}; cargarResumen(); }
+    else msg.innerHTML='<div class="aviso">⚠️ '+esc(data.error||'error')+'</div>';
+  }catch(err){ msg.innerHTML='<div class="aviso">⚠️ '+esc(err.message||err)+'</div>'; }
+}
+
 /* ================= COMPLETAR FALTANTES (residente / admin / jeisson) =================
  * Mini-interfaz para agregar/corregir personas que no reportaron o quedaron presentes sin CC.
  * Usa el endpoint asistencia_individual (upsert por persona): NO pisa lo que ya reportó el
@@ -278,7 +418,8 @@ function seccionCompletar(d){
     + '<span style="font-family:\'Syne\',sans-serif;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Completar faltantes ('+comp.length+')</span>'
     + '<button class="mini-btn" onclick="toggleLista(\'listaCompletar\',this)">Mostrar</button></div>';
   h+='<div id="listaCompletar" class="card" style="display:none;"><p style="font-size:12px;color:var(--muted);margin-bottom:10px;">Agrega o corrige personas que no reportaron (o quedaron presentes sin CC). Marca su estado y guarda; <b>no borra</b> lo que ya reportó el responsable de la cuadrilla.</p>';
-  h+='<datalist id="ccList">'+ccOrden.map(cc=>`<option value="${esc(cc)}">`).join('')+'</datalist>';
+  // El datalist #ccList lo arma render() (compartido con el detalle por cuadrilla). ccOrden se conserva
+  // por si acaso, pero ya no se re-emite aquí para no duplicar el id.
   comp.forEach((p,i)=>{
     h+=`<div class="comp-item" style="border-bottom:1px solid rgba(46,52,80,0.5);padding:10px 0;">`
      + `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">`
