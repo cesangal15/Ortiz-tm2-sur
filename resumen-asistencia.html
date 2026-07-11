@@ -197,7 +197,7 @@ function render(){
     }
   }
 
-  // D75: cada cuadrilla se puede DESPLEGAR para ver el detalle por persona de cómo se reportó (horas,
+  // D76: cada cuadrilla se puede DESPLEGAR para ver el detalle por persona de cómo se reportó (horas,
   // CC, ordinarias/extras) y editar en el sitio. Datalist de CC compartido (lo usa también "Completar").
   const ccOrdenTop=(d.catCCUsados||[]).concat((d.catCC||[]).filter(cc=>(d.catCCUsados||[]).indexOf(cc)<0));
   html+='<datalist id="ccList">'+ccOrdenTop.map(cc=>`<option value="${esc(cc)}">`).join('')+'</datalist>';
@@ -264,7 +264,7 @@ function render(){
   if(STATE.personal) renderPersonal();
 }
 
-/* ================= DETALLE POR CUADRILLA (D75) =================
+/* ================= DETALLE POR CUADRILLA (D76) =================
  * Despliega, dentro del listado de "Cuadrillas", CÓMO reportó cada persona: presente/ausente, turno,
  * entrada–salida, CC y el desglose ordinarias/extras EXACTO del Parte (mismo clasificarHoras que el
  * export). Así la residente revisa de un vistazo quién lleva horas extra o de más/de menos, sin abrir
@@ -406,7 +406,10 @@ function seccionCompletar(d){
   faltantes.filter(f=>f.tipo==='sin_reportar').forEach(f=>comp.push({codigo:f.codigo,cedula:f.cedula,nombre:f.nombre,cargo:f.cargo,cuadrilla:f.cuadrilla,tag: f.incompleto?'presente sin CC':'sin reportar'}));
   if(!comp.length) return '';
   STATE._comp=comp;
-  const catCC=d.catCC||[], catCCUsados=d.catCCUsados||[], catMotivos=d.catMotivos||[], j=d.jornada||{};
+  const catCC=d.catCC||[], catCCUsados=d.catCCUsados||[], catMotivos=d.catMotivos||[], j=Object.assign({},d.jornada||{});
+  // D77: en domingo/festivo el backend puede mandar la jornada vacía; se pre-llena el horario típico
+  // (07:00–15:00; 8h − 1h almuerzo = 7h Dom/Fest) para completar faltantes sin teclear las horas.
+  if(j.tipo==='domfest' && !j.entrada){ j.entrada='07:00'; j.salida='15:00'; }
   // D72: turnos para completar faltantes (mismo pre-llenado de horas que el formulario del capataz).
   const turnos=d.turnos||[]; STATE._compTurnos=turnos;
   const turnosUnq=[]; turnos.forEach(t=>{ if(turnosUnq.indexOf(String(t.turno))<0) turnosUnq.push(String(t.turno)); }); turnosUnq.sort();
@@ -542,12 +545,14 @@ function jornadaPorDefecto(tipoJornada, cfg){
   return { entrada:cfg.entrada_lv||'07:00', salida:cfg.salida_lv||'15:30', descanso_ini:cfg.almuerzo_ini||'12:00', descanso_fin:cfg.almuerzo_fin||'13:00' };
 }
 // Fila de TURNOS que aplica a (turno, fecha) — misma preferencia por día que el formulario.
+// D77: en sábado, un turno SIN variante de sábado usa su horario de semana (lj/lv) como estándar —
+// el turno sigue existiendo el sábado aunque no tenga horario propio ese día (antes caía a cand[0]).
 function turnoRowFor(turnoNum, fecha, turnos, tipoJornada){
   if(!turnoNum || !turnos || !turnos.length || tipoJornada==='domfest') return null;
   const cand=turnos.filter(t=>String(t.turno)===String(turnoNum)); if(!cand.length) return null;
   const d=String(fecha||'').split('-'); const dow=new Date(Number(d[0]),Number(d[1])-1,Number(d[2])).getDay();
   const dt = dow===6?'sabado':dow===5?'viernes':dow===0?'domingo':'lj';
-  const pref = dt==='sabado'?['sabado']:dt==='viernes'?['viernes','lv']:['lj','lv'];
+  const pref = dt==='sabado'?['sabado','lj','lv']:dt==='viernes'?['viernes','lv']:['lj','lv'];
   for(let i=0;i<pref.length;i++){ const m=cand.find(t=>t.tipo_dia===pref[i]); if(m) return m; }
   return cand[0];
 }
@@ -568,7 +573,11 @@ function clasificarHoras(tipoJornada, entrada, salida, cfg, turnoRow){
     return { ordinarias:0, ord_domfest:round2(Math.min(tot,cap)), extra_diurna:0, extra_nocturna:0, recargo_noct_ord:0,
       domfest_diurna_scomp:0, avisoExtra:false, avisoDomFest: tot>cap+0.01 };
   }
-  const nDesde=horasNum(cfg.nocturno_desde||'19:00'), NOC1=nDesde, NOC2=30;   // ventana nocturna [19:00, 06:00 del día siguiente)
+  // Ventana nocturna [nocturno_desde, nocturno_hasta del día siguiente) — por defecto [19:00, 06:00).
+  // D77: el fin de la ventana sale de CONFIG.nocturno_hasta (antes 06:00 fijo). Lo que una extra pase
+  // de esa hora cuenta como EXTRA DIURNA (p. ej. turno 4 hasta 06:30 → 1.5h extra noct + 0.5h diurna).
+  const nDesde=horasNum(cfg.nocturno_desde||'19:00'), NOC1=nDesde;
+  const nHasta=horasNum(cfg.nocturno_hasta||'06:00'), NOC2=(nHasta==null?6:nHasta)+24;
   const jt = turnoRow || jornadaPorDefecto(tipoJornada, cfg);
   const se=horasNum(jt.entrada), ss0=horasNum(jt.salida);
   const schedGross = (ss0<se? ss0+24 : ss0) - se;         // duración bruta programada (incluye descanso)
@@ -596,8 +605,9 @@ function clasificarHoras(tipoJornada, entrada, salida, cfg, turnoRow){
   return { ordinarias:round2(ordinarias), ord_domfest:0, extra_diurna:round2(extraDiurna<0?0:extraDiurna),
     extra_nocturna:round2(extraNocturna), recargo_noct_ord:round2(recargoNoct), avisoExtra, avisoDomFest:false };
 }
-// PROVISIONAL (parámetro abierto, §6 cols G–N): el mapeo fino de recargos/Dom-Fest c/s compensación
-// está pendiente de confirmar con la empresa. No escribe nada; solo documenta el punto de extensión.
+// PROVISIONAL (parámetro abierto, §6 cols H–N): el mapeo fino de Dom-Fest c/s compensación está
+// pendiente de confirmar con la empresa (C–G ya se calculan por turno, D72e/D77). No escribe nada;
+// solo documenta el punto de extensión.
 // TODO: cuando la empresa confirme el mapeo, completar aquí y usarlo en buildParteRow().
 function mapearColumnasEspeciales(clasif){ return null; }
 
@@ -725,7 +735,7 @@ async function generarExcel(proyecto){
     });
     // Gancho D73: extras del admin de este día×proyecto (canal aparte, no está en `filas`). Se inyectan
     // como filas extra del Parte. `admin_recurso` (CONFIG) es parámetro abierto: si viene vacío, no se
-    // agrega la fila y se avisa. Dom/Fest no se mapea (G–N abierto): se avisa revisión manual.
+    // agrega la fila y se avisa. Dom/Fest del admin va a col D (tope 7h, D73); H–N sigue abierto.
     const adminRecurso=String(cfg.admin_recurso||'').trim();
     const extrasDia=(data.extrasAdmin||[]).filter(ex=>String(ex.proyecto||'')===proyecto);
     if(!filasProyecto.length && !(extrasDia.length && adminRecurso)){

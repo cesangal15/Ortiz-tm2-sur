@@ -143,10 +143,15 @@
 
 Reglas clave: captura CRUDA de hora entrada/salida; la clasificación (ordinarias/extras diurna-nocturna/
 Dom-Fest) la hace el **clasificador de horas** (módulo JS compartido embebido en `resumen-asistencia.html`,
-con casos de prueba manual en comentario) **al exportar**, nunca al guardar. Códigos sin catálogo pasan
-sin bloqueo (`codigo| NOMBRE`). Retiros = `inactivo` + `fecha_retiro`, nunca se borra una fila. Columnas
-G–N y el string de `CONFIG.proyecto_3702` son parámetros abiertos (ver 03_BACKLOG). Este módulo **nunca**
-lee ni escribe BANDEJA/DATA/MAQUINARIA ni comparte Sheet/Script con `Codigo.gs`.
+con casos de prueba manual en comentario) **al exportar**, nunca al guardar. El **estándar de ordinarias
+es el del TURNO reportado** (catálogo TURNOS, D72e/D77): las extras empiezan al pasar la salida del turno,
+la ventana nocturna va de `CONFIG.nocturno_desde` (19:00) a `CONFIG.nocturno_hasta` (06:00) — lo que una
+extra pase de las 06:00 es extra DIURNA —, en sábado un turno sin variante sabatina usa su horario de
+semana, y domingo/festivo tiene horario típico 07:00–15:00 (7h a col D, tope `domfest_tope`). Códigos sin
+catálogo pasan sin bloqueo (`codigo| NOMBRE`). Retiros = `inactivo` + `fecha_retiro`, nunca se borra una
+fila. Columnas H–N (Dom/Fest c/s compensación) y el string de `CONFIG.proyecto_3702` son parámetros
+abiertos (ver 03_BACKLOG). Este módulo **nunca** lee ni escribe BANDEJA/DATA/MAQUINARIA ni comparte
+Sheet/Script con `Codigo.gs`.
 
 **Canal "solo extras" del admin (D73):** hoja **`EXTRAS_ADMIN`** (`fecha·cc·proyecto·horas·tipo·timestamp·reporta`,
 clave lógica = `fecha`, re-guardar pisa el día, sin staging) aislada del roster — el admin NO está en
