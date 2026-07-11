@@ -74,11 +74,14 @@ const USUARIOS = {
   // así que aterrizan en seleccion-reporte.html.
   'residente_odt': { clave: 'Ortiz2026', rol: 'residente_odt', redirige: 'seleccion-reporte.html' },
   'residente_odl': { clave: 'Ortiz2026', rol: 'residente_odl', redirige: 'seleccion-reporte.html' },
-  // Chequeadoras (claves: comparten una contraseña común; usuario se compara en minúsculas)
-  'maleja':   { clave: 'cheq2025', rol: 'chequeadora', redirige: 'reporte-chequeadora.html' },
+  // Chequeadoras (claves: comparten una contraseña común; usuario se compara en minúsculas).
+  // maleja/mairy/luzdary tienen doble deber (reporte de obra + asistencia de su cuadrilla): aterrizan
+  // en seleccion-reporte.html. maleja -> cuadrilla ALBERT, luzdary -> cuadrilla ALEJANDRO (se definen
+  // en la columna `responsables` de la hoja CUADRILLAS). El rol sigue siendo 'chequeadora'.
+  'maleja':   { clave: 'cheq2025', rol: 'chequeadora', redirige: 'seleccion-reporte.html' },
   'mairy':    { clave: 'cheq2025', rol: 'chequeadora', redirige: 'seleccion-reporte.html' },
   'maria':    { clave: 'cheq2025', rol: 'chequeadora', redirige: 'reporte-chequeadora.html' },
-  'luzdary':  { clave: 'cheq2025', rol: 'chequeadora', redirige: 'reporte-chequeadora.html' },
+  'luzdary':  { clave: 'cheq2025', rol: 'chequeadora', redirige: 'seleccion-reporte.html' },
   // Módulo de Asistencias (D69): jeisson reporta operadores + resumen sin gestión de personal.
   'jeisson':  { clave: 'Oficial2026', rol: 'asistencia_plus', redirige: 'seleccion-reporte.html' },
 };
