@@ -187,6 +187,18 @@ function buildDataRow(c, fecha, ts, reporta, rol, idC){
     const cod = ccCorto(c.centro_costo);            // "02.05" -> reancla el proyecto correcto al CC
     cc = cod ? (proy + '.' + cod) : cc;
   }
+  // D79: CONFORMACIÓN (02.08) — el DESTINO lo elige el residente en el panel del encargado
+  // (c.destino_conf 'RCD'|'ZODME'; sin el campo — frontend viejo — cae a RCD, el comportamiento
+  // que ya existía). El destino manda sobre el PK del origen: la fila se ancla al sitio de
+  // disposición, no a donde se excavó. RCD → UF1/3701 (elemento "RCD 15+800"); ZODME → UF2/3702
+  // (elemento "ZODME PK30"). ELEMENTO y ABS salen verbatim de la fila de la BASE de ese tipo (D68).
+  const confDest = (ccCorto(c.centro_costo)==='02.08')
+    ? (String(c.destino_conf||'').trim().toUpperCase()==='ZODME' ? 'ZODME' : 'RCD') : '';
+  if(confDest){
+    uf   = (confDest==='ZODME') ? 'UF2' : 'UF1';
+    proy = (confDest==='ZODME') ? '3702' : '3701';
+    cc   = proy + '.02.08';
+  }
   // ELEMENTO oficial desde la hoja BASE (catálogo de elementos), eligiendo la FUENTE según la
   // actividad (D63): préstamo→EL DIVISO, estructuras/MSR→elemento MSR del PK, conformación→RCD,
   // resto (aprovechable/no aprovechable/terraplén/subbase/base)→tramo "tm2 pk X-Y" por abscisa. Con
@@ -194,7 +206,7 @@ function buildDataRow(c, fecha, ts, reporta, rol, idC){
   // byte-idéntico, D68). Si no hay elemento para esa actividad/PK, se arma desde el PK con el helper
   // único (sin "Pk Pk") — buildElemento/pkNorm/pkMeters quedan SOLO para ese fallback. REVISAR queda
   // SÓLO para el caso legítimo (el PK no pertenece a ningún tramo del eje / falta el marcador).
-  const lk = lookupElemento(cc, c.descripcion, mi);
+  const lk = lookupElemento(cc, c.descripcion, mi, confDest || null);
   const pkElem = buildElemento(c.pk_inicial, c.pk_final);
   const elem = lk.elem ? lk.elem
              : lk.revisar ? ('REVISAR · ' + (pkElem || c.elemento || ('pk ' + (c.pk_inicial||''))))
@@ -334,8 +346,10 @@ function buildElemento(pkIni, pkFin){
  *                              terraplén, subbase, base. Parten el eje (9+800→39+560) por abscisa.
  *   - DIVISO "EL DIVISO"     → excavación de PRÉSTAMO (CC 02.06).
  *   - MSR    "MSR …"         → estructuras / MSR (CC 05.* y 02.12); por abscisa entre las MSR.
- *   - RCD    "RCD …"         → conformación / disposición (CC 02.08). (Por ahora todo 02.08 va a RCD;
- *                              distinguir ZODME "ZODME PK30" queda PENDIENTE — el usuario trabaja sólo RCD.)
+ *   - RCD    "RCD …"         → conformación / disposición (CC 02.08) con destino RCD (default).
+ *   - ZODME  "ZODME PK30"    → conformación / disposición (CC 02.08) con destino ZODME. El DESTINO
+ *                              lo elige el residente por línea en el panel del encargado (D79):
+ *                              RCD → 3701/UF1, ZODME → 3702/UF2; ELEMENTO/ABS del marcador verbatim.
  *   - ODT*   (drenajes)      → FUERA de alcance (V1, D22). Se ignoran; comparten PK con los tramos.
  * REVISAR sólo para el caso legítimo: el PK no pertenece a ningún tramo del eje, o falta el marcador. */
 const BASE_TOL_M = 30; // metros de tolerancia para ajustar un PK cercano a un tramo (error humano)
@@ -359,7 +373,7 @@ function baseTipo(elem){
   if(/diviso/i.test(e))       return 'DIVISO';
   if(/^\s*msr/i.test(e))      return 'MSR';
   if(/^\s*rcd/i.test(e))      return 'RCD';
-  if(/zodme/i.test(e))        return 'ZODME';   // clasificado pero aún sin actividad asignada (pendiente)
+  if(/zodme/i.test(e))        return 'ZODME';   // conformación con destino ZODME (elige el residente, D79)
   if(/^\s*odt/i.test(e))      return 'ODT';     // marcadores de drenajes (abscisa puntual, D69)
   return '';                                     // demás -> fuera
 }
@@ -368,7 +382,7 @@ function baseSetFor(ccCortoStr){
   const c=String(ccCortoStr||'');
   if(c==='02.06') return 'DIVISO';                       // excavación de préstamo
   if(c.indexOf('05.')===0 || c==='02.12') return 'MSR';  // estructuras / MSR
-  if(c==='02.08') return 'RCD';                          // conformación/disposición (ZODME pendiente)
+  if(c==='02.08') return 'RCD';                          // conformación/disposición (default; destino ZODME se fuerza vía setForzado, D79)
   return 'TRAMO';                                        // aprovechable/no aprovechable/terraplén/subbase/base
 }
 // Normaliza texto SOLO para comparar (nunca para escribir): mayúsculas, sin tildes, espacios raros
@@ -524,13 +538,15 @@ function lookupDescripcion(cc, descripcion){
 // -> { elem:'<ELEMENTO>'|'' , revisar:true|false , absIni , absFin }
 // elem = celda J verbatim; absIni/absFin = celdas K/L verbatim del elemento emparejado (D68).
 // En los retornos sin match, absIni/absFin quedan undefined y buildDataRow deriva ABS del PK.
-function lookupElemento(cc, descripcion, pkMetersIn){
+// setForzado (D79): fuerza el conjunto de la BASE ('RCD'|'ZODME') sin mirar el CC — lo usa la
+// conformación 02.08, cuyo destino elige el residente en el panel del encargado.
+function lookupElemento(cc, descripcion, pkMetersIn, setForzado){
   const all=getBaseRows();
   if(!all.length) return { elem:'', revisar:false };
-  const set=baseSetFor(ccCorto(cc));
+  const set=setForzado || baseSetFor(ccCorto(cc));
   const rows=all.filter(r=>r.tipo===set);
-  // DIVISO / RCD: marcador ligado a la ACTIVIDAD (no al PK) -> se devuelve directo.
-  if(set==='DIVISO' || set==='RCD'){
+  // DIVISO / RCD / ZODME: marcador ligado a la ACTIVIDAD/DESTINO (no al PK) -> se devuelve directo.
+  if(set==='DIVISO' || set==='RCD' || set==='ZODME'){
     return rows.length ? { elem:rows[0].elem, revisar:false, absIni:rows[0].rawIni, absFin:rows[0].rawFin }
                        : { elem:'', revisar:true };
   }

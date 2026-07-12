@@ -11,8 +11,10 @@
  *
  * Endpoints:
  *   GET  ?action=roster&usuario=…            -> cuadrillas del usuario + personas activas + CONFIG
- *                                                + CAT_CC + CAT_MOTIVOS + CC recientes por cuadrilla
+ *                                                + CAT_CC + motivos FRECUENTES (MOTIVOS_USADOS, D78)
+ *                                                + CC recientes por cuadrilla
  *   GET  ?action=asistencia&fecha=…          -> filas del día + estado por cuadrilla + faltantes
+ *                                                + catálogos COMPLETOS (CC y motivos, D78)
  *   GET  ?action=personal                    -> PERSONAL completo + CUADRILLAS (gestión)
  *   GET  ?action=export&fecha=…              -> filas crudas del día (todas) + catálogos para el
  *                                                generador Navision (cliente decide por proyecto)
@@ -51,7 +53,14 @@ const CAT_TRABAJADORES_HEADERS = ['codigo','string_navision'];
 // Una sola columna: cada CC va COMPLETO en su celda ("3701.06.67| Box abovedados...", verbatim de
 // Navision). El proyecto NO se pide aparte: se deriva del propio prefijo del string (proyectoFromCC).
 const CAT_CC_HEADERS        = ['string_cc'];
+// CAT_MOTIVOS = catálogo COMPLETO de motivos de ausencia (verbatim de Navision). Lo ve completo quien
+// accede al resumen (residentes/jeisson/admin) para poder registrar un motivo especial (D78).
 const CAT_MOTIVOS_HEADERS   = ['string_motivo'];
+// MOTIVOS_USADOS (D78): subconjunto de CAT_MOTIVOS que se usa a diario — misma filosofía que CC_USADOS.
+// Es lo que ve el RESPONSABLE de cuadrilla en asistencia.html (los demás motivos solo confunden).
+// Si la hoja está vacía se cae al catálogo completo (retrocompatible: instalaciones sin llenarla
+// siguen viendo lo mismo que hoy).
+const MOTIVOS_USADOS_HEADERS = ['string_motivo'];
 // CC_USADOS: subconjunto de CAT_CC que se usa a diario (≈5-20). El usuario lo mantiene (pega los CC
 // frecuentes, mismo string exacto que CAT_CC). El formulario muestra estos por defecto y deja buscar
 // el resto del catálogo completo. Si la hoja está vacía, se usa el catálogo completo como antes.
@@ -164,6 +173,13 @@ function ccUsadosParaArea(area){
   const rows=readSheet('CC_USADOS', CC_USADOS_HEADERS);
   return sinCCexcluidos(rows.filter(r=> String(r.string_cc||'').trim() && (!area || (norm(r.area)||'tierras')===area))
              .map(r=>String(r.string_cc).trim()));
+}
+// Motivos de ausencia (D78): el catálogo completo (CAT_MOTIVOS) es para quien revisa el resumen;
+// el responsable de cuadrilla ve solo los frecuentes (MOTIVOS_USADOS). Hoja vacía = catálogo completo.
+function motivosCatalogo(){ return readSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS).map(r=>String(r.string_motivo||'')).filter(Boolean); }
+function motivosUsados(){
+  const rows=readSheet('MOTIVOS_USADOS', MOTIVOS_USADOS_HEADERS).map(r=>String(r.string_motivo||'')).filter(Boolean);
+  return rows.length ? rows : motivosCatalogo();
 }
 
 /* ---------- roster date-aware (D72) ----------
@@ -280,7 +296,7 @@ function roster(e){
   // D72: se excluye el CC de supervisión del encargado/capataz del picker de bloques (confunde al reportar).
   const catCC=sinCCexcluidos(readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean));
   const catCCUsados=ccUsadosParaArea(areaDeReportante(usuario));   // D72: CC frecuentes del área del reportante
-  const catMotivos=readSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS).map(r=>String(r.string_motivo||'')).filter(Boolean);
+  const catMotivos=motivosUsados();   // D78: el responsable ve solo los motivos frecuentes (fallback: todos)
   // CC usados recientemente por cada cuadrilla (últimos 60 días de ASISTENCIA), más reciente primero.
   const recientesCC={};
   cuadrillas.forEach(c=>{ recientesCC[c]=[]; });
@@ -358,9 +374,12 @@ function asistenciaDia(e){
   const cfg=getConfigMap();
   const festivos=getFestivos();
   const jornada=jornadaDelDia(fecha, cfg, festivos);
+  // D78: quien accede al RESUMEN ve los catálogos COMPLETOS — todos los CC (catCC, sin exclusiones)
+  // y todos los motivos de ausencia (CAT_MOTIVOS completo) — para poder registrar uno especial.
+  // catCCUsados sigue siendo el subconjunto frecuente del área revisada: el frontend lo muestra primero.
   const catCC=readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
   const catCCUsados=ccUsadosParaArea(area);   // D72: en el resumen, CC frecuentes del área revisada ('' = todas)
-  const catMotivos=readSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS).map(r=>String(r.string_motivo||'')).filter(Boolean);
+  const catMotivos=motivosCatalogo();
   const turnos=readSheet('TURNOS', TURNOS_HEADERS).map(t=>({ turno:String(t.turno||''), tipo_dia:norm(t.tipo_dia),
     entrada:ftime(t.entrada), salida:ftime(t.salida), descanso_ini:ftime(t.descanso_ini), descanso_fin:ftime(t.descanso_fin),
     cruza_medianoche: String(t.cruza_medianoche||'').toUpperCase()==='SI' }));
@@ -638,6 +657,7 @@ function setupHojas(){
   getSheet('CAT_CC', CAT_CC_HEADERS);
   getSheet('CC_USADOS', CC_USADOS_HEADERS);   // el usuario pega aquí los ~5-20 CC frecuentes (opcional)
   getSheet('CAT_MOTIVOS', CAT_MOTIVOS_HEADERS);
+  getSheet('MOTIVOS_USADOS', MOTIVOS_USADOS_HEADERS);   // D78: motivos frecuentes para el capataz (opcional; vacía = todos)
   getSheet('EXTRAS_ADMIN', EXTRAS_ADMIN_HEADERS);   // D73: canal "solo extras" del admin (mis-extras.html)
   getSheet('NOTAS_ASISTENCIA', NOTAS_ASISTENCIA_HEADERS);   // D74: nota libre del día por cuadrilla
 

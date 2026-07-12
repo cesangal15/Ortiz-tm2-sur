@@ -54,6 +54,7 @@
   .li-act{font-size:13px;font-weight:600;}
   .li-sub{font-size:11px;color:var(--muted);margin-top:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
   .li-dest{font-size:10.5px;color:var(--accent);margin-top:2px;opacity:0.85;}
+  .conf-dest{width:auto;font-size:11px;padding:3px 26px 3px 8px;margin-left:4px;background-position:right 8px center;}
   .src{font-size:10px;font-weight:600;padding:1px 7px;border-radius:12px;border:1px solid var(--border);}
   .src.cap{border-color:rgba(245,166,35,0.4);color:var(--accent);}
   .src.cheq{border-color:rgba(58,155,220,0.4);color:var(--uf1);}
@@ -177,6 +178,10 @@ async function consultar(){
     const resp=await fetch(url); const data=await resp.json();
     STATE.fecha=fecha;
     STATE.cantidades=(data.cantidades||[]).map(c=>({...c, largo:parseFloat(c.largo)||0, _inc:(c.estado!=='descartado'&&c.estado!=='no_data'), _nodata:(c.estado==='no_data')}));
+    // D79: la conformación (02.08) se ancla al DESTINO que elige el residente, no al PK del origen:
+    // RCD → 3701/UF1 (RCD 15+800) · ZODME → 3702/UF2 (ZODME PK30). Default RCD (lo que ya hacía el
+    // sistema); se normaliza uf/proyecto de una vez para que el badge y el envío coincidan.
+    STATE.cantidades.forEach(c=>{ if(!c._nodata && categoria(c)==='Conformación / ZODME') setDestinoConfObj(c, c.destino_conf||'RCD'); });
     STATE.maquinas=data.maquinas||[];
     STATE.observaciones=data.observaciones||[];
     autoReconcile();
@@ -385,10 +390,17 @@ function renderBandeja(){
         const ofiTag = (!c._control && c.rol==='chequeadora' && CAT_CONTROL_CAPATAZ.includes(cat)) ? `<span class="ofi-tag">oficial</span>` : '';
         const dest = destinosDe(c); // a dónde se envió el material excavado (indicativo, D67)
         const destLine = dest ? `<div class="li-dest">→ ${dest}</div>` : '';
+        // D79: selector de DESTINO de la conformación (lo elige el residente): RCD → 3701/UF1,
+        // ZODME → 3702/UF2. Define ELEMENTO/ABS/UF/proyecto de la fila en DATA (el backend los ancla).
+        const confSel = (cat==='Conformación / ZODME')
+          ? `<div class="li-dest">Destino: <select class="conf-dest" onchange="setDestinoConf(${idx},this.value)">
+              <option value="RCD" ${c.destino_conf!=='ZODME'?'selected':''}>RCD 15+800 · 3701 (UF1)</option>
+              <option value="ZODME" ${c.destino_conf==='ZODME'?'selected':''}>ZODME PK30 · 3702 (UF2)</option>
+            </select></div>` : '';
         html+=`<div class="linea-item ${c._inc?'':'off'}${c._control?' control':''}${dupCls}" id="li_${idx}">
           <button class="tog ${c._inc?'on':'no'}" onclick="toggleInc(${idx})">${c._inc?'✓':'✕'}</button>
           <div class="li-main"><div class="li-act">${c.actividad||c.descripcion||''}${ofiTag}${ctrlTag}</div>
-          <div class="li-sub"><span class="src ${srcClass(c)}">${c.rol||'?'}·${c.reporta||'?'}</span> PK ${pk||'—'}${uf?` <span class="badge ${uf.toLowerCase()}">${uf}</span>`:''}${dupBadge}</div>${destLine}</div>
+          <div class="li-sub"><span class="src ${srcClass(c)}">${c.rol||'?'}·${c.reporta||'?'}</span> PK ${pk||'—'}${uf?` <span class="badge ${uf.toLowerCase()}">${uf}</span>`:''}${dupBadge}</div>${destLine}${confSel}</div>
           <div class="li-largo"><input type="number" step="any" value="${c.largo}" onchange="editLargo(${idx},this.value)"></div>
           <div class="li-unit">${c.unidad||''}</div>
         </div>`;
@@ -478,6 +490,15 @@ function toggleObs(){
   if(b) b.textContent=open?'▸ ver':'▾ ocultar';
 }
 function toggleInc(idx){ STATE.cantidades[idx]._inc=!STATE.cantidades[idx]._inc; render(); }
+// D79: fija el destino de una línea de conformación y alinea uf/proyecto/CC con él (RCD → 3701/UF1;
+// ZODME → 3702/UF2), para que el badge, el WhatsApp y el payload coincidan con lo que anclará el backend.
+function setDestinoConfObj(c, v){
+  c.destino_conf = (v==='ZODME') ? 'ZODME' : 'RCD';
+  c.uf       = (c.destino_conf==='ZODME') ? 'UF2' : 'UF1';
+  c.proyecto = (c.destino_conf==='ZODME') ? '3702' : '3701';
+  c.centro_costo = c.proyecto + '.02.08';
+}
+function setDestinoConf(idx, v){ setDestinoConfObj(STATE.cantidades[idx], v); render(); }
 function editLargo(idx,val){ STATE.cantidades[idx].largo=parseFloat(val)||0; refreshTot(); }
 function refreshTot(){ const tot=calcTotales(); const box=document.querySelector('.totales'); if(!box)return;
   let html='',any=false;
@@ -491,10 +512,12 @@ function addLinea(){
   const a=document.getElementById('addAct').value, pk=document.getElementById('addPk').value.trim(), largo=parseFloat(document.getElementById('addLargo').value)||0;
   if(!a){ alert('Elige una actividad'); return; }
   const x=ACT_IDX[a], uf=ufFromPk(pk), proy=uf==='UF1'?'3701':uf==='UF2'?'3702':'';
-  STATE.cantidades.push({ id_registro:'', reporta:'(encargado)', rol:'encargado',
+  const nueva={ id_registro:'', reporta:'(encargado)', rol:'encargado',
     grupo:'TIERRAS', capitulo:'', actividad:a, descripcion:x.item,
     centro_costo:proy?`${proy}.${x.cc}`:'', unidad:x.uni, uf, proyecto:proy, elemento:buildElemento(pk,''), pk_inicial:pk, pk_final:'',
-    abs_inicial:pkToMeters(pk), abs_final:null, liberacion:'CAMPO', largo, observacion:'', _inc:true });
+    abs_inicial:pkToMeters(pk), abs_final:null, liberacion:'CAMPO', largo, observacion:'', _inc:true };
+  if(x.cc==='02.08') setDestinoConfObj(nueva, 'RCD');   // D79: conformación arranca con destino RCD (el residente puede cambiarlo)
+  STATE.cantidades.push(nueva);
   render();
 }
 
@@ -540,7 +563,9 @@ function generarMensaje(){
       if(SPLIT_UF.includes(cat)&&(o.uf1||o.uf2)) head+=`  (UF1: ${fmt(o.uf1)} / UF2: ${fmt(o.uf2)})`;
       msg+=head+'\n';
       byCat[cat].forEach(c=>{ const pk=c.pk_inicial+(c.pk_final?(' - '+c.pk_final):'');
-        msg+=`${pk||'—'}  ${fmt(c.largo)} ${c.unidad}\n`;
+        // D79: la conformación indica su DESTINO (RCD 15+800 / ZODME PK30) elegido por el residente.
+        const confTag=(cat==='Conformación / ZODME'&&c.destino_conf)?(' · '+(c.destino_conf==='ZODME'?'ZODME PK30':'RCD 15+800')):'';
+        msg+=`${pk||'—'}  ${fmt(c.largo)} ${c.unidad}${confTag}\n`;
         const dest=destinosDe(c); if(dest) msg+=`  → ${dest}\n`; }); // a dónde se envió (D67)
     }
   });

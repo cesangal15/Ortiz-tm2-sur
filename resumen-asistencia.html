@@ -56,6 +56,13 @@
   .tag.inactivo{border-color:rgba(122,128,160,0.4);color:var(--muted);}
   .mini-btn{background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer;margin-right:4px;}
   .mini-btn:hover{border-color:var(--accent);color:var(--accent);}
+  /* Buscador de CC (D78): mismo patrón visual que el del capataz, pero sobre TODO el catálogo */
+  .cc-search{position:relative;}
+  .cc-results{position:absolute;top:100%;left:0;right:0;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;max-height:240px;overflow-y:auto;z-index:30;margin-top:4px;}
+  .cc-opt{padding:8px 12px;font-size:12.5px;cursor:pointer;border-bottom:1px solid var(--border);}
+  .cc-opt:last-child{border-bottom:none;}
+  .cc-opt:hover{background:var(--surface2);color:var(--accent);}
+  .cc-head{padding:5px 12px;font-size:9.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);background:var(--surface2);border-bottom:1px solid var(--border);position:sticky;top:0;}
 </style>
 </head>
 <body>
@@ -197,10 +204,12 @@ function render(){
     }
   }
 
-  // D76: cada cuadrilla se puede DESPLEGAR para ver el detalle por persona de cómo se reportó (horas,
-  // CC, ordinarias/extras) y editar en el sitio. Datalist de CC compartido (lo usa también "Completar").
-  const ccOrdenTop=(d.catCCUsados||[]).concat((d.catCC||[]).filter(cc=>(d.catCCUsados||[]).indexOf(cc)<0));
-  html+='<datalist id="ccList">'+ccOrdenTop.map(cc=>`<option value="${esc(cc)}">`).join('')+'</datalist>';
+  // D78: catálogo para el buscador de CC (detalle por cuadrilla + completar faltantes): los CC
+  // frecuentes del área revisada (CC_USADOS) van primero y debajo TODO el catálogo (CAT_CC completo),
+  // para poder registrar un CC especial. Reemplaza el <datalist> (no mostraba el listado completo de
+  // forma confiable) por un buscador desplegable real.
+  STATE._ccUsados=(d.catCCUsados||[]);
+  STATE._ccResto=(d.catCC||[]).filter(cc=>STATE._ccUsados.indexOf(cc)<0);
   STATE._detalle={}; STATE._detIdx=0;
   html+='<div class="section-title">Cuadrillas</div><div class="card">';
   cuadrillas.forEach((c,ci)=>{
@@ -263,6 +272,44 @@ function render(){
   document.getElementById('container').innerHTML=html;
   if(STATE.personal) renderPersonal();
 }
+
+/* ================= BUSCADOR DE CC (D78) =================
+ * Quien accede al resumen puede escoger CUALQUIER centro de costo del catálogo completo (CAT_CC),
+ * no solo los frecuentes: el desplegable muestra primero los "Frecuentes" del área revisada
+ * (CC_USADOS) y debajo el "Catálogo completo", filtrable por código o nombre. Lo usan el detalle
+ * por cuadrilla (detEditorHtml) y "Completar faltantes". El input conserva el id que leen
+ * guardarDetalle/guardarCompletar. onmousedown (no onclick) para ganarle al blur del input. */
+const CC_PICK_CAP=80;   // tope de opciones visibles a la vez; el resto aparece al filtrar
+function ccPickerHtml(id, value){
+  return `<div class="cc-search"><input type="text" id="${id}" value="${esc(value||'')}" placeholder="Buscar CC por código o nombre…" autocomplete="off" oninput="ccPickFilter('${id}')" onfocus="ccPickFilter('${id}')" onblur="ccPickBlur('${id}')"><div class="cc-results" id="${id}-res" style="display:none;"></div></div>`;
+}
+function ccPickFilter(id){
+  const inp=document.getElementById(id), box=document.getElementById(id+'-res');
+  if(!inp||!box) return;
+  const q=(inp.value||'').trim().toLowerCase();
+  const match=cc=>!q || cc.toLowerCase().indexOf(q)>=0;
+  const us=(STATE._ccUsados||[]).filter(match);
+  const re=(STATE._ccResto||[]).filter(match);
+  const pool=us.concat(re.slice(0, Math.max(0, CC_PICK_CAP-us.length)));
+  STATE._ccPickList=pool;
+  let h='', i=0;
+  if(!pool.length){ h='<div class="cc-opt" style="cursor:default;color:var(--muted)">Sin resultados</div>'; }
+  else {
+    if(us.length) h+='<div class="cc-head">Frecuentes</div>';
+    us.forEach(cc=>{ h+=`<div class="cc-opt" onmousedown="ccPickChoose('${id}',${i++})">${esc(cc)}</div>`; });
+    const nResto=pool.length-us.length;
+    if(nResto>0) h+='<div class="cc-head">Catálogo completo</div>';
+    for(let k=0;k<nResto;k++){ h+=`<div class="cc-opt" onmousedown="ccPickChoose('${id}',${i++})">${esc(pool[us.length+k])}</div>`; }
+    const faltan=(us.length+re.length)-pool.length;
+    if(faltan>0) h+=`<div class="cc-opt" style="cursor:default;color:var(--muted)">…y ${faltan} más · escribe para filtrar</div>`;
+  }
+  box.innerHTML=h; box.style.display='block';
+}
+function ccPickChoose(id, i){
+  const inp=document.getElementById(id); if(inp) inp.value=(STATE._ccPickList||[])[i]||'';
+  const box=document.getElementById(id+'-res'); if(box) box.style.display='none';
+}
+function ccPickBlur(id){ setTimeout(function(){ const b=document.getElementById(id+'-res'); if(b) b.style.display='none'; }, 200); }
 
 /* ================= DETALLE POR CUADRILLA (D76) =================
  * Despliega, dentro del listado de "Cuadrillas", CÓMO reportó cada persona: presente/ausente, turno,
@@ -336,7 +383,7 @@ function detEditorHtml(idx, f, turnos){
     + `<div class="row"><div class="field" style="max-width:170px;"><label>Estado</label>`
     +   `<select id="det-est-${idx}" onchange="detToggleEstado(${idx})"><option value="Si" ${est==='Si'?'selected':''}>Presente</option><option value="No" ${est==='No'?'selected':''}>Ausente</option></select></div></div>`
     + `<div id="det-pres-${idx}" style="display:${est==='Si'?'block':'none'};margin-top:8px;"><div class="row">`
-    +   `<div class="field"><label>Centro de Costo</label><input type="text" list="ccList" id="det-cc-${idx}" value="${esc(f.cc||'')}" placeholder="Buscar CC…"></div>`
+    +   `<div class="field"><label>Centro de Costo</label>${ccPickerHtml('det-cc-'+idx, f.cc||'')}</div>`
     +   (turnoOpts?`<div class="field" style="max-width:140px;"><label>Turno</label><select id="det-tur-${idx}" onchange="detTurnoChange(${idx})">${turnoOpts}</select></div>`:'')
     +   `<div class="field" style="max-width:120px;"><label>Entrada</label><input type="time" id="det-ent-${idx}" value="${esc(f.hora_entrada||j.entrada||'')}"></div>`
     +   `<div class="field" style="max-width:120px;"><label>Salida</label><input type="time" id="det-sal-${idx}" value="${esc(f.hora_salida||j.salida||'')}"></div>`
@@ -406,7 +453,7 @@ function seccionCompletar(d){
   faltantes.filter(f=>f.tipo==='sin_reportar').forEach(f=>comp.push({codigo:f.codigo,cedula:f.cedula,nombre:f.nombre,cargo:f.cargo,cuadrilla:f.cuadrilla,tag: f.incompleto?'presente sin CC':'sin reportar'}));
   if(!comp.length) return '';
   STATE._comp=comp;
-  const catCC=d.catCC||[], catCCUsados=d.catCCUsados||[], catMotivos=d.catMotivos||[], j=Object.assign({},d.jornada||{});
+  const catMotivos=d.catMotivos||[], j=Object.assign({},d.jornada||{});
   // D77: en domingo/festivo el backend puede mandar la jornada vacía; se pre-llena el horario típico
   // (07:00–15:00; 8h − 1h almuerzo = 7h Dom/Fest) para completar faltantes sin teclear las horas.
   if(j.tipo==='domfest' && !j.entrada){ j.entrada='07:00'; j.salida='15:00'; }
@@ -414,15 +461,11 @@ function seccionCompletar(d){
   const turnos=d.turnos||[]; STATE._compTurnos=turnos;
   const turnosUnq=[]; turnos.forEach(t=>{ if(turnosUnq.indexOf(String(t.turno))<0) turnosUnq.push(String(t.turno)); }); turnosUnq.sort();
   const turnoOpts = turnosUnq.length ? turnosUnq.map(tn=>`<option value="${esc(tn)}">Turno ${esc(tn)}</option>`).join('') : '';
-  // Los CC frecuentes (CC_USADOS) primero en el datalist; el resto del catálogo queda disponible al
-  // escribir (búsqueda nativa del datalist). Así el residente ve los usuales pero puede buscar cualquiera.
-  const ccOrden = catCCUsados.concat(catCC.filter(cc=>catCCUsados.indexOf(cc)<0));
+  // D78: el CC se elige con el buscador ccPickerHtml (frecuentes del área primero + catálogo completo).
   let h='<div style="display:flex;justify-content:space-between;align-items:center;margin:22px 0 10px;">'
     + '<span style="font-family:\'Syne\',sans-serif;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Completar faltantes ('+comp.length+')</span>'
     + '<button class="mini-btn" onclick="toggleLista(\'listaCompletar\',this)">Mostrar</button></div>';
   h+='<div id="listaCompletar" class="card" style="display:none;"><p style="font-size:12px;color:var(--muted);margin-bottom:10px;">Agrega o corrige personas que no reportaron (o quedaron presentes sin CC). Marca su estado y guarda; <b>no borra</b> lo que ya reportó el responsable de la cuadrilla.</p>';
-  // El datalist #ccList lo arma render() (compartido con el detalle por cuadrilla). ccOrden se conserva
-  // por si acaso, pero ya no se re-emite aquí para no duplicar el id.
   comp.forEach((p,i)=>{
     h+=`<div class="comp-item" style="border-bottom:1px solid rgba(46,52,80,0.5);padding:10px 0;">`
      + `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">`
@@ -430,7 +473,7 @@ function seccionCompletar(d){
      + `<select class="comp-estado" id="comp-est-${i}" onchange="compToggle(${i})" style="max-width:160px;"><option value="">— Pendiente</option><option value="Si">Presente</option><option value="No">Ausente</option></select>`
      + `</div>`
      + `<div id="comp-pres-${i}" style="display:none;margin-top:8px;"><div class="row">`
-     + `<div class="field"><label>Centro de Costo</label><input type="text" list="ccList" id="comp-cc-${i}" placeholder="Buscar CC…"></div>`
+     + `<div class="field"><label>Centro de Costo</label>${ccPickerHtml('comp-cc-'+i, '')}</div>`
      + (turnoOpts ? `<div class="field" style="max-width:140px;"><label>Turno</label><select id="comp-tur-${i}" onchange="compTurnoChange(${i})">${turnoOpts}</select></div>` : '')
      + `<div class="field" style="max-width:120px;"><label>Entrada</label><input type="time" id="comp-ent-${i}" value="${esc(j.entrada||'')}"></div>`
      + `<div class="field" style="max-width:120px;"><label>Salida</label><input type="time" id="comp-sal-${i}" value="${esc(j.salida||'')}"></div>`
