@@ -323,8 +323,16 @@ function toggleCuad(id, rowEl){
   el.style.display = show ? 'block' : 'none';
   const b=rowEl.querySelector('.detToggle'); if(b) b.textContent = show ? 'Ocultar' : 'Ver detalle';
 }
+// D81: turnos elegibles según la fecha del resumen — en sábado solo los que tienen variante sabatina
+// (un turno que "acaba el viernes" no se ofrece el sábado); en domingo/festivo NINGUNO ('' oculta el
+// selector: la jornada Dom/Fest es única, 07:00–15:00 editable).
 function turnoOptsHtml(turnos, sel){
-  const unq=[]; (turnos||[]).forEach(t=>{ const tn=String(t.turno); if(unq.indexOf(tn)<0) unq.push(tn); }); unq.sort();
+  const tipoJ=tipoJornadaDeFecha(STATE.fecha, (STATE.data&&STATE.data.festivos)||[]);
+  if(tipoJ==='domfest') return '';
+  const unq=[]; (turnos||[]).forEach(t=>{ const tn=String(t.turno);
+    if(unq.indexOf(tn)>=0) return;
+    if(tipoJ==='sabado' && !(turnos||[]).some(x=>String(x.turno)===tn && x.tipo_dia==='sabado')) return;
+    unq.push(tn); }); unq.sort();
   return unq.map(tn=>`<option value="${esc(tn)}" ${String(sel==null?'':sel)===tn?'selected':''}>Turno ${esc(tn)}</option>`).join('');
 }
 function fmtH(n){ return (Math.round(n*100)/100).toString(); }
@@ -350,10 +358,11 @@ function detalleCuadrillaHtml(c, filasCuad){
       nPres++;
       const tr=turnoRowFor(f.turno, STATE.fecha, turnos, tipoJornada);
       const cl=clasificarHoras(tipoJornada, f.hora_entrada, f.hora_salida, cfg, tr);
-      const extra=(cl.extra_diurna||0)+(cl.extra_nocturna||0); sumExtra+=extra;
+      const extra=(cl.extra_diurna||0)+(cl.extra_nocturna||0)+(cl.extra_domfest||0); sumExtra+=extra;
       const partes=[];
       if(cl.ordinarias)   partes.push(`${fmtH(cl.ordinarias)}h ord`);
       if(cl.ord_domfest)  partes.push(`${fmtH(cl.ord_domfest)}h dom/fest`);
+      if(cl.extra_domfest) partes.push(`${fmtH(cl.extra_domfest)}h extra dom/fest`);
       if(cl.recargo_noct_ord) partes.push(`${fmtH(cl.recargo_noct_ord)}h rec.noct`);
       if(extra)  extraTag=`<span class="badge" style="border-color:rgba(245,166,35,0.5);color:var(--accent);">⏱️ +${fmtH(extra)}h extra${cl.avisoExtra?' (revisar)':''}</span>`;
       linea=`<small style="color:var(--muted)">T${esc(f.turno||'?')} · ${esc(f.hora_entrada||'')}–${esc(f.hora_salida||'')} · ${esc(f.cc||'')}</small>`
@@ -458,16 +467,26 @@ function seccionCompletar(d){
   // (07:00–15:00; 8h − 1h almuerzo = 7h Dom/Fest) para completar faltantes sin teclear las horas.
   if(j.tipo==='domfest' && !j.entrada){ j.entrada='07:00'; j.salida='15:00'; }
   // D72: turnos para completar faltantes (mismo pre-llenado de horas que el formulario del capataz).
+  // D81: filtrados por día (sábado solo con variante sabatina; domingo/festivo sin turnos).
   const turnos=d.turnos||[]; STATE._compTurnos=turnos;
-  const turnosUnq=[]; turnos.forEach(t=>{ if(turnosUnq.indexOf(String(t.turno))<0) turnosUnq.push(String(t.turno)); }); turnosUnq.sort();
-  const turnoOpts = turnosUnq.length ? turnosUnq.map(tn=>`<option value="${esc(tn)}">Turno ${esc(tn)}</option>`).join('') : '';
+  const turnoOpts = turnoOptsHtml(turnos, '1');
+  const esDomFest = tipoJornadaDeFecha(STATE.fecha, d.festivos||[])==='domfest';
   // D78: el CC se elige con el buscador ccPickerHtml (frecuentes del área primero + catálogo completo).
   let h='<div style="display:flex;justify-content:space-between;align-items:center;margin:22px 0 10px;">'
     + '<span style="font-family:\'Syne\',sans-serif;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Completar faltantes ('+comp.length+')</span>'
     + '<button class="mini-btn" onclick="toggleLista(\'listaCompletar\',this)">Mostrar</button></div>';
   h+='<div id="listaCompletar" class="card" style="display:none;"><p style="font-size:12px;color:var(--muted);margin-bottom:10px;">Agrega o corrige personas que no reportaron (o quedaron presentes sin CC). Marca su estado y guarda; <b>no borra</b> lo que ya reportó el responsable de la cuadrilla.</p>';
+  // D81: en domingo/festivo trabaja solo el personal disponible (revuelto de cuadrillas y responsables),
+  // así que ESTE es el canal para subir el día (Jeisson/residente): se marca SOLO a quienes trabajaron;
+  // los demás se dejan sin tocar (no cuentan como ausentes — el domingo no trabajado es lo normal).
+  if(esDomFest){
+    h+='<div class="aviso" style="margin:0 0 10px;">📅 <b>Domingo/festivo:</b> marca únicamente a quienes trabajaron (CC + horario, pre-llenado 07:00–15:00 = 7h Dom/Fest; si hicieron más, hasta 2h van a extras Dom/Fest). A los demás <b>no los marques</b>: no cuentan como ausentes.</div>';
+  }
+  // D81: buscador — la lista trae a TODO el personal esperado (útil en dom/fest, donde solo se busca a
+  // los pocos que trabajaron). Filtra por DOM (sin re-render) para no perder lo ya diligenciado.
+  h+='<input type="text" id="compFiltro" placeholder="Buscar por nombre, cuadrilla o cargo…" oninput="compFiltrar(this.value)" style="margin-bottom:10px;">';
   comp.forEach((p,i)=>{
-    h+=`<div class="comp-item" style="border-bottom:1px solid rgba(46,52,80,0.5);padding:10px 0;">`
+    h+=`<div class="comp-item" data-search="${esc((String(p.nombre)+' '+String(p.cargo)+' '+String(p.cuadrilla)).toLowerCase())}" style="border-bottom:1px solid rgba(46,52,80,0.5);padding:10px 0;">`
      + `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">`
      + `<div class="nm"><b>${esc(p.nombre)}</b><small style="color:var(--muted)">${esc(p.cargo)} · ${esc(p.cuadrilla)} · ${esc(p.tag)}</small></div>`
      + `<select class="comp-estado" id="comp-est-${i}" onchange="compToggle(${i})" style="max-width:160px;"><option value="">— Pendiente</option><option value="Si">Presente</option><option value="No">Ausente</option></select>`
@@ -489,6 +508,15 @@ function compToggle(i){
   const est=document.getElementById('comp-est-'+i).value;
   document.getElementById('comp-pres-'+i).style.display = est==='Si'?'block':'none';
   document.getElementById('comp-aus-'+i).style.display  = est==='No'?'block':'none';
+}
+// D81: filtro del listado de faltantes por nombre/cuadrilla/cargo. Oculta/muestra por DOM (sin
+// re-render), así lo ya marcado en otras personas no se pierde; las ocultas quedan "— Pendiente"
+// y guardarCompletar las ignora.
+function compFiltrar(q){
+  q=String(q||'').trim().toLowerCase();
+  document.querySelectorAll('#listaCompletar .comp-item').forEach(el=>{
+    el.style.display = (!q || (el.getAttribute('data-search')||'').indexOf(q)>=0) ? '' : 'none';
+  });
 }
 // D72: al elegir turno en un faltante, pre-llena su entrada/salida (igual que el formulario del capataz).
 function compTurnoChange(i){
@@ -600,21 +628,25 @@ function turnoRowFor(turnoNum, fecha, turnos, tipoJornada){
   return cand[0];
 }
 function clasificarHoras(tipoJornada, entrada, salida, cfg, turnoRow){
-  const vacio={ordinarias:0, ord_domfest:0, extra_diurna:0, extra_nocturna:0, recargo_noct_ord:0, domfest_diurna_scomp:0, avisoExtra:false, avisoDomFest:false};
+  const vacio={ordinarias:0, ord_domfest:0, extra_diurna:0, extra_nocturna:0, recargo_noct_ord:0, extra_domfest:0, domfest_diurna_scomp:0, avisoExtra:false, avisoDomFest:false};
   const e=horasNum(entrada), s0=horasNum(salida);
   if(e==null || s0==null) return vacio;
   const Sact = s0 < e ? s0+24 : s0;                       // cruce de medianoche (nocturnos)
   if(tipoJornada==='domfest'){
-    // Criterio de nómina (jul-2026, aclarado): Dom/Fest = MÁXIMO 7h, TODAS en Horas Ordinarias Dom/Fest
-    // (col D). NADA en col L (nada de 0.33/0.67). Si alguien reporta más, se capa a 7 (7 es el tope).
-    // Descuenta almuerzo si el rango lo cubre (igual que entre semana). Tope en CONFIG.domfest_tope (def. 7).
+    // D81 (enmienda al criterio D72/D77): Dom/Fest = hasta 7h (CONFIG.domfest_tope) en Horas
+    // Ordinarias Dom/Fest (col D); lo trabajado DE MÁS va a **Horas extras diurnas Dom/Fest (col H
+    // del Parte)** hasta max_extras_dia (2h, corroborado con Navision por el dueño jul-2026). Más
+    // allá de 7+2 se avisa (avisoDomFest) para revisión manual. NADA en col L (nada de 0.33/0.67).
+    // Descuenta almuerzo si el rango lo cubre (igual que entre semana).
     let tot=Sact-e;
     const almIni=horasNum(cfg.almuerzo_ini||'12:00'), almFin=horasNum(cfg.almuerzo_fin||'13:00');
     if(almIni!=null && almFin!=null && e<=almIni && Sact>=almFin) tot-=(almFin-almIni);
     if(tot<0) tot=0;
     const tope=parseFloat(cfg.domfest_tope); const cap=isNaN(tope)?7:tope;
+    const maxCfg=parseFloat(cfg.max_extras_dia); const capE=isNaN(maxCfg)?2:maxCfg;
+    const extraDF=Math.min(Math.max(0, tot-cap), capE);
     return { ordinarias:0, ord_domfest:round2(Math.min(tot,cap)), extra_diurna:0, extra_nocturna:0, recargo_noct_ord:0,
-      domfest_diurna_scomp:0, avisoExtra:false, avisoDomFest: tot>cap+0.01 };
+      extra_domfest:round2(extraDF), domfest_diurna_scomp:0, avisoExtra:false, avisoDomFest: tot>cap+capE+0.01 };
   }
   // Ventana nocturna [nocturno_desde, nocturno_hasta del día siguiente) — por defecto [19:00, 06:00).
   // D77: el fin de la ventana sale de CONFIG.nocturno_hasta (antes 06:00 fijo). Lo que una extra pase
@@ -646,7 +678,7 @@ function clasificarHoras(tipoJornada, entrada, salida, cfg, turnoRow){
     extraNocturna=exNoc; extraDiurna=extra-exNoc;
   }
   return { ordinarias:round2(ordinarias), ord_domfest:0, extra_diurna:round2(extraDiurna<0?0:extraDiurna),
-    extra_nocturna:round2(extraNocturna), recargo_noct_ord:round2(recargoNoct), avisoExtra, avisoDomFest:false };
+    extra_nocturna:round2(extraNocturna), recargo_noct_ord:round2(recargoNoct), extra_domfest:0, avisoExtra, avisoDomFest:false };
 }
 // PROVISIONAL (parámetro abierto, §6 cols H–N): el mapeo fino de Dom-Fest c/s compensación está
 // pendiente de confirmar con la empresa (C–G ya se calculan por turno, D72e/D77). No escribe nada;
@@ -703,12 +735,13 @@ function buildParteRow(f, proyectoStr, cfg, tipoJornada, catTrabajadores, turnoR
     const cl=clasificarHoras(tipoJornada, f.hora_entrada, f.hora_salida, cfg, turnoRow);
     row[2]=cl.ordinarias; row[3]=cl.ord_domfest; row[4]=cl.extra_diurna; row[5]=cl.extra_nocturna;
     row[6]=cl.recargo_noct_ord;                             // G Recargo hora nocturna ord (D72)
+    if(cl.extra_domfest) row[7]=cl.extra_domfest;           // H Horas extras diurnas Dom/Fest (D81, máx 2h)
     if(cl.domfest_diurna_scomp) row[11]=cl.domfest_diurna_scomp;   // L Hora Diurna Ord. Dom/Fest s/Comp (criterio nómina)
     row._aviso = cl.avisoDomFest;      // Dom/Fest: solo avisa si hubo MÁS de la jornada base (posibles extras H–N)
     row._avisoExtra = cl.avisoExtra;   // extras > max_extras_dia en día normal: revisar a mano
     row._nombre = f.nombre;
   }
-  // H–N (7..13) vacías: Dom/Fest c/comp s/comp — revisión manual solo en domingo/festivo (§6)
+  // Resto de H–N (I–K, M–N) vacías: Dom/Fest c/comp s/comp — revisión manual solo en domingo/festivo (§6)
   row[14]=proyectoStr;                                      // O No. Proyecto
   row[15]=ausente? '' : (f.cc||'');                          // P Centro de coste
   row[16]=ausente? 'Si':'No';                                // Q Ausente
@@ -750,7 +783,10 @@ async function generarExcel(proyecto){
   const msg=document.getElementById('exportMsg');
   if(!STATE.tplBuf){ msg.innerHTML='<div class="aviso">⚠️ Primero sube la plantilla oficial (.xlsx).</div>'; return; }
   // D74 (idea 3): avisa si vas a descargar con gente SIN REPORTAR (por si se pasó a alguien).
-  const sinRep=((STATE.data&&STATE.data.faltantes)||[]).filter(f=>f.tipo==='sin_reportar');
+  // D81: en domingo/festivo NO se avisa — ese día trabaja solo el personal disponible y lo normal es
+  // que casi todos queden sin reportar (no es un olvido; al Parte van solo los marcados presentes).
+  const esDomFestExp = tipoJornadaDeFecha(STATE.fecha, (STATE.data&&STATE.data.festivos)||[])==='domfest';
+  const sinRep=esDomFestExp ? [] : ((STATE.data&&STATE.data.faltantes)||[]).filter(f=>f.tipo==='sin_reportar');
   if(sinRep.length){
     const nombres=sinRep.slice(0,12).map(f=>'  • '+f.nombre).join('\n')+(sinRep.length>12?`\n  …y ${sinRep.length-12} más`:'');
     if(!confirm(`⚠️ Hay ${sinRep.length} persona(s) SIN REPORTAR hoy:\n\n${nombres}\n\nSi descargas ahora NO quedarán en el archivo. Lo correcto es completarlas (arriba en "Completar faltantes") o marcarlas ausentes.\n\n¿Descargar de todas formas?`)) { msg.innerHTML=''; return; }
@@ -835,7 +871,7 @@ async function generarExcel(proyecto){
     if(adminAgregadas) out+='<div class="aviso" style="color:var(--success);border-color:rgba(46,204,113,0.3);background:rgba(46,204,113,0.08);">✓ Incluida(s) '+adminAgregadas+' fila(s) de tus horas extra (admin) en este archivo.</div>';
     if(avisoAdminSinRecurso) out+='<div class="aviso">⚠️ Hay extras del admin para este proyecto pero <b>admin_recurso</b> está vacío en CONFIG: no se agregaron. Configúralo para exportarlas.</div>';
     if(adminDomFest.length) out+='<div class="aviso" style="color:var(--success);border-color:rgba(46,204,113,0.3);background:rgba(46,204,113,0.08);">ℹ️ Extra del admin en domingo/festivo el <b>'+adminDomFest.map(esc).join(', ')+'</b>: se reportó en <b>D Horas ordinarias dom/fest</b> (tope 7h), no en extras.</div>';
-    if(hayAvisoGN) out+='<div class="aviso">⚠️ Día domingo/festivo: alguien reportó más de 7h; se registraron <b>7h (el máximo)</b> en Horas Ordinarias Dom/Fest. Revisa si ese excedente se maneja aparte.</div>';
+    if(hayAvisoGN) out+='<div class="aviso">⚠️ Día domingo/festivo: alguien superó las 7h Dom/Fest + 2h de extras Dom/Fest (D81). El archivo registra 7h en la col D y máximo 2h en la col H; el excedente quedó por fuera — revísalo a mano.</div>';
     if(overExtra.length){ const mx=parseFloat(cfg.max_extras_dia)||2;
       out+='<div class="aviso">ℹ️ Estas personas trabajaron más de '+mx+' horas extra: <b>'+overExtra.map(esc).join(', ')+'</b>. El archivo reporta solo '+mx+' (el tope); el resto queda para que el residente lo sume a mano en los días que corresponda.</div>'; }
     if(sinCodigo.length) out+='<div class="aviso">⚠️ Sin código Navision (la columna A queda incompleta "| NOMBRE"): <b>'+sinCodigo.map(esc).join(', ')+'</b>. Consigue su código en Navision/RRHH y ponlo en PERSONAL antes de importar.</div>';

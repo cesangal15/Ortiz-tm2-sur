@@ -194,11 +194,12 @@ async function consultar(){
 // Categoría de una línea (agrupa totales, bandeja y WhatsApp). D80: primero por CC (más confiable)
 // y después por palabras clave; el DEFAULT deja de ser "Estructuras / MSR" — lo que no calza en
 // ninguna categoría (paisajeo, adecuación de caminos, derrumbe…) cae a "Otras actividades" en vez
-// de colarse entre las estructuras (el riego de imprimación 04.01 tiene su categoría Pavimentos).
+// de colarse entre las estructuras. La sección de pavimentos se titula "Riego de imprimación"
+// (es la única actividad de pavimentos en alcance, D71 — "Pavimentos" a secas decía menos).
 function categoria(c){
   const d=(c.descripcion||c.actividad||'').toUpperCase();
   const cc=(String(c.centro_costo||'').match(/(\d{2}\.\d{2})\s*$/)||[])[1]||'';
-  if(cc.indexOf('04.')===0 || d.includes('IMPRIMACI')) return 'Pavimentos';
+  if(cc.indexOf('04.')===0 || d.includes('IMPRIMACI')) return 'Riego de imprimación';
   if(cc.indexOf('05.')===0) return 'Estructuras / MSR';
   if(d.includes('NO APRO')) return 'Excavación no aprovechable';
   if(d.includes('PRESTAMO')||d.includes('PRÉSTAMO')) return 'Excavación préstamo';
@@ -211,7 +212,7 @@ function categoria(c){
   if(d.includes('MSR')||d.includes('GEOMALLA')||d.includes('GEOTEXTIL')||d.includes('GEOBOLSA')||d.includes('GEODREN')||d.includes('GEODRÉN')) return 'Estructuras / MSR';
   return 'Otras actividades';
 }
-const ORDEN_CAT=['Excavación aprovechable','Excavación préstamo','Excavación no aprovechable','Conformación / ZODME','Terraplén','Subbase','Base / BTC','Pavimentos','Desmonte y limpieza','Estructuras / MSR','Otras actividades'];
+const ORDEN_CAT=['Excavación aprovechable','Excavación préstamo','Excavación no aprovechable','Conformación / ZODME','Terraplén','Subbase','Base / BTC','Riego de imprimación','Desmonte y limpieza','Estructuras / MSR','Otras actividades'];
 const SPLIT_UF=['Terraplén','Subbase','Base / BTC'];
 function fmt(n){ return (Math.round(n*100)/100).toLocaleString('es-CO'); }
 
