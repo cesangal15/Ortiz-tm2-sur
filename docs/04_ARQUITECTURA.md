@@ -114,7 +114,8 @@
                           ▼
 ┌── backend/CodigoAsistencias.gs (Apps Script NUEVO, SHEET_ID propio) ───┐
 │  GET  ?action=roster&usuario=…     → cuadrillas + roster + CONFIG      │
-│                                       + CAT_CC + CAT_MOTIVOS + recientes│
+│                                       + CAT_CC + motivos frecuentes    │
+│                                       (MOTIVOS_USADOS, D78) + recientes│
 │  GET  ?action=asistencia&fecha=…   → filas del día + estado cuadrilla  │
 │                                       + faltantes (con responsable)    │
 │  GET  ?action=personal             → PERSONAL + CUADRILLAS (gestión)  │
@@ -130,7 +131,8 @@
                           ▼
 ┌── GOOGLE SHEET NUEVO (1KrhzaIg3BSspyi0oH0gHkAJnSRXaOIdel_pKaMVHX9w) ───┐
 │  PERSONAL · CUADRILLAS · ASISTENCIA · CONFIG · FESTIVOS ·              │
-│  CAT_TRABAJADORES · CAT_CC · CAT_MOTIVOS · EXTRAS_ADMIN (D73) —        │
+│  CAT_TRABAJADORES · CAT_CC · CAT_MOTIVOS (catálogo completo, D78) ·    │
+│  MOTIVOS_USADOS (frecuentes, D78) · EXTRAS_ADMIN (D73) —               │
 │  setupHojas() de un solo uso                                          │
 └────────────────────────┬────────────────────────────────────────────--┘
                           │ SheetJS en el navegador (resumen-asistencia.html)
