@@ -158,6 +158,13 @@ async function cargarResumen(){
     document.getElementById('container').innerHTML='<div class="empty-state">⚠️ No se pudo consultar. Revisa el Apps Script.<br><small>'+esc(err.message||err)+'</small></div>';
   }
 }
+// ¿La vista actual es de TIERRAS? (residente de tierras, jeisson, o admin sin filtrar ODT/ODL).
+// El flujo especial de dom/fest (D81c: subir solo a quienes trabajaron, sin aviso de sin-reportar)
+// aplica SOLO a tierras — drenajes ODT/ODL siguen reportando por cuadrilla también esos días.
+function esVistaTierras(){
+  return STATE.rol==='residente' || STATE.rol==='asistencia_plus'
+    || (STATE.rol==='admin' && STATE.areaFiltro!=='odt' && STATE.areaFiltro!=='odl');
+}
 function onFechaChange(v){ STATE.fecha=v; STATE.exportCache={}; cargarResumen(); }
 // D74b: admin cambia la vista de área (Todas/Tierras/ODT/ODL); recarga resumen y limpia caché de export.
 function onAreaFiltro(v){ STATE.areaFiltro=v; STATE.exportCache={}; STATE.personal=null; cargarResumen(); }
@@ -192,8 +199,7 @@ function render(){
 
   // Indicador de extras del admin (D73): solo lectura, para el residente de tierras/jeisson/admin (las
   // extras son CC de tierras). D74b: se oculta si el admin está viendo ODT/ODL (no aplican allá).
-  const viendoTierras = (STATE.rol==='residente' || STATE.rol==='asistencia_plus'
-    || (STATE.rol==='admin' && STATE.areaFiltro!=='odt' && STATE.areaFiltro!=='odl'));
+  const viendoTierras = esVistaTierras();
   if(viendoTierras){
     const exAdmin=d.extrasAdmin||[];
     if(exAdmin.length){
@@ -479,7 +485,10 @@ function seccionCompletar(d){
   // D81: en domingo/festivo trabaja solo el personal disponible (revuelto de cuadrillas y responsables),
   // así que ESTE es el canal para subir el día (Jeisson/residente): se marca SOLO a quienes trabajaron;
   // los demás se dejan sin tocar (no cuentan como ausentes — el domingo no trabajado es lo normal).
-  if(esDomFest){
+  // SOLO TIERRAS: jeisson ya viene acotado a tierras por el backend (D74b); ODT/ODL siguen reportando
+  // por cuadrilla también en dom/fest (no se ha contemplado otra forma), así que a sus residentes no
+  // se les muestra esta guía.
+  if(esDomFest && esVistaTierras()){
     h+='<div class="aviso" style="margin:0 0 10px;">📅 <b>Domingo/festivo:</b> marca únicamente a quienes trabajaron (CC + horario, pre-llenado 07:00–15:00 = 7h Dom/Fest; si hicieron más, hasta 2h van a extras Dom/Fest). A los demás <b>no los marques</b>: no cuentan como ausentes.</div>';
   }
   // D81: buscador — la lista trae a TODO el personal esperado (útil en dom/fest, donde solo se busca a
@@ -785,8 +794,10 @@ async function generarExcel(proyecto){
   // D74 (idea 3): avisa si vas a descargar con gente SIN REPORTAR (por si se pasó a alguien).
   // D81: en domingo/festivo NO se avisa — ese día trabaja solo el personal disponible y lo normal es
   // que casi todos queden sin reportar (no es un olvido; al Parte van solo los marcados presentes).
+  // SOLO TIERRAS: en ODT/ODL el reporte sigue siendo por cuadrilla también en dom/fest, así que a sus
+  // residentes el aviso se les conserva todos los días (allá el sin-reportar sí puede ser un olvido).
   const esDomFestExp = tipoJornadaDeFecha(STATE.fecha, (STATE.data&&STATE.data.festivos)||[])==='domfest';
-  const sinRep=esDomFestExp ? [] : ((STATE.data&&STATE.data.faltantes)||[]).filter(f=>f.tipo==='sin_reportar');
+  const sinRep=(esDomFestExp && esVistaTierras()) ? [] : ((STATE.data&&STATE.data.faltantes)||[]).filter(f=>f.tipo==='sin_reportar');
   if(sinRep.length){
     const nombres=sinRep.slice(0,12).map(f=>'  • '+f.nombre).join('\n')+(sinRep.length>12?`\n  …y ${sinRep.length-12} más`:'');
     if(!confirm(`⚠️ Hay ${sinRep.length} persona(s) SIN REPORTAR hoy:\n\n${nombres}\n\nSi descargas ahora NO quedarán en el archivo. Lo correcto es completarlas (arriba en "Completar faltantes") o marcarlas ausentes.\n\n¿Descargar de todas formas?`)) { msg.innerHTML=''; return; }
