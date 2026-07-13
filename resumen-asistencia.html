@@ -118,7 +118,7 @@ async function cargarPlantillaBundle(){
 }
 
 window.onload = function(){
-  const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
+  const rol=localStorage.getItem('rol'), usuario=localStorage.getItem('usuario');
   // Guard: residente(tierras), admin, jeisson (rol asistencia_plus, D69) o residente de área odt/odl (D72).
   // D74b: jeisson entraba con rol 'asistencia_plus' (NO 'jeisson'), por eso lo devolvía al login.
   const rolesOk=['residente','admin','asistencia_plus','residente_odt','residente_odl'];
@@ -135,7 +135,7 @@ window.onload = function(){
   cargarResumen();
   cargarPlantillaBundle();
 };
-function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
+function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); window.location.href='index.html'; }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 // Mostrar/ocultar una lista larga por su id (puro DOM, sin re-render → no borra nada que se esté llenando).
 function toggleLista(id, btn){

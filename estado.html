@@ -110,15 +110,15 @@ const TIPO_EQUIPO = {
 };
 
 window.onload = function() {
-  const rol = sessionStorage.getItem('rol');
-  const usuario = sessionStorage.getItem('usuario');
+  const rol = localStorage.getItem('rol');
+  const usuario = localStorage.getItem('usuario');
   if (!rol || rol !== 'admin') { window.location.href = 'index.html'; return; }
   document.getElementById('userDisplay').textContent = usuario;
   if(rol==='admin'){var _bm=document.getElementById('btnMenu');if(_bm)_bm.style.display='inline-block';}
   document.getElementById('fechaConsulta').value = new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
 };
 
-function logout() { sessionStorage.clear(); window.location.href = 'index.html'; }
+function logout() { localStorage.removeItem('usuario'); localStorage.removeItem('rol'); window.location.href = 'index.html'; }
 
 async function consultar() {
   const fecha = document.getElementById('fechaConsulta').value;

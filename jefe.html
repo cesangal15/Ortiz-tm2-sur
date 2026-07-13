@@ -129,7 +129,7 @@ function deriveArea(cc){
 }
 
 window.onload = function(){
-  const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
+  const rol=localStorage.getItem('rol'), usuario=localStorage.getItem('usuario');
   // Guard: jefe, admin o residente (el residente entra desde su panel). Otro rol -> login.
   if(!rol || (rol!=='jefe' && rol!=='admin' && rol!=='residente')){ window.location.href='index.html'; return; }
   document.getElementById('userDisplay').textContent=usuario||'jefe';
@@ -145,7 +145,7 @@ window.onload = function(){
   document.getElementById('hasta').value=hoy;
   syncRango();
 };
-function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
+function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); window.location.href='index.html'; }
 
 // hasta no puede ser menor que desde: fija el min y corrige si quedó por debajo.
 function syncRango(){

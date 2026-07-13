@@ -4,7 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reporte de Chequeadora</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#f5a623">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TM2 Sur">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<script src="offline.js"></script>
 <style>
   :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--success:#2ecc71;--error:#e74c3c;--input-bg:#12151f;--uf1:#3a9bdc;--uf2:#9b59b6;}
   *{box-sizing:border-box;margin:0;padding:0;}
@@ -139,8 +146,8 @@
 </div>
 
 <div class="success" id="successScreen">
-  <div class="ico">✅</div>
-  <h2>Reporte enviado</h2>
+  <div class="ico" id="successIco">✅</div>
+  <h2 id="successTitle">Reporte enviado</h2>
   <p id="successMsg">Tus viajes quedaron registrados.</p>
   <button onclick="resetForm()">Nuevo reporte</button>
 </div>
@@ -184,8 +191,9 @@ let lineaIdx = 0;
 let CUBMAP = {};
 
 window.onload = function(){
-  const rol = sessionStorage.getItem('rol');
-  const usuario = sessionStorage.getItem('usuario');
+  // D82: sesión en localStorage (sobrevive cierre del navegador en zona muerta)
+  const rol = localStorage.getItem('rol');
+  const usuario = localStorage.getItem('usuario');
   if(!rol || (rol!=='chequeadora' && rol!=='admin')){ window.location.href='index.html'; return; }
   document.getElementById('userDisplay').textContent = usuario || 'chequeadora';
   if(rol==='admin'){var _bm=document.getElementById('btnMenu');if(_bm)_bm.style.display='inline-block';}
@@ -193,14 +201,26 @@ window.onload = function(){
   cargarCubicaje();
   addLinea();
 };
-function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
+function logout(){
+  // solo la sesión: la cola de envíos pendientes NO se borra al cerrar sesión (D82)
+  localStorage.removeItem('usuario'); localStorage.removeItem('rol');
+  window.location.href='index.html';
+}
 
-// Trae el catálogo placa→cubicaje. Si falla (sin red / hoja vacía) deja CUBMAP={} y todo usa el factor.
+// Trae el catálogo placa→cubicaje con caché-fallback (D82 §2.7): fresco si hay señal (y se guarda
+// copia local); sin señal usa la última copia con aviso de fecha. Sin señal Y sin copia: CUBMAP={}
+// y todo cae al factor fijo 14 ya existente (D54) — el envío NUNCA se bloquea por esto.
 async function cargarCubicaje(){
   try{
-    const resp=await fetch(APPS_SCRIPT_URL+'?action=cubicaje');
-    const data=await resp.json();
-    if(data && data.cubicaje) CUBMAP=data.cubicaje;
+    const r=await TM2Offline.catalogoCache('cubicaje', async function(){
+      const resp=await fetch(APPS_SCRIPT_URL+'?action=cubicaje');
+      const data=await resp.json();
+      if(!data || !data.cubicaje) throw new Error('sin catálogo de cubicaje');
+      return data.cubicaje;
+    }, 24);
+    CUBMAP=r.data||{};
+    if(!r.fresco) TM2Offline.bannerCatalogoViejo(document.querySelector('.container'),
+      'Sin señal: usando el cubicaje guardado del '+TM2Offline.fechaCorta(r.guardado)+'. Placas que no estén ahí usan el factor 14 m³/viaje.');
   }catch(err){ CUBMAP={}; }
   recalcAll(); // re-pinta totales/placas con el cubicaje ya cargado
 }
@@ -384,7 +404,7 @@ function getMaquinaria(){
     const prog=progHoras(id);
     const op=parseFloat(row.querySelector('.m-hrs').value)||0;
     const muertas=+Math.max(0, prog-op).toFixed(2);
-    out.push({ id_maquina:id, tipo_equipo:TIPO_EQUIPO[id]||'', operador:row.querySelector('.m-op').value.trim(),
+    out.push({ id_registro:TM2Offline.uuid(), id_maquina:id, tipo_equipo:TIPO_EQUIPO[id]||'', operador:row.querySelector('.m-op').value.trim(),
       horas_programadas:prog, horas_operadas:op, horas_muertas:muertas, motivo: muertas>0.01?maqMotivo(row):'' });
   });
   return out;
@@ -430,7 +450,7 @@ function getCantidades(){
     else { aproM3+=m3; aproViajes+=viajes; }
     if(tipo==='Terraplén'){
       const ufD=ufFromPk(pk), proyD=proyectoFromUf(ufD);
-      rows.push({ grupo:'TIERRAS', capitulo:'EXPLANACIONES', actividad:'Terraplén (conformación)',
+      rows.push({ id_registro:TM2Offline.uuid(), grupo:'TIERRAS', capitulo:'EXPLANACIONES', actividad:'Terraplén (conformación)',
         descripcion:'Terraplenes (solo conformación)', centro_costo: proyD?(proyD+'.02.07'):'', unidad:'m3',
         uf:ufD, proyecto:proyD, elemento:buildElemento(pk,''), pk_inicial:pk, pk_final:'',
         abs_inicial:pkToMeters(pk), abs_final:null, liberacion:'CAMPO', largo:m3, _linea:lineId,
@@ -443,7 +463,7 @@ function getCantidades(){
   // la NO APROVECHABLE (lo que fue a Botadero) y la del origen (el resto). PK/ELEMENTO/ABS/UF/PROYECTO/CC
   // derivan del ORIGEN (donde se hizo el corte). El backend recalcula ambos volúmenes como fuente (D06/D53).
   if(botaViajes>0){
-    rows.unshift({ grupo:'TIERRAS', capitulo:'EXPLANACIONES', actividad:'Excavación no aprovechable',
+    rows.unshift({ id_registro:TM2Offline.uuid(), grupo:'TIERRAS', capitulo:'EXPLANACIONES', actividad:'Excavación no aprovechable',
       descripcion:'Excavaciones en material común NO APROVECHABLE',
       centro_costo: proyO?(proyO+'.02.05'):'', unidad:'m3', uf:ufO, proyecto:proyO,
       elemento:buildElemento(origenPk,''), pk_inicial:origenPk, pk_final:'',
@@ -452,7 +472,7 @@ function getCantidades(){
       observacion: origenLabel+' · '+botaViajes+' viajes · → Botadero '+Math.round(botaM3).toLocaleString('es-CO')+' m³' });
   }
   if(aproViajes>0){
-    rows.unshift({ grupo:'TIERRAS', capitulo:'EXPLANACIONES', actividad:exc.actividad, descripcion:exc.item,
+    rows.unshift({ id_registro:TM2Offline.uuid(), grupo:'TIERRAS', capitulo:'EXPLANACIONES', actividad:exc.actividad, descripcion:exc.item,
       centro_costo: proyO?(proyO+'.'+exc.cc):'', unidad:'m3', uf:ufO, proyecto:proyO,
       elemento:buildElemento(origenPk,''), pk_inicial:origenPk, pk_final:'',
       abs_inicial:pkToMeters(origenPk), abs_final:null, liberacion:'CAMPO', largo:aproM3,
@@ -475,7 +495,8 @@ function getVolquetas(){
     if(!pk || !placas.length) return;
     const uf=ufFromPk(pk);
     const lineId=Number(b.id.split('_')[1]); // misma correlación que getCantidades para el backend (D53)
-    out.push({ origen:origenLabel, destino:pk, tipo_destino:tipo, uf:uf, placas:placas, _linea:lineId });
+    // D82: un id_registro de cliente por línea de PK destino (las placas de la línea comparten id en VOLQUETAS)
+    out.push({ id_registro:TM2Offline.uuid(), origen:origenLabel, destino:pk, tipo_destino:tipo, uf:uf, placas:placas, _linea:lineId });
   });
   return out;
 }
@@ -509,6 +530,21 @@ function validate(){
   return ok;
 }
 let enviando=false;
+/* Pantalla de confirmación con DOS modos bien distintos (D82): 'servidor' (verde, confirmación real)
+ * y 'cola' (naranja, guardado LOCAL pendiente de subir). Nunca mostrar el verde para un encolado. */
+function mostrarExito(modo, msg){
+  const ico=document.getElementById('successIco'), h2=document.getElementById('successTitle'), p=document.getElementById('successMsg');
+  if(modo==='cola'){
+    ico.textContent='📥'; h2.textContent='Guardado en el teléfono'; h2.style.color='var(--accent)';
+    p.innerHTML='<b style="color:var(--accent)">Se enviará solo cuando vuelva la señal.</b><br>'+msg;
+  } else {
+    ico.textContent='✅'; h2.textContent='Reporte enviado'; h2.style.color='';
+    p.textContent=msg;
+  }
+  document.getElementById('formMain').classList.add('hidden');
+  document.getElementById('submitBar').classList.add('hidden');
+  document.getElementById('successScreen').classList.add('visible');
+}
 async function submitForm(){
   if(enviando) return;
   if(!validate()){ if(document.querySelector('.field-error')) alert('Revisa los campos marcados.'); return; }
@@ -516,25 +552,27 @@ async function submitForm(){
   let exito=false;
   const btn=document.getElementById('btnSubmit');
   btn.textContent='ENVIANDO...'; btn.disabled=true;
+  // D82: id_registro por fila generados EN EL CLIENTE (dedupe de reenvíos en Codigo.gs)
   const data={ fecha:document.getElementById('fecha').value, rol:'chequeadora',
-    capataz: sessionStorage.getItem('usuario')||'chequeadora', m3viaje:m3viaje(),
+    capataz: localStorage.getItem('usuario')||'chequeadora', m3viaje:m3viaje(),
     cantidades:getCantidades(), volquetas:getVolquetas(), maquinaria:getMaquinaria() };
-  try{
-    const resp=await fetch(APPS_SCRIPT_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(data) });
-    const res=await resp.json();
-    if(!res || !res.ok) throw new Error((res&&res.error)||'Respuesta inesperada del servidor');
+  // D82: intento directo con timeout ~15 s; si no hay red / no responde, va a la cola local
+  const r=await TM2Offline.enviarConCola({ tipo:'reporte', url:APPS_SCRIPT_URL, payload:data, fecha_obra:data.fecha, usuario:data.capataz });
+  if(r.enviado){
+    const res=r.res;
+    if(!res || !res.ok){
+      alert('⚠ No se pudo guardar: '+((res&&res.error)||'Respuesta inesperada del servidor')+'\n\nIntenta de nuevo.');
+    } else {
+      exito=true;
+      mostrarExito('servidor','Se registraron '+res.cantidades+' filas (excavación + terraplén)'+(res.volquetas!=null?(' y '+res.volquetas+' placas'):'')+(res.maquinas?(' y '+res.maquinas+' máquina(s)'):'')+'.');
+    }
+  } else {
     exito=true;
-    document.getElementById('successMsg').textContent='Se registraron '+res.cantidades+' filas (excavación + terraplén)'+(res.volquetas!=null?(' y '+res.volquetas+' placas'):'')+(res.maquinas?(' y '+res.maquinas+' máquina(s)'):'')+'.';
-    document.getElementById('formMain').classList.add('hidden');
-    document.getElementById('submitBar').classList.add('hidden');
-    document.getElementById('successScreen').classList.add('visible');
-  }catch(err){
-    alert('⚠ No se pudo guardar: '+err.message+'\n\nIntenta de nuevo.');
-  }finally{
-    if(!exito){ btn.textContent='ENVIAR VIAJES DEL DÍA →'; btn.disabled=false; }
-    else{ btn.textContent='✓ ENVIADO'; btn.disabled=true; }
-    enviando=false;
+    mostrarExito('cola','Tus viajes del '+data.fecha+' quedaron guardados en este teléfono y subirán automático. Puedes ver los pendientes en el contador de arriba.');
   }
+  if(!exito){ btn.textContent='ENVIAR VIAJES DEL DÍA →'; btn.disabled=false; }
+  else{ btn.textContent=r.enviado?'✓ ENVIADO':'📥 EN COLA'; btn.disabled=true; }
+  enviando=false;
 }
 function resetForm(){
   document.getElementById('lineasContainer').innerHTML='';

@@ -17,9 +17,12 @@
 │                        │             modo ODT/ODL por rol — marcador o PK + ítems BASE)  │
 │                        └── residente-drenajes.html (residente_odt · residente_odl ·     │
 │                                      admin — bandeja/DATA/WhatsApp SOLO de su área)      │
-│  Sesión: sessionStorage {usuario, rol}. Credenciales hardcoded en index.html.           │
+│  Sesión: localStorage {usuario, rol} (D82; antes sessionStorage). Credenciales hardcoded │
+│  en index.html.                                                                          │
 │  Admin: botón "← Menú" en toda pantalla interna vuelve a menu.html sin cerrar sesión.    │
 └────────────────────────────────────┬─────────────────────────────────────────────────--┘
+
+**Offline (D82, backlog 2.8/2.8b/2.9):** archivos nuevos `offline.js` (cola localStorage `tm2_cola_envios` + sync FIFO + caché-fallback de catálogos + chip/panel de estado), `sw.js` (service worker network-first, precache del shell + capturas; NUNCA intercepta Apps Script; fuentes Google cache-first; subir `CACHE_V` solo si cambia la lista de precache), `manifest.json`, `icons/` (192/512/180) y `OFFLINE_README.md` (instalación + checklist de pruebas). Flujo de envío de las 4 capturas (capataz, chequeadora, drenajes, asistencia) con rama offline: intento directo (timeout ~15 s) → si no hay red, encola y muestra confirmación NARANJA (distinta del verde de servidor); al volver la señal la cola sube en orden y `Codigo.gs` deduplica por `id_registro` UUID de cliente (asistencia no lo necesita: upsert fecha+cuadrilla idempotente). Encargado/residente/jefe/resúmenes quedan FUERA del offline (D49): sin señal muestran "Esta pantalla necesita conexión".
                                      │ fetch GET/POST (Content-Type: text/plain)
                                      ▼
 ┌──────────────────── GOOGLE APPS SCRIPT v6 (API, una sola URL) ──────────────────────────┐

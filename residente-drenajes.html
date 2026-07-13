@@ -122,7 +122,7 @@ let STATE={ fecha:'', cantidades:[], maquinas:[], observaciones:[] };
 let MARCADORES=[], ITEMS=[];
 
 window.onload = async function(){
-  const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
+  const rol=localStorage.getItem('rol'), usuario=localStorage.getItem('usuario');
   const OK=['residente_odt','residente_odl','admin'];
   if(!rol || OK.indexOf(rol)<0){ window.location.href='index.html'; return; }
   document.getElementById('userDisplay').textContent=usuario||'residente';
@@ -139,7 +139,7 @@ window.onload = async function(){
   document.getElementById('fecha').value=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'}); // D50
   cargarCatalogo();
 };
-function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
+function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); window.location.href='index.html'; }
 function pintarTitulo(){
   const n=(AREA==='odt')?'ODT · Transversal':'ODL · Longitudinal';
   document.getElementById('hdrLabel').textContent='Bandeja · Drenajes '+(AREA==='odt'?'ODT':'ODL');
@@ -337,7 +337,7 @@ function addLinea(){
     elemento=buildElemento(pk,''); abs=pkToMeters(pk);
   }
   const uf=abs==null?'':(abs<=30000?'UF1':'UF2'), proy=uf==='UF1'?'3701':uf==='UF2'?'3702':'';
-  STATE.cantidades.push({ id_registro:'', reporta:'(residente)', rol:sessionStorage.getItem('rol')||'residente',
+  STATE.cantidades.push({ id_registro:'', reporta:'(residente)', rol:localStorage.getItem('rol')||'residente',
     grupo:'DRENAJES Y ESTRUCTURAS',
     // capítulo por defecto del área; los ítems "extra" (D71: Demolición de Estructuras) traen el suyo
     capitulo: it.capitulo || ((AREA==='odt')?'DRENAJE TRANSVERSAL':'DRENAJE LONGITUDINAL'),

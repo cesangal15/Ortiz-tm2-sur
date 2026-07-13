@@ -530,6 +530,12 @@ function borrarExtrasAdmin(body){
 }
 
 /* ---------- POST reporte_asistencia: escritura directa (sin bandeja), pisa fecha+cuadrilla (D03) ---------- */
+/* D82 — VERIFICADO para el modo offline (no tocar): este upsert BORRA-E-INSERTA el bloque completo de
+ * fecha+cuadrilla (filtra `keep` = todo lo que NO es esa fecha+cuadrilla, clearContents y reescribe;
+ * NO hace append). Un reenvío idéntico desde la cola offline re-pisa con el mismo contenido =>
+ * IDEMPOTENTE POR DISEÑO, no necesita id_registro/UUID de cliente ni dedupe. Si hay dos envíos
+ * encolados de la misma fecha+cuadrilla, el orden FIFO de la cola hace que gane el último (correcto:
+ * es el más reciente). upsertNotaDia (D74) sigue la misma regla. */
 function guardarAsistencia(body){
   const fecha=fdate(body.fecha), cuadrilla=body.cuadrilla||'', reporta=body.reporta||'', ts=new Date();
   const sh=getSheet('ASISTENCIA', ASISTENCIA_HEADERS);

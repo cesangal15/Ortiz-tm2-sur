@@ -4,7 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Menú — Admin</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#f5a623">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TM2 Sur">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<script src="offline.js"></script>
 <style>
   :root{--bg:#0f1117;--surface:#1a1d27;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--error:#e74c3c;}
   *{box-sizing:border-box;margin:0;padding:0;}
@@ -113,10 +120,12 @@
   </a>
 </div>
 <script>
-  const rol=sessionStorage.getItem('rol');
+  // D82: sesión en localStorage (sobrevive cierre del navegador en zona muerta)
+  const rol=localStorage.getItem('rol');
   if(!rol || rol!=='admin'){ window.location.href='index.html'; }
-  document.getElementById('userDisplay').textContent=sessionStorage.getItem('usuario')||'admin';
-  function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
+  document.getElementById('userDisplay').textContent=localStorage.getItem('usuario')||'admin';
+  // solo la sesión: la cola de envíos pendientes NO se borra al cerrar sesión (D82)
+  function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); window.location.href='index.html'; }
 </script>
 </body>
 </html>
