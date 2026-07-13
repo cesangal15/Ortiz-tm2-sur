@@ -260,6 +260,9 @@ function descansoDeBloque(b){ return descansoDeTurnoRow(turnoHoras(b&&b.turno||'
 // empiezan después). Duración programada entrada→salida (cruce de medianoche incluido) menos descanso.
 // Sin fila de TURNOS aplicable se cae al tope de la jornada estándar del día (comportamiento previo).
 function topeDeTurno(turno){
+  // D81: en domingo/festivo el estándar es la jornada única Dom/Fest (7h a la col D), no el turno —
+  // antes devolvía STATE.jornada.tope (0 en domfest) y un domingo legítimo de 7h disparaba el aviso.
+  if(STATE.jornada && STATE.jornada.tipo==='domfest') return parseFloat(STATE.config.domfest_tope)||7;
   const t=turnoHoras(turno||'1', STATE.fecha);
   if(!t) return STATE.jornada.tope||0;
   const e=horasNum(t.entrada), s=horasNum(t.salida);
@@ -268,9 +271,19 @@ function topeDeTurno(turno){
   const d=descansoDeTurnoRow(t);
   return Math.max(0, h-(d||0));
 }
-// Turnos únicos disponibles (para el <select>), ordenados por número.
+// Turnos SELECCIONABLES según la fecha (D81, enmienda a D77c): un turno SIN variante de sábado
+// "acaba el viernes" y NO se ofrece el sábado (antes se dejaba elegir con su horario de semana);
+// en domingo/festivo no hay turnos (jornada única 07:00–15:00). El clasificador del Excel conserva
+// el respaldo lj/lv SOLO para filas viejas ya guardadas con un turno fuera de su día.
 function turnosDisponibles(){
-  const s=[]; STATE.turnos.forEach(t=>{ if(s.indexOf(String(t.turno))<0) s.push(String(t.turno)); });
+  if(STATE.jornada && STATE.jornada.tipo==='domfest') return [];
+  const sab = diaTipoTurno(STATE.fecha)==='sabado';
+  const s=[];
+  STATE.turnos.forEach(t=>{ const tn=String(t.turno);
+    if(s.indexOf(tn)>=0) return;
+    if(sab && !STATE.turnos.some(x=>String(x.turno)===tn && x.tipo_dia==='sabado')) return;
+    s.push(tn);
+  });
   return s.sort();
 }
 
@@ -406,7 +419,9 @@ function render(){
   html+='</div>';
   const j=STATE.jornada;
   if(j.tipo==='domfest'){
-    html+=`<div class="jornada-banner">⚠️ Día <b>domingo/festivo</b>: horario típico <b>${esc(j.entrada||'07:00')}</b> a <b>${esc(j.salida||'15:00')}</b> (se descuenta 1h de almuerzo → 7h). Todo lo trabajado va a horas Dom/Fest (tope ${parseFloat(STATE.config.domfest_tope)||7}h).</div>`;
+    // D81: hasta 7h van a Horas ordinarias Dom/Fest (col D); lo que pase del tope cuenta como
+    // horas extra Dom/Fest (col H del Parte), máximo max_extras_dia (2h).
+    html+=`<div class="jornada-banner">⚠️ Día <b>domingo/festivo</b>: horario típico <b>${esc(j.entrada||'07:00')}</b> a <b>${esc(j.salida||'15:00')}</b> (se descuenta 1h de almuerzo → ${parseFloat(STATE.config.domfest_tope)||7}h a Dom/Fest). Las horas son editables; lo que pase del tope cuenta como <b>extra Dom/Fest</b> (máx ${parseFloat(STATE.config.max_extras_dia)||2}h).</div>`;
   } else {
     html+=`<div class="jornada-banner">Jornada estándar (<b>${j.tipo==='sabado'?'sábado':'lunes a viernes'}</b>): <b>${esc(j.entrada)}</b> a <b>${esc(j.salida)}</b> · tope ordinario <b>${j.tope}h</b></div>`;
   }
@@ -549,9 +564,10 @@ async function enviar(){
     if(!confirm(`⚠️ ATENCIÓN — ${sinCC.length} persona(s) PRESENTES sin actividad / Centro de Costo:\n\n${nombres}\n\nLo correcto es asignarlas a un bloque con CC, o marcarlas AUSENTES con motivo.\n\nSi las envías así quedarán SIN CC en el reporte (habrá que corregirlas después).\n\n¿Enviar de todas formas?`)) return;
   }
 
-  // SUPER AVISO 2: horas que superan el turno + máximo de extras del día (solo días normales; en
-  // domingo/festivo todas las horas van a Dom/Fest y el tope de extras no aplica).
-  if(STATE.jornada.tipo!=='domfest'){
+  // SUPER AVISO 2: horas que superan el estándar del día + máximo de extras. D81: aplica TAMBIÉN en
+  // domingo/festivo (estándar = tope Dom/Fest 7h vía topeDeTurno; lo que pase va a extras Dom/Fest,
+  // máx 2h — más que eso se avisa igual que entre semana).
+  {
     const over=[];
     personas.filter(p=>p.presente).forEach(p=>{
       const b=STATE.bloques.find(x=>x.id===p.bloqueId);
@@ -563,10 +579,10 @@ async function enviar(){
       // D77: cada persona se compara contra el ESTÁNDAR de SU turno (el del bloque; capataz = turno 1).
       const topeP=esCapataz(p)?topeDeTurno('1'):topeDeTurno(b?b.turno:'1');
       const h=horasTrabajadas(he,hs,cfg,descansoDeBloque(b));
-      if(h!=null && h>topeP+maxExtra+0.001) over.push(`  • ${p.nombre} — ${h.toFixed(1)}h (su turno: ${topeP}h + ${maxExtra}h extra)`);
+      if(h!=null && h>topeP+maxExtra+0.001) over.push(`  • ${p.nombre} — ${h.toFixed(1)}h (estándar del día: ${topeP}h + ${maxExtra}h extra)`);
     });
     if(over.length){
-      if(!confirm(`⚠️ ATENCIÓN — estas personas superan las horas ordinarias de su turno + máximo de extras (${maxExtra}h):\n\n${over.join('\n')}\n\nEn días normales solo se reconocen ${maxExtra} horas extra sobre el turno. Revisa las horas de entrada/salida.\n\n¿Enviar de todas formas?`)) return;
+      if(!confirm(`⚠️ ATENCIÓN — estas personas superan las horas ordinarias del día + máximo de extras (${maxExtra}h):\n\n${over.join('\n')}\n\nSolo se reconocen ${maxExtra} horas extra sobre el estándar del día. Revisa las horas de entrada/salida.\n\n¿Enviar de todas formas?`)) return;
     }
   }
 
