@@ -4,7 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>¿Qué quieres reportar?</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#f5a623">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TM2 Sur">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<script src="offline.js"></script>
 <style>
   :root{--bg:#0f1117;--surface:#1a1d27;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--error:#e74c3c;}
   *{box-sizing:border-box;margin:0;padding:0;}
@@ -82,7 +89,8 @@ const ADMIN_TILES=[
 ];
 
 window.onload = function(){
-  const rol=sessionStorage.getItem('rol'), usuario=(sessionStorage.getItem('usuario')||'').trim().toLowerCase();
+  // D82: sesión en localStorage (sobrevive cierre del navegador en zona muerta)
+  const rol=localStorage.getItem('rol'), usuario=(localStorage.getItem('usuario')||'').trim().toLowerCase();
   if(!rol || !usuario || (!TILES[usuario] && rol!=='admin')){ window.location.href='index.html'; return; }
   document.getElementById('userDisplay').textContent=usuario;
   if(rol==='admin'){
@@ -103,7 +111,11 @@ window.onload = function(){
     `<a class="tile" href="${t.href}"><div class="ico">${t.ico}</div><div class="t-main"><h2>${t.t}</h2><p>${t.p}</p></div><div class="arrow">→</div></a>`
   ).join('');
 };
-function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
+function logout(){
+  // solo la sesión: la cola de envíos pendientes NO se borra al cerrar sesión (D82)
+  localStorage.removeItem('usuario'); localStorage.removeItem('rol');
+  window.location.href='index.html';
+}
 </script>
 </body>
 </html>

@@ -1,0 +1,17 @@
+{
+  "name": "TM2 Sur — Reporte de Obra",
+  "short_name": "TM2 Sur",
+  "description": "Sistema de Reporte Diario de Obra TM2 Sur: reportes de capataz, chequeadora, drenajes y asistencia de personal, con modo sin conexión (D82).",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f1117",
+  "theme_color": "#f5a623",
+  "lang": "es",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

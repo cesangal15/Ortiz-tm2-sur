@@ -4,7 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reporte Diario de Obra — Capataz</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#f5a623">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TM2 Sur">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<script src="offline.js"></script>
 <style>
   :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--success:#2ecc71;--error:#e74c3c;--input-bg:#12151f;--uf1:#3a9bdc;--uf2:#9b59b6;}
   *{box-sizing:border-box;margin:0;padding:0;}
@@ -145,8 +152,8 @@
 </div>
 
 <div class="success" id="successScreen">
-  <div class="ico">✅</div>
-  <h2>Reporte enviado</h2>
+  <div class="ico" id="successIco">✅</div>
+  <h2 id="successTitle">Reporte enviado</h2>
   <p id="successMsg">Tu reporte del día quedó registrado.</p>
   <button onclick="resetForm()">Nuevo reporte</button>
 </div>
@@ -224,7 +231,8 @@ const MOTIVOS = ['Mantenimiento','Sin operador','Falla mecánica','Lluvia / clim
 let lineaIdx = 0, eqIdx = 0;
 
 window.onload = function(){
-  const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
+  // D82: sesión en localStorage (sobrevive cierre del navegador en zona muerta)
+  const rol=localStorage.getItem('rol'), usuario=localStorage.getItem('usuario');
   if(!rol || (rol!=='capataz' && rol!=='admin' && rol!=='encargado')){ window.location.href='index.html'; return; }
   document.getElementById('userDisplay').textContent=usuario||'capataz';
   if(rol==='admin'){var _bm=document.getElementById('btnMenu');if(_bm)_bm.style.display='inline-block';}
@@ -233,9 +241,11 @@ window.onload = function(){
   addLinea();
 };
 function logout(){
-  const rol=sessionStorage.getItem('rol');
+  const rol=localStorage.getItem('rol');
   if(rol==='encargado'){ window.location.href='encargado.html'; return; }
-  sessionStorage.clear(); window.location.href='index.html';
+  // solo la sesión: la cola de envíos pendientes NO se borra al cerrar sesión (D82)
+  localStorage.removeItem('usuario'); localStorage.removeItem('rol');
+  window.location.href='index.html';
 }
 
 function pkToMeters(pk){ if(!pk) return null; pk=String(pk).toLowerCase().replace(/pk/g,'').trim().replace(/\s/g,''); if(pk.includes('+')){const p=pk.split('+');const km=parseInt(p[0]);const m=parseInt(p[1]||'0');if(isNaN(km))return null;return km*1000+(isNaN(m)?0:m);} const n=parseFloat(pk);return isNaN(n)?null:n*1000; }
@@ -630,11 +640,12 @@ function getCantidades(){
         const sinProd=TIPOS_SIN_PRODUCCION.includes(e.tipo_equipo);
         const opAll=parseFloat(e.horas_operadas)||0;
         const opA=Math.round((opAll/2)*100)/100, opB=Math.round((opAll-opA)*100)/100;
-        equiposA.push({...e, horas_operadas:opA, produccion:sinProd?null:v.prodMaq});
-        equiposB.push({...e, horas_operadas:opB, horas_programadas:0, horas_muertas:0, motivo:'', produccion:sinProd?null:v.m3});
+        // D82: id_registro UUID de CLIENTE por fila de MAQUINARIA (dedupe de reenvíos de la cola)
+        equiposA.push({...e, id_registro:TM2Offline.uuid(), horas_operadas:opA, produccion:sinProd?null:v.prodMaq});
+        equiposB.push({...e, id_registro:TM2Offline.uuid(), horas_operadas:opB, horas_programadas:0, horas_muertas:0, motivo:'', produccion:sinProd?null:v.m3});
       });
       // Fila A — contractual a DATA en Ha (m²÷10 000); máquina con prod_maquina en m²/m³
-      rows.push({ grupo:grupoFromCc(x.cc), capitulo:capFromCc(x.cc), actividad:a, descripcion:x.item, sub_actividad:'',
+      rows.push({ id_registro:TM2Offline.uuid(), grupo:grupoFromCc(x.cc), capitulo:capFromCc(x.cc), actividad:a, descripcion:x.item, sub_actividad:'',
         centro_costo: proy?(proy+'.'+x.cc):'', unidad:x.uni, data:true, uf:uf||'', proyecto:proy,
         elemento:buildElemento(pki,pkf), pk_inicial:pki, pk_final:pkf, abs_inicial:pkToMeters(pki), abs_final:pkToMeters(pkf),
         liberacion:'CAMPO', largo:v.ha, observacion:obs, equipos:equiposA,
@@ -642,7 +653,7 @@ function getCantidades(){
       // Fila B — excavación no aprovechable (m²×espesor) en m³; hereda PK/UF (D04); CC=proy.02.05.
       // Lleva la misma máquina (mitad de horas, producción m³ vía su largo). El backend encadena la
       // ZODME (Fila C, 02.08) por la ruta existente de D17 — esa sí sin máquina.
-      rows.push({ grupo:'TIERRAS', capitulo:'EXPLANACIONES', actividad:'Excavación no aprovechable',
+      rows.push({ id_registro:TM2Offline.uuid(), grupo:'TIERRAS', capitulo:'EXPLANACIONES', actividad:'Excavación no aprovechable',
         descripcion:'Excavaciones en material común NO APROVECHABLE', sub_actividad:'',
         centro_costo: proy?(proy+'.02.05'):'', unidad:'m3', data:true, uf:uf||'', proyecto:proy,
         elemento:buildElemento(pki,pkf), pk_inicial:pki, pk_final:pkf, abs_inicial:pkToMeters(pki), abs_final:pkToMeters(pkf),
@@ -658,9 +669,9 @@ function getCantidades(){
       largo=(prodEl && prodDiv && prodDiv.style.display!=='none') ? (parseFloat(prodEl.value)||0) : null;
     }
     const equipos=[];
-    b.querySelectorAll('.eq-item').forEach(r=>{ const e=byEq[r.id]; if(e) equipos.push({...e, produccion:TIPOS_SIN_PRODUCCION.includes(e.tipo_equipo)?null:largo}); });
+    b.querySelectorAll('.eq-item').forEach(r=>{ const e=byEq[r.id]; if(e) equipos.push({...e, id_registro:TM2Offline.uuid(), produccion:TIPOS_SIN_PRODUCCION.includes(e.tipo_equipo)?null:largo}); });
     const esApoyo = x.medida==='apoyo';
-    rows.push({ grupo:esApoyo?'':grupoFromCc(x.cc), capitulo:esApoyo?'':capFromCc(x.cc),
+    rows.push({ id_registro:TM2Offline.uuid(), grupo:esApoyo?'':grupoFromCc(x.cc), capitulo:esApoyo?'':capFromCc(x.cc),
       actividad:esApoyo?'APOYO':a, descripcion:x.item, sub_actividad:x.sub||'',
       centro_costo: (x.data&&proy)?(proy+'.'+x.cc):'', unidad:x.uni, data:x.data, uf:esApoyo?'':uf||'', proyecto: x.data?proy:'',
       elemento:buildElemento(pki,pkf), pk_inicial:pki, pk_final:pkf, abs_inicial:pkToMeters(pki), abs_final:pkToMeters(pkf),
@@ -704,29 +715,46 @@ function validate(){
   return ok;
 }
 let enviando=false;
+/* Pantalla de confirmación con DOS modos bien distintos (D82): 'servidor' (verde, confirmación real)
+ * y 'cola' (naranja, guardado LOCAL pendiente de subir). Nunca mostrar el verde para un encolado. */
+function mostrarExito(modo, msg){
+  const ico=document.getElementById('successIco'), h2=document.getElementById('successTitle'), p=document.getElementById('successMsg');
+  if(modo==='cola'){
+    ico.textContent='📥'; h2.textContent='Guardado en el teléfono'; h2.style.color='var(--accent)';
+    p.innerHTML='<b style="color:var(--accent)">Se enviará solo cuando vuelva la señal.</b><br>'+msg;
+  } else {
+    ico.textContent='✅'; h2.textContent='Reporte enviado'; h2.style.color='';
+    p.textContent=msg;
+  }
+  document.getElementById('formMain').classList.add('hidden');
+  document.getElementById('submitBar').classList.add('hidden');
+  document.getElementById('successScreen').classList.add('visible');
+}
 async function submitForm(){
   if(enviando) return;
   if(!validate()){ if(document.querySelector('.field-error')) alert('Revisa los campos marcados.'); return; }
   enviando=true;
   let exito=false;
   const btn=document.getElementById('btnSubmit'); btn.textContent='ENVIANDO...'; btn.disabled=true;
-  const data={ fecha:document.getElementById('fechaReporte').value, rol:'capataz', capataz:sessionStorage.getItem('usuario')||'capataz', cantidades:getCantidades(), observacion_general:(document.getElementById('obsGeneral').value||'').trim() };
-  try{
-    const resp=await fetch(APPS_SCRIPT_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(data) });
-    const res=await resp.json();
-    if(!res || !res.ok) throw new Error((res&&res.error)||'Respuesta inesperada del servidor');
+  // D82: id_reporte + id_registro por fila generados EN EL CLIENTE (dedupe de reenvíos en Codigo.gs)
+  const data={ id_reporte:TM2Offline.uuid(), fecha:document.getElementById('fechaReporte').value, rol:'capataz', capataz:localStorage.getItem('usuario')||'capataz', cantidades:getCantidades(), observacion_general:(document.getElementById('obsGeneral').value||'').trim() };
+  // D82: intento directo con timeout ~15 s; si no hay red / no responde, va a la cola local
+  const r=await TM2Offline.enviarConCola({ tipo:'reporte', url:APPS_SCRIPT_URL, payload:data, fecha_obra:data.fecha, usuario:data.capataz });
+  if(r.enviado){
+    const res=r.res;
+    if(!res || !res.ok){
+      alert('⚠ No se pudo guardar: '+((res&&res.error)||'Respuesta inesperada del servidor')+'\n\nNo cierres la página, intenta enviar de nuevo.');
+    } else {
+      exito=true;
+      mostrarExito('servidor','Se guardaron '+res.cantidades+' actividad(es) y '+res.maquinas+' equipo(s).');
+    }
+  } else {
     exito=true;
-    document.getElementById('successMsg').textContent='Se guardaron '+res.cantidades+' actividad(es) y '+res.maquinas+' equipo(s).';
-    document.getElementById('formMain').classList.add('hidden');
-    document.getElementById('submitBar').classList.add('hidden');
-    document.getElementById('successScreen').classList.add('visible');
-  }catch(err){
-    alert('⚠ No se pudo guardar: '+err.message+'\n\nNo cierres la página, intenta enviar de nuevo.');
-  }finally{
-    if(!exito){ btn.textContent='ENVIAR REPORTE DEL DÍA →'; btn.disabled=false; }
-    else{ btn.textContent='✓ ENVIADO'; btn.disabled=true; }
-    enviando=false;
+    mostrarExito('cola','Tu reporte del '+data.fecha+' quedó guardado en este teléfono y subirá automático. Puedes ver los pendientes en el contador de arriba.');
   }
+  if(!exito){ btn.textContent='ENVIAR REPORTE DEL DÍA →'; btn.disabled=false; }
+  else{ btn.textContent=r.enviado?'✓ ENVIADO':'📥 EN COLA'; btn.disabled=true; }
+  enviando=false;
 }
 function resetForm(){
   document.getElementById('cantidadesContainer').innerHTML=''; lineaIdx=0;

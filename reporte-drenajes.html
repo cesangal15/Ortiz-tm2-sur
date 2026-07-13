@@ -4,7 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reporte Diario de Obra — Drenajes</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#f5a623">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TM2 Sur">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<script src="offline.js"></script>
 <style>
   :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--success:#2ecc71;--error:#e74c3c;--input-bg:#12151f;--uf1:#3a9bdc;--uf2:#9b59b6;}
   *{box-sizing:border-box;margin:0;padding:0;}
@@ -138,8 +145,8 @@
 </div>
 
 <div class="success" id="successScreen">
-  <div class="ico">✅</div>
-  <h2>Reporte enviado</h2>
+  <div class="ico" id="successIco">✅</div>
+  <h2 id="successTitle">Reporte enviado</h2>
   <p id="successMsg">Tu reporte del día quedó registrado.</p>
   <button onclick="resetForm()">Nuevo reporte</button>
 </div>
@@ -172,7 +179,8 @@ let ACUM={};
 let lineaIdx=0, eqIdx=0;
 
 window.onload = async function(){
-  const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
+  // D82: sesión en localStorage (sobrevive cierre del navegador en zona muerta)
+  const rol=localStorage.getItem('rol'), usuario=localStorage.getItem('usuario');
   const OK=['capataz_odt','capataz_odl','residente_odt','residente_odl','admin'];
   if(!rol || OK.indexOf(rol)<0){ window.location.href='index.html'; return; }
   document.getElementById('userDisplay').textContent=usuario||'capataz';
@@ -192,9 +200,11 @@ window.onload = async function(){
   await cargarCatalogo();
 };
 function logout(){
-  const rol=sessionStorage.getItem('rol');
+  const rol=localStorage.getItem('rol');
   if(rol==='residente_odt'||rol==='residente_odl'){ window.location.href='residente-drenajes.html'; return; }
-  sessionStorage.clear(); window.location.href='index.html';
+  // solo la sesión: la cola de envíos pendientes NO se borra al cerrar sesión (D82)
+  localStorage.removeItem('usuario'); localStorage.removeItem('rol');
+  window.location.href='index.html';
 }
 function pintarTitulo(){
   const n=(AREA==='odt')?'ODT · Transversal':'ODL · Longitudinal';
@@ -207,19 +217,27 @@ function cambiarArea(){
   document.getElementById('cantidadesContainer').innerHTML=''; lineaIdx=0;
   addLinea(); refreshCounts();
 }
+// D82 §2.7: catálogo con caché-fallback. Fresco si hay señal (y guarda copia local); sin señal usa
+// la última copia con un banner ámbar informativo (no bloquea). Sin señal Y sin copia: hay que abrir
+// la pantalla con señal al menos una vez.
 async function cargarCatalogo(){
   try{
-    const resp=await fetch(APPS_SCRIPT_URL+'?action=drenajes');
-    const data=await resp.json();
-    if(!data || !data.ok) throw new Error((data&&data.error)||'Respuesta inesperada');
-    MARCADORES=(data.marcadores||[]);
-    ITEMS=(data.items||[]);
+    const r=await TM2Offline.catalogoCache('drenajes', async function(){
+      const resp=await fetch(APPS_SCRIPT_URL+'?action=drenajes');
+      const data=await resp.json();
+      if(!data || !data.ok) throw new Error((data&&data.error)||'Respuesta inesperada');
+      return { marcadores:(data.marcadores||[]), items:(data.items||[]) };
+    }, 24);
+    MARCADORES=(r.data.marcadores||[]);
+    ITEMS=(r.data.items||[]);
+    if(!r.fresco) TM2Offline.bannerCatalogoViejo(document.querySelector('.container'),
+      'Sin señal: usando el catálogo del '+TM2Offline.fechaCorta(r.guardado)+' (marcadores e ítems guardados). Se actualizará solo al volver la señal.');
     document.getElementById('catLoading').style.display='none';
     document.getElementById('btnAddLinea').style.display='block';
-    cargarAcumulado();      // en paralelo; no bloquea el formulario si falla
+    cargarAcumulado();      // en paralelo; no bloquea el formulario si falla (offline: sin acumulado)
     addLinea();
   }catch(err){
-    document.getElementById('catLoading').innerHTML='⚠ No se pudo cargar el catálogo de la BASE ('+err.message+'). <a href="#" onclick="cargarCatalogo();return false;" style="color:var(--accent)">Reintentar</a>';
+    document.getElementById('catLoading').innerHTML='⚠ No se pudo cargar el catálogo de la BASE ('+err.message+').<br>Si estás sin señal: necesitas abrir esta pantalla con señal al menos una vez para guardar una copia en el teléfono. <a href="#" onclick="cargarCatalogo();return false;" style="color:var(--accent)">Reintentar</a>';
   }
 }
 // Acumulado oficial (DATA) por marcador+CC del área. Best-effort: si falla, el formulario sigue
@@ -450,10 +468,11 @@ function getCantidades(){
     const equipos=[];
     b.querySelectorAll('.eq-item').forEach(r=>{
       const id=r.querySelector('.e-id').value.trim(); if(!id) return;
-      equipos.push({ id_maquina:id, tipo_equipo:'', operador:r.querySelector('.e-op').value.trim(),
+      equipos.push({ id_registro:TM2Offline.uuid(), id_maquina:id, tipo_equipo:'', operador:r.querySelector('.e-op').value.trim(),
         horas_programadas:'', horas_operadas:(r.querySelector('.e-hrs').value||''), horas_muertas:'', motivo:'' });
     });
     rows.push({
+      id_registro:TM2Offline.uuid(),   // D82: UUID de cliente (dedupe de reenvíos en Codigo.gs)
       grupo:'DRENAJES Y ESTRUCTURAS',
       // capítulo por defecto del área; los ítems "extra" (D71: Demolición de Estructuras) traen el suyo
       capitulo: it.capitulo || ((AREA==='odt')?'DRENAJE TRANSVERSAL':'DRENAJE LONGITUDINAL'),
@@ -493,33 +512,50 @@ function validate(){
   return ok;
 }
 let enviando=false;
+/* Pantalla de confirmación con DOS modos bien distintos (D82): 'servidor' (verde, confirmación real)
+ * y 'cola' (naranja, guardado LOCAL pendiente de subir). Nunca mostrar el verde para un encolado. */
+function mostrarExito(modo, msg){
+  const ico=document.getElementById('successIco'), h2=document.getElementById('successTitle'), p=document.getElementById('successMsg');
+  if(modo==='cola'){
+    ico.textContent='📥'; h2.textContent='Guardado en el teléfono'; h2.style.color='var(--accent)';
+    p.innerHTML='<b style="color:var(--accent)">Se enviará solo cuando vuelva la señal.</b><br>'+msg;
+  } else {
+    ico.textContent='✅'; h2.textContent='Reporte enviado'; h2.style.color='';
+    p.textContent=msg;
+  }
+  document.getElementById('formMain').classList.add('hidden');
+  document.getElementById('submitBar').classList.add('hidden');
+  document.getElementById('successScreen').classList.add('visible');
+}
 async function submitForm(){
   if(enviando) return;
   if(!validate()){ if(document.querySelector('.field-error')) alert('Revisa los campos marcados.'); return; }
   enviando=true;
   let exito=false;
   const btn=document.getElementById('btnSubmit'); btn.textContent='ENVIANDO...'; btn.disabled=true;
+  // D82: id_registro por fila generados EN EL CLIENTE (dedupe de reenvíos en Codigo.gs)
   const data={ fecha:document.getElementById('fechaReporte').value,
-    rol:sessionStorage.getItem('rol')||('capataz_'+AREA),
-    capataz:sessionStorage.getItem('usuario')||('capataz_'+AREA),
+    rol:localStorage.getItem('rol')||('capataz_'+AREA),
+    capataz:localStorage.getItem('usuario')||('capataz_'+AREA),
     cantidades:getCantidades() };
-  try{
-    // confirmación real del servidor (D30): POST text/plain y se lee la respuesta
-    const resp=await fetch(APPS_SCRIPT_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(data) });
-    const res=await resp.json();
-    if(!res || !res.ok) throw new Error((res&&res.error)||'Respuesta inesperada del servidor');
+  // confirmación real del servidor (D30) con rama offline (D82): intento directo con timeout ~15 s;
+  // si no hay red / no responde, el payload EXACTO va a la cola local
+  const r=await TM2Offline.enviarConCola({ tipo:'reporte', url:APPS_SCRIPT_URL, payload:data, fecha_obra:data.fecha, usuario:data.capataz });
+  if(r.enviado){
+    const res=r.res;
+    if(!res || !res.ok){
+      alert('⚠ No se pudo guardar: '+((res&&res.error)||'Respuesta inesperada del servidor')+'\n\nNo cierres la página, intenta enviar de nuevo.');
+    } else {
+      exito=true;
+      mostrarExito('servidor','Se guardaron '+res.cantidades+' actividad(es) y '+res.maquinas+' máquina(s).');
+    }
+  } else {
     exito=true;
-    document.getElementById('successMsg').textContent='Se guardaron '+res.cantidades+' actividad(es) y '+res.maquinas+' máquina(s).';
-    document.getElementById('formMain').classList.add('hidden');
-    document.getElementById('submitBar').classList.add('hidden');
-    document.getElementById('successScreen').classList.add('visible');
-  }catch(err){
-    alert('⚠ No se pudo guardar: '+err.message+'\n\nNo cierres la página, intenta enviar de nuevo.');
-  }finally{
-    if(!exito){ btn.textContent='ENVIAR REPORTE DEL DÍA →'; btn.disabled=false; }
-    else{ btn.textContent='✓ ENVIADO'; btn.disabled=true; }
-    enviando=false;
+    mostrarExito('cola','Tu reporte del '+data.fecha+' quedó guardado en este teléfono y subirá automático. Puedes ver los pendientes en el contador de arriba.');
   }
+  if(!exito){ btn.textContent='ENVIAR REPORTE DEL DÍA →'; btn.disabled=false; }
+  else{ btn.textContent=r.enviado?'✓ ENVIADO':'📥 EN COLA'; btn.disabled=true; }
+  enviando=false;
 }
 function resetForm(){
   document.getElementById('cantidadesContainer').innerHTML=''; lineaIdx=0;

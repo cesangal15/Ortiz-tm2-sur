@@ -4,7 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Asistencia de Personal — Responsable</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#f5a623">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TM2 Sur">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<script src="offline.js"></script>
 <style>
   :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--success:#2ecc71;--error:#e74c3c;--input-bg:#12151f;--warn:#f5a623;}
   *{box-sizing:border-box;margin:0;padding:0;}
@@ -72,6 +79,8 @@
   .btn-enviar:disabled{opacity:0.5;cursor:not-allowed;}
   .loading,.empty-state{text-align:center;padding:34px;color:var(--muted);font-size:14px;}
   .confirm-ok{background:rgba(46,204,113,0.1);border:1px solid rgba(46,204,113,0.3);border-radius:10px;padding:12px 14px;color:var(--success);font-size:13px;margin-bottom:14px;}
+  /* D82: confirmación NARANJA de encolado (guardado local, NO es confirmación de servidor) */
+  .confirm-cola{background:rgba(245,166,35,0.1);border:1px solid rgba(245,166,35,0.4);border-radius:10px;padding:12px 14px;color:var(--accent);font-size:13px;margin-bottom:14px;}
 </style>
 </head>
 <body>
@@ -98,7 +107,8 @@ let STATE = { usuario:'', rol:'', fecha:'', cuadrillas:[], cuadrillaActual:'', p
   config:{}, festivos:[], jornada:{}, catCC:[], catCCUsados:[], catMotivos:[], recientesCC:{}, turnos:[], nota:'', nextBloqueId:1, enviando:false };
 
 window.onload = function(){
-  const rol=sessionStorage.getItem('rol'), usuario=sessionStorage.getItem('usuario');
+  // D82: sesión en localStorage (sobrevive cierre del navegador en zona muerta)
+  const rol=localStorage.getItem('rol'), usuario=localStorage.getItem('usuario');
   if(!rol || !usuario){ window.location.href='index.html'; return; }
   STATE.usuario=usuario; STATE.rol=rol;
   document.getElementById('userDisplay').textContent=usuario;
@@ -107,7 +117,11 @@ window.onload = function(){
   STATE.fecha=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
   cargarRoster();
 };
-function logout(){ sessionStorage.clear(); window.location.href='index.html'; }
+function logout(){
+  // solo la sesión: la cola de envíos pendientes NO se borra al cerrar sesión (D82)
+  localStorage.removeItem('usuario'); localStorage.removeItem('rol');
+  window.location.href='index.html';
+}
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function pid(p){ return p._pid; }
@@ -147,9 +161,17 @@ function ccCapataz(){ return prefijoCapataz()+'.'+ccCapatazSufijo(); }
 async function cargarRoster(){
   document.getElementById('container').innerHTML='<div class="loading">⏳ Cargando roster…</div>';
   try{
-    const url=`${APPS_SCRIPT_URL}?action=roster&usuario=${encodeURIComponent(STATE.usuario)}&fecha=${STATE.fecha}`;
-    const resp=await fetch(url); const data=await resp.json();
-    if(!data.ok) throw new Error(data.error||'roster');
+    // D82 §2.7: roster con caché-fallback POR USUARIO. Fresco si hay señal (y guarda copia local);
+    // sin señal usa el último roster guardado con aviso de fecha (un roster de ayer es aceptable:
+    // el residente corrige después). Sin señal y sin copia: mensaje de abrir con señal una vez.
+    const rc=await TM2Offline.catalogoCache('roster_'+STATE.usuario, async function(){
+      const url=`${APPS_SCRIPT_URL}?action=roster&usuario=${encodeURIComponent(STATE.usuario)}&fecha=${STATE.fecha}`;
+      const resp=await fetch(url); const d=await resp.json();
+      if(!d.ok) throw new Error(d.error||'roster');
+      return d;
+    }, 48);
+    const data=rc.data;
+    STATE.rosterViejo=!rc.fresco; STATE.rosterGuardado=rc.guardado;
     STATE.cuadrillas=data.cuadrillas||[];
     STATE.cuadrillaActual=STATE.cuadrillas[0]||'';
     STATE.config=data.config||{}; STATE.festivos=data.festivos||[]; STATE.jornada=data.jornada||{};
@@ -171,7 +193,7 @@ async function cargarRoster(){
     STATE.bloques=[];
     render();
   }catch(err){
-    document.getElementById('container').innerHTML='<div class="empty-state">⚠️ No se pudo cargar el roster. Revisa la conexión o el Apps Script.<br><small>'+esc(err.message||err)+'</small></div>';
+    document.getElementById('container').innerHTML='<div class="empty-state">⚠️ No se pudo cargar el roster. Revisa la conexión o el Apps Script.<br>Si estás sin señal: abre esta pantalla con señal al menos una vez para guardar una copia del roster en el teléfono.<br><small>'+esc(err.message||err)+'</small></div>';
   }
 }
 
@@ -406,6 +428,10 @@ function render(){
   const avisos=calcularAvisos();
 
   let html='';
+  // D82: aviso informativo (no bloquea) de roster de copia local — sin señal al cargar
+  if(STATE.rosterViejo){
+    html+='<div class="avisos">📡 Sin señal al cargar: usando el roster guardado del '+esc(TM2Offline.fechaCorta(STATE.rosterGuardado))+'. Si hubo cambios de personal, el residente los corrige después.</div>';
+  }
   // ---- fecha + cuadrilla + jornada ----
   html+='<div class="card"><div class="row">';
   html+=`<div class="field"><label>Fecha</label><input type="date" value="${STATE.fecha}" onchange="onFechaChange(this.value)"></div>`;
@@ -611,20 +637,26 @@ async function enviar(){
   });
 
   STATE.enviando=true; render();
-  try{
-    const resp=await fetch(APPS_SCRIPT_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body: JSON.stringify({ action:'reporte_asistencia', fecha:STATE.fecha, cuadrilla:STATE.cuadrillaActual, reporta:STATE.usuario, filas, nota:STATE.nota||'' }) });
-    const data=await resp.json();
-    STATE.enviando=false;
-    if(data.ok){
+  // D82: la asistencia NO lleva UUID de dedupe — el backend pisa fecha+cuadrilla (upsert
+  // borra-e-inserta verificado en CodigoAsistencias.gs/guardarAsistencia): reenviar el mismo payload
+  // desde la cola re-pisa con el mismo contenido (idempotente por diseño). Si hay dos envíos
+  // encolados de la misma fecha+cuadrilla, el orden FIFO hace que gane el último (el más reciente).
+  const payload={ action:'reporte_asistencia', fecha:STATE.fecha, cuadrilla:STATE.cuadrillaActual, reporta:STATE.usuario, filas, nota:STATE.nota||'' };
+  const r=await TM2Offline.enviarConCola({ tipo:'asistencia', url:APPS_SCRIPT_URL, payload:payload, fecha_obra:STATE.fecha, usuario:STATE.usuario });
+  STATE.enviando=false;
+  if(r.enviado){
+    const data=r.res;
+    if(data && data.ok){
       render();
       document.getElementById('confirmBox').innerHTML=`<div class="confirm-ok">✓ Guardado en el servidor: ${data.filas} fila(s) para ${esc(STATE.cuadrillaActual)} · ${STATE.fecha}.</div>`;
     } else {
-      alert('El servidor respondió con un error: '+(data.error||'desconocido'));
+      render();
+      alert('El servidor respondió con un error: '+((data&&data.error)||'desconocido'));
     }
-  }catch(err){
-    STATE.enviando=false; render();
-    alert('No se pudo enviar. Revisa la conexión.\n'+(err.message||err));
+  } else {
+    // encolado: confirmación NARANJA (guardado local) — nunca el verde de servidor
+    render();
+    document.getElementById('confirmBox').innerHTML=`<div class="confirm-cola">📥 <b>Guardado en el teléfono.</b> Se enviará solo cuando vuelva la señal. Asistencia de ${esc(STATE.cuadrillaActual)} · ${STATE.fecha} en cola (mira el contador de arriba).</div>`;
   }
 }
 </script>

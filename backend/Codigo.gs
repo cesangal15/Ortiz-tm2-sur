@@ -19,6 +19,9 @@
  *   POST  reporte: {fecha,rol,capataz,cantidades:[{...,equipos:[]}],volquetas:[{origen,destino,tipo_destino,uf,placas:[{placa,viajes}]}],maquinaria:[{id_maquina,...}]}
  *           -> BANDEJA (+ MAQUINARIA) ; chequeadora además -> VOLQUETAS (una fila por placa)
  *           y, si envía maquinaria, sus excavadoras -> MAQUINARIA (producción = total excavado ÷ nº máquinas, D54)
+ *           D82: cada fila puede traer id_registro UUID de CLIENTE → dedupe por fecha (reenvíos de la
+ *           cola offline no duplican); payload sin ids = comportamiento viejo. Respuesta incluye
+ *           {guardadas, duplicadas} además de los conteos de siempre.
  *   POST  {action:'enviar_data', fecha, area, cantidades:[...incluidas...]}  -> DATA
  *           (pisa el día SOLO en el área que envía — tierras | odt | odl; enmienda operativa de D03, D69)
  */
@@ -623,10 +626,40 @@ function doPost(e){
 }
 
 /* ---------- capataz / chequeadora -> BANDEJA ---------- */
+// D82: dedupe de reenvíos de la cola offline. Devuelve {id:1} con los id_registro ya guardados en la
+// hoja PARA ESA FECHA (búsqueda acotada por fecha: solo se leen las columnas id+fecha, no todo el
+// histórico). Solo se llama cuando el payload trae ids generados en el cliente; un payload viejo
+// (sin id) nunca entra aquí. Fechas comparadas con fdate (duck-typing, NUNCA instanceof Date).
+function idsExistentes(sh, headers, idHeader, fecha){
+  const out={}, last=sh.getLastRow();
+  if(last<2) return out;
+  const idCol=headers.indexOf(idHeader)+1, fCol=headers.indexOf('fecha')+1;
+  if(!idCol || !fCol) return out;
+  const ids=sh.getRange(2,idCol,last-1,1).getValues();
+  const fs=sh.getRange(2,fCol,last-1,1).getValues();
+  for(let i=0;i<ids.length;i++){
+    if(fdate(fs[i][0])===fecha && String(ids[i][0]||'')!=='') out[String(ids[i][0])]=1;
+  }
+  return out;
+}
 function guardarReporte(body){
   const fecha=fdate(body.fecha), reporta=body.capataz||'', rol=body.rol||'capataz', ts=new Date();
   const banSh=getSheet('BANDEJA', BANDEJA_HEADERS), maqSh=getSheet('MAQUINARIA', MAQ_HEADERS);
   const banRows=[], maqRows=[];
+  // D82 — identidad de envíos: cada fila del payload puede traer su id_registro UUID GENERADO EN EL
+  // CLIENTE (antes lo generaba este backend). Un reenvío desde la cola offline puede duplicar filas
+  // si el primer intento sí llegó pero la respuesta se perdió (señal intermitente): las filas cuyo id
+  // ya existe en la hoja destino se SALTAN en silencio y cuentan como `duplicadas` — el reenvío de
+  // algo ya guardado ES éxito. RETROCOMPATIBILIDAD: si el payload llega sin id_registro (frontend
+  // viejo cacheado en un celular), el backend genera el id como siempre y NO deduplica.
+  const traeIdsBan=(body.cantidades||[]).some(function(c){ return c.id_registro; });
+  const traeIdsMaq=(body.cantidades||[]).some(function(c){ return (c.equipos||[]).some(function(m){ return m.id_registro; }); })
+                 || (body.maquinaria||[]).some(function(m){ return m.id_registro; });
+  const traeIdsVol=(body.volquetas||[]).some(function(l){ return l.id_registro; });
+  const banIds = traeIdsBan ? idsExistentes(banSh, BANDEJA_HEADERS, 'id_registro', fecha) : {};
+  const maqIds = traeIdsMaq ? idsExistentes(maqSh, MAQ_HEADERS, 'app_id_registro', fecha) : {};
+  const volIds = traeIdsVol ? idsExistentes(getSheet('VOLQUETAS', VOLQUETAS_HEADERS), VOLQUETAS_HEADERS, 'id_registro', fecha) : {};
+  let dupBan=0, dupMaq=0, dupVol=0;
   // D53: cubicaje real por placa. Procesamos VOLQUETAS antes que las cantidades para que el
   // volumen oficial de excavación/terraplén use Σ(viajes_placa × cubicaje_placa) en vez de total×14.
   // El factor editable del reporte (14 por defecto) es el fallback para placas no catalogadas.
@@ -635,7 +668,11 @@ function guardarReporte(body){
   const lineVol={}, lineTipo={}; // _linea -> volumen real (m³) desde las placas / tipo de destino (D67)
   const volRows=[];
   (body.volquetas||[]).forEach(line=>{
-    const idV=Utilities.getUuid();
+    // D82: id de línea del cliente si viene (las placas de la línea comparten id, como siempre).
+    // Línea ya guardada => se recalcula igual el volumen (las cantidades lo necesitan) pero sus
+    // placas NO se re-escriben: cuentan como duplicadas.
+    const idV=line.id_registro||Utilities.getUuid();
+    const dupLinea=!!(line.id_registro && volIds[String(line.id_registro)]);
     let m3line=0;
     (line.placas||[]).forEach(p=>{
       const placaN=normPlaca(p.placa);
@@ -644,7 +681,8 @@ function guardarReporte(body){
       const cub=found ? cubMap[placaN] : factorReporte;          // catálogo o fallback
       const m3p=viajes*cub;
       m3line+=m3p;
-      volRows.push([idV, ts, fecha, reporta, line.origen||'', line.destino||'', line.tipo_destino||'',
+      if(dupLinea){ dupVol++; }
+      else volRows.push([idV, ts, fecha, reporta, line.origen||'', line.destino||'', line.tipo_destino||'',
         line.uf||'', p.placa||'', (p.viajes!=null?p.viajes:''), cub, m3p, found?'catalogo':'default']);
     });
     if(line._linea!=null){ lineVol[line._linea]=m3line; lineTipo[line._linea]=String(line.tipo_destino||''); }
@@ -664,7 +702,9 @@ function guardarReporte(body){
       else if(c._acumOrigen) c.largo=traeSplit ? (totalExc-totalBota) : totalExc; // excavación acumulada al origen
       else if(c._linea!=null && lineVol[c._linea]!=null) c.largo=lineVol[c._linea]; // terraplén por línea
     }
-    const idC=Utilities.getUuid();
+    // D82: id de la fila generado en el cliente si viene; fila ya guardada => se salta (dupC).
+    const idC=c.id_registro||Utilities.getUuid();
+    const dupC=!!(c.id_registro && banIds[String(c.id_registro)]);
     // D56: origen del banco de material para la fila de excavación acumulada de la chequeadora; la
     // chequeadora lo manda en c.origen (la fila acumulada ya no tiene un _linea único).
     const origenBandeja = (rol==='chequeadora') ? (c.origen||'') : '';
@@ -675,7 +715,8 @@ function guardarReporte(body){
     const areaCol = (areaLinea==='tierras') ? '' : areaLinea;
     const turnoNoche = (c.turno_noche===true || String(c.turno_noche||'').toUpperCase()==='SI') ? 'SI' : '';
     // todo entra a BANDEJA; cereo (data:false) marcado como 'no_data' para que el encargado lo vea pero no lo envíe a DATA
-    banRows.push([idC, ts, fecha, reporta, rol, c.grupo||'', c.capitulo||'', c.actividad||'', c.descripcion||'', c.centro_costo||'',
+    if(dupC){ dupBan++; }
+    else banRows.push([idC, ts, fecha, reporta, rol, c.grupo||'', c.capitulo||'', c.actividad||'', c.descripcion||'', c.centro_costo||'',
       c.unidad||'', c.uf||'', c.proyecto||'', c.elemento||'', c.pk_inicial||'', c.pk_final||'', c.abs_inicial||'', c.abs_final||'', c.liberacion||'CAMPO',
       c.largo||0, c.observacion||'', (c.data===false)?'no_data':'pendiente', origenBandeja,
       areaCol, (c.personal_oficiales!=null?c.personal_oficiales:''), (c.personal_ayudantes!=null?c.personal_ayudantes:''),
@@ -684,14 +725,20 @@ function guardarReporte(body){
     // D58: si la no aprovechable nació de descapote/desmonte (c.derivada), el ZODME hereda el sello
     // 'orig:descapote/desmonte' en su observación para que la reconciliación del encargado no lo apague
     // por una no aprovechable de chequeadora de otro frente.
+    // D82: el ZODME nace y muere con su fila madre — id determinístico derivado del de la madre
+    // (idC+'-z') y mismo destino dup: si la madre ya estaba guardada, su ZODME también (ambas filas
+    // se escriben en el mismo setValues), así que se salta y cuenta como duplicada.
     if(c.data!==false && String(c.descripcion||'').toUpperCase().indexOf('NO APROVECHABLE')>=0){
+      if(dupC){ dupBan++; }
+      else {
         const proy=c.proyecto||'';
         const obsZodme = c.derivada ? 'Auto · ZODME de descapote/desmonte · orig:descapote/desmonte'
                                     : 'Auto · secuencial a no aprovechable';
-        banRows.push([Utilities.getUuid(), ts, fecha, reporta, rol, 'TIERRAS', 'EXPLANACIONES',
+        banRows.push([(c.id_registro?(c.id_registro+'-z'):Utilities.getUuid()), ts, fecha, reporta, rol, 'TIERRAS', 'EXPLANACIONES',
           'Conformación y disposición de sobrantes (ZODME)', 'Conformación y disposición de sobrantes',
           proy?(proy+'.02.08'):'', 'm3', c.uf, proy, c.elemento, c.pk_inicial, c.pk_final, c.abs_inicial, c.abs_final,
           c.liberacion, c.largo, obsZodme, 'pendiente', '', '', '', '', '', '']);
+      }
     }
     // equipos -> MAQUINARIA (layout Captura A→AA + internos del app, D52)
     // D69: las máquinas de líneas de drenajes (ODT/ODL) son captura libre (id/placa + operador +
@@ -699,6 +746,10 @@ function guardarReporte(body){
     const der = derivarActividad(c);
     const esDrenaje = (areaLinea!=='tierras');
     (c.equipos||[]).forEach(m=>{
+      // D82: cada equipo trae su propio id_registro de cliente (→ app_id_registro); si ya está
+      // guardado en MAQUINARIA para esa fecha, se salta (reenvío desde la cola).
+      const idM=m.id_registro||Utilities.getUuid();
+      if(m.id_registro && maqIds[String(m.id_registro)]){ dupMaq++; return; }
       const esVibro = esTipoSinProduccion(m.tipo_equipo);
       const esApoyo = (c.actividad||'') === 'APOYO';
       // T Producción: largo de la actividad EXCEPTO vibros/minis y actividades de apoyo → blanco (D41/D44).
@@ -723,7 +774,7 @@ function guardarReporte(body){
         // T produccion · U–X vacío · Y vacío(viajes) · Z vacío · AA observacion
         prod, '', '', '', '', '', '', c.observacion||'',
         // internos del app
-        Utilities.getUuid(), idC, ts, reporta, m.tipo_equipo, m.horas_programadas, m.horas_muertas,
+        idM, idC, ts, reporta, m.tipo_equipo, m.horas_programadas, m.horas_muertas,
         m.motivo, uProd, c.actividad, (esDrenaje?'NO':der.aCaptura), '', areaCol]);
     });
   });
@@ -743,6 +794,9 @@ function guardarReporte(body){
     if(!proyMaq && (body.cantidades||[]).length) proyMaq=body.cantidades[0].proyecto||'';
     const der=derivarActividad({actividad:actMaq});
     maqList.forEach(m=>{
+      // D82: mismo dedupe por id de cliente que los equipos del capataz.
+      const idM=m.id_registro||Utilities.getUuid();
+      if(m.id_registro && maqIds[String(m.id_registro)]){ dupMaq++; return; }
       const esVibro=esTipoSinProduccion(m.tipo_equipo);
       const prod=esVibro ? '' : prodCada;          // vibros/minis nunca llevan producción (D44)
       const uProd=(prod==='') ? '' : 'm3';
@@ -754,7 +808,7 @@ function guardarReporte(body){
         der.h, der.i, '', '', m.horas_operadas, '',
         '', hMant, '', '', estado, '',
         prod, '', '', '', '', '', '', '',
-        Utilities.getUuid(), '', ts, reporta, m.tipo_equipo, m.horas_programadas, m.horas_muertas,
+        idM, '', ts, reporta, m.tipo_equipo, m.horas_programadas, m.horas_muertas,
         m.motivo, uProd, actMaq, der.aCaptura, '', '']);
     });
   })();
@@ -766,8 +820,23 @@ function guardarReporte(body){
   if(volRows.length){ const volSh=getSheet('VOLQUETAS', VOLQUETAS_HEADERS);
     volSh.getRange(volSh.getLastRow()+1,1,volRows.length,VOLQUETAS_HEADERS.length).setValues(volRows); }
   const obs=(body.observacion_general||'').trim();
-  if(obs) getSheet('OBSERVACIONES', OBS_HEADERS).appendRow([Utilities.getUuid(), ts, fecha, reporta, obs]);
-  return json({ok:true, cantidades:banRows.length, maquinas:maqRows.length, volquetas:volRows.length});
+  if(obs){
+    // D82: la observación general usa el id_reporte del cliente (uno por envío) para no duplicarse
+    // en un reenvío; sin id_reporte (frontend viejo) se comporta como siempre.
+    const obsSh=getSheet('OBSERVACIONES', OBS_HEADERS);
+    const yaObs=body.id_reporte ? idsExistentes(obsSh, OBS_HEADERS, 'id_registro', fecha)[String(body.id_reporte)] : false;
+    if(!yaObs) obsSh.appendRow([body.id_reporte||Utilities.getUuid(), ts, fecha, reporta, obs]);
+  }
+  // D82: `guardadas`/`duplicadas` = filas escritas / saltadas por dedupe en este llamado. Los campos
+  // cantidades/maquinas/volquetas conservan el TOTAL del reporte (guardadas + duplicadas), así el
+  // mensaje de éxito de un reenvío muestra los mismos conteos que el envío original — el cliente
+  // trata guardadas+duplicadas === esperadas como éxito total.
+  return json({ok:true,
+    cantidades: banRows.length + dupBan,
+    maquinas:   maqRows.length + dupMaq,
+    volquetas:  volRows.length + dupVol,
+    guardadas:  banRows.length + maqRows.length + volRows.length,
+    duplicadas: dupBan + dupMaq + dupVol});
 }
 
 /* ---------- bandeja para el encargado / residentes de drenajes ---------- */

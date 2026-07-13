@@ -1,0 +1,129 @@
+/**
+ * TM2 Sur — Service worker (Nivel 3, D82 / backlog 2.9)
+ *
+ * Alcance: './' (rutas RELATIVAS — GitHub Pages sirve bajo /nombre-repo/).
+ * Estrategia:
+ *   - Precache del shell + capturas en `install` (lista explícita abajo).
+ *   - NETWORK-FIRST para todo documento/JS propio: con señal, los despliegues de GitHub Pages se
+ *     ven de inmediato (se sirve lo fresco y se actualiza la caché); sin señal, se sirve la copia.
+ *   - Fuentes de Google (DM Sans/Syne): CACHE-FIRST runtime (no cambian; sin esto el offline abre
+ *     con fuente del sistema). Cualquier otro dominio externo: passthrough sin caché.
+ *   - NUNCA se interceptan las llamadas al Apps Script (script.google.com /
+ *     script.googleusercontent.com), ni GET ni POST: el fallback de catálogos lo maneja offline.js
+ *     a nivel de aplicación con control explícito, y cachear un POST sería catastrófico.
+ *   - Navegar sin red a una página FUERA del precache (encargado/residente/jefe/resúmenes, D49)
+ *     responde una mini-página "Esta pantalla necesita conexión" con el estilo del tema.
+ *
+ * VERSIONADO: solo hace falta subir CACHE_V cuando cambia la LISTA de precache (se agrega/quita un
+ * archivo). Con network-first, el CONTENIDO de los archivos se refresca solo al haber señal — un
+ * cambio de texto en un HTML NO requiere subir la versión.
+ */
+const CACHE_V = 'tm2-v1';
+const FONT_CACHE = CACHE_V + '-fonts';
+
+// Lista explícita: shell + capturas + app. NO precachear las páginas fuera de alcance
+// (encargado, residente, residente-drenajes, jefe, estado, produccion-maquinaria,
+// resumen-asistencia, mis-extras necesitan datos vivos, D49/D82).
+const PRECACHE = [
+  './index.html',
+  './seleccion-reporte.html',
+  './menu.html',
+  './reporte-capataz.html',
+  './reporte-chequeadora.html',
+  './reporte-drenajes.html',
+  './asistencia.html',
+  './offline.js',
+  './manifest.json',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/icon-180.png'
+];
+
+// Mini-página inline para navegaciones sin red a páginas fuera del precache (mismo tema oscuro).
+const OFFLINE_HTML = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">'
+  + '<meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Sin conexión — TM2 Sur</title>'
+  + '<style>body{font-family:sans-serif;background:#0f1117;color:#e8eaf0;min-height:100vh;display:flex;'
+  + 'align-items:center;justify-content:center;padding:20px;margin:0;}'
+  + '.card{background:#1a1d27;border:1px solid #2e3450;border-radius:20px;padding:40px 32px;max-width:400px;text-align:center;}'
+  + '.ico{font-size:48px;margin-bottom:14px;}h1{font-size:19px;margin:0 0 10px;}'
+  + 'p{font-size:14px;color:#7a80a0;line-height:1.6;margin:0 0 20px;}'
+  + 'a{display:inline-block;padding:12px 24px;background:linear-gradient(135deg,#f5a623,#e8621a);'
+  + 'border-radius:10px;color:#0f1117;font-weight:700;text-decoration:none;}</style></head><body>'
+  + '<div class="card"><div class="ico">📡</div><h1>Esta pantalla necesita conexión</h1>'
+  + '<p>Los paneles de revisión y resúmenes leen datos vivos del servidor y no funcionan sin señal. '
+  + 'Los reportes de campo (capataz, chequeadora, drenajes, asistencia) sí funcionan sin señal.</p>'
+  + '<a href="./index.html">← Volver al inicio</a></div></body></html>';
+
+self.addEventListener('install', function(ev){
+  ev.waitUntil(
+    caches.open(CACHE_V)
+      .then(function(cache){ return cache.addAll(PRECACHE); })
+      .then(function(){ return self.skipWaiting(); })
+  );
+});
+
+self.addEventListener('activate', function(ev){
+  ev.waitUntil(
+    caches.keys().then(function(keys){
+      return Promise.all(keys.map(function(k){
+        // borra caches de versiones anteriores (se conserva la actual y la de fuentes)
+        if (k !== CACHE_V && k !== FONT_CACHE) return caches.delete(k);
+      }));
+    }).then(function(){ return self.clients.claim(); })
+  );
+});
+
+self.addEventListener('fetch', function(ev){
+  const req = ev.request;
+  if (req.method !== 'GET') return;                    // POST y demás: siempre directo a la red
+
+  let url;
+  try{ url = new URL(req.url); }catch(e){ return; }
+
+  // ¡NUNCA interceptar el Apps Script! (ni GET de catálogos ni POST de reportes)
+  if (url.hostname === 'script.google.com' || url.hostname === 'script.googleusercontent.com'
+      || url.hostname.endsWith('.script.google.com')) return;
+
+  // Fuentes de Google: cache-first runtime (no cambian)
+  if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com'){
+    ev.respondWith(
+      caches.open(FONT_CACHE).then(function(cache){
+        return cache.match(req).then(function(hit){
+          if (hit) return hit;
+          return fetch(req).then(function(resp){
+            if (resp && resp.ok) cache.put(req, resp.clone());
+            return resp;
+          });
+        });
+      })
+    );
+    return;
+  }
+
+  // Cualquier otro dominio externo: passthrough sin caché
+  if (url.origin !== self.location.origin) return;
+
+  // Propio (documentos/JS/iconos): NETWORK-FIRST — fresco si hay señal (y se actualiza la caché),
+  // copia cacheada si no. ignoreSearch tolera query strings (?area=odl).
+  ev.respondWith(
+    fetch(req).then(function(resp){
+      if (resp && resp.ok){
+        const copia = resp.clone();
+        caches.open(CACHE_V).then(function(cache){ cache.put(req, copia); });
+      }
+      return resp;
+    }).catch(function(){
+      return caches.match(req, { ignoreSearch:true }).then(function(hit){
+        if (hit) return hit;
+        if (req.mode === 'navigate'){
+          // raíz del sitio sin red -> el login precacheado; página fuera del precache -> aviso
+          // "Esta pantalla necesita conexión" con el estilo del tema (nunca una pantalla rota)
+          const aviso = new Response(OFFLINE_HTML, { headers: { 'Content-Type':'text/html; charset=utf-8' } });
+          if (url.pathname.endsWith('/')) return caches.match('./index.html').then(function(idx){ return idx || aviso; });
+          return aviso;
+        }
+        return Response.error();
+      });
+    })
+  );
+});

@@ -4,7 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sistema Reporte de Obra — Login</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#f5a623">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TM2 Sur">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<script src="offline.js"></script>
 <style>
   :root { --bg:#0f1117;--surface:#1a1d27;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--error:#e74c3c;--input-bg:#12151f; }
   *{box-sizing:border-box;margin:0;padding:0;}
@@ -91,8 +98,13 @@ function login() {
   const c = document.getElementById('clave').value;
   const err = document.getElementById('errorMsg');
   if (USUARIOS[u] && USUARIOS[u].clave === c) {
-    sessionStorage.setItem('usuario', u);
-    sessionStorage.setItem('rol', USUARIOS[u].rol);
+    // D82: la sesión vive en localStorage para sobrevivir pestaña en segundo plano / cierre del
+    // navegador en zona muerta (antes sessionStorage, que se pierde al cerrar la pestaña).
+    localStorage.setItem('usuario', u);
+    localStorage.setItem('rol', USUARIOS[u].rol);
+    // limpieza de la clave vieja de sessionStorage (versiones anteriores a D82)
+    sessionStorage.removeItem('usuario');
+    sessionStorage.removeItem('rol');
     err.classList.remove('visible');
     window.location.href = USUARIOS[u].redirige;
   } else {
