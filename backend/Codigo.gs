@@ -37,7 +37,13 @@ const DATA_HEADERS = ['FECHA','ORDEN','GRUPO','CENTRO DE COSTO','CAPITULO','DESC
   // Fija el "pisado por área" (D70) para ítems cuyo CC NO deriva el área por sí solo: la DEMOLICIÓN
   // DE ESTRUCTURAS (01.02) es drenaje pero su CC deriva 'tierras'. Filas viejas (col vacía) caen a
   // deriveArea(CC) vía areaDeFila, así que su clasificación no cambia.
-  'area'];
+  'area',
+  // clima (D37): observación del clima del día que elige el encargado al enviar a DATA. INTERNA
+  // (tras `area`, columna AC — NO viaja al maestro: el paste sigue siendo A:S). No hay columna de
+  // clima en el maestro; vive aquí solo para alimentar el WhatsApp y el resumen del jefe (jefe.html
+  // la lee de esta columna vía consolidado). Valor por día (mismo string en todas las filas del
+  // envío); filas viejas la tienen vacía (retrocompatible).
+  'clima'];
 const C = { FECHA:0, LARGO:14, OBS:18 };
 
 // BANDEJA: llaves limpias (lo crudo que reportan)
@@ -236,7 +242,7 @@ function buildDataRow(c, fecha, ts, reporta, rol, idC){
   return [ toDate(fecha), '', grupo, cc, c.capitulo||'', desc,
     uf, proy, elem, absIni, absFin,
     c.liberacion||'CAMPO', '', c.unidad||'', (c.largo!=null?c.largo:''), '', '', '', c.observacion||'', '',
-    idC, ts, reporta||'', rol||'', c.actividad||'', c.pk_inicial||'', c.pk_final||'', 'tierras' ];
+    idC, ts, reporta||'', rol||'', c.actividad||'', c.pk_inicial||'', c.pk_final||'', 'tierras', c.clima||'' ];
 }
 
 /* ---------- DATA para DRENAJES (ODT / ODL) — D69 ----------
@@ -291,7 +297,7 @@ function buildDataRowDrenajes(c, fecha, ts, reporta, rol, idC, area, mi, mf){
   return [ toDate(fecha), '', 'DRENAJES Y ESTRUCTURAS', cc, capitulo, desc,
     uf, proy, elem, absIni, absFin,
     c.liberacion||'CAMPO', '', c.unidad||'', (c.largo!=null?c.largo:''), '', '', '', c.observacion||'', '',
-    idC, ts, reporta||'', rol||'', c.actividad||'', c.pk_inicial||'', c.pk_final||'', area ];
+    idC, ts, reporta||'', rol||'', c.actividad||'', c.pk_inicial||'', c.pk_final||'', area, c.clima||'' ];
 }
 // Marcador ODT de la tabla de elementos de la BASE por su nombre (cruce tolerante con normTexto,
 // que NUNCA altera lo que se escribe: el elem devuelto es la celda J cruda). null si no calza.
@@ -888,14 +894,17 @@ function consolidadoRango(e){
   const desde = dRaw || hRaw, hasta = hRaw || dRaw;   // si falta uno, el rango es un solo día
   const proy=e.parameter.proyecto||'';
   const AT=20;                                        // A–T (las 20 columnas espejo del maestro + Columna1)
+  const climaCol=DATA_HEADERS.indexOf('clima');       // columna interna (tras A–T); no viaja al maestro
   const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('DATA');
-  const filas=[];
+  const filas=[], climaPorDia={};                     // D37: clima del día (leído de la col interna)
   if(desde && hasta && sh && sh.getLastRow()>1){
     const v=sh.getDataRange().getValues();
     for(let i=1;i<v.length;i++){
       const f=fdate(v[i][C.FECHA]);                   // Date -> 'YYYY-MM-DD' por duck-typing; string se normaliza
       if(!f || f<desde || f>hasta) continue;          // rango inclusivo, comparación lexicográfica
       if(proy && String(v[i][7])!==proy) continue;
+      // clima del día: primer valor no vacío que aparezca (lo escribe el encargado de tierras, D37)
+      if(climaCol>=0 && !climaPorDia[f]){ const cl=String(v[i][climaCol]||'').trim(); if(cl) climaPorDia[f]=cl; }
       const row=v[i].slice(0, AT);                     // recorta a A–T (el copiado A:S recorta a 19 en cliente)
       row[C.FECHA]=f;                                  // col A como cadena 'YYYY-MM-DD' (agrupar por día / copiar)
       filas.push(row);
@@ -910,6 +919,7 @@ function consolidadoRango(e){
     cols: { FECHA:0, ORDEN:1, GRUPO:2, CC:3, CAPITULO:4, DESCRIPCION:5, UF:6, PROYECTO:7, ELEMENTO:8,
             ABS_INI:9, ABS_FIN:10, LIBERACION:11, ACTA:12, UNIDAD:13, LARGO:14, ESPESOR:15, FC:16,
             CANTIDAD:17, OBSERVACION:18, COLUMNA1:19, COPY_END:15 },
+    climaPorDia: climaPorDia,   // D37: {fecha -> clima}; el jefe lo muestra en el resumen (no va al maestro)
     filas: filas
   });
 }
@@ -1191,8 +1201,11 @@ function enviarData(body){
   // Guard: solo se escriben filas del área que envía (una fila de otra área colada en el payload
   // duplicaría datos que este envío NO borró). El área de la línea manda por su columna `area`
   // (D71); si falta, se deriva del CC. Las de otra área se ignoran sin error.
+  // D37: clima del día que elige el encargado (mismo string en todas las filas del envío). Se sella
+  // en la columna interna `clima` de DATA (no viaja al maestro); alimenta el resumen del jefe.
+  const clima=String(body.clima||'').trim();
   const rows=incluidas.filter(c=>c.estado!=='no_data' && areaDeFila(c.area, c.centro_costo)===area)
-    .map(c=> buildDataRow(c, fecha, ts, c.reporta||'(encargado)', c.rol||'encargado', Utilities.getUuid()));
+    .map(c=> buildDataRow(Object.assign(c,{clima:clima}), fecha, ts, c.reporta||'(encargado)', c.rol||'encargado', Utilities.getUuid()));
   if(rows.length) sh.getRange(sh.getLastRow()+1,1,rows.length,DATA_HEADERS.length).setValues(rows);
   // 2) BANDEJA: marcar incluido / descartado SOLO las filas de esa área
   const banSh=getSheet('BANDEJA', BANDEJA_HEADERS);

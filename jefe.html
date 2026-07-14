@@ -114,7 +114,7 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IV
 // Estado de la consulta. `cols` trae los índices de columna que informa el backend (con fallback al
 // layout A–T conocido) para no acoplar el frontend a posiciones fijas. Es SOLO LECTURA: aquí no se
 // escribe nada a DATA ni al maestro; el copiado va al portapapeles y lo pega el usuario a mano.
-let STATE = { filas:[], cols:{}, desde:'', hasta:'' };
+let STATE = { filas:[], cols:{}, desde:'', hasta:'', clima:{} };
 const COLS_DEFAULT = { FECHA:0, GRUPO:2, CC:3, DESCRIPCION:5, UF:6, ABS_INI:9, ABS_FIN:10, UNIDAD:13, LARGO:14, COPY_END:15 };
 
 // Área derivada del CC en CLIENTE (espejo de deriveArea del backend, D70) — el esquema A–T de
@@ -170,6 +170,7 @@ async function consultar(){
     const resp=await fetch(url); const data=await resp.json();
     STATE.filas=data.filas||[];
     STATE.cols=data.cols||{};
+    STATE.clima=data.climaPorDia||{};   // D37: {fecha -> clima}; se muestra en el resumen (no está en A–T)
     STATE.desde=desde; STATE.hasta=hasta;
     armarSelectores();
     render();
@@ -264,6 +265,7 @@ function render(){
   // ---- A) RESUMEN (protagonista): por actividad, con DÓNDE (ubicación) y cuánto ----
   html+='<div class="section-title">Resumen por actividad y ubicación</div>';
   html+=`<p class="meta-line">${acts.length} actividad${acts.length!==1?'es':''} · ${rows.length} línea${rows.length!==1?'s':''} · ${dias.length} día${dias.length!==1?'s':''}</p>`;
+  html+=bloqueClima(dias);
   acts.forEach(a=>{ html+=bloqueActividad(a); });
 
   // ---- C) COPIADO (secundario) ----
@@ -271,6 +273,22 @@ function render(){
   html+=bloqueCopiado();
 
   cont.innerHTML=html;
+}
+
+// D37: clima del día que registró el encargado (columna interna de DATA, no viaja al maestro). Una
+// línea por día del rango que tenga clima; si ningún día trae dato, el bloque no se muestra.
+function bloqueClima(dias){
+  const conClima=(dias||[]).filter(d=>STATE.clima && STATE.clima[d]).sort();
+  if(!conClima.length) return '';
+  let h='<div class="resumen-block"><div class="act-head"><span class="act-name">🌦️ Clima</span></div>';
+  if(conClima.length===1){
+    h+=`<div class="tot-row"><div class="cat">${esc(STATE.clima[conClima[0]])}</div>`
+     + `<div class="val" style="font-size:11px;color:var(--muted);">${esc(conClima[0])}</div></div>`;
+  } else {
+    conClima.forEach(d=>{ h+='<div class="tot-row"><div class="cat">'+esc(d)+'</div>'
+      + `<div class="val" style="font-size:12px;">${esc(STATE.clima[d])}</div></div>`; });
+  }
+  return h+'</div>';
 }
 
 // Un bloque por actividad: encabezado con el subtotal por unidad, y una fila por UBICACIÓN
