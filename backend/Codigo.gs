@@ -11,6 +11,7 @@
  *   GET  ?action=consolidado&desde=YYYY-MM-DD&hasta=YYYY-MM-DD  -> {filas:[](A–T crudo de DATA en el rango),header,cols} (panel del jefe, solo lectura)
  *   GET  ?action=estado&fecha=...        -> {reportadas:[{id_maquina,capataz}]}
  *   GET  ?action=cubicaje                -> {cubicaje:{PLACA:cubicaje,...}}  (catálogo placa→m³/viaje, D53)
+ *   GET  ?action=volquetas&fecha=YYYY-MM-DD -> {fecha, filas:[{id_registro,reporta,origen,destino,tipo_destino,uf,placa,viajes,cubicaje,cubicaje_origen}]} (SOLO LECTURA de VOLQUETAS para digitadora.html, D83)
  *   GET  ?action=drenajes                -> {marcadores:[ODT*],items:[ítems .06/.07]} (catálogo drenajes, D69)
  *   GET  ?action=acumulado_drenajes[&area=] -> {acumulado:{"ELEMENTO||CCcorto":cantidad}} (acumulado oficial por ODT, D70)
  *   GET  ?action=maquinaria_produccion&fecha=...  -> cruce MAQUINARIA(CC 02.05-08) × volumen oficial DATA (2.4/D55)
@@ -609,6 +610,41 @@ function getCubicajeMap(){
   return _cubMap;
 }
 
+/* Digitadora de volquetas (D83, backlog 2.22): SOLO LECTURA de la hoja VOLQUETAS por fecha.
+ * Le entrega a la pantalla digitadora.html las líneas placa→destino ya capturadas por la
+ * chequeadora (guía) para que ella pre-llene la BASE de transporte. No escribe NADA (Opción A,
+ * §3.2 del prompt): ni DATA, ni BANDEJA, ni MAQUINARIA, ni una hoja nueva. La remisión y la
+ * empresa siguen viviendo fuera de la app (D53 / backlog 2.7). Fecha por DUCK-TYPING (fdate,
+ * §0: typeof v.getFullYear==='function', NUNCA instanceof Date). Sin filas ese día -> {filas:[]}
+ * (no es error). */
+function volquetasDelDia(e){
+  const fecha = fdate((e && e.parameter && e.parameter.fecha) || '');
+  const ss = SpreadsheetApp.openById(SHEET_ID), sh = ss.getSheetByName('VOLQUETAS');
+  if(!sh || sh.getLastRow() < 2) return json({ok:true, fecha:fecha, filas:[]});
+  const v = sh.getDataRange().getValues(), h = v[0];
+  // ubica columnas por nombre de cabecera (tolerante al orden real de la hoja)
+  const col = {}; h.forEach((k,j)=>{ col[String(k==null?'':k).trim()] = j; });
+  const get = (row,name)=>{ const j=col[name]; return (j==null)?'':row[j]; };
+  const filas = [];
+  for(let i=1;i<v.length;i++){
+    const row = v[i];
+    if(fdate(get(row,'fecha')) !== fecha) continue;   // duck-typing, ver §0
+    filas.push({
+      id_registro:     String(get(row,'id_registro')||''),
+      reporta:         String(get(row,'reporta')||''),
+      origen:          String(get(row,'origen')||''),
+      destino:         String(get(row,'destino')||''),
+      tipo_destino:    String(get(row,'tipo_destino')||''),
+      uf:              String(get(row,'uf')||''),
+      placa:           String(get(row,'placa')||''),
+      viajes:          Number(get(row,'viajes'))||0,
+      cubicaje:        Number(get(row,'cubicaje'))||0,
+      cubicaje_origen: String(get(row,'cubicaje_origen')||'')
+    });
+  }
+  return json({ok:true, fecha:fecha, filas:filas});
+}
+
 /* ---------- routing ---------- */
 function doGet(e){
   const a=((e.parameter.action)||'').toLowerCase();
@@ -616,6 +652,7 @@ function doGet(e){
   if(a==='consolidado') return consolidado(e);
   if(a==='estado')      return estado(e);
   if(a==='cubicaje')    return json({ok:true, cubicaje:getCubicajeMap()});
+  if(a==='volquetas')   return volquetasDelDia(e);
   if(a==='drenajes')    return drenajesCatalogo();
   if(a==='acumulado_drenajes') return acumuladoDrenajes(e);
   if(a==='maquinaria_produccion') return maquinariaProduccion(e);
