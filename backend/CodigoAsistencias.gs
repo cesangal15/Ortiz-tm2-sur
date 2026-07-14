@@ -725,9 +725,12 @@ function setupHojas(){
   const festSh=getSheet('FESTIVOS', FESTIVOS_HEADERS);
   if(festSh.getLastRow()<2){
     // Colombia 2026-2027, Ley Emiliani aplicada (verificado contra el algoritmo de Pascua + traslado a lunes).
+    // '2026-07-13' NO es festivo de calendario: se decretó como día no laboral puntual para la obra
+    // (jul-2026). Va en la semilla para instalaciones nuevas; en una hoja ya sembrada hay que añadir la
+    // fila '2026-07-13' a mano en FESTIVOS (el seed solo corre con la hoja vacía).
     const festivos=[
       '2026-01-01','2026-01-12','2026-03-23','2026-04-02','2026-04-03','2026-05-01','2026-05-18',
-      '2026-06-08','2026-06-15','2026-06-29','2026-07-20','2026-08-07','2026-08-17','2026-10-12',
+      '2026-06-08','2026-06-15','2026-06-29','2026-07-13','2026-07-20','2026-08-07','2026-08-17','2026-10-12',
       '2026-11-02','2026-11-16','2026-12-08','2026-12-25',
       '2027-01-01','2027-01-11','2027-03-22','2027-03-25','2027-03-26','2027-05-01','2027-05-10',
       '2027-05-31','2027-06-07','2027-07-05','2027-07-20','2027-08-07','2027-08-16','2027-10-18',
