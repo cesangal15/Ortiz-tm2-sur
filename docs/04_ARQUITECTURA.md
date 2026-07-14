@@ -28,7 +28,7 @@
 ┌──────────────────── GOOGLE APPS SCRIPT v6 (API, una sola URL) ──────────────────────────┐
 │  GET  ?action=bandeja&fecha=…[&proyecto=…][&area=…] → crudo del día por área (D70)      │
 │  GET  ?action=consolidado&fecha=…            → lo ya enviado a DATA                     │
-│  GET  ?action=consolidado&desde=…&hasta=…    → filas crudas A–T de DATA del rango (D65) │
+│  GET  ?action=consolidado&desde=…&hasta=…    → filas A–T de DATA + climaPorDia (D65/D37)│
 │  GET  ?action=estado&fecha=…                 → máquinas reportadas (estado.html)        │
 │  GET  ?action=debug&fecha=…                  → diagnóstico                              │
 │  GET  ?action=cubicaje                        → mapa placa→cubicaje (frontend, D53/2.10) │
@@ -52,7 +52,7 @@
 │              tras produccion_capataz_orig — drenajes = captura libre, a_captura=NO (D70) │
 │  VOLQUETAS   desglose por placa de la chequeadora (1 fila/placa, informativo; no a DATA) │
 │  CUBICAJE    catálogo placa→cubicaje (lo lee el backend; lo mantiene el usuario; D53/2.10)│
-│  DATA        oficial; columnas A–T = espejo del maestro TM2                             │
+│  DATA        oficial; A–T = espejo del maestro TM2; internas U+ (…area, clima D37)      │
 └────────────────────────────────────┬─────────────────────────────────────────────────--┘
                                      │ copy-paste manual por bloques
                                      ▼

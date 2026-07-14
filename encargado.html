@@ -145,7 +145,12 @@ const ACTIVIDADES = [
 ];
 const ACT_IDX={}; ACTIVIDADES.forEach(x=>ACT_IDX[x.a]=x);
 
-let STATE = { fecha:'', cantidades:[], maquinas:[], observaciones:[] };
+let STATE = { fecha:'', cantidades:[], maquinas:[], observaciones:[], clima:'' };
+
+// D37: clima del día que elige el encargado. Se sella en DATA (columna interna, no viaja al maestro)
+// para el resumen del jefe, y se añade al WhatsApp. Lista corta de estados típicos de la obra.
+const CLIMA_OPS=['','Soleado','Parcialmente nublado','Nublado','Lluvia ligera','Lluvia intermitente','Lluvia fuerte'];
+function setClima(v){ STATE.clima=v||''; }
 
 window.onload = function(){
   const rol=localStorage.getItem('rol'), usuario=localStorage.getItem('usuario');
@@ -375,6 +380,13 @@ function render(){
     '<button class="btn-action" onclick="generarMensaje()">📲 Generar WhatsApp</button>'+
     '</div>';
   html+='<div class="card" style="margin-top:16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">'+
+    '<div class="section-title" style="margin-bottom:10px;">Clima del día</div>'+
+    '<select id="clima" onchange="setClima(this.value)" style="width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:\'DM Sans\',sans-serif;font-size:13px;padding:10px 12px;outline:none;">'+
+      CLIMA_OPS.map(o=>`<option value="${o}"${STATE.clima===o?' selected':''}>${o||'— Sin especificar —'}</option>`).join('')+
+    '</select>'+
+    '<p style="font-size:11px;color:var(--muted);margin-top:6px;">Se guarda para el WhatsApp y el resumen del jefe (no va al Excel maestro).</p>'+
+    '</div>';
+  html+='<div class="card" style="margin-top:16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">'+
     '<div class="section-title" style="margin-bottom:10px;">Equipos inoperativos / novedades</div>'+
     '<textarea id="inoperativos" placeholder="ej. Motoniveladora MO03: sin operador&#10;Minicargador: falla mecánica" style="width:100%;min-height:80px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:\'DM Sans\',sans-serif;font-size:13px;padding:10px 12px;outline:none;resize:vertical;"></textarea>'+
     '</div>';
@@ -556,7 +568,7 @@ async function enviar(){
   try{
     // area:'tierras' (D70): el pisado de DATA es por día + área — este envío nunca borra ODT/ODL.
     const resp=await fetch(APPS_SCRIPT_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body:JSON.stringify({action:'enviar_data', fecha:STATE.fecha, area:'tierras', cantidades:incluidas})});
+      body:JSON.stringify({action:'enviar_data', fecha:STATE.fecha, area:'tierras', clima:STATE.clima||'', cantidades:incluidas})});
     const res=await resp.json();
     if(!res||!res.ok) throw new Error((res&&res.error)||'Respuesta inesperada');
     const f=document.getElementById('savedFlag'); f.style.display='inline'; setTimeout(()=>f.style.display='none',3000);
@@ -567,7 +579,9 @@ function generarMensaje(){
   const tot=calcTotales();
   const f=new Date(STATE.fecha+'T12:00:00');
   const dd=String(f.getDate()).padStart(2,'0'), mm=String(f.getMonth()+1).padStart(2,'0'), yy=String(f.getFullYear()).slice(2);
-  let msg=`*Reporte de actividades de movimiento de Tierras ${dd}/${mm}/${yy}*\n——————————\n`;
+  let msg=`*Reporte de actividades de movimiento de Tierras ${dd}/${mm}/${yy}*\n`;
+  if(STATE.clima) msg+=`_Clima: ${STATE.clima}_\n`;
+  msg+='——————————\n';
   const byCat={}; STATE.cantidades.forEach(c=>{ if(!c._inc) return; const cat=categoria(c);(byCat[cat]=byCat[cat]||[]).push(c);});
   ORDEN_CAT.forEach(cat=>{ if(!byCat[cat])return; const o=tot[cat];
     if(cat==='Estructuras / MSR'){
