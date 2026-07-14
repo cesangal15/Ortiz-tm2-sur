@@ -263,7 +263,6 @@ function render(){
   }
   html+='</div>';
 
-  html+=seccionRegistrados(d);
   html+=seccionCompletar(d);
 
   html+='<div class="section-title">Descargar Excel Navision</div>';
@@ -455,39 +454,6 @@ async function guardarDetalle(idx){
   }catch(err){ msg.innerHTML='<div class="aviso">⚠️ '+esc(err.message||err)+'</div>'; }
 }
 
-/* ================= REGISTRADOS HOY (recap visible) =================
- * Quienes YA quedaron marcados presentes (con CC) en el área en vista, agrupados por cuadrilla.
- * Motivo (jul-2026): en domingo/festivo (tierras) el resumen se arma marcando gente en "Completar
- * faltantes"; tras cada guardado esa persona salía del listado de faltantes y "se perdía de vista".
- * Este bloque la mantiene a la vista y agrupada, para no perder el hilo de a quién ya se puso.
- * En dom/fest (tierras) es el canal principal → arranca desplegado; el resto de días arranca oculto
- * (la sección "Cuadrillas" ya los muestra por cuadrilla) pero sigue disponible con un clic. */
-function seccionRegistrados(d){
-  if(['residente','admin','asistencia_plus','residente_odt','residente_odl'].indexOf(STATE.rol)<0) return '';
-  const registrados=(d.filas||[]).filter(f=>f.presente==='Si' && String(f.cc||'').trim());
-  if(!registrados.length) return '';
-  const abierto = tipoJornadaDeFecha(STATE.fecha, d.festivos||[])==='domfest' && esVistaTierras();
-  // Agrupa por cuadrilla (útil en dom/fest, donde el personal es un revuelto de cuadrillas).
-  const grupos={};
-  registrados.forEach(f=>{ const k=f.cuadrilla||'(sin cuadrilla)'; (grupos[k]=grupos[k]||[]).push(f); });
-  let body='';
-  Object.keys(grupos).sort().forEach(k=>{
-    const arr=grupos[k].sort((a,b)=>String(a.nombre||'').localeCompare(String(b.nombre||'')));
-    body+=`<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin:10px 0 4px;">${esc(k)} <span style="color:var(--accent)">(${arr.length})</span></div>`;
-    arr.forEach(f=>{
-      body+=`<div class="cuad-row" style="align-items:flex-start;"><span style="flex:1;"><b>${esc(f.nombre)}</b> <small style="color:var(--muted)">${esc(f.cargo||'')}</small><br>`
-        + `<small style="color:var(--muted)">${esc(f.cc||'')} · ${esc(f.hora_entrada||'')}–${esc(f.hora_salida||'')}${f.turno?' · T'+esc(f.turno):''}</small></span></div>`;
-    });
-  });
-  let h='<div style="display:flex;justify-content:space-between;align-items:center;margin:22px 0 10px;">'
-    + '<span style="font-family:\'Syne\',sans-serif;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">✅ Registrados hoy ('+registrados.length+')</span>'
-    + '<button class="mini-btn" onclick="toggleLista(\'listaRegistrados\',this)">'+(abierto?'Ocultar':'Mostrar')+'</button></div>';
-  h+='<div id="listaRegistrados" class="card" style="display:'+(abierto?'block':'none')+';">';
-  h+='<p style="font-size:12px;color:var(--muted);margin-bottom:6px;">Personas ya marcadas como presentes hoy. Para corregir a alguien, búscalo en <b>Cuadrillas → Ver detalle</b>.</p>';
-  h+=body+'</div>';
-  return h;
-}
-
 /* ================= COMPLETAR FALTANTES (residente / admin / jeisson) =================
  * Mini-interfaz para agregar/corregir personas que no reportaron o quedaron presentes sin CC.
  * Usa el endpoint asistencia_individual (upsert por persona): NO pisa lo que ya reportó el
@@ -528,8 +494,15 @@ function seccionCompletar(d){
   // D81: buscador — la lista trae a TODO el personal esperado (útil en dom/fest, donde solo se busca a
   // los pocos que trabajaron). Filtra por DOM (sin re-render) para no perder lo ya diligenciado.
   h+='<input type="text" id="compFiltro" placeholder="Buscar por nombre, cuadrilla o cargo…" oninput="compFiltrar(this.value)" style="margin-bottom:10px;">';
+  // Mejora jul-2026: conforme marca gente (presente/ausente), cada persona sube a este bloque fijo
+  // "Marcados para subir" y se queda a la vista — así no se pierde en la lista al buscar al siguiente
+  // ni al filtrar, y los revisa juntos antes de "Guardar". El buscador solo filtra los pendientes de
+  // abajo (#compPendientes); los ya marcados nunca se ocultan.
+  h+='<div id="compMarcados" style="display:none;border:1px solid rgba(245,166,35,0.4);border-radius:10px;padding:4px 10px 2px;margin-bottom:10px;">'
+    + '<div style="font-family:\'Syne\',sans-serif;font-size:11px;letter-spacing:1.5px;color:var(--accent);text-transform:uppercase;padding:6px 0 2px;">✓ Marcados para subir (<span id="compMarcadosN">0</span>)</div></div>';
+  h+='<div id="compPendientes">';
   comp.forEach((p,i)=>{
-    h+=`<div class="comp-item" data-search="${esc((String(p.nombre)+' '+String(p.cargo)+' '+String(p.cuadrilla)).toLowerCase())}" style="border-bottom:1px solid rgba(46,52,80,0.5);padding:10px 0;">`
+    h+=`<div class="comp-item" id="comp-item-${i}" data-search="${esc((String(p.nombre)+' '+String(p.cargo)+' '+String(p.cuadrilla)).toLowerCase())}" style="border-bottom:1px solid rgba(46,52,80,0.5);padding:10px 0;">`
      + `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">`
      + `<div class="nm"><b>${esc(p.nombre)}</b><small style="color:var(--muted)">${esc(p.cargo)} · ${esc(p.cuadrilla)} · ${esc(p.tag)}</small></div>`
      + `<select class="comp-estado" id="comp-est-${i}" onchange="compToggle(${i})" style="max-width:160px;"><option value="">— Pendiente</option><option value="Si">Presente</option><option value="No">Ausente</option></select>`
@@ -543,6 +516,7 @@ function seccionCompletar(d){
      + `<div id="comp-aus-${i}" style="display:none;margin-top:8px;"><select id="comp-mot-${i}"><option value="">Motivo de ausencia…</option>${catMotivos.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('')}</select></div>`
      + `</div>`;
   });
+  h+='</div>'; // /#compPendientes
   h+='<button class="btn" style="margin-top:12px;" onclick="guardarCompletar()">Guardar faltantes →</button><div id="compMsg" style="margin-top:8px;"></div>';
   h+='</div>';
   return h;
@@ -551,13 +525,26 @@ function compToggle(i){
   const est=document.getElementById('comp-est-'+i).value;
   document.getElementById('comp-pres-'+i).style.display = est==='Si'?'block':'none';
   document.getElementById('comp-aus-'+i).style.display  = est==='No'?'block':'none';
+  // Pin: los marcados suben al bloque fijo "Marcados para subir"; los que vuelven a "— Pendiente"
+  // regresan abajo. Mover el nodo conserva lo ya tecleado (CC, horas, motivo).
+  const item=document.getElementById('comp-item-'+i);
+  const marc=document.getElementById('compMarcados'), pend=document.getElementById('compPendientes');
+  if(item && marc && pend){
+    if(est) marc.appendChild(item); else pend.appendChild(item);
+    item.style.borderLeft  = est ? '3px solid var(--accent)' : '';
+    item.style.paddingLeft = est ? '8px' : '';
+    item.style.display=''; // por si venía oculto por el filtro
+    const n=marc.querySelectorAll('.comp-item').length;
+    document.getElementById('compMarcadosN').textContent=n;
+    marc.style.display = n ? 'block' : 'none';
+  }
 }
-// D81: filtro del listado de faltantes por nombre/cuadrilla/cargo. Oculta/muestra por DOM (sin
-// re-render), así lo ya marcado en otras personas no se pierde; las ocultas quedan "— Pendiente"
-// y guardarCompletar las ignora.
+// D81: filtro del listado de faltantes por nombre/cuadrilla/cargo. Solo filtra los PENDIENTES de
+// abajo (por DOM, sin re-render); los ya marcados viven en #compMarcados y nunca se ocultan, así lo
+// diligenciado no se pierde. Las pendientes ocultas quedan "— Pendiente" y guardarCompletar las ignora.
 function compFiltrar(q){
   q=String(q||'').trim().toLowerCase();
-  document.querySelectorAll('#listaCompletar .comp-item').forEach(el=>{
+  document.querySelectorAll('#compPendientes .comp-item').forEach(el=>{
     el.style.display = (!q || (el.getAttribute('data-search')||'').indexOf(q)>=0) ? '' : 'none';
   });
 }
