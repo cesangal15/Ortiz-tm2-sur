@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Digitación de Volquetas</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#f5a623">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TM2 Sur">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<style>
+  /* Estilos del proyecto (copiados de reporte-chequeadora.html; no rediseñar) */
+  :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--success:#2ecc71;--error:#e74c3c;--input-bg:#12151f;--uf1:#3a9bdc;--uf2:#9b59b6;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:0 0 120px;}
+  .header{background:linear-gradient(135deg,#1a1d27 0%,#0f1117 100%);border-bottom:3px solid var(--accent);padding:20px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20;}
+  .header-left .label{font-family:'Syne',sans-serif;font-size:10px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;}
+  .header-left h1{font-family:'Syne',sans-serif;font-size:19px;font-weight:800;}
+  .header-user{font-size:12px;color:var(--muted);text-align:right;}
+  .header-user span{display:block;color:var(--accent);font-weight:600;}
+  .logout-btn{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:4px 10px;cursor:pointer;margin-top:4px;font-family:'DM Sans',sans-serif;}
+  .logout-btn:hover{border-color:var(--error);color:var(--error);}
+  .container{max-width:640px;margin:0 auto;padding:20px 16px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px;}
+  .section-title{font-family:'Syne',sans-serif;font-size:12px;letter-spacing:2px;color:var(--accent);text-transform:uppercase;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+  .section-title::after{content:'';flex:1;height:1px;background:var(--border);}
+  .section-title .count{font-size:11px;color:var(--muted);background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:2px 10px;letter-spacing:0;}
+  .field{margin-bottom:14px;}
+  .field:last-child{margin-bottom:0;}
+  label{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-bottom:5px;letter-spacing:0.5px;text-transform:uppercase;}
+  select,input[type="number"],input[type="text"],input[type="date"],input[type="time"]{width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 14px;outline:none;transition:border-color 0.2s;appearance:none;}
+  input[type="date"],input[type="time"]{color-scheme:dark;}
+  select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a80a0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:36px;cursor:pointer;}
+  select:focus,input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,0.1);}
+  select option{background:#1a1d27;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;}
+  @media(max-width:520px){.grid3{grid-template-columns:1fr 1fr;}}
+  .row-load{display:flex;gap:10px;align-items:flex-end;}
+  .row-load .field{flex:1;margin:0;}
+  .btn{padding:11px 16px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:10px;color:#0f1117;font-family:'Syne',sans-serif;font-size:13px;font-weight:800;cursor:pointer;letter-spacing:0.5px;transition:all 0.2s;white-space:nowrap;}
+  .btn:hover{transform:translateY(-1px);}
+  .btn:disabled{opacity:0.5;cursor:default;transform:none;}
+  .msg{font-size:13px;border-radius:8px;padding:10px 14px;margin-top:12px;display:none;}
+  .msg.err{display:block;background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.3);color:var(--error);}
+  .msg.info{display:block;background:var(--surface2);border:1px solid var(--border);color:var(--muted);}
+  /* Grupo (una línea de VOLQUETAS) */
+  .grupo{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;}
+  .grp-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}
+  .grp-placa{font-family:'Syne',sans-serif;font-size:17px;font-weight:800;letter-spacing:1px;}
+  .grp-route{display:block;font-size:12px;color:var(--muted);margin-top:3px;}
+  .grp-route b{color:var(--text);font-weight:600;}
+  .guia{font-style:italic;color:var(--accent);opacity:0.8;}
+  .meta-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:4px 10px;border-radius:20px;border:1px solid var(--border);background:var(--input-bg);color:var(--muted);}
+  .badge.uf1{border-color:rgba(58,155,220,0.4);background:rgba(58,155,220,0.1);color:var(--uf1);}
+  .badge.uf2{border-color:rgba(155,89,182,0.4);background:rgba(155,89,182,0.1);color:var(--uf2);}
+  .badge.m3{border-color:rgba(245,166,35,0.3);background:rgba(245,166,35,0.08);color:var(--accent);}
+  .badge.m3.warn{border-color:var(--accent);background:rgba(245,166,35,0.16);}
+  .badge .cub-inp{width:64px;background:transparent;border:none;border-bottom:1px solid var(--accent);border-radius:0;color:var(--accent);font-weight:700;padding:0 2px;font-size:12px;text-align:right;}
+  .badge .cub-inp:focus{box-shadow:none;}
+  .seg{display:inline-flex;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:3px;margin-top:14px;}
+  .seg-btn{background:none;border:none;color:var(--muted);font-family:'Syne',sans-serif;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:6px 14px;border-radius:6px;cursor:pointer;}
+  .seg-btn.active{background:var(--accent);color:#0f1117;}
+  .grp-warn{font-size:11px;color:var(--accent);margin-top:10px;}
+  .renglones{margin-top:14px;}
+  .ren{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px;}
+  .ren-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+  .ren-num{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:1px;text-transform:uppercase;}
+  .btn-del{background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;width:26px;height:26px;font-size:14px;cursor:pointer;line-height:1;flex-shrink:0;}
+  .btn-del:hover{border-color:var(--error);color:var(--error);}
+  .pk-inp.pk-diff{border-color:var(--accent);background:rgba(245,166,35,0.12);color:var(--accent);font-weight:600;}
+  .btn-add{width:100%;padding:12px;background:var(--input-bg);border:1px dashed var(--border);border-radius:10px;color:var(--accent);font-family:'Syne',sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;cursor:pointer;transition:all 0.2s;text-transform:uppercase;margin-top:2px;}
+  .btn-add:hover{border-color:var(--accent);background:rgba(245,166,35,0.05);}
+  .empty-hint{font-size:12px;color:var(--muted);text-align:center;padding:18px 0;}
+  .paste-hint{font-size:12px;color:var(--muted);line-height:1.55;margin-bottom:14px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
+  .paste-hint b{color:var(--accent);}
+  /* Barra fija inferior */
+  .foot{position:fixed;bottom:0;left:0;right:0;background:linear-gradient(to top,#0f1117 65%,transparent);padding:14px 16px 16px;z-index:15;}
+  .foot-inner{max-width:640px;margin:0 auto;}
+  .foot-prog{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);margin-bottom:10px;}
+  .foot-prog b{font-family:'Syne',sans-serif;color:var(--text);}
+  .foot-btns{display:flex;gap:10px;}
+  .foot-btns .btn{flex:1;padding:14px;font-size:14px;}
+  .btn.ghost{background:var(--surface);border:1px solid var(--border);color:var(--text);box-shadow:none;}
+  .btn.copied{background:var(--success);color:#0f1117;}
+  .hidden{display:none;}
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="header-left">
+    <div class="label">Reporte Diario · Digitación</div>
+    <h1>📋 Volquetas</h1>
+  </div>
+  <div class="header-user">
+    <span id="userDisplay">—</span>
+    <button class="logout-btn" id="btnMenu" onclick="location.href='menu.html'" style="display:none;border-color:var(--accent);color:var(--accent);margin-right:6px;">← Menú</button>
+    <button class="logout-btn" onclick="logout()">Salir</button>
+  </div>
+</div>
+
+<div class="container">
+  <div class="card">
+    <div class="row-load">
+      <div class="field"><label>Fecha</label><input type="date" id="fecha"></div>
+      <button class="btn" id="btnCargar" onclick="cargarDia()">Cargar viajes del día</button>
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div id="gruposContainer"></div>
+  <div class="empty-hint" id="emptyGrupos">Selecciona una fecha y toca «Cargar viajes del día».</div>
+
+  <div class="card">
+    <div class="section-title">Viajes externos <span class="count" id="cntExt">0</span></div>
+    <div class="empty-hint" id="emptyExt" style="padding:8px 0 14px;">Viajes que llegaron por fuera de la captura (otras personas). Se van en el mismo export.</div>
+    <div id="externosContainer"></div>
+    <button class="btn-add" onclick="addExterno()">＋ Agregar viaje externo</button>
+  </div>
+
+  <div class="card">
+    <div class="paste-hint">
+      <b>Para pegar en TERRAPLEN.xlsx (hoja BASE 2026):</b> toca «Copiar todo», ve a la primera fila
+      libre de la tabla y usa <b>Pegado especial → Omitir blancos</b>. Así las columnas de fórmula
+      (H, M, V, W, TIEMPO, CONTRATISTA…) no se pisan. El PK destino, la remisión, las horas y el
+      conductor salen tal como quedaron aquí.
+    </div>
+  </div>
+</div>
+
+<div class="foot">
+  <div class="foot-inner">
+    <div class="foot-prog">
+      <span>Remisiones: <b id="progRem">0</b> / <b id="progTot">0</b></span>
+      <span><b id="progFilas">0</b> renglones a exportar</span>
+    </div>
+    <div class="foot-btns">
+      <button class="btn ghost" id="btnCopiar" onclick="copiarTodo(this)" disabled>Copiar todo</button>
+      <button class="btn" id="btnCsv" onclick="descargarCsv()" disabled>Descargar CSV</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
+const TIPOS = ['Terraplén','Puente','ODL','ODT','Botadero'];
+
+let FECHA = '';
+let grupos = [];   // {gid, placa, origen, destino, tipo_destino, uf, cub, esDefault, viajes, modo, cantAgr, renglones:[{rid,pk,remision,hs,hl,conductor}], renAgr:{pk,remision,conductor}}
+let externos = []; // {eid, placa, origen, pkDestino, tipo_destino, cub, remision, hs, hl, conductor}
+let gidSeq = 0, ridSeq = 0, eidSeq = 0;
+
+window.onload = function(){
+  // Sesión en localStorage (D82). Solo digitadora y admin entran aquí.
+  const rol = localStorage.getItem('rol');
+  const usuario = localStorage.getItem('usuario');
+  if(!rol || (rol!=='digitadora' && rol!=='admin')){ window.location.href='index.html'; return; }
+  document.getElementById('userDisplay').textContent = usuario || 'digitadora';
+  if(rol==='admin'){ const bm=document.getElementById('btnMenu'); if(bm) bm.style.display='inline-block'; }
+  // Fecha por defecto = hoy en America/Bogota (UTC−5), nunca toISOString (D50).
+  document.getElementById('fecha').value = new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
+};
+function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); window.location.href='index.html'; }
+
+/* ---------- helpers de PK / UF (mismo criterio que el resto del proyecto, D63/D04) ---------- */
+function pkMeters(s){
+  if(s==null) return null;
+  const t=String(s).toLowerCase().replace(/pk/g,'').replace(/\s+/g,'');
+  const m=t.match(/(\d+)\+(\d+)/);
+  if(m) return parseInt(m[1],10)*1000 + parseInt(m[2],10);
+  const n=parseFloat(t); return isNaN(n)?null:n*1000;
+}
+function pkFmt(meters){ if(meters==null||isNaN(meters)) return ''; const km=Math.floor(meters/1000), r=Math.round(meters-km*1000); return km+'+'+('00'+r).slice(-3); }
+function pkNorm(s){ return pkFmt(pkMeters(s)); }
+function ufDeMetros(m){ return m==null?'':(m<=30000?'UF1':'UF2'); }
+// Mapeo origen → Pk inicial en metros (§5, D63): Masivo2=19800, Masivo1=14400, Diviso=21500.
+// Complementario/Otro = el PK que tecleó la chequeadora (viene en `origen`), convertido a metros.
+function origenPkMeters(origen){
+  const s=String(origen||'').toLowerCase();
+  if(s.indexOf('masivo 2')>=0 || s.indexOf('masivo2')>=0) return 19800;
+  if(s.indexOf('masivo 1')>=0 || s.indexOf('masivo1')>=0) return 14400;
+  if(s.indexOf('diviso')>=0) return 21500;
+  return pkMeters(origen);
+}
+/* ---------- mapeo tipo_destino → I Actividad / J Material / L Centro de costo (§5) ---------- */
+function normTipo(t){ return String(t||'').toLowerCase().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').trim(); }
+function actividadDe(t){ return normTipo(t)==='botadero' ? '' : 'CONFORMACIÓN TERRAPLÉN'; }
+function materialDe(t){ return normTipo(t)==='botadero' ? '' : 'MATERIAL CORTE PARA TERRAPLÉN'; }
+function ccDe(t, pkDestM){
+  const n=normTipo(t);
+  if(n==='terraplen'){ const proy=(pkDestM!=null && pkDestM<=30000)?'3701':'3702'; return proy+'.02.11'; } // proyecto por PK destino (D04) + .02.11
+  if(n==='puente') return '3701.11.03';  // fijo (confirmado por el usuario)
+  return '';                              // ODL / ODT / Botadero: CC en blanco, lo pone la digitadora
+}
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmtNum(n){ if(n==null||n==='') return ''; const x=Number(n); if(isNaN(x)) return ''; return String(x).replace('.', ','); }
+function fechaExcel(iso){ const p=String(iso||'').slice(0,10).split('-'); if(p.length<3) return ''; return p[2]+'/'+p[1]+'/'+p[0]; } // dd/mm/yyyy
+
+/* ---------- carga del día ---------- */
+function setMsg(txt, tipo){ const m=document.getElementById('msg'); if(!txt){ m.className='msg'; m.textContent=''; return; } m.className='msg '+(tipo||'info'); m.textContent=txt; }
+function hayRemisiones(){ return grupos.some(g=> g.modo==='agrupado' ? !!(g.renAgr.remision||'').trim() : g.renglones.some(r=>(r.remision||'').trim()) ) || externos.some(x=>(x.remision||'').trim()); }
+
+async function cargarDia(){
+  const fecha=document.getElementById('fecha').value;
+  if(!fecha){ setMsg('Elige una fecha primero.','err'); return; }
+  if((grupos.length||externos.length) && hayRemisiones() && !confirm('Recargar del servidor descarta lo que ya tecleaste (remisiones, horas, conductores). ¿Continuar?')) return;
+  const btn=document.getElementById('btnCargar'); btn.disabled=true; btn.textContent='Cargando…'; setMsg('');
+  try{
+    const resp=await fetch(APPS_SCRIPT_URL+'?action=volquetas&fecha='+encodeURIComponent(fecha));
+    const data=await resp.json();
+    if(!data || !data.ok) throw new Error((data&&data.error)||'Respuesta inesperada del servidor');
+    FECHA=fecha; externos=[]; construirGrupos(data.filas||[]);
+    renderExternos();
+    if(!grupos.length) setMsg('No hay viajes capturados en VOLQUETAS para el '+fecha+'. Puedes registrar viajes externos abajo.','info');
+    else setMsg((data.filas.length)+' línea(s) de VOLQUETAS · '+totalGuia()+' viajes guía.','info');
+  }catch(err){
+    setMsg('No se pudo cargar del servidor: '+err.message+'. Revisa la señal e intenta de nuevo.','err');
+  }
+  btn.disabled=false; btn.textContent='Cargar viajes del día';
+}
+function totalGuia(){ return grupos.reduce((s,g)=>s+g.viajes,0); }
+
+function construirGrupos(filas){
+  grupos=[]; gidSeq=0; ridSeq=0;
+  filas.forEach(f=>{
+    const g={
+      gid:gidSeq++, placa:String(f.placa||''), origen:String(f.origen||''), destino:String(f.destino||''),
+      tipo_destino:String(f.tipo_destino||''), uf:String(f.uf||''),
+      cub:Number(f.cubicaje)||0, esDefault:(String(f.cubicaje_origen||'').toLowerCase()==='default'),
+      viajes:Number(f.viajes)||0, modo:'explotar', cantAgr:(Number(f.viajes)||0),
+      renglones:[], renAgr:{pk:pkNorm(f.destino), remision:'', conductor:''}
+    };
+    const n=Math.max(g.viajes,0);
+    for(let i=0;i<n;i++) g.renglones.push(nuevoRen(g));
+    if(g.renglones.length===0) g.renglones.push(nuevoRen(g)); // línea sin viajes → al menos 1 renglón editable
+    grupos.push(g);
+  });
+  renderGrupos();
+}
+function nuevoRen(g){ return {rid:ridSeq++, pk:pkNorm(g.destino), remision:'', hs:'', hl:'', conductor:''}; }
+
+/* ---------- render de grupos ---------- */
+function renderGrupos(){
+  const cont=document.getElementById('gruposContainer');
+  document.getElementById('emptyGrupos').style.display=grupos.length?'none':'block';
+  cont.innerHTML=grupos.map(grupoHTML).join('');
+  refresh();
+}
+function grupoHTML(g){
+  const gi=g.gid;
+  const prog=pkNorm(g.destino)||esc(g.destino);
+  const ufcls=g.uf==='UF1'?'uf1':g.uf==='UF2'?'uf2':'';
+  const cubBadge = g.esDefault
+    ? '<span class="badge m3 warn" title="Placa sin catálogo: verifica el m³ contra el parte">m³/viaje <input type="number" step="any" class="cub-inp" value="'+esc(g.cub)+'" oninput="setCub('+gi+',this.value)"> ⚠</span>'
+    : '<span class="badge m3">'+esc(fmtNum(g.cub))+' m³/viaje</span>';
+  let cuerpo;
+  if(g.modo==='agrupado'){
+    cuerpo='<div class="renglones">'+renAgrHTML(g)+'</div>';
+  } else {
+    const items=g.renglones.map((r,k)=>renHTML(g,r,k)).join('');
+    let warn='';
+    if(g.renglones.length!==g.viajes) warn='<div class="grp-warn">⚠ '+g.renglones.length+' renglón(es) vs '+g.viajes+' viajes de la guía — ajusta si el parte físico dice otra cosa.</div>';
+    cuerpo='<div class="renglones">'+items+'</div>'
+      +warn
+      +'<button class="btn-add" onclick="addRen('+gi+')">＋ Agregar renglón</button>';
+  }
+  return '<div class="grupo" id="grupo_'+gi+'">'
+    +'<div class="grp-head"><div><span class="grp-placa">'+esc(g.placa||'—')+'</span>'
+    +'<span class="grp-route"><b>'+esc(g.origen||'—')+'</b> → <b>'+prog+'</b> <span class="guia">programado · guía</span></span></div></div>'
+    +'<div class="meta-row">'
+    +'<span class="badge">'+esc(g.tipo_destino||'—')+'</span>'
+    +(g.uf?'<span class="badge '+ufcls+'">'+esc(g.uf)+'</span>':'')
+    +cubBadge
+    +'<span class="badge">guía: '+g.viajes+' viajes</span></div>'
+    +'<div class="seg">'
+    +'<button class="seg-btn'+(g.modo==='explotar'?' active':'')+'" onclick="setModo('+gi+',\'explotar\')">Explotar</button>'
+    +'<button class="seg-btn'+(g.modo==='agrupado'?' active':'')+'" onclick="setModo('+gi+',\'agrupado\')">Agrupado</button>'
+    +'</div>'
+    +cuerpo
+    +'</div>';
+}
+function renHTML(g,r,k){
+  const diff = pkDiff(g,r.pk);
+  return '<div class="ren" id="ren_'+g.gid+'_'+r.rid+'">'
+    +'<div class="ren-head"><span class="ren-num">#'+(k+1)+'</span>'
+    +'<button class="btn-del" title="Quitar renglón" onclick="delRen('+g.gid+','+r.rid+')">✕</button></div>'
+    +'<div class="grid2">'
+    +'<div class="field" style="margin:0;"><label>PK destino real</label>'
+    +'<input type="text" class="pk-inp'+(diff?' pk-diff':'')+'" value="'+esc(r.pk)+'" placeholder="'+esc(pkNorm(g.destino))+'" oninput="setRenPk('+g.gid+','+r.rid+',this)"></div>'
+    +'<div class="field" style="margin:0;"><label>Remisión</label>'
+    +'<input type="text" value="'+esc(r.remision)+'" oninput="setRen('+g.gid+','+r.rid+',\'remision\',this.value)"></div>'
+    +'</div>'
+    +'<div class="grid3">'
+    +'<div class="field" style="margin:0;"><label>Hora salida</label><input type="text" inputmode="numeric" placeholder="HH:MM" value="'+esc(r.hs)+'" oninput="setRen('+g.gid+','+r.rid+',\'hs\',this.value)"></div>'
+    +'<div class="field" style="margin:0;"><label>Hora llegada</label><input type="text" inputmode="numeric" placeholder="HH:MM" value="'+esc(r.hl)+'" oninput="setRen('+g.gid+','+r.rid+',\'hl\',this.value)"></div>'
+    +'<div class="field" style="margin:0;"><label>Conductor</label><input type="text" value="'+esc(r.conductor)+'" oninput="setRen('+g.gid+','+r.rid+',\'conductor\',this.value)"></div>'
+    +'</div></div>';
+}
+function renAgrHTML(g){
+  const r=g.renAgr; const diff=pkDiff(g,r.pk);
+  return '<div class="ren">'
+    +'<div class="ren-head"><span class="ren-num">Agrupado · 1 renglón</span></div>'
+    +'<div class="grid2">'
+    +'<div class="field" style="margin:0;"><label>PK destino real</label>'
+    +'<input type="text" class="pk-inp'+(diff?' pk-diff':'')+'" value="'+esc(r.pk)+'" placeholder="'+esc(pkNorm(g.destino))+'" oninput="setAgrPk('+g.gid+',this)"></div>'
+    +'<div class="field" style="margin:0;"><label>Cant. viajes</label>'
+    +'<input type="number" min="0" step="1" value="'+esc(g.cantAgr)+'" oninput="setCantAgr('+g.gid+',this.value)"></div>'
+    +'</div>'
+    +'<div class="grid2" style="margin-top:12px;">'
+    +'<div class="field" style="margin:0;"><label>Remisión</label><input type="text" value="'+esc(r.remision)+'" oninput="setAgr('+g.gid+',\'remision\',this.value)"></div>'
+    +'<div class="field" style="margin:0;"><label>Conductor</label><input type="text" value="'+esc(r.conductor)+'" oninput="setAgr('+g.gid+',\'conductor\',this.value)"></div>'
+    +'</div></div>';
+}
+function pkDiff(g,pk){ const a=pkMeters(pk), b=pkMeters(g.destino); return (a!=null && b!=null && a!==b); }
+function grupoById(gid){ return grupos.find(g=>g.gid===gid); }
+
+/* ---------- edición de estado (sin re-render para no perder el foco) ---------- */
+function setCub(gid,val){ const g=grupoById(gid); if(g) g.cub=parseFloat(val)||0; }
+function setRen(gid,rid,campo,val){ const g=grupoById(gid); if(!g) return; const r=g.renglones.find(x=>x.rid===rid); if(r){ r[campo]=val; if(campo==='remision') refresh(); } }
+function setRenPk(gid,rid,el){ const g=grupoById(gid); if(!g) return; const r=g.renglones.find(x=>x.rid===rid); if(r){ r.pk=el.value; el.classList.toggle('pk-diff', pkDiff(g,el.value)); } }
+function setAgr(gid,campo,val){ const g=grupoById(gid); if(g){ g.renAgr[campo]=val; if(campo==='remision') refresh(); } }
+function setAgrPk(gid,el){ const g=grupoById(gid); if(g){ g.renAgr.pk=el.value; el.classList.toggle('pk-diff', pkDiff(g,el.value)); } }
+function setCantAgr(gid,val){ const g=grupoById(gid); if(g){ g.cantAgr=Math.max(0, parseInt(val,10)||0); refresh(); } }
+
+/* ---------- ops estructurales (re-render del grupo) ---------- */
+function rerenderGrupo(gid){ const el=document.getElementById('grupo_'+gid); const g=grupoById(gid); if(el&&g){ el.outerHTML=grupoHTML(g); refresh(); } }
+function setModo(gid,modo){ const g=grupoById(gid); if(g && g.modo!==modo){ g.modo=modo; rerenderGrupo(gid); } }
+function addRen(gid){ const g=grupoById(gid); if(g){ g.renglones.push(nuevoRen(g)); rerenderGrupo(gid); } }
+function delRen(gid,rid){ const g=grupoById(gid); if(g){ g.renglones=g.renglones.filter(r=>r.rid!==rid); rerenderGrupo(gid); } }
+
+/* ---------- viajes externos ---------- */
+function renderExternos(){
+  const cont=document.getElementById('externosContainer');
+  document.getElementById('cntExt').textContent=externos.length;
+  document.getElementById('emptyExt').style.display=externos.length?'none':'block';
+  cont.innerHTML=externos.map(externoHTML).join('');
+  refresh();
+}
+function externoHTML(x){
+  const ei=x.eid;
+  const tipoOpts=TIPOS.map(t=>'<option'+(t===x.tipo_destino?' selected':'')+'>'+t+'</option>').join('');
+  return '<div class="ren" id="ext_'+ei+'">'
+    +'<div class="ren-head"><span class="ren-num">Externo</span>'
+    +'<button class="btn-del" title="Quitar" onclick="delExterno('+ei+')">✕</button></div>'
+    +'<div class="grid2">'
+    +'<div class="field" style="margin:0;"><label>Placa</label><input type="text" value="'+esc(x.placa)+'" oninput="setExt('+ei+',\'placa\',this.value)"></div>'
+    +'<div class="field" style="margin:0;"><label>Origen (PK o texto)</label><input type="text" value="'+esc(x.origen)+'" placeholder="19+800 / Masivo 2" oninput="setExt('+ei+',\'origen\',this.value)"></div>'
+    +'</div>'
+    +'<div class="grid3">'
+    +'<div class="field" style="margin:0;"><label>PK destino</label><input type="text" value="'+esc(x.pkDestino)+'" placeholder="34+500" oninput="setExt('+ei+',\'pkDestino\',this.value)"></div>'
+    +'<div class="field" style="margin:0;"><label>Tipo destino</label><select onchange="setExt('+ei+',\'tipo_destino\',this.value)">'+tipoOpts+'</select></div>'
+    +'<div class="field" style="margin:0;"><label>m³/viaje</label><input type="number" step="any" value="'+esc(x.cub)+'" oninput="setExt('+ei+',\'cub\',this.value)"></div>'
+    +'</div>'
+    +'<div class="grid3">'
+    +'<div class="field" style="margin:0;"><label>Remisión</label><input type="text" value="'+esc(x.remision)+'" oninput="setExt('+ei+',\'remision\',this.value)"></div>'
+    +'<div class="field" style="margin:0;"><label>Hora salida</label><input type="text" inputmode="numeric" placeholder="HH:MM" value="'+esc(x.hs)+'" oninput="setExt('+ei+',\'hs\',this.value)"></div>'
+    +'<div class="field" style="margin:0;"><label>Hora llegada</label><input type="text" inputmode="numeric" placeholder="HH:MM" value="'+esc(x.hl)+'" oninput="setExt('+ei+',\'hl\',this.value)"></div>'
+    +'</div>'
+    +'<div class="field" style="margin-top:12px;"><label>Conductor</label><input type="text" value="'+esc(x.conductor)+'" oninput="setExt('+ei+',\'conductor\',this.value)"></div>'
+    +'</div>';
+}
+function addExterno(){ externos.push({eid:eidSeq++, placa:'', origen:'', pkDestino:'', tipo_destino:'Terraplén', cub:'', remision:'', hs:'', hl:'', conductor:''}); renderExternos(); }
+function delExterno(eid){ externos=externos.filter(x=>x.eid!==eid); renderExternos(); }
+function setExt(eid,campo,val){ const x=externos.find(e=>e.eid===eid); if(x){ x[campo]=val; if(campo==='remision') refresh(); } }
+
+/* ---------- export (A→AH, §5) ---------- */
+function grupoCub(g){ return Number(g.cub)||0; }
+function buildRow(o){
+  const ufDest=ufDeMetros(o.pkDestinoM), ufIni=ufDeMetros(o.pkOrigenM);
+  const row=new Array(34).fill('');
+  row[0]=fechaExcel(FECHA);                                 // A  Fecha (dd/mm/yyyy)
+  row[1]=o.remision||'';                                    // B  No. Remisión
+  row[2]=o.placa||'';                                       // C  Código equipo o Placa
+  // D  Contratista → vacío (la empresa no entra a la app, D53)
+  row[4]='N/A';                                             // E  Planta
+  row[5]=fmtNum(o.cubicaje);                                // F  Cant. transportada (m3)
+  row[6]=(o.viajes!=null&&o.viajes!=='')?String(o.viajes):''; // G  Cant. viajes
+  // H  Cant. total transportada → fórmula (F×G): vacío
+  row[8]=actividadDe(o.tipo_destino);                       // I  Descripción Actividad
+  row[9]=materialDe(o.tipo_destino);                        // J  Descripción Material
+  row[10]=ufDest;                                           // K  UF (del destino real)
+  row[11]=ccDe(o.tipo_destino,o.pkDestinoM);                // L  Centro de costo
+  // M  Descripción centro de costo → fórmula: vacío
+  row[13]=o.horaSalida||'';                                 // N  Hora salida
+  row[14]=o.horaLlegada||'';                                // O  Hora llegada
+  row[15]=(o.pkOrigenM!=null)?String(o.pkOrigenM):'';       // P  Pk inicial (origen en metros)
+  row[16]='4513';                                           // Q  Ruta Nacional inicial
+  row[17]=ufIni;                                            // R  UF inicial
+  row[18]=(o.pkDestinoM!=null)?String(o.pkDestinoM):'';     // S  Pk final (destino real en metros)
+  row[19]='4513';                                           // T  Ruta Nacional final
+  row[20]=ufDest;                                           // U  UF final
+  // V  Distancia (km) → fórmula: vacío
+  // W  Transporte de material m3*Km → fórmula: vacío
+  row[23]='m3km';                                           // X  UNIDAD
+  // Y  CATEGORIA → vacío
+  row[25]=o.conductor||'';                                  // Z  Conductor
+  row[26]=o.esDefault?'Pendiente por cubicar':'';           // AA Observaciones
+  // AB–AH (27–33) → AREA RESPONSABLE·TIEMPO·CORTE·TIPO DE VIAJE·volqueta·ACTA·CONTRATISTA: vacío (fórmula / la digitadora)
+  return row;
+}
+function collectRows(){
+  const rows=[];
+  grupos.forEach(g=>{
+    const cub=grupoCub(g);
+    if(g.modo==='agrupado'){
+      const r=g.renAgr;
+      rows.push(buildRow({remision:r.remision, placa:g.placa, cubicaje:cub, viajes:g.cantAgr,
+        tipo_destino:g.tipo_destino, pkOrigenM:origenPkMeters(g.origen), pkDestinoM:pkMeters(r.pk),
+        horaSalida:'', horaLlegada:'', conductor:r.conductor, esDefault:g.esDefault}));
+    } else {
+      g.renglones.forEach(r=>{
+        rows.push(buildRow({remision:r.remision, placa:g.placa, cubicaje:cub, viajes:1,
+          tipo_destino:g.tipo_destino, pkOrigenM:origenPkMeters(g.origen), pkDestinoM:pkMeters(r.pk),
+          horaSalida:r.hs, horaLlegada:r.hl, conductor:r.conductor, esDefault:g.esDefault}));
+      });
+    }
+  });
+  externos.forEach(x=>{
+    rows.push(buildRow({remision:x.remision, placa:x.placa, cubicaje:x.cub, viajes:1,
+      tipo_destino:x.tipo_destino, pkOrigenM:pkMeters(x.origen), pkDestinoM:pkMeters(x.pkDestino),
+      horaSalida:x.hs, horaLlegada:x.hl, conductor:x.conductor, esDefault:false}));
+  });
+  return rows;
+}
+
+/* ---------- progreso / totales ---------- */
+function refresh(){
+  let tot=0, rem=0;
+  grupos.forEach(g=>{
+    if(g.modo==='agrupado'){ tot++; if((g.renAgr.remision||'').trim()) rem++; }
+    else g.renglones.forEach(r=>{ tot++; if((r.remision||'').trim()) rem++; });
+  });
+  externos.forEach(x=>{ tot++; if((x.remision||'').trim()) rem++; });
+  document.getElementById('progRem').textContent=rem;
+  document.getElementById('progTot').textContent=tot;
+  document.getElementById('progFilas').textContent=tot;
+  const vacio=(tot===0);
+  document.getElementById('btnCopiar').disabled=vacio;
+  document.getElementById('btnCsv').disabled=vacio;
+}
+
+/* ---------- copiar / descargar ---------- */
+function copiarTodo(btn){
+  const rows=collectRows();
+  if(!rows.length){ alert('No hay renglones para copiar.'); return; }
+  const tsv=rows.map(r=>r.join('\t')).join('\n');
+  const ok=()=>{ const o=btn.innerHTML; btn.classList.add('copied'); btn.innerHTML='✓ Copiado'; setTimeout(()=>{btn.classList.remove('copied');btn.innerHTML=o;},1600); };
+  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(tsv).then(ok).catch(()=>fallbackCopiar(tsv,ok));
+  else fallbackCopiar(tsv,ok);
+}
+function fallbackCopiar(text, ok){
+  const ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.top='-1000px'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.focus(); ta.select();
+  try{ document.execCommand('copy'); ok(); }catch(e){ alert('No se pudo copiar automáticamente.'); }
+  document.body.removeChild(ta);
+}
+function csvCell(v){ const s=String(v==null?'':v); return /[;"\r\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; }
+function descargarCsv(){
+  const rows=collectRows();
+  if(!rows.length){ alert('No hay renglones para exportar.'); return; }
+  const csv='﻿'+rows.map(r=>r.map(csvCell).join(';')).join('\r\n');   // UTF-8 con BOM, separador ;
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='volquetas_'+(FECHA||'export')+'.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+</script>
+</body>
+</html>

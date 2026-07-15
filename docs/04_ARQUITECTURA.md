@@ -32,6 +32,7 @@
 │  GET  ?action=estado&fecha=…                 → máquinas reportadas (estado.html)        │
 │  GET  ?action=debug&fecha=…                  → diagnóstico                              │
 │  GET  ?action=cubicaje                        → mapa placa→cubicaje (frontend, D53/2.10) │
+│  GET  ?action=volquetas&fecha=…               → filas VOLQUETAS del día (digitadora, D83) │
 │  GET  ?action=maquinaria_produccion&fecha=…  → frentes×oficial DATA + PK/horas/faltantes  │
 │  GET  ?action=drenajes                        → 147 marcadores ODT + ítems .06/.07 (D70)  │
 │  POST {reporte}                              → escribe BANDEJA + MAQUINARIA (+VOLQUETAS)  │
@@ -103,6 +104,7 @@
 - encargado.html: consolidado y estado de reportes.
 - jefe.html (jefe/residente/admin): consulta post-DATA **por rango de fechas** (solo lectura). Resumen por actividad y ubicación (PK crudo + UF, sumando LARGO por unidad), filtro de **Área** (Tierras/ODT/ODL/Todas — derivada del CC en cliente con el espejo de `deriveArea`, D70; el esquema A–T no cambia) y copiado A:S día a día al portapapeles, **por área o día completo**, para pegar en el maestro (D65). No escribe nada.
 - Excel maestros: análisis, KPI y resúmenes mensuales (RESUMEN_MES con B2=período, B3=proyecto/0).
+- digitadora.html (rol `digitadora`, admin vía menu.html + "← Menú"): **solo lectura** de VOLQUETAS por fecha (`?action=volquetas`), explota los viajes y pre-llena la BASE de transporte (`TERRAPLEN.xlsx`/`BASE 2026`) para pegar con **Omitir blancos** (export A→AH; H/M/V/W/AB–AH quedan vacías por ser fórmula). PK destino real editable por viaje; toggle explotar/agrupado (ORTIZ/internos); viajes externos a mano; **sin persistencia** (Opción A, D83). No escribe nada ni entra a DATA/BANDEJA/MAQUINARIA. Offline fuera de alcance (D49/D82).
 
 ## Módulo Asistencias (D69) — aislado, Sheet/Script propios
 

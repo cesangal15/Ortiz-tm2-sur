@@ -91,6 +91,9 @@ const USUARIOS = {
   'luzdary':  { clave: 'cheq2025', rol: 'chequeadora', redirige: 'seleccion-reporte.html' },
   // Módulo de Asistencias (D69): jeisson reporta operadores + resumen sin gestión de personal.
   'jeisson':  { clave: 'Oficial2026', rol: 'asistencia_plus', redirige: 'seleccion-reporte.html' },
+  // Digitación de volquetas (D83, backlog 2.22): la digitadora pre-llena la BASE de transporte a
+  // partir de VOLQUETAS y exporta; no ve el resto del sistema. Clave placeholder (endurecimiento 2.21).
+  'digitadora': { clave: 'volquetas2026', rol: 'digitadora', redirige: 'digitadora.html' },
 };
 
 function login() {
