@@ -23,7 +23,9 @@
   .header-user span{display:block;color:var(--accent);font-weight:600;}
   .logout-btn{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:4px 10px;cursor:pointer;margin-top:4px;font-family:'DM Sans',sans-serif;}
   .logout-btn:hover{border-color:var(--error);color:var(--error);}
-  .container{max-width:640px;margin:0 auto;padding:20px 16px;}
+  /* Pantalla pensada para PC (la digitadora trabaja en su puesto con computador): contenedor ancho
+     y renglones en UNA línea tipo tabla, espejando el orden en que teclea en su Excel. */
+  .container{max-width:1180px;margin:0 auto;padding:20px 24px;}
   .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px;}
   .section-title{font-family:'Syne',sans-serif;font-size:12px;letter-spacing:2px;color:var(--accent);text-transform:uppercase;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
   .section-title::after{content:'';flex:1;height:1px;background:var(--border);}
@@ -36,11 +38,8 @@
   select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a80a0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:36px;cursor:pointer;}
   select:focus,input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,0.1);}
   select option{background:#1a1d27;}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
-  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:12px;}
-  @media(max-width:520px){.grid3{grid-template-columns:1fr 1fr;}}
   .row-load{display:flex;gap:10px;align-items:flex-end;}
-  .row-load .field{flex:1;margin:0;}
+  .row-load .field{flex:0 0 220px;margin:0;}
   .btn{padding:11px 16px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:10px;color:#0f1117;font-family:'Syne',sans-serif;font-size:13px;font-weight:800;cursor:pointer;letter-spacing:0.5px;transition:all 0.2s;white-space:nowrap;}
   .btn:hover{transform:translateY(-1px);}
   .btn:disabled{opacity:0.5;cursor:default;transform:none;}
@@ -62,15 +61,22 @@
   .badge.m3.warn{border-color:var(--accent);background:rgba(245,166,35,0.16);}
   .badge .cub-inp{width:64px;background:transparent;border:none;border-bottom:1px solid var(--accent);border-radius:0;color:var(--accent);font-weight:700;padding:0 2px;font-size:12px;text-align:right;}
   .badge .cub-inp:focus{box-shadow:none;}
-  .seg{display:inline-flex;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:3px;margin-top:14px;}
+  .seg{display:inline-flex;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:3px;flex-shrink:0;}
   .seg-btn{background:none;border:none;color:var(--muted);font-family:'Syne',sans-serif;font-size:11px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;padding:6px 14px;border-radius:6px;cursor:pointer;}
   .seg-btn.active{background:var(--accent);color:#0f1117;}
   .grp-warn{font-size:11px;color:var(--accent);margin-top:10px;}
-  .renglones{margin-top:14px;}
-  .ren{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:10px;}
-  .ren-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
-  .ren-num{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:1px;text-transform:uppercase;}
-  .btn-del{background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;width:26px;height:26px;font-size:14px;cursor:pointer;line-height:1;flex-shrink:0;}
+  /* Tabla de renglones (desktop): un viaje = una línea, en el orden en que ella digita */
+  .tblwrap{overflow-x:auto;margin-top:14px;}
+  .tbl{min-width:860px;}
+  .tbl-head,.tbl-row{display:grid;grid-template-columns:44px 1.1fr 1fr 84px 84px 1.4fr 34px;gap:8px;align-items:center;}
+  .tbl.agr .tbl-head,.tbl.agr .tbl-row{grid-template-columns:1.1fr 110px 1fr 1.4fr 34px;}
+  .tbl.ext{min-width:1080px;}
+  .tbl.ext .tbl-head,.tbl.ext .tbl-row{grid-template-columns:100px 1fr 110px 130px 88px 1fr 84px 84px 1.2fr 34px;}
+  .tbl-head{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;padding:0 2px 6px;}
+  .tbl-row{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:8px;margin-bottom:8px;}
+  .tbl-row input,.tbl-row select{padding:8px 10px;font-size:13px;}
+  .tbl-num{font-size:11px;color:var(--muted);font-weight:700;text-align:center;font-variant-numeric:tabular-nums;}
+  .btn-del{background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;width:28px;height:32px;font-size:14px;cursor:pointer;line-height:1;flex-shrink:0;justify-self:center;}
   .btn-del:hover{border-color:var(--error);color:var(--error);}
   .pk-inp.pk-diff{border-color:var(--accent);background:rgba(245,166,35,0.12);color:var(--accent);font-weight:600;}
   .btn-add{width:100%;padding:12px;background:var(--input-bg);border:1px dashed var(--border);border-radius:10px;color:var(--accent);font-family:'Syne',sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;cursor:pointer;transition:all 0.2s;text-transform:uppercase;margin-top:2px;}
@@ -80,11 +86,12 @@
   .paste-hint b{color:var(--accent);}
   /* Barra fija inferior */
   .foot{position:fixed;bottom:0;left:0;right:0;background:linear-gradient(to top,#0f1117 65%,transparent);padding:14px 16px 16px;z-index:15;}
-  .foot-inner{max-width:640px;margin:0 auto;}
-  .foot-prog{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);margin-bottom:10px;}
+  .foot-inner{max-width:1180px;margin:0 auto;padding:0 8px;}
+  .foot-inner{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+  .foot-prog{display:flex;gap:24px;align-items:center;font-size:12px;color:var(--muted);}
   .foot-prog b{font-family:'Syne',sans-serif;color:var(--text);}
   .foot-btns{display:flex;gap:10px;}
-  .foot-btns .btn{flex:1;padding:14px;font-size:14px;}
+  .foot-btns .btn{padding:13px 28px;font-size:14px;min-width:170px;}
   .btn.ghost{background:var(--surface);border:1px solid var(--border);color:var(--text);box-shadow:none;}
   .btn.copied{background:var(--success);color:#0f1117;}
   .hidden{display:none;}
@@ -169,7 +176,9 @@ function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('
 /* ---------- helpers de PK / UF (mismo criterio que el resto del proyecto, D63/D04) ---------- */
 function pkMeters(s){
   if(s==null) return null;
-  const t=String(s).toLowerCase().replace(/pk/g,'').replace(/\s+/g,'');
+  // el destino de VOLQUETAS viene como "tm2 pk 34+500": quitar el token tm2 ANTES de compactar,
+  // o su "2" se pega al PK ("tm222+000" → 222+000)
+  const t=String(s).toLowerCase().replace(/tm2/g,'').replace(/pk/g,'').replace(/\s+/g,'');
   const m=t.match(/(\d+)\+(\d+)/);
   if(m) return parseInt(m[1],10)*1000 + parseInt(m[2],10);
   const n=parseFloat(t); return isNaN(n)?null:n*1000;
@@ -259,61 +268,57 @@ function grupoHTML(g){
     : '<span class="badge m3">'+esc(fmtNum(g.cub))+' m³/viaje</span>';
   let cuerpo;
   if(g.modo==='agrupado'){
-    cuerpo='<div class="renglones">'+renAgrHTML(g)+'</div>';
+    cuerpo='<div class="tblwrap"><div class="tbl agr">'
+      +'<div class="tbl-head"><span>PK destino real</span><span>Cant. viajes</span><span>Remisión</span><span>Conductor</span><span></span></div>'
+      +renAgrHTML(g)
+      +'</div></div>';
   } else {
     const items=g.renglones.map((r,k)=>renHTML(g,r,k)).join('');
     let warn='';
     if(g.renglones.length!==g.viajes) warn='<div class="grp-warn">⚠ '+g.renglones.length+' renglón(es) vs '+g.viajes+' viajes de la guía — ajusta si el parte físico dice otra cosa.</div>';
-    cuerpo='<div class="renglones">'+items+'</div>'
+    cuerpo='<div class="tblwrap"><div class="tbl">'
+      +'<div class="tbl-head"><span>#</span><span>PK destino real</span><span>Remisión</span><span>H. salida</span><span>H. llegada</span><span>Conductor</span><span></span></div>'
+      +items
+      +'</div></div>'
       +warn
       +'<button class="btn-add" onclick="addRen('+gi+')">＋ Agregar renglón</button>';
   }
   return '<div class="grupo" id="grupo_'+gi+'">'
     +'<div class="grp-head"><div><span class="grp-placa">'+esc(g.placa||'—')+'</span>'
-    +'<span class="grp-route"><b>'+esc(g.origen||'—')+'</b> → <b>'+prog+'</b> <span class="guia">programado · guía</span></span></div></div>'
+    +'<span class="grp-route"><b>'+esc(g.origen||'—')+'</b> → <b>'+prog+'</b> <span class="guia">programado · guía</span></span></div>'
+    +'<div class="seg">'
+    +'<button class="seg-btn'+(g.modo==='explotar'?' active':'')+'" onclick="setModo('+gi+',\'explotar\')">Explotar</button>'
+    +'<button class="seg-btn'+(g.modo==='agrupado'?' active':'')+'" onclick="setModo('+gi+',\'agrupado\')">Agrupado</button>'
+    +'</div></div>'
     +'<div class="meta-row">'
     +'<span class="badge">'+esc(g.tipo_destino||'—')+'</span>'
     +(g.uf?'<span class="badge '+ufcls+'">'+esc(g.uf)+'</span>':'')
     +cubBadge
     +'<span class="badge">guía: '+g.viajes+' viajes</span></div>'
-    +'<div class="seg">'
-    +'<button class="seg-btn'+(g.modo==='explotar'?' active':'')+'" onclick="setModo('+gi+',\'explotar\')">Explotar</button>'
-    +'<button class="seg-btn'+(g.modo==='agrupado'?' active':'')+'" onclick="setModo('+gi+',\'agrupado\')">Agrupado</button>'
-    +'</div>'
     +cuerpo
     +'</div>';
 }
 function renHTML(g,r,k){
   const diff = pkDiff(g,r.pk);
-  return '<div class="ren" id="ren_'+g.gid+'_'+r.rid+'">'
-    +'<div class="ren-head"><span class="ren-num">#'+(k+1)+'</span>'
-    +'<button class="btn-del" title="Quitar renglón" onclick="delRen('+g.gid+','+r.rid+')">✕</button></div>'
-    +'<div class="grid2">'
-    +'<div class="field" style="margin:0;"><label>PK destino real</label>'
-    +'<input type="text" class="pk-inp'+(diff?' pk-diff':'')+'" value="'+esc(r.pk)+'" placeholder="'+esc(pkNorm(g.destino))+'" oninput="setRenPk('+g.gid+','+r.rid+',this)"></div>'
-    +'<div class="field" style="margin:0;"><label>Remisión</label>'
-    +'<input type="text" value="'+esc(r.remision)+'" oninput="setRen('+g.gid+','+r.rid+',\'remision\',this.value)"></div>'
-    +'</div>'
-    +'<div class="grid3">'
-    +'<div class="field" style="margin:0;"><label>Hora salida</label><input type="text" inputmode="numeric" placeholder="HH:MM" value="'+esc(r.hs)+'" oninput="setRen('+g.gid+','+r.rid+',\'hs\',this.value)"></div>'
-    +'<div class="field" style="margin:0;"><label>Hora llegada</label><input type="text" inputmode="numeric" placeholder="HH:MM" value="'+esc(r.hl)+'" oninput="setRen('+g.gid+','+r.rid+',\'hl\',this.value)"></div>'
-    +'<div class="field" style="margin:0;"><label>Conductor</label><input type="text" value="'+esc(r.conductor)+'" oninput="setRen('+g.gid+','+r.rid+',\'conductor\',this.value)"></div>'
-    +'</div></div>';
+  return '<div class="tbl-row" id="ren_'+g.gid+'_'+r.rid+'">'
+    +'<span class="tbl-num">'+(k+1)+'</span>'
+    +'<input type="text" class="pk-inp'+(diff?' pk-diff':'')+'" value="'+esc(r.pk)+'" placeholder="'+esc(pkNorm(g.destino))+'" oninput="setRenPk('+g.gid+','+r.rid+',this)">'
+    +'<input type="text" value="'+esc(r.remision)+'" placeholder="remisión" oninput="setRen('+g.gid+','+r.rid+',\'remision\',this.value)">'
+    +'<input type="text" inputmode="numeric" placeholder="HH:MM" value="'+esc(r.hs)+'" oninput="setRen('+g.gid+','+r.rid+',\'hs\',this.value)">'
+    +'<input type="text" inputmode="numeric" placeholder="HH:MM" value="'+esc(r.hl)+'" oninput="setRen('+g.gid+','+r.rid+',\'hl\',this.value)">'
+    +'<input type="text" value="'+esc(r.conductor)+'" placeholder="conductor" oninput="setRen('+g.gid+','+r.rid+',\'conductor\',this.value)">'
+    +'<button class="btn-del" title="Quitar renglón" onclick="delRen('+g.gid+','+r.rid+')">✕</button>'
+    +'</div>';
 }
 function renAgrHTML(g){
   const r=g.renAgr; const diff=pkDiff(g,r.pk);
-  return '<div class="ren">'
-    +'<div class="ren-head"><span class="ren-num">Agrupado · 1 renglón</span></div>'
-    +'<div class="grid2">'
-    +'<div class="field" style="margin:0;"><label>PK destino real</label>'
-    +'<input type="text" class="pk-inp'+(diff?' pk-diff':'')+'" value="'+esc(r.pk)+'" placeholder="'+esc(pkNorm(g.destino))+'" oninput="setAgrPk('+g.gid+',this)"></div>'
-    +'<div class="field" style="margin:0;"><label>Cant. viajes</label>'
-    +'<input type="number" min="0" step="1" value="'+esc(g.cantAgr)+'" oninput="setCantAgr('+g.gid+',this.value)"></div>'
-    +'</div>'
-    +'<div class="grid2" style="margin-top:12px;">'
-    +'<div class="field" style="margin:0;"><label>Remisión</label><input type="text" value="'+esc(r.remision)+'" oninput="setAgr('+g.gid+',\'remision\',this.value)"></div>'
-    +'<div class="field" style="margin:0;"><label>Conductor</label><input type="text" value="'+esc(r.conductor)+'" oninput="setAgr('+g.gid+',\'conductor\',this.value)"></div>'
-    +'</div></div>';
+  return '<div class="tbl-row">'
+    +'<input type="text" class="pk-inp'+(diff?' pk-diff':'')+'" value="'+esc(r.pk)+'" placeholder="'+esc(pkNorm(g.destino))+'" oninput="setAgrPk('+g.gid+',this)">'
+    +'<input type="number" min="0" step="1" value="'+esc(g.cantAgr)+'" oninput="setCantAgr('+g.gid+',this.value)">'
+    +'<input type="text" value="'+esc(r.remision)+'" placeholder="remisión" oninput="setAgr('+g.gid+',\'remision\',this.value)">'
+    +'<input type="text" value="'+esc(r.conductor)+'" placeholder="conductor" oninput="setAgr('+g.gid+',\'conductor\',this.value)">'
+    +'<span></span>'
+    +'</div>';
 }
 function pkDiff(g,pk){ const a=pkMeters(pk), b=pkMeters(g.destino); return (a!=null && b!=null && a!==b); }
 function grupoById(gid){ return grupos.find(g=>g.gid===gid); }
@@ -337,30 +342,28 @@ function renderExternos(){
   const cont=document.getElementById('externosContainer');
   document.getElementById('cntExt').textContent=externos.length;
   document.getElementById('emptyExt').style.display=externos.length?'none':'block';
-  cont.innerHTML=externos.map(externoHTML).join('');
+  cont.innerHTML = externos.length
+    ? '<div class="tblwrap"><div class="tbl ext">'
+      +'<div class="tbl-head"><span>Placa</span><span>Origen (PK o texto)</span><span>PK destino</span><span>Tipo destino</span><span>m³/viaje</span><span>Remisión</span><span>H. salida</span><span>H. llegada</span><span>Conductor</span><span></span></div>'
+      +externos.map(externoHTML).join('')
+      +'</div></div>'
+    : '';
   refresh();
 }
 function externoHTML(x){
   const ei=x.eid;
   const tipoOpts=TIPOS.map(t=>'<option'+(t===x.tipo_destino?' selected':'')+'>'+t+'</option>').join('');
-  return '<div class="ren" id="ext_'+ei+'">'
-    +'<div class="ren-head"><span class="ren-num">Externo</span>'
-    +'<button class="btn-del" title="Quitar" onclick="delExterno('+ei+')">✕</button></div>'
-    +'<div class="grid2">'
-    +'<div class="field" style="margin:0;"><label>Placa</label><input type="text" value="'+esc(x.placa)+'" oninput="setExt('+ei+',\'placa\',this.value)"></div>'
-    +'<div class="field" style="margin:0;"><label>Origen (PK o texto)</label><input type="text" value="'+esc(x.origen)+'" placeholder="19+800 / Masivo 2" oninput="setExt('+ei+',\'origen\',this.value)"></div>'
-    +'</div>'
-    +'<div class="grid3">'
-    +'<div class="field" style="margin:0;"><label>PK destino</label><input type="text" value="'+esc(x.pkDestino)+'" placeholder="34+500" oninput="setExt('+ei+',\'pkDestino\',this.value)"></div>'
-    +'<div class="field" style="margin:0;"><label>Tipo destino</label><select onchange="setExt('+ei+',\'tipo_destino\',this.value)">'+tipoOpts+'</select></div>'
-    +'<div class="field" style="margin:0;"><label>m³/viaje</label><input type="number" step="any" value="'+esc(x.cub)+'" oninput="setExt('+ei+',\'cub\',this.value)"></div>'
-    +'</div>'
-    +'<div class="grid3">'
-    +'<div class="field" style="margin:0;"><label>Remisión</label><input type="text" value="'+esc(x.remision)+'" oninput="setExt('+ei+',\'remision\',this.value)"></div>'
-    +'<div class="field" style="margin:0;"><label>Hora salida</label><input type="text" inputmode="numeric" placeholder="HH:MM" value="'+esc(x.hs)+'" oninput="setExt('+ei+',\'hs\',this.value)"></div>'
-    +'<div class="field" style="margin:0;"><label>Hora llegada</label><input type="text" inputmode="numeric" placeholder="HH:MM" value="'+esc(x.hl)+'" oninput="setExt('+ei+',\'hl\',this.value)"></div>'
-    +'</div>'
-    +'<div class="field" style="margin-top:12px;"><label>Conductor</label><input type="text" value="'+esc(x.conductor)+'" oninput="setExt('+ei+',\'conductor\',this.value)"></div>'
+  return '<div class="tbl-row" id="ext_'+ei+'">'
+    +'<input type="text" value="'+esc(x.placa)+'" placeholder="ABC123" oninput="setExt('+ei+',\'placa\',this.value)">'
+    +'<input type="text" value="'+esc(x.origen)+'" placeholder="19+800 / Masivo 2" oninput="setExt('+ei+',\'origen\',this.value)">'
+    +'<input type="text" value="'+esc(x.pkDestino)+'" placeholder="34+500" oninput="setExt('+ei+',\'pkDestino\',this.value)">'
+    +'<select onchange="setExt('+ei+',\'tipo_destino\',this.value)">'+tipoOpts+'</select>'
+    +'<input type="number" step="any" value="'+esc(x.cub)+'" oninput="setExt('+ei+',\'cub\',this.value)">'
+    +'<input type="text" value="'+esc(x.remision)+'" placeholder="remisión" oninput="setExt('+ei+',\'remision\',this.value)">'
+    +'<input type="text" inputmode="numeric" placeholder="HH:MM" value="'+esc(x.hs)+'" oninput="setExt('+ei+',\'hs\',this.value)">'
+    +'<input type="text" inputmode="numeric" placeholder="HH:MM" value="'+esc(x.hl)+'" oninput="setExt('+ei+',\'hl\',this.value)">'
+    +'<input type="text" value="'+esc(x.conductor)+'" placeholder="conductor" oninput="setExt('+ei+',\'conductor\',this.value)">'
+    +'<button class="btn-del" title="Quitar" onclick="delExterno('+ei+')">✕</button>'
     +'</div>';
 }
 function addExterno(){ externos.push({eid:eidSeq++, placa:'', origen:'', pkDestino:'', tipo_destino:'Terraplén', cub:'', remision:'', hs:'', hl:'', conductor:''}); renderExternos(); }
