@@ -32,7 +32,7 @@ navegador las descarga; después quedan en caché del navegador.
 | 4 · Conciliación | Revisas el tablero por estados | Llave cerrada: remisión exacta (texto, ceros incluidos) + empresa ∈ alias + fecha ≥ mínima. 0 candidatos → NO_ENCONTRADA (con sugerencias: "existe con otra empresa" y "existe en la otra base"); 1 → clasificador (solo UF3 excluye; áreas PLANTA/PUENTE/TM1/ODT… van al acta con observación); >1 → eliges tú. Si una hoja entera parece estar en la base equivocada, sale un aviso con un botón para cambiarla de ámbito y re-conciliar. |
 | 5 · Investigación PDF | Cargas los PDFs de partes y corres el OCR | Búsqueda dirigida SOLO de las no-encontradas (listadas de menor a mayor por número de remisión, en la lista lateral y en los botones del modal de revisión): pasada roja por franjas (número impreso arriba-derecha, 1–3 partes/página) + pasada gris de respaldo (AVENSA). Verde = exacto, naranja = 1 dígito. NUNCA auto-confirma: tú ves la página y decides (Confirmar / Es ASFALTO / No es). Además, el panel "Cobertura del OCR por página" muestra la vista inversa: páginas SIN lectura o cuyo número no coincide con nada reclamado. El botón **"▶ Revisar contra las faltantes"** las recorre una por una: ves el parte, la lista de faltantes sin confirmar como botones (≈ marca las que están a 1 dígito de lo leído) y con UN clic confirmas el comprobante; o pulsas **"✕ No es ninguna faltante"** y la página se descarta de la lista (es reproceso: remisión que ya está en la base). Las descartadas se pueden ver y restaurar con ↩ (y corregir su lectura las re-abre). El ✏️ para corregir la lectura del OCR sigue disponible (si el número corregido es una faltante pasa a candidato; si es de una remisión ya conciliada, la página sale de la revisión). Por revisar y descartadas salen en el resumen del Paso 7. Navegador manual de miniaturas siempre disponible. |
 | 6 · Resolución manual | Decides las dudosas | Cola de revisión manual, múltiples, duplicadas y alertas de internos >3 km. Cada transición queda auditada (estado anterior/nuevo, fecha-hora, nota). |
-| 7 · Exportes | Copias/descargas | Bloque acta (TSV al portapapeles + .xlsx), Excel digitadora y PDF de pendientes — ambos en el MISMO orden: fecha de la proforma de menor a mayor y, dentro del día, remisión de menor a mayor (páginas deduplicadas), para que la digitadora trabaje renglón a página — y resumen del corte. |
+| 7 · Exportes | Copias/descargas | Bloque acta (TSV al portapapeles + .xlsx), **bloque acta de PENDIENTES** (mismo modelo A..S con lo que sabe la proforma y CC propuesto — ver abajo), Excel digitadora y PDF de pendientes — ambos en el MISMO orden: fecha de la proforma de menor a mayor y, dentro del día, remisión de menor a mayor (páginas deduplicadas), para que la digitadora trabaje renglón a página — y resumen del corte. |
 
 **Ciclo digitadora:** cuando la digitadora digite los comprobantes enviados,
 recarga las bases (Paso 1): se re-corren SOLO las `NO_ENCONTRADA` y
@@ -84,6 +84,28 @@ Filas ordenadas por fecha y luego remisión. La remisión se exporta como TEXTO
 El mapeo acta↔bases vive en `actaLayout` dentro de la configuración (editable),
 no está quemado en el código. El cálculo `PK/1000+2.5` de granulares queda
 documentado pero NO implementado: se exporta lo que dice la base.
+
+### Bloque acta de PENDIENTES de digitación (tarjeta 1b)
+
+Los `PENDIENTE_DIGITACION` **con comprobante confirmado** salen en un bloque
+APARTE con el mismo modelo A..S, llenando lo que la proforma sabe (fecha C,
+remisión I, placa J, cantidad P; observación S = "PENDIENTE DIGITACIÓN ·
+comprobante archivo p.N · área X") — actividad/kilometrajes/unidad solo los
+conoce la base y van vacíos. El **CC (col. H)** es propuesta automática que
+César confirma o corrige en la tarjeta (marca `auto` naranja hasta editarlo):
+
+- Área **ajena** (el origen/destino de la proforma menciona PUENTE, PLANTA,
+  TM1, AMP, RCD… = todo lo no nuestro que no se excluye) → **CC fijo
+  `3701.11.03`** (decisión jul-2026). Editar el área re-fija el CC.
+- **Nuestros**: prefijo por PK del destino (PK≤30→3701, PK>30→3702);
+  TERRAPLEN → `37xx.02.11`; GRANULARES → el CC más frecuente de la base
+  cargada con ese prefijo (los CC se repiten y son pocos). Sin PK ni base →
+  vacío, lo pone César. La UF (col. F) se deriva del prefijo del CC.
+
+El área/CC editados persisten en la sesión (`actaPend` del reclamo). Ojo al
+reproceso: cuando la digitadora los digite y se recarguen las bases, esas
+remisiones pasan a `ENCONTRADA` y salen también en el bloque 1 — no pegarlas
+dos veces (la tarjeta lo advierte).
 
 ## Configuración (⚙️ Config)
 

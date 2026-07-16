@@ -1878,6 +1878,84 @@ function pendientesOrdenadas(){
   });
 }
 
+/* ---- Bloque acta de PENDIENTES (modelo A..S con lo que la proforma sabe) ----
+   Los pendientes de digitación no están en la base, así que el sistema llena lo que
+   conoce (fecha, remisión, placa, cantidad) y PROPONE área/CC para que César confirme
+   o corrija en el Paso 7 antes de copiar (nunca se exporta sin que él lo vea). */
+
+const CC_AREA_AJENA='3701.11.03';   // CC fijo de todo lo que no es nuestro y no se excluye (puente, planta, TM1…)
+
+// PK del texto libre de la proforma: "PK 25+300", "pk34", "K12", "34+500".
+function pkDeTexto(t){
+  if(!t) return null;
+  const s=String(t);
+  let m=s.match(/P\.?K\.?\s*[.:]?\s*(\d{1,3})(?:\s*\+\s*\d{1,3})?/i);
+  if(!m) m=s.match(/(?:^|[^\d+.,])(\d{1,3})\s*\+\s*\d{3}(?:\D|$)/);
+  if(!m) return null;
+  const n=parseInt(m[1],10);
+  return isNaN(n)?null:n;
+}
+
+// CCs reales de la base cargada, de más a menos frecuente (se repiten y son pocos).
+function ccCatalogo(tipo){
+  const freq=new Map();
+  const suma=b=>{ if(b&&b.rows) for(const r of b.rows){ const cc=String(r.cc||'').trim(); if(cc) freq.set(cc,(freq.get(cc)||0)+1); } };
+  if(tipo){ suma(S.bases[tipo]); } else { suma(S.bases.GRANULARES); suma(S.bases.TERRAPLEN); }
+  return Array.from(freq.entries()).sort((a,b)=>b[1]-a[1]).map(e=>e[0]);
+}
+
+// Propuesta automática de área/CC (César la confirma o corrige en pantalla):
+//  · el origen/destino/obs de la proforma menciona un área observada → área ajena, CC fijo 3701.11.03
+//  · nuestra con PK: prefijo 3701 (PK≤30) / 3702 (PK>30) — TERRAPLEN → 37xx.02.11;
+//    GRANULARES → el CC más frecuente de la base con ese prefijo (sin PK, el más frecuente)
+//  · sin señal suficiente → CC vacío (lo pone César)
+function propuestaPendiente(rc){
+  const s=rc.secundarios||{};
+  const texto=normTexto([s.destino,s.origen,rc.obs].filter(Boolean).join(' '));
+  for(const a of (S.config.areasObservadas||[])){
+    const an=normTexto(a);
+    if(an&&texto.indexOf(an)>=0) return {area:a,cc:CC_AREA_AJENA};
+  }
+  const pk=pkDeTexto(s.destino)!=null?pkDeTexto(s.destino):pkDeTexto(s.origen);
+  const pref=pk==null?null:(pk<=30?'3701':'3702');
+  if(rc.ambito==='GRANULARES'){
+    const cat=ccCatalogo('GRANULARES');
+    return {area:'',cc:pref?(cat.find(c=>String(c).indexOf(pref)===0)||''):(cat[0]||'')};
+  }
+  return {area:'',cc:pref?pref+'.02.11':''};   // TERRAPLEN (incl. internos)
+}
+
+// Área/CC efectivos: lo editado a mano (rc.actaPend, persiste en la sesión) gana a la propuesta.
+function valoresActaPendiente(rc){
+  const auto=propuestaPendiente(rc);
+  const man=rc.actaPend||{};
+  return {area:(man.area!=null)?man.area:auto.area, cc:(man.cc!=null)?man.cc:auto.cc,
+    autoArea:man.area==null, autoCC:man.cc==null};
+}
+
+function pendientesConComprobante(){ return pendientesOrdenadas().filter(r=>r.evidencia); }
+
+function filasActaPendientes(){
+  const cfg=S.config;
+  return pendientesConComprobante().map(rc=>{
+    const v=valoresActaPendiente(rc); const s=rc.secundarios||{};
+    const uf=String(v.cc||'').indexOf('3701')===0?'UF1':String(v.cc||'').indexOf('3702')===0?'UF2':'';
+    const obs=['PENDIENTE DIGITACIÓN','comprobante '+rc.evidencia.archivo+' p.'+rc.evidencia.pagina]
+      .concat(v.area?['área '+v.area]:[]).join(' · ');
+    return cfg.actaLayout.map(cd=>{
+      if(!cd.campo) return '';
+      if(cd.campo==='remision') return rc.remision||'';
+      if(cd.campo==='fecha') return s.fecha?fmtFecha(s.fecha):'';
+      if(cd.campo==='placa') return s.placa||'';
+      if(cd.campo==='cantidad') return s.cantidad||'';
+      if(cd.campo==='cc') return v.cc||'';
+      if(cd.campo==='uf') return uf;
+      if(cd.campo==='obs') return obs;
+      return '';   // actividad, km, m3km, unidad: solo los conoce la base
+    });
+  });
+}
+
 function filasActa(){
   const cfg=S.config;
   const lista=S.corte.reclamos.filter(r=>ESTADOS_ACTA.indexOf(r.estado)>=0);
@@ -1921,6 +1999,8 @@ function vistaPaso7(){
     ${acta.length>200?'<div class="note">(vista previa limitada a 200 filas; el export lleva todas)</div>':''}
   </div>
 
+  ${cardActaPendientes(cab)}
+
   <div class="card"><h3>2 · Excel digitadora (${pend.length} pendientes de digitación)</h3>
     <div class="flexrow"><button class="btn sec" onclick="Exportes.xlsxDigitadora()" ${pend.length?'':'disabled'}>⬇ Descargar .xlsx</button>
     <span class="note">remisión + datos de la proforma + archivo/página del comprobante + notas · en orden por fecha y luego remisión (menor a mayor)</span></div></div>
@@ -1934,6 +2014,46 @@ function vistaPaso7(){
       <button class="btn sec mini" onclick="Exportes.copiarResumen()">📋 Copiar</button>
       <button class="btn sec mini" onclick="Exportes.xlsxResumen()">⬇ .xlsx</button></div>
     <pre class="mono" style="white-space:pre-wrap;font-size:12px;color:var(--text)">${escapeHtml(resumen)}</pre></div>`;
+}
+
+function cardActaPendientes(cab){
+  const cfg=S.config;
+  const pendC=pendientesConComprobante();
+  if(!pendC.length) return '';
+  const dlAreas=(cfg.areasObservadas||[]).map(a=>`<option value="${escapeHtml(a)}">`).join('');
+  const ccs=Array.from(new Set([CC_AREA_AJENA,'3701.02.11','3702.02.11'].concat(ccCatalogo())));
+  const dlCC=ccs.map(c=>`<option value="${escapeHtml(String(c))}">`).join('');
+  const editor=pendC.map(rc=>{
+    const v=valoresActaPendiente(rc); const s=rc.secundarios||{};
+    const autoStyle='border-color:var(--warn)';
+    return `<tr>
+      <td class="mono"><b>${escapeHtml(rc.remision)}</b></td>
+      <td>${s.fecha?fmtFecha(s.fecha):''}</td>
+      <td>${escapeHtml([s.origen,s.destino].filter(Boolean).join(' → ')||'—')}</td>
+      <td><input list="dlAreasPend" value="${escapeHtml(v.area)}" placeholder="nuestra"
+        style="width:110px;${v.autoArea&&v.area?autoStyle:''}" title="vacío = nuestra; área ajena → CC fijo ${CC_AREA_AJENA}"
+        onchange="Exportes.setPendArea('${rc.id}',this.value)"></td>
+      <td><input list="dlCCPend" class="mono" value="${escapeHtml(v.cc)}" placeholder="CC"
+        style="width:110px;${v.autoCC&&v.cc?autoStyle:''}" title="propuesta automática — confírmala o corrígela"
+        onchange="Exportes.setPendCC('${rc.id}',this.value)">${v.autoCC&&v.cc?' <span class="badge naranja" title="propuesta automática, revísala">auto</span>':''}</td>
+    </tr>`;
+  }).join('');
+  const filas=filasActaPendientes().map(row=>'<tr>'+row.map(x=>`<td>${escapeHtml(fmtNumTSV(x,cfg.decimalTSV))}</td>`).join('')+'</tr>').join('');
+  return `<div class="card"><h3>1b · Bloque acta de PENDIENTES de digitación (${pendC.length} con comprobante)</h3>
+    <div class="note" style="margin-bottom:8px">Mismo modelo A..S con lo que la proforma sabe (fecha, remisión, placa, cantidad) —
+    actividad/kilometrajes/unidad solo los conoce la base y van vacíos. El <b>CC</b> es propuesta automática
+    (<span class="badge naranja">auto</span> = sin confirmar): área ajena (puente, planta…) → fijo ${CC_AREA_AJENA};
+    nuestros → 3701/3702 según PK ≤ 30 del destino. Revísalos o corrígelos aquí antes de copiar.
+    ⚠️ Cuando la digitadora los digite y recargues bases pasarán a ENCONTRADA y saldrán también en el bloque 1: no los pegues dos veces.</div>
+    <datalist id="dlAreasPend">${dlAreas}</datalist><datalist id="dlCCPend">${dlCC}</datalist>
+    <div class="tbl-wrap" style="margin-bottom:10px"><table class="tbl">
+      <tr><th>Remisión</th><th>Fecha</th><th>Origen → Destino (proforma)</th><th>Área</th><th>CC (col. H)</th></tr>${editor}</table></div>
+    <div class="flexrow" style="margin-bottom:8px">
+      <button class="btn" onclick="Exportes.copiarActaPend()">📋 Copiar bloque pendientes (TSV)</button>
+      <button class="btn sec" onclick="Exportes.xlsxActaPend()">⬇ Descargar .xlsx</button>
+    </div>
+    <div class="tbl-wrap" style="max-height:260px;overflow-y:auto"><table class="tbl"><tr>${cab}</tr>${filas}</table></div>
+  </div>`;
 }
 
 function resumenCorte(){
@@ -1989,6 +2109,35 @@ const Exportes={
     const ws=XLSX.utils.aoa_to_sheet(aoa);
     const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'BLOQUE ACTA');
     XLSX.writeFile(wb,this._nombre('bloque_acta','xlsx'));
+  },
+  // ---- bloque acta de pendientes: edición de área/CC y exportes ----
+  setPendArea(id,val){
+    const rc=S.corte.reclamos.find(r=>r.id===id); if(!rc) return;
+    rc.actaPend=rc.actaPend||{};
+    rc.actaPend.area=String(val||'').trim();
+    // área ajena manda el CC fijo; volver a "nuestra" re-propone (borra el CC manual)
+    if(rc.actaPend.area) rc.actaPend.cc=CC_AREA_AJENA; else delete rc.actaPend.cc;
+    autosave(); render();
+  },
+  setPendCC(id,val){
+    const rc=S.corte.reclamos.find(r=>r.id===id); if(!rc) return;
+    rc.actaPend=rc.actaPend||{};
+    rc.actaPend.cc=String(val||'').trim();
+    autosave(); render();
+  },
+  async copiarActaPend(){
+    const cfg=S.config; const rows=filasActaPendientes();
+    const lines=rows.map(r=>r.map(v=>fmtNumTSV(v,cfg.decimalTSV)).join('\t'));
+    if(S.ui.tsvHeader) lines.unshift(cfg.actaLayout.map(c=>c.titulo).join('\t'));
+    const ok=await copiarTexto(lines.join('\n'));
+    toast(ok?('📋 Bloque de pendientes copiado ('+rows.length+' filas).'):'⚠️ No se pudo copiar al portapapeles.');
+  },
+  xlsxActaPend(){
+    const cfg=S.config;
+    const aoa=[cfg.actaLayout.map(c=>c.titulo)].concat(filasActaPendientes());
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'PENDIENTES ACTA');
+    XLSX.writeFile(wb,this._nombre('bloque_acta_pendientes','xlsx'));
   },
   xlsxDigitadora(){
     const pend=pendientesOrdenadas();
@@ -2242,6 +2391,7 @@ if(typeof module!=='undefined'&&module.exports){
     marcarDuplicadas,conciliarPendientes,reconciliar,setEstado,conteoEstados,
     resetReclamo,hojasSospechosas,
     obsReclamo,filasActa,resumenCorte,cmpRemision,faltantes,pendientesOrdenadas,
+    pkDeTexto,ccCatalogo,propuestaPendiente,valoresActaPendiente,pendientesConComprobante,filasActaPendientes,CC_AREA_AJENA,
     S,ESTADOS,ESTADOS_ACTA
   };
 }
