@@ -150,24 +150,32 @@ function configSeed(){
       viajes:['no viajes','node viajes','no de viajes','viaje'],
       origen:['origen','sitio de procedencia','cargue','pk origen uf1','pk inicial'],
       destino:['obra','destino','sitio de descargue','descargue','pk final uf1','pk final'],
-      material:['material','tipo de material','material transportado','clase de material','producto']
+      material:['material','tipo material','tipo de material','material transportado','clase de material','producto'],
+      // km/m3km de la proforma: SOLO respaldo del bloque de pendientes cuando las reglas
+      // propias (kmPorOrigen / resta de abscisas) no pueden calcular (el acta paga las
+      // reglas de César, no lo que reclame el contratista)
+      km:['km','kms','km totales','kilometros','kilometros totales','total km'],
+      m3km:['total m3/km','m3/km','m3km','total m3km','m3 x km','m3*km','transporte m3*km','transporte de material m3*km']
     },
     // Material → sufijo de CC para la propuesta del bloque de pendientes (Paso 7).
     // Patrones levantados de las BASE 2026 reales (jul-2026); el prefijo 3701/3702
     // lo pone el PK (≤30→3701). Orden importa (SUB BASE antes que BASE). Editable.
+    // nombreBase = cómo escribe la BASE ese material (col. actividad): el bloque de
+    // pendientes lo usa en la col. G para que quede igual que las filas encontradas.
     ccPorMaterial:{
       GRANULARES:[
-        {patron:'SUB\\s*-?\\s*BASE', suf:'.03.02', nota:'transporte de subbase granular'},
-        {patron:'TDA', suf:'.03.03', nota:'base estabilizada con cemento'},
-        {patron:'BTC|BASE', suf:'.03.04', nota:'transporte de base granular'},
-        {patron:'CRUDO', suf:'.02.11', nota:'crudo de rio (explanaciones)'},
-        {patron:'BOLO', suf:'.02.07', nota:'bolo/sobretamano (terraplenes conformacion)'},
-        {patron:'PIEDRA\\s*FILTRO|FILTRO', suf:'.06.03', nota:'granular drenante (ODT: revisar)'},
-        {patron:'PSI\\s*4000|4000\\s*PSI|28\\s*MPA', suf:'.06.09', nota:'concreto 28 MPa (ODT: revisar)'},
-        {patron:'PSI\\s*2000|2000\\s*PSI|14\\s*MPA', suf:'.06.07', nota:'concreto 14 MPa (ODT: revisar)'}
+        {patron:'SUB\\s*-?\\s*BASE', suf:'.03.02', nombreBase:'Sub base', nota:'transporte de subbase granular'},
+        {patron:'TDA', suf:'.03.03', nombreBase:'Base TDA con cemento', nota:'base estabilizada con cemento'},
+        {patron:'BTC', suf:'.03.04', nombreBase:'BTC', nota:'transporte de base granular'},
+        {patron:'BASE', suf:'.03.04', nombreBase:'Base Granular', nota:'transporte de base granular'},
+        {patron:'CRUDO', suf:'.02.11', nombreBase:'Crudo de río', nota:'crudo de rio (explanaciones)'},
+        {patron:'BOLO', suf:'.02.07', nombreBase:'Bolo (sobretamaño)', nota:'bolo/sobretamano (terraplenes conformacion)'},
+        {patron:'PIEDRA\\s*FILTRO|FILTRO', suf:'.06.03', nombreBase:'Piedra filtro', nota:'granular drenante (ODT: revisar)'},
+        {patron:'PSI\\s*4000|4000\\s*PSI|28\\s*MPA', suf:'.06.09', nombreBase:'PSI 4000 3/4" normal', nota:'concreto 28 MPa (ODT: revisar)'},
+        {patron:'PSI\\s*2000|2000\\s*PSI|14\\s*MPA', suf:'.06.07', nombreBase:'PSI 2000 3/4" normal', nota:'concreto 14 MPa (ODT: revisar)'}
       ],
       TERRAPLEN:[
-        {patron:'', suf:'.02.11', nota:'transporte explanaciones (corte, descapote, excavacion)'}
+        {patron:'', suf:'.02.11', nota:'transporte explanaciones (corte, descapote, excavacion); actividad queda tal cual la proforma'}
       ]
     },
     // Kilómetros totales del bloque de pendientes según el ORIGEN (reglas de César,
@@ -229,10 +237,17 @@ function cargarConfig(){
       if(c && c.contratistas && c.actaLayout){
         // migración: antes las áreas EXCLUÍAN; ahora solo se OBSERVAN (excluyen solo UF3 y asfalto)
         if(c.areasExcluyentes && !c.areasObservadas){ c.areasObservadas=c.areasExcluyentes; delete c.areasExcluyentes; }
-        // migración: mapeo material→CC y columna material (jul-2026, bloque de pendientes)
-        if(!c.ccPorMaterial) c.ccPorMaterial=configSeed().ccPorMaterial;
-        if(c.aliasColumnasSecundarias&&!c.aliasColumnasSecundarias.material)
-          c.aliasColumnasSecundarias.material=configSeed().aliasColumnasSecundarias.material;
+        // migración: mapeo material→CC (jul-2026); se re-siembra si aún no trae nombreBase
+        if(!c.ccPorMaterial||!Object.values(c.ccPorMaterial).some(arr=>(arr||[]).some(r=>r.nombreBase)))
+          c.ccPorMaterial=configSeed().ccPorMaterial;
+        // migración: alias de secundarias nuevos (material/km/m3km…) se FUSIONAN con los guardados
+        if(c.aliasColumnasSecundarias){
+          const seedAl=configSeed().aliasColumnasSecundarias;
+          for(const k of Object.keys(seedAl)){
+            if(!c.aliasColumnasSecundarias[k]) c.aliasColumnasSecundarias[k]=seedAl[k];
+            else for(const a of seedAl[k]) if(c.aliasColumnasSecundarias[k].indexOf(a)<0) c.aliasColumnasSecundarias[k].push(a);
+          }
+        }
         // migración: km totales por origen (jul-2026)
         if(!c.kmPorOrigen) c.kmPorOrigen=configSeed().kmPorOrigen;
         return c;
@@ -1930,6 +1945,19 @@ function pkDeTexto(t){
   return isNaN(n)?null:n;
 }
 
+// Número de la PROFORMA (cantidad/km/m3km): llegan como texto formateado y el punto suele
+// ser DECIMAL ("18.8" del formato del Excel), al revés de parseNum (es-CO, punto = miles).
+// Estas magnitudes no llevan miles, así que: coma final decimal ("18,8" / "1.234,5"),
+// y si solo hay punto se toma como decimal.
+function numProforma(v){
+  if(v==null||v==='') return null;
+  if(typeof v==='number') return isFinite(v)?v:null;
+  let s=String(v).trim().replace(/\s/g,'');
+  if(/,\d+$/.test(s)&&s.indexOf('.')>=0) s=s.replace(/\./g,'').replace(',','.');
+  else if(s.indexOf(',')>=0&&s.indexOf('.')<0) s=s.replace(',','.');
+  const n=parseFloat(s); return isFinite(n)?n:null;
+}
+
 // Abscisa en METROS desde texto libre: "PK 25+300"→25300, "33800"→33800, "33"→33000.
 function pkMetros(t){
   if(t==null||t==='') return null;
@@ -2001,20 +2029,34 @@ function propuestaPendiente(rc){
   }
   const pk=pkDeTexto(s.destino)!=null?pkDeTexto(s.destino):pkDeTexto(s.origen);
   const pref=pk==null?null:(pk<=30?'3701':'3702');
-  const tipo=rc.ambito==='GRANULARES'?'GRANULARES':'TERRAPLEN';
-  // sufijo por material: la columna material de la proforma manda; solo si no existe o no
-  // matchea se busca en destino/origen/obs/nombre de hoja
-  const reglas=((S.config.ccPorMaterial||{})[tipo]||[]);
-  const buscarSuf=t=>{ if(!t) return null;
-    for(const rg of reglas){ try{ if(new RegExp(rg.patron,'i').test(t)) return rg.suf; }catch(_){} }
-    return null; };
-  let suf=buscarSuf(normTexto(s.material||''));
-  if(suf==null) suf=buscarSuf(normTexto([s.destino,s.origen,rc.obs,rc.hoja].filter(Boolean).join(' ')));
+  const rg=reglaMaterialPendiente(rc);
+  const suf=rg?rg.suf:null;
   if(pref&&suf) return {area:'',cc:pref+suf};
+  const tipo=rc.ambito==='GRANULARES'?'GRANULARES':'TERRAPLEN';
   const cat=ccCatalogo(tipo);
   if(suf) return {area:'',cc:cat.find(c=>String(c).slice(-suf.length)===suf)||''};
   if(pref) return {area:'',cc:cat.find(c=>String(c).indexOf(pref)===0)||''};
   return {area:'',cc:tipo==='GRANULARES'?(cat[0]||''):''};
+}
+
+// Regla de material que aplica al pendiente (config.ccPorMaterial): la columna material
+// de la proforma manda; solo si no existe o no matchea se busca en destino/origen/obs/hoja.
+function reglaMaterialPendiente(rc){
+  const s=rc.secundarios||{};
+  const tipo=rc.ambito==='GRANULARES'?'GRANULARES':'TERRAPLEN';
+  const reglas=((S.config.ccPorMaterial||{})[tipo]||[]);
+  const buscar=t=>{ if(!t) return null;
+    for(const rg of reglas){ try{ if(new RegExp(rg.patron,'i').test(t)) return rg; }catch(_){} }
+    return null; };
+  return buscar(normTexto(s.material||''))
+    || buscar(normTexto([s.destino,s.origen,rc.obs,rc.hoja].filter(Boolean).join(' ')));
+}
+
+// Material "traducido" a como lo escribe la BASE (col. actividad): SUBBASE→Sub base,
+// BTC→BTC… Sin regla o sin nombreBase (terraplén), queda el texto de la proforma.
+function materialBasePendiente(rc){
+  const rg=reglaMaterialPendiente(rc);
+  return (rg&&rg.nombreBase)||((rc.secundarios||{}).material)||'';
 }
 
 // Área/CC efectivos: lo editado a mano (rc.actaPend, persiste en la sesión) gana a la propuesta.
@@ -2040,19 +2082,22 @@ function filasActaPendientes(){
     const iniM=pkMetros(s.origen), finM=pkMetros(s.destino);
     const kmIni=tipo==='GRANULARES'?(s.origen||''):(iniM!=null?iniM:(s.origen||''));
     const kmFin=finM!=null?finM:'';
-    const kmTot=kmTotalesPendiente(rc);
-    const cant=parseNum(s.cantidad);
-    const m3km=(kmTot!=null&&cant!=null&&!isNaN(cant))?+(kmTot*cant).toFixed(3):'';
+    // km totales: reglas propias primero; el km de la proforma SOLO como respaldo
+    let kmTot=kmTotalesPendiente(rc);
+    if(kmTot==null){ const k=numProforma(s.km); if(k!=null) kmTot=k; }
+    const cant=numProforma(s.cantidad);
+    let m3km=(kmTot!=null&&cant!=null)?+(kmTot*cant).toFixed(3):'';
+    if(m3km===''){ const q=numProforma(s.m3km); if(q!=null) m3km=q; }
     return cfg.actaLayout.map(cd=>{
       if(!cd.campo) return '';
       if(cd.campo==='remision') return rc.remision||'';
       if(cd.campo==='fecha') return s.fecha?fmtFecha(s.fecha):'';
       if(cd.campo==='placa') return s.placa||'';
-      if(cd.campo==='cantidad') return s.cantidad||'';
+      if(cd.campo==='cantidad') return cant!=null?cant:(s.cantidad||'');
       if(cd.campo==='cc') return v.cc||'';
       if(cd.campo==='uf') return uf;
       if(cd.campo==='obs') return obs;
-      if(cd.campo==='actividad') return s.material||'';
+      if(cd.campo==='actividad') return materialBasePendiente(rc);
       if(cd.campo==='kmIni') return kmIni;
       if(cd.campo==='kmFin') return kmFin;
       if(cd.campo==='kmTot') return kmTot!=null?kmTot:'';
@@ -2133,10 +2178,14 @@ function cardActaPendientes(cab){
   const editor=pendC.map(rc=>{
     const v=valoresActaPendiente(rc); const s=rc.secundarios||{};
     const autoStyle='border-color:var(--warn)';
+    const matBase=materialBasePendiente(rc);
+    const matCell=s.material
+      ?escapeHtml(s.material)+(matBase&&matBase!==s.material?' <span class="note">→ '+escapeHtml(matBase)+'</span>':'')
+      :(matBase?'<span class="note">detectado: '+escapeHtml(matBase)+'</span>':'—');
     return `<tr>
       <td class="mono"><b>${escapeHtml(rc.remision)}</b></td>
       <td>${s.fecha?fmtFecha(s.fecha):''}</td>
-      <td>${escapeHtml(s.material||'—')}</td>
+      <td>${matCell}</td>
       <td>${escapeHtml([s.origen,s.destino].filter(Boolean).join(' → ')||'—')}</td>
       <td><input list="dlAreasPend" value="${escapeHtml(v.area)}" placeholder="nuestra"
         style="width:110px;${v.autoArea&&v.area?autoStyle:''}" title="vacío = nuestra; área ajena → CC fijo ${CC_AREA_AJENA}"
@@ -2504,7 +2553,7 @@ if(typeof module!=='undefined'&&module.exports){
     resetReclamo,hojasSospechosas,
     obsReclamo,filasActa,resumenCorte,cmpRemision,faltantes,pendientesOrdenadas,
     pkDeTexto,ccCatalogo,propuestaPendiente,valoresActaPendiente,pendientesConComprobante,filasActaPendientes,CC_AREA_AJENA,
-    pkMetros,kmTotalesPendiente,unidadDominante,
+    pkMetros,kmTotalesPendiente,unidadDominante,reglaMaterialPendiente,materialBasePendiente,numProforma,
     S,ESTADOS,ESTADOS_ACTA
   };
 }

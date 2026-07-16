@@ -91,8 +91,15 @@ ese cálculo sí se aplica en el bloque de PENDIENTES (ver `kmPorOrigen` abajo).
 Los `PENDIENTE_DIGITACION` **con comprobante confirmado** salen en un bloque
 APARTE con el mismo modelo A..S, llenado como lo hace César a mano (solo las
 derivadas A/B/D/E/N/O van vacías): fecha C, actividad G = material de la
-proforma, remisión I, placa J, cantidad P; observación S = "PENDIENTE
-DIGITACIÓN · comprobante archivo p.N · área X". **Kilometrajes:** K = origen
+proforma **traducido a como lo escribe la base** (`nombreBase` del mapeo
+`ccPorMaterial`: SUBBASE→"Sub base", BTC→"BTC", crudo→"Crudo de río"…; en
+terraplén queda tal cual la proforma), remisión I, placa J, cantidad P;
+observación S = "PENDIENTE DIGITACIÓN · comprobante archivo p.N · área X".
+Cada proforma trae formato propio, así que la columna de material se detecta
+por alias (`tipo material`, `tipo de material`, `material transportado`… —
+ampliables en la config); si la proforma trae `KM` / `TOTAL M3/KM` propios,
+se capturan y se usan SOLO como respaldo cuando las reglas de César no pueden
+calcular (el acta paga las reglas propias, no lo que reclame el contratista). **Kilometrajes:** K = origen
 (en GRANULARES el texto tal cual: "Planta Putana", "AVENSA"…; en TERRAPLEN la
 abscisa en metros), L = PK destino en metros, y **M Km totales** con las
 reglas verificadas contra la BASE 2026 (config `kmPorOrigen`, editable):
