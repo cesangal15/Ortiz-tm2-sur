@@ -1867,6 +1867,17 @@ function obsReclamo(rc){
   return o.join(' · ');
 }
 
+// Pendientes de digitación en orden de trabajo: fecha de la proforma de menor a mayor
+// y, dentro del mismo día, remisión de menor a mayor (sin fecha → al final). El Excel
+// de la digitadora y el PDF de comprobantes usan ESTE mismo orden, renglón a página.
+function pendientesOrdenadas(){
+  return S.corte.reclamos.filter(r=>r.estado==='PENDIENTE_DIGITACION').sort((a,b)=>{
+    const fa=(a.secundarios&&a.secundarios.fecha)||'9999-99-99', fb=(b.secundarios&&b.secundarios.fecha)||'9999-99-99';
+    if(fa!==fb) return fa<fb?-1:1;
+    return cmpRemision(a.remision||'',b.remision||'');
+  });
+}
+
 function filasActa(){
   const cfg=S.config;
   const lista=S.corte.reclamos.filter(r=>ESTADOS_ACTA.indexOf(r.estado)>=0);
@@ -1912,11 +1923,11 @@ function vistaPaso7(){
 
   <div class="card"><h3>2 · Excel digitadora (${pend.length} pendientes de digitación)</h3>
     <div class="flexrow"><button class="btn sec" onclick="Exportes.xlsxDigitadora()" ${pend.length?'':'disabled'}>⬇ Descargar .xlsx</button>
-    <span class="note">remisión + datos de la proforma + archivo/página del comprobante + notas</span></div></div>
+    <span class="note">remisión + datos de la proforma + archivo/página del comprobante + notas · en orden por fecha y luego remisión (menor a mayor)</span></div></div>
 
   <div class="card"><h3>3 · PDF de pendientes</h3>
     <div class="flexrow"><button class="btn sec" onclick="Exportes.pdfPendientes()" ${pend.filter(r=>r.evidencia).length?'':'disabled'}>⬇ Generar PDF</button>
-    <span class="note">páginas confirmadas de los comprobantes (deduplicadas, en orden por remisión) para enviar a la digitadora</span></div></div>
+    <span class="note">páginas confirmadas de los comprobantes (deduplicadas), en el MISMO orden del Excel — fecha y luego remisión — para que la digitadora trabaje renglón a página</span></div></div>
 
   <div class="card"><h3>4 · Resumen del corte</h3>
     <div class="flexrow" style="margin-bottom:8px">
@@ -1980,7 +1991,7 @@ const Exportes={
     XLSX.writeFile(wb,this._nombre('bloque_acta','xlsx'));
   },
   xlsxDigitadora(){
-    const pend=S.corte.reclamos.filter(r=>r.estado==='PENDIENTE_DIGITACION');
+    const pend=pendientesOrdenadas();
     const aoa=[['Remisión','Ámbito','Fecha proforma','Placa','Cantidad','Origen','Destino','Archivo PDF','Página','Notas']];
     for(const rc of pend){
       const s=rc.secundarios||{};
@@ -1993,10 +2004,11 @@ const Exportes={
     XLSX.writeFile(wb,this._nombre('digitadora','xlsx'));
   },
   async pdfPendientes(){
-    const pend=S.corte.reclamos.filter(r=>r.estado==='PENDIENTE_DIGITACION'&&r.evidencia);
+    // MISMO orden que el Excel de la digitadora (fecha y luego remisión), para que
+    // las páginas del PDF acompañen renglón a renglón su trabajo de digitación.
+    const pend=pendientesOrdenadas().filter(r=>r.evidencia);
     if(!pend.length){ toast('No hay pendientes con comprobante confirmado.'); return; }
     try{ await loadScript(CDN.pdflib); }catch(e){ toast('❌ '+e.message); return; }
-    pend.sort((a,b)=>(a.remision<b.remision?-1:1));
     const vistos=new Set(); const orden=[];
     for(const rc of pend){
       const k=rc.evidencia.archivo+'#'+rc.evidencia.pagina;
@@ -2229,7 +2241,7 @@ if(typeof module!=='undefined'&&module.exports){
     snap,areaObservada,buscarCandidatos,buscarSinCeros,conciliarReclamo,clasificar,
     marcarDuplicadas,conciliarPendientes,reconciliar,setEstado,conteoEstados,
     resetReclamo,hojasSospechosas,
-    obsReclamo,filasActa,resumenCorte,cmpRemision,faltantes,
+    obsReclamo,filasActa,resumenCorte,cmpRemision,faltantes,pendientesOrdenadas,
     S,ESTADOS,ESTADOS_ACTA
   };
 }
