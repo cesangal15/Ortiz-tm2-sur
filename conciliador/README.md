@@ -97,10 +97,19 @@ César confirma o corrige en la tarjeta (marca `auto` naranja hasta editarlo):
 - Área **ajena** (el origen/destino de la proforma menciona PUENTE, PLANTA,
   TM1, AMP, RCD… = todo lo no nuestro que no se excluye) → **CC fijo
   `3701.11.03`** (decisión jul-2026). Editar el área re-fija el CC.
-- **Nuestros**: prefijo por PK del destino (PK≤30→3701, PK>30→3702);
-  TERRAPLEN → `37xx.02.11`; GRANULARES → el CC más frecuente de la base
-  cargada con ese prefijo (los CC se repiten y son pocos). Sin PK ni base →
-  vacío, lo pone César. La UF (col. F) se deriva del prefijo del CC.
+- **Nuestros**: CC = prefijo por PK del destino (PK≤30→3701, PK>30→3702) +
+  **sufijo por MATERIAL** (mapeo `ccPorMaterial` en la config, levantado de
+  las BASE 2026 reales jul-2026): GRANULARES — sub base→`.03.02`,
+  TDA→`.03.03`, BTC/base→`.03.04`, crudo de río→`.02.11`, piedra
+  filtro→`.06.03`, PSI 4000/28 MPa→`.06.09`, PSI 2000/14 MPa→`.06.07`;
+  TERRAPLEN — todo→`.02.11` (transporte explanaciones; el `.02.10` es por
+  distancia ≤1 km y queda a corrección manual). El material sale de la
+  columna `material` de la proforma (alias configurables) y, si no existe,
+  de destino/origen/obs/nombre de hoja. Las variaciones `06.*`/`07.*` de
+  ODT/ODL son puntuales y raras → corrección manual. Con material pero sin
+  PK se propone el CC más frecuente de la base cargada que cierre con ese
+  sufijo; sin señal → vacío, lo pone César. La UF (col. F) se deriva del
+  prefijo del CC. UF3 (`3703.*`) no aplica: se excluye del corte.
 
 El área/CC editados persisten en la sesión (`actaPend` del reclamo). Ojo al
 reproceso: cuando la digitadora los digite y se recarguen las bases, esas

@@ -149,7 +149,26 @@ function configSeed(){
       cantidad:['mts','m3','cantidad material (m3)','cubicacion','m3 vehiculo','total m3','cantidad transportada'],
       viajes:['no viajes','node viajes','no de viajes','viaje'],
       origen:['origen','sitio de procedencia','cargue','pk origen uf1','pk inicial'],
-      destino:['obra','destino','sitio de descargue','descargue','pk final uf1','pk final']
+      destino:['obra','destino','sitio de descargue','descargue','pk final uf1','pk final'],
+      material:['material','tipo de material','material transportado','clase de material','producto']
+    },
+    // Material → sufijo de CC para la propuesta del bloque de pendientes (Paso 7).
+    // Patrones levantados de las BASE 2026 reales (jul-2026); el prefijo 3701/3702
+    // lo pone el PK (≤30→3701). Orden importa (SUB BASE antes que BASE). Editable.
+    ccPorMaterial:{
+      GRANULARES:[
+        {patron:'SUB\\s*-?\\s*BASE', suf:'.03.02', nota:'transporte de subbase granular'},
+        {patron:'TDA', suf:'.03.03', nota:'base estabilizada con cemento'},
+        {patron:'BTC|BASE', suf:'.03.04', nota:'transporte de base granular'},
+        {patron:'CRUDO', suf:'.02.11', nota:'crudo de rio (explanaciones)'},
+        {patron:'BOLO', suf:'.02.07', nota:'bolo/sobretamano (terraplenes conformacion)'},
+        {patron:'PIEDRA\\s*FILTRO|FILTRO', suf:'.06.03', nota:'granular drenante (ODT: revisar)'},
+        {patron:'PSI\\s*4000|4000\\s*PSI|28\\s*MPA', suf:'.06.09', nota:'concreto 28 MPa (ODT: revisar)'},
+        {patron:'PSI\\s*2000|2000\\s*PSI|14\\s*MPA', suf:'.06.07', nota:'concreto 14 MPa (ODT: revisar)'}
+      ],
+      TERRAPLEN:[
+        {patron:'', suf:'.02.11', nota:'transporte explanaciones (corte, descapote, excavacion)'}
+      ]
     },
     // Áreas OBSERVADAS: van al acta normalmente, con observación "área X" visible.
     // (Decisión jul-2026: solo excluyen UF3 y ASFALTO; PLANTA/PUENTE/TM1/ODT… se incluyen con nota.)
@@ -201,6 +220,10 @@ function cargarConfig(){
       if(c && c.contratistas && c.actaLayout){
         // migración: antes las áreas EXCLUÍAN; ahora solo se OBSERVAN (excluyen solo UF3 y asfalto)
         if(c.areasExcluyentes && !c.areasObservadas){ c.areasObservadas=c.areasExcluyentes; delete c.areasExcluyentes; }
+        // migración: mapeo material→CC y columna material (jul-2026, bloque de pendientes)
+        if(!c.ccPorMaterial) c.ccPorMaterial=configSeed().ccPorMaterial;
+        if(c.aliasColumnasSecundarias&&!c.aliasColumnasSecundarias.material)
+          c.aliasColumnasSecundarias.material=configSeed().aliasColumnasSecundarias.material;
         return c;
       }
     }
@@ -1906,8 +1929,12 @@ function ccCatalogo(tipo){
 
 // Propuesta automática de área/CC (César la confirma o corrige en pantalla):
 //  · el origen/destino/obs de la proforma menciona un área observada → área ajena, CC fijo 3701.11.03
-//  · nuestra con PK: prefijo 3701 (PK≤30) / 3702 (PK>30) — TERRAPLEN → 37xx.02.11;
-//    GRANULARES → el CC más frecuente de la base con ese prefijo (sin PK, el más frecuente)
+//  · nuestra: SUFIJO por material (config.ccPorMaterial, levantado de las BASE 2026 reales:
+//    granulares sub base→.03.02, BTC/base→.03.04, crudo→.02.11…; terraplén→.02.11) y
+//    PREFIJO por PK del destino (≤30→3701, >30→3702). Las variaciones 06.*/07.* son de
+//    ODT/ODL puntuales (raras): quedan a la corrección manual.
+//  · con material pero sin PK: el CC más frecuente de la base cargada que cierre con ese
+//    sufijo (recupera el prefijo típico); sin material ni PK → el más frecuente del ámbito
 //  · sin señal suficiente → CC vacío (lo pone César)
 function propuestaPendiente(rc){
   const s=rc.secundarios||{};
@@ -1918,11 +1945,20 @@ function propuestaPendiente(rc){
   }
   const pk=pkDeTexto(s.destino)!=null?pkDeTexto(s.destino):pkDeTexto(s.origen);
   const pref=pk==null?null:(pk<=30?'3701':'3702');
-  if(rc.ambito==='GRANULARES'){
-    const cat=ccCatalogo('GRANULARES');
-    return {area:'',cc:pref?(cat.find(c=>String(c).indexOf(pref)===0)||''):(cat[0]||'')};
-  }
-  return {area:'',cc:pref?pref+'.02.11':''};   // TERRAPLEN (incl. internos)
+  const tipo=rc.ambito==='GRANULARES'?'GRANULARES':'TERRAPLEN';
+  // sufijo por material: la columna material de la proforma manda; solo si no existe o no
+  // matchea se busca en destino/origen/obs/nombre de hoja
+  const reglas=((S.config.ccPorMaterial||{})[tipo]||[]);
+  const buscarSuf=t=>{ if(!t) return null;
+    for(const rg of reglas){ try{ if(new RegExp(rg.patron,'i').test(t)) return rg.suf; }catch(_){} }
+    return null; };
+  let suf=buscarSuf(normTexto(s.material||''));
+  if(suf==null) suf=buscarSuf(normTexto([s.destino,s.origen,rc.obs,rc.hoja].filter(Boolean).join(' ')));
+  if(pref&&suf) return {area:'',cc:pref+suf};
+  const cat=ccCatalogo(tipo);
+  if(suf) return {area:'',cc:cat.find(c=>String(c).slice(-suf.length)===suf)||''};
+  if(pref) return {area:'',cc:cat.find(c=>String(c).indexOf(pref)===0)||''};
+  return {area:'',cc:tipo==='GRANULARES'?(cat[0]||''):''};
 }
 
 // Área/CC efectivos: lo editado a mano (rc.actaPend, persiste en la sesión) gana a la propuesta.
@@ -2029,6 +2065,7 @@ function cardActaPendientes(cab){
     return `<tr>
       <td class="mono"><b>${escapeHtml(rc.remision)}</b></td>
       <td>${s.fecha?fmtFecha(s.fecha):''}</td>
+      <td>${escapeHtml(s.material||'—')}</td>
       <td>${escapeHtml([s.origen,s.destino].filter(Boolean).join(' → ')||'—')}</td>
       <td><input list="dlAreasPend" value="${escapeHtml(v.area)}" placeholder="nuestra"
         style="width:110px;${v.autoArea&&v.area?autoStyle:''}" title="vacío = nuestra; área ajena → CC fijo ${CC_AREA_AJENA}"
@@ -2043,11 +2080,13 @@ function cardActaPendientes(cab){
     <div class="note" style="margin-bottom:8px">Mismo modelo A..S con lo que la proforma sabe (fecha, remisión, placa, cantidad) —
     actividad/kilometrajes/unidad solo los conoce la base y van vacíos. El <b>CC</b> es propuesta automática
     (<span class="badge naranja">auto</span> = sin confirmar): área ajena (puente, planta…) → fijo ${CC_AREA_AJENA};
-    nuestros → 3701/3702 según PK ≤ 30 del destino. Revísalos o corrígelos aquí antes de copiar.
+    nuestros → sufijo por MATERIAL (sub base .03.02 · BTC/base .03.04 · crudo .02.11 · terraplén .02.11; mapeo
+    editable en ⚙️ Config → ccPorMaterial) y prefijo 3701/3702 según PK ≤ 30 del destino. Las variaciones
+    06.*/07.* de ODT/ODL son puntuales: corrígelas aquí. Revisa todo antes de copiar.
     ⚠️ Cuando la digitadora los digite y recargues bases pasarán a ENCONTRADA y saldrán también en el bloque 1: no los pegues dos veces.</div>
     <datalist id="dlAreasPend">${dlAreas}</datalist><datalist id="dlCCPend">${dlCC}</datalist>
     <div class="tbl-wrap" style="margin-bottom:10px"><table class="tbl">
-      <tr><th>Remisión</th><th>Fecha</th><th>Origen → Destino (proforma)</th><th>Área</th><th>CC (col. H)</th></tr>${editor}</table></div>
+      <tr><th>Remisión</th><th>Fecha</th><th>Material</th><th>Origen → Destino (proforma)</th><th>Área</th><th>CC (col. H)</th></tr>${editor}</table></div>
     <div class="flexrow" style="margin-bottom:8px">
       <button class="btn" onclick="Exportes.copiarActaPend()">📋 Copiar bloque pendientes (TSV)</button>
       <button class="btn sec" onclick="Exportes.xlsxActaPend()">⬇ Descargar .xlsx</button>
