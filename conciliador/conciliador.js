@@ -1270,7 +1270,20 @@ async function ensurePdfjs(){
   window.pdfjsLib.GlobalWorkerOptions.workerSrc=CDN.pdfjsWorker;
 }
 
-function faltantes(){ return S.corte?S.corte.reclamos.filter(r=>r.estado==='NO_ENCONTRADA'&&r.remision):[]; }
+// Orden de menor a mayor por el número de la remisión (0348 < 986 < CH6199 por su parte
+// numérica; las que no tienen dígitos van al final, alfabéticas) para llevar el control.
+function cmpRemision(a,b){
+  const na=parseInt((String(a).match(/\d+/)||[''])[0],10), nb=parseInt((String(b).match(/\d+/)||[''])[0],10);
+  if(!isNaN(na)&&!isNaN(nb)&&na!==nb) return na-nb;
+  if(!isNaN(na)&&isNaN(nb)) return -1;
+  if(isNaN(na)&&!isNaN(nb)) return 1;
+  return String(a)<String(b)?-1:String(a)>String(b)?1:0;
+}
+function faltantes(){
+  return S.corte
+    ?S.corte.reclamos.filter(r=>r.estado==='NO_ENCONTRADA'&&r.remision).sort((x,y)=>cmpRemision(x.remision,y.remision))
+    :[];
+}
 
 // Vista INVERSA del OCR: clasifica cada página de cada PDF cargado.
 //   evidencia        → ya confirmada como comprobante de alguna remisión
@@ -2216,7 +2229,7 @@ if(typeof module!=='undefined'&&module.exports){
     snap,areaObservada,buscarCandidatos,buscarSinCeros,conciliarReclamo,clasificar,
     marcarDuplicadas,conciliarPendientes,reconciliar,setEstado,conteoEstados,
     resetReclamo,hojasSospechosas,
-    obsReclamo,filasActa,resumenCorte,
+    obsReclamo,filasActa,resumenCorte,cmpRemision,faltantes,
     S,ESTADOS,ESTADOS_ACTA
   };
 }
