@@ -82,17 +82,27 @@ Filas ordenadas por fecha y luego remisión. La remisión se exporta como TEXTO
 - **Descargar .xlsx:** mismos valores con números reales (sin problema de locale).
 
 El mapeo acta↔bases vive en `actaLayout` dentro de la configuración (editable),
-no está quemado en el código. El cálculo `PK/1000+2.5` de granulares queda
-documentado pero NO implementado: se exporta lo que dice la base.
+no está quemado en el código. Para las filas que vienen de la base se exporta
+lo que dice la base (el cálculo `PK/1000+2.5` de granulares NO se recalcula);
+ese cálculo sí se aplica en el bloque de PENDIENTES (ver `kmPorOrigen` abajo).
 
 ### Bloque acta de PENDIENTES de digitación (tarjeta 1b)
 
 Los `PENDIENTE_DIGITACION` **con comprobante confirmado** salen en un bloque
-APARTE con el mismo modelo A..S, llenando lo que la proforma sabe (fecha C,
-remisión I, placa J, cantidad P; observación S = "PENDIENTE DIGITACIÓN ·
-comprobante archivo p.N · área X") — actividad/kilometrajes/unidad solo los
-conoce la base y van vacíos. El **CC (col. H)** es propuesta automática que
-César confirma o corrige en la tarjeta (marca `auto` naranja hasta editarlo):
+APARTE con el mismo modelo A..S, llenado como lo hace César a mano (solo las
+derivadas A/B/D/E/N/O van vacías): fecha C, actividad G = material de la
+proforma, remisión I, placa J, cantidad P; observación S = "PENDIENTE
+DIGITACIÓN · comprobante archivo p.N · área X". **Kilometrajes:** K = origen
+(en GRANULARES el texto tal cual: "Planta Putana", "AVENSA"…; en TERRAPLEN la
+abscisa en metros), L = PK destino en metros, y **M Km totales** con las
+reglas verificadas contra la BASE 2026 (config `kmPorOrigen`, editable):
+origen Putana → PK destino/1000 + 2,5; Avensa → 25,7 fijo y Pekin → 67,5 fijo
+(siempre van al PK33); resto → |destino − origen|/1000 (abscisas en metros).
+**Q m³·Km = Km totales × cantidad** y R unidad como la escribe la base
+cargada (`m3/km` en GRANULARES, `m3km` en TERRAPLEN). Sin datos suficientes
+la celda queda vacía y la llena César. El **CC (col. H)** es propuesta
+automática que César confirma o corrige en la tarjeta (marca `auto` naranja
+hasta editarlo):
 
 - Área **ajena** (el origen/destino de la proforma menciona PUENTE, PLANTA,
   TM1, AMP, RCD… = todo lo no nuestro que no se excluye) → **CC fijo

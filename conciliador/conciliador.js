@@ -170,6 +170,15 @@ function configSeed(){
         {patron:'', suf:'.02.11', nota:'transporte explanaciones (corte, descapote, excavacion)'}
       ]
     },
+    // Kilómetros totales del bloque de pendientes según el ORIGEN (reglas de César,
+    // verificadas contra la BASE 2026 real): Putana = PK destino/1000 + 2.5; Avensa y
+    // Pekin siempre van al PK33 → fijos. Sin regla: |destino − origen| / 1000 (abscisas
+    // en metros). Editable.
+    kmPorOrigen:[
+      {patron:'PUTANA', masKm:2.5},
+      {patron:'AVENSA', fijo:25.7},
+      {patron:'PEKIN', fijo:67.5}
+    ],
     // Áreas OBSERVADAS: van al acta normalmente, con observación "área X" visible.
     // (Decisión jul-2026: solo excluyen UF3 y ASFALTO; PLANTA/PUENTE/TM1/ODT… se incluyen con nota.)
     areasObservadas:['PLANTA','PUENTE','TM1','AMP','RCD','ZODME - RCD','DIVISO - PUENTE'],
@@ -224,6 +233,8 @@ function cargarConfig(){
         if(!c.ccPorMaterial) c.ccPorMaterial=configSeed().ccPorMaterial;
         if(c.aliasColumnasSecundarias&&!c.aliasColumnasSecundarias.material)
           c.aliasColumnasSecundarias.material=configSeed().aliasColumnasSecundarias.material;
+        // migración: km totales por origen (jul-2026)
+        if(!c.kmPorOrigen) c.kmPorOrigen=configSeed().kmPorOrigen;
         return c;
       }
     }
@@ -1919,6 +1930,51 @@ function pkDeTexto(t){
   return isNaN(n)?null:n;
 }
 
+// Abscisa en METROS desde texto libre: "PK 25+300"→25300, "33800"→33800, "33"→33000.
+function pkMetros(t){
+  if(t==null||t==='') return null;
+  if(typeof t==='number') return t>=100?t:t*1000;
+  const s=String(t);
+  let m=s.match(/P\.?K\.?\s*[.:]?\s*(\d{1,3})(?:\s*\+\s*(\d{1,3}))?/i);
+  if(!m) m=s.match(/(?:^|[^\d+.,])(\d{1,3})\s*\+\s*(\d{3})(?:\D|$)/);
+  if(m) return parseInt(m[1],10)*1000+(m[2]?parseInt(m[2],10):0);
+  m=s.match(/^\s*(\d{4,6})\s*$/);            // ya viene en metros
+  if(m) return parseInt(m[1],10);
+  m=s.match(/^\s*(\d{1,3})\s*$/);            // número suelto pequeño = km
+  if(m) return parseInt(m[1],10)*1000;
+  return null;
+}
+
+// Kilómetros totales (col. M) del pendiente, reglas de César verificadas contra la base:
+//  · origen con regla (config.kmPorOrigen): Putana = PK destino/1000 + 2.5; Avensa 25.7;
+//    Pekin 67.5 (siempre van al PK33)
+//  · sin regla: |PK destino − PK origen| / 1000 (abscisas normales, en metros)
+//  · sin datos suficientes → null (César lo pone)
+function kmTotalesPendiente(rc){
+  const s=rc.secundarios||{};
+  const origenTxt=normTexto([s.origen,rc.hoja].filter(Boolean).join(' '));
+  for(const rg of (S.config.kmPorOrigen||[])){
+    try{
+      if(new RegExp(rg.patron,'i').test(origenTxt)){
+        if(rg.fijo!=null) return rg.fijo;
+        if(rg.masKm!=null){ const fin=pkMetros(s.destino); return fin==null?null:+(fin/1000+rg.masKm).toFixed(1); }
+      }
+    }catch(_){}
+  }
+  const ini=pkMetros(s.origen), fin=pkMetros(s.destino);
+  if(ini!=null&&fin!=null) return +(Math.abs(fin-ini)/1000).toFixed(1);
+  return null;
+}
+
+// Unidad (col. R) como la escribe la base cargada (GRANULARES 'm3/km', TERRAPLEN 'm3km').
+function unidadDominante(tipo){
+  const b=S.bases[tipo]; if(!b||!b.rows) return 'm3km';
+  const f=new Map();
+  for(const r of b.rows){ const u=String(r.unidad||'').trim(); if(u) f.set(u,(f.get(u)||0)+1); }
+  let best='m3km',bc=0; for(const [u,c] of f) if(c>bc){ best=u; bc=c; }
+  return best;
+}
+
 // CCs reales de la base cargada, de más a menos frecuente (se repiten y son pocos).
 function ccCatalogo(tipo){
   const freq=new Map();
@@ -1978,6 +2034,15 @@ function filasActaPendientes(){
     const uf=String(v.cc||'').indexOf('3701')===0?'UF1':String(v.cc||'').indexOf('3702')===0?'UF2':'';
     const obs=['PENDIENTE DIGITACIÓN','comprobante '+rc.evidencia.archivo+' p.'+rc.evidencia.pagina]
       .concat(v.area?['área '+v.area]:[]).join(' · ');
+    const tipo=rc.ambito==='GRANULARES'?'GRANULARES':'TERRAPLEN';
+    // kilometrajes como los escribe la base: GRANULARES kmIni = texto del origen (Planta
+    // Putana, AVENSA…); TERRAPLEN kmIni = abscisa en metros. kmFin en metros en ambas.
+    const iniM=pkMetros(s.origen), finM=pkMetros(s.destino);
+    const kmIni=tipo==='GRANULARES'?(s.origen||''):(iniM!=null?iniM:(s.origen||''));
+    const kmFin=finM!=null?finM:'';
+    const kmTot=kmTotalesPendiente(rc);
+    const cant=parseNum(s.cantidad);
+    const m3km=(kmTot!=null&&cant!=null&&!isNaN(cant))?+(kmTot*cant).toFixed(3):'';
     return cfg.actaLayout.map(cd=>{
       if(!cd.campo) return '';
       if(cd.campo==='remision') return rc.remision||'';
@@ -1987,7 +2052,13 @@ function filasActaPendientes(){
       if(cd.campo==='cc') return v.cc||'';
       if(cd.campo==='uf') return uf;
       if(cd.campo==='obs') return obs;
-      return '';   // actividad, km, m3km, unidad: solo los conoce la base
+      if(cd.campo==='actividad') return s.material||'';
+      if(cd.campo==='kmIni') return kmIni;
+      if(cd.campo==='kmFin') return kmFin;
+      if(cd.campo==='kmTot') return kmTot!=null?kmTot:'';
+      if(cd.campo==='m3km') return m3km;
+      if(cd.campo==='unidad') return unidadDominante(tipo);
+      return '';
     });
   });
 }
@@ -2077,8 +2148,10 @@ function cardActaPendientes(cab){
   }).join('');
   const filas=filasActaPendientes().map(row=>'<tr>'+row.map(x=>`<td>${escapeHtml(fmtNumTSV(x,cfg.decimalTSV))}</td>`).join('')+'</tr>').join('');
   return `<div class="card"><h3>1b · Bloque acta de PENDIENTES de digitación (${pendC.length} con comprobante)</h3>
-    <div class="note" style="margin-bottom:8px">Mismo modelo A..S con lo que la proforma sabe (fecha, remisión, placa, cantidad) —
-    actividad/kilometrajes/unidad solo los conoce la base y van vacíos. El <b>CC</b> es propuesta automática
+    <div class="note" style="margin-bottom:8px">Mismo modelo A..S, llenado como lo hace César: fecha, remisión, placa, cantidad y
+    actividad (material) de la proforma; kilometrajes = origen/destino (Km totales: Putana = destino + 2,5 · Avensa 25,7 ·
+    Pekin 67,5 · resto |destino − origen|/1000, editable en ⚙️ Config → kmPorOrigen); m³·Km = Km totales × cantidad;
+    unidad como la escribe la base. Solo quedan vacías tus derivadas (A, B, D, E, N, O). El <b>CC</b> es propuesta automática
     (<span class="badge naranja">auto</span> = sin confirmar): área ajena (puente, planta…) → fijo ${CC_AREA_AJENA};
     nuestros → sufijo por MATERIAL (sub base .03.02 · BTC/base .03.04 · crudo .02.11 · terraplén .02.11; mapeo
     editable en ⚙️ Config → ccPorMaterial) y prefijo 3701/3702 según PK ≤ 30 del destino. Las variaciones
@@ -2431,6 +2504,7 @@ if(typeof module!=='undefined'&&module.exports){
     resetReclamo,hojasSospechosas,
     obsReclamo,filasActa,resumenCorte,cmpRemision,faltantes,pendientesOrdenadas,
     pkDeTexto,ccCatalogo,propuestaPendiente,valoresActaPendiente,pendientesConComprobante,filasActaPendientes,CC_AREA_AJENA,
+    pkMetros,kmTotalesPendiente,unidadDominante,
     S,ESTADOS,ESTADOS_ACTA
   };
 }
