@@ -70,6 +70,19 @@ auto-corrige (filosofía: nunca asumir), pero te lo hace evidente por tres vías
 3. En el detalle de cada NO_ENCONTRADA: bloque "existe en la otra base" con el
    candidato listo para usar con un clic.
 
+### Filas ENCONTRADAS a medias (completar con la proforma)
+
+Si la remisión matchea la base (remisión + empresa + fecha) pero la fila está
+**incompleta** porque la chequeadora apenas la digita, el match ya prueba que
+el PDF existe. El acta rellena SOLO las celdas vacías de esa fila con los
+valores derivados de la proforma (mismo motor que el bloque de pendientes:
+CC/UF, actividad-material, placa, kilometrajes, cantidad, m³·km, unidad) y lo
+marca en Observaciones ("completada con proforma (CC, km totales…)"). Nunca
+pisa lo que la chequeadora ya tecleó, solo llena huecos. Se calcula en vivo:
+cuando ella termine y recargues las bases (Paso 1), el dato real de la base
+gana solo y la marca desaparece. El Paso 7 avisa cuántas filas se completaron
+y las lista en el resumen del corte.
+
 ## Bloque acta (contrato de pegado)
 
 Columnas A..S del acta con las derivadas **vacías** (A `X`, B `Acta No.`, D, E,

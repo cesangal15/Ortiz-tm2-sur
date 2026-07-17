@@ -1905,7 +1905,7 @@ function vistaPaso6(){
 
 /* ---------- PASO 7: exportes ---------- */
 
-function obsReclamo(rc){
+function obsReclamo(rc,comp){
   const o=[];
   if(rc.marcas.indexOf('AREA_OBSERVADA')>=0&&rc.subtipo) o.push('área '+rc.subtipo);
   if(rc.marcas.indexOf('REZAGO')>=0&&rc.candidato&&rc.candidato.fecha) o.push('rezago '+fmtRezago(rc.candidato.fecha));
@@ -1913,6 +1913,7 @@ function obsReclamo(rc){
   if(rc.notaReconciliacion) o.push('resuelta en re-conciliación');
   if(rc.marcas.indexOf('CELDA_MULTIPLE')>=0) o.push('de celda múltiple');
   if(rc.marcas.indexOf('MATCH_SIN_CEROS')>=0) o.push('match sin ceros confirmado');
+  if(comp) o.push('completada con proforma ('+Object.keys(comp).map(k=>LBL_CAMPO[k]||k).join(', ')+')');
   return o.join(' · ');
 }
 
@@ -1995,20 +1996,25 @@ function kmTotalesPendiente(rc){
 }
 
 // Unidad (col. R) como la escribe la base cargada (GRANULARES 'm3/km', TERRAPLEN 'm3km').
+// Memo en el objeto base (`_`-key: no se serializa; se recrea al recargar la base).
 function unidadDominante(tipo){
   const b=S.bases[tipo]; if(!b||!b.rows) return 'm3km';
+  if(b._unidadDom) return b._unidadDom;
   const f=new Map();
   for(const r of b.rows){ const u=String(r.unidad||'').trim(); if(u) f.set(u,(f.get(u)||0)+1); }
   let best='m3km',bc=0; for(const [u,c] of f) if(c>bc){ best=u; bc=c; }
-  return best;
+  return (b._unidadDom=best);
 }
 
-// CCs reales de la base cargada, de más a menos frecuente (se repiten y son pocos).
+// CCs reales de la base cargada, de más a menos frecuente (se repiten y son pocos). Memo por base.
 function ccCatalogo(tipo){
+  if(tipo){ const b=S.bases[tipo]; if(b&&b._ccCat) return b._ccCat; }
   const freq=new Map();
   const suma=b=>{ if(b&&b.rows) for(const r of b.rows){ const cc=String(r.cc||'').trim(); if(cc) freq.set(cc,(freq.get(cc)||0)+1); } };
   if(tipo){ suma(S.bases[tipo]); } else { suma(S.bases.GRANULARES); suma(S.bases.TERRAPLEN); }
-  return Array.from(freq.entries()).sort((a,b)=>b[1]-a[1]).map(e=>e[0]);
+  const out=Array.from(freq.entries()).sort((a,b)=>b[1]-a[1]).map(e=>e[0]);
+  if(tipo&&S.bases[tipo]) S.bases[tipo]._ccCat=out;
+  return out;
 }
 
 // Propuesta automática de área/CC (César la confirma o corrige en pantalla):
@@ -2069,43 +2075,87 @@ function valoresActaPendiente(rc){
 
 function pendientesConComprobante(){ return pendientesOrdenadas().filter(r=>r.evidencia); }
 
+// Valores A..S que la app puede DERIVAR de la proforma sin la base. Fuente única para el
+// bloque de pendientes Y para completar filas ENCONTRADAS que la chequeadora dejó a medias.
+// kmIni: GRANULARES = texto del origen ("Planta Putana", "AVENSA"…); TERRAPLEN = abscisa en
+// metros. km totales por reglas propias; km/m³·km de la proforma solo como respaldo.
+function derivadosProforma(rc){
+  const s=rc.secundarios||{};
+  const v=valoresActaPendiente(rc);
+  const tipo=rc.ambito==='GRANULARES'?'GRANULARES':'TERRAPLEN';
+  const iniM=pkMetros(s.origen), finM=pkMetros(s.destino);
+  const kmIni=tipo==='GRANULARES'?(s.origen||''):(iniM!=null?iniM:(s.origen||''));
+  const kmFin=finM!=null?finM:'';
+  let kmTot=kmTotalesPendiente(rc);
+  if(kmTot==null){ const k=numProforma(s.km); if(k!=null) kmTot=k; }
+  const cant=numProforma(s.cantidad);
+  let m3km=(kmTot!=null&&cant!=null)?+(kmTot*cant).toFixed(3):'';
+  if(m3km===''){ const q=numProforma(s.m3km); if(q!=null) m3km=q; }
+  const uf=String(v.cc||'').indexOf('3701')===0?'UF1':String(v.cc||'').indexOf('3702')===0?'UF2':'';
+  return {
+    fecha:s.fecha?fmtFecha(s.fecha):'', uf, actividad:materialBasePendiente(rc), cc:v.cc||'',
+    placa:s.placa||'', kmIni, kmFin, kmTot:kmTot!=null?kmTot:'',
+    cantidad:cant!=null?cant:(s.cantidad||''), m3km, unidad:unidadDominante(tipo), area:v.area
+  };
+}
+
 function filasActaPendientes(){
   const cfg=S.config;
   return pendientesConComprobante().map(rc=>{
-    const v=valoresActaPendiente(rc); const s=rc.secundarios||{};
-    const uf=String(v.cc||'').indexOf('3701')===0?'UF1':String(v.cc||'').indexOf('3702')===0?'UF2':'';
+    const d=derivadosProforma(rc);
     const obs=['PENDIENTE DIGITACIÓN','comprobante '+rc.evidencia.archivo+' p.'+rc.evidencia.pagina]
-      .concat(v.area?['área '+v.area]:[]).join(' · ');
-    const tipo=rc.ambito==='GRANULARES'?'GRANULARES':'TERRAPLEN';
-    // kilometrajes como los escribe la base: GRANULARES kmIni = texto del origen (Planta
-    // Putana, AVENSA…); TERRAPLEN kmIni = abscisa en metros. kmFin en metros en ambas.
-    const iniM=pkMetros(s.origen), finM=pkMetros(s.destino);
-    const kmIni=tipo==='GRANULARES'?(s.origen||''):(iniM!=null?iniM:(s.origen||''));
-    const kmFin=finM!=null?finM:'';
-    // km totales: reglas propias primero; el km de la proforma SOLO como respaldo
-    let kmTot=kmTotalesPendiente(rc);
-    if(kmTot==null){ const k=numProforma(s.km); if(k!=null) kmTot=k; }
-    const cant=numProforma(s.cantidad);
-    let m3km=(kmTot!=null&&cant!=null)?+(kmTot*cant).toFixed(3):'';
-    if(m3km===''){ const q=numProforma(s.m3km); if(q!=null) m3km=q; }
+      .concat(d.area?['área '+d.area]:[]).join(' · ');
     return cfg.actaLayout.map(cd=>{
       if(!cd.campo) return '';
       if(cd.campo==='remision') return rc.remision||'';
-      if(cd.campo==='fecha') return s.fecha?fmtFecha(s.fecha):'';
-      if(cd.campo==='placa') return s.placa||'';
-      if(cd.campo==='cantidad') return cant!=null?cant:(s.cantidad||'');
-      if(cd.campo==='cc') return v.cc||'';
-      if(cd.campo==='uf') return uf;
       if(cd.campo==='obs') return obs;
-      if(cd.campo==='actividad') return materialBasePendiente(rc);
-      if(cd.campo==='kmIni') return kmIni;
-      if(cd.campo==='kmFin') return kmFin;
-      if(cd.campo==='kmTot') return kmTot!=null?kmTot:'';
-      if(cd.campo==='m3km') return m3km;
-      if(cd.campo==='unidad') return unidadDominante(tipo);
-      return '';
+      const val=d[cd.campo];
+      return val==null?'':val;
     });
   });
+}
+
+// Campos del acta que la chequeadora llena y que la proforma puede completar si la BASE los
+// dejó vacíos (fila a medias, aún en digitación). fecha queda fuera: es la llave del match.
+const CAMPOS_COMPLETABLES=['uf','actividad','cc','placa','kmIni','kmFin','kmTot','cantidad','m3km','unidad'];
+const LBL_CAMPO={uf:'UF',actividad:'actividad',cc:'CC',placa:'placa',kmIni:'km inicial',
+  kmFin:'km final',kmTot:'km totales',cantidad:'cantidad',m3km:'m³·km',unidad:'unidad'};
+
+// La remisión matcheó la base (remisión + empresa + fecha) pero la fila está A MEDIAS porque
+// la chequeadora apenas la digita: devuelve SOLO los campos vacíos en la base que la proforma
+// sí puede aportar (el PDF ya está probado por el match). No muta la base ni pisa lo tecleado.
+function completarDesdeProforma(rc){
+  if(!rc.candidato) return null;
+  const c=rc.candidato, d=derivadosProforma(rc), faltan={};
+  const vacio=x=>(x==null||x==='');
+  for(const campo of CAMPOS_COMPLETABLES){
+    if(campo==='uf'||campo==='m3km') continue;    // dependen de otros: al final
+    if(vacio(c[campo]) && !vacio(d[campo])) faltan[campo]=d[campo];
+  }
+  if(vacio(c.uf)){                                 // UF desde el CC efectivo (base o rellenado)
+    const cc=vacio(c.cc)?faltan.cc:c.cc;
+    const uf=String(cc||'').indexOf('3701')===0?'UF1':String(cc||'').indexOf('3702')===0?'UF2':'';
+    if(uf) faltan.uf=uf;
+  }
+  if(vacio(c.m3km)){                               // m³·km = km totales × cantidad (efectivos)
+    const kn=numProforma(vacio(c.kmTot)?faltan.kmTot:c.kmTot);
+    const cn=numProforma(vacio(c.cantidad)?faltan.cantidad:c.cantidad);
+    if(kn!=null&&cn!=null) faltan.m3km=+(kn*cn).toFixed(3);
+    else if(!vacio(d.m3km)) faltan.m3km=d.m3km;
+  }
+  return Object.keys(faltan).length?faltan:null;
+}
+
+// Filas del acta completadas con proforma (base a medias): para el aviso del Paso 7 y el resumen.
+function reclamosCompletados(){
+  if(!S.corte) return [];
+  const out=[];
+  for(const rc of S.corte.reclamos){
+    if(ESTADOS_ACTA.indexOf(rc.estado)<0) continue;
+    const comp=completarDesdeProforma(rc);
+    if(comp) out.push({rc,campos:Object.keys(comp)});
+  }
+  return out;
 }
 
 function filasActa(){
@@ -2116,21 +2166,26 @@ function filasActa(){
     if(fa!==fb) return fa<fb?-1:1;
     return (a.remision||'')<(b.remision||'')?-1:1;
   });
-  return lista.map(rc=>cfg.actaLayout.map(cd=>{
-    if(!cd.campo) return '';                       // derivada: César arrastra su fórmula
-    if(cd.campo==='remision') return rc.remision||'';
-    if(cd.campo==='obs') return obsReclamo(rc);
-    const c=rc.candidato; if(!c) return '';
-    if(cd.campo==='fecha') return c.fecha?fmtFecha(c.fecha):'';
-    const v=c[cd.campo];
-    return v==null?'':v;
-  }));
+  return lista.map(rc=>{
+    const comp=completarDesdeProforma(rc);          // huecos de la base rellenados con la proforma
+    return cfg.actaLayout.map(cd=>{
+      if(!cd.campo) return '';                       // derivada: César arrastra su fórmula
+      if(cd.campo==='remision') return rc.remision||'';
+      if(cd.campo==='obs') return obsReclamo(rc,comp);
+      const c=rc.candidato; if(!c) return '';
+      if(cd.campo==='fecha') return c.fecha?fmtFecha(c.fecha):'';
+      let v=c[cd.campo];
+      if((v==null||v==='') && comp && comp[cd.campo]!=null) v=comp[cd.campo];
+      return v==null?'':v;
+    });
+  });
 }
 
 function vistaPaso7(){
   if(!S.corte||!S.corte.reclamos.length) return `<div class="paso-title">Paso 7 · Exportes</div><div class="alert warn">Carga una proforma primero.</div>`;
   const cfg=S.config; const c=conteoEstados();
   const acta=filasActa();
+  const compl=reclamosCompletados();
   const pend=S.corte.reclamos.filter(r=>r.estado==='PENDIENTE_DIGITACION');
   const cab=cfg.actaLayout.map(cd=>`<th>${escapeHtml(cd.col)}<br><span style="font-weight:400">${escapeHtml(cd.titulo)}</span></th>`).join('');
   const filas=acta.slice(0,200).map(row=>'<tr>'+row.map(v=>`<td>${escapeHtml(fmtNumTSV(v,cfg.decimalTSV))}</td>`).join('')+'</tr>').join('');
@@ -2147,6 +2202,9 @@ function vistaPaso7(){
     </div>
     <div class="note" style="margin-bottom:8px">Orden: fecha y luego remisión. Columnas derivadas (A,B,D,E,N,O) van VACÍAS —
     después de pegar, arrastra tus fórmulas. Decimales del TSV con “${escapeHtml(cfg.decimalTSV)}” (configurable).</div>
+    ${compl.length?`<div class="alert info" style="margin-bottom:8px">🩹 <b>${compl.length}</b> fila(s) estaban A MEDIAS en la base (la chequeadora aún las digitaba):
+      la remisión ya matcheó (empresa + fecha), así que el PDF está probado y se completaron los huecos con la proforma.
+      Van marcadas en Observaciones (“completada con proforma …”). Cuando la chequeadora termine y recargues las bases, el dato real gana solo. Verifícalas.</div>`:''}
     <div class="tbl-wrap" style="max-height:340px;overflow-y:auto"><table class="tbl"><tr>${cab}</tr>${filas}</table></div>
     ${acta.length>200?'<div class="note">(vista previa limitada a 200 filas; el export lleva todas)</div>':''}
   </div>
@@ -2233,6 +2291,9 @@ function resumenCorte(){
   listar('DUPLICADAS',S.corte.reclamos.filter(r=>r.estado==='DUPLICADA_EN_PROFORMA'));
   listar('REZAGOS',S.corte.reclamos.filter(r=>r.marcas.indexOf('REZAGO')>=0),rc=>rc.remision+' ('+(rc.candidato?fmtFecha(rc.candidato.fecha):'')+')');
   listar('INTERNOS > 3 KM (verificar acuerdo aparte)',S.corte.reclamos.filter(r=>r.marcas.indexOf('INTERNO_MAYOR_3KM')>=0),rc=>rc.remision+' ('+(rc.candidato?rc.candidato.kmTot:'')+' km)');
+  const compl=reclamosCompletados();
+  if(compl.length){ lin.push(''); lin.push('COMPLETADAS CON PROFORMA — fila a medias en la base ('+compl.length+'):');
+    for(const x of compl) lin.push('  '+x.rc.remision+' ['+x.campos.map(k=>LBL_CAMPO[k]||k).join(', ')+']'); }
   const yn=S.corte.yaNoReclamadas||[];
   if(yn.length){ lin.push(''); lin.push('YA NO RECLAMADAS tras reemplazo de proforma ('+yn.length+'): '+yn.join(', ')); }
   // páginas de PDF que el OCR no pudo cruzar (partes sin reconocer)
@@ -2554,6 +2615,7 @@ if(typeof module!=='undefined'&&module.exports){
     obsReclamo,filasActa,resumenCorte,cmpRemision,faltantes,pendientesOrdenadas,
     pkDeTexto,ccCatalogo,propuestaPendiente,valoresActaPendiente,pendientesConComprobante,filasActaPendientes,CC_AREA_AJENA,
     pkMetros,kmTotalesPendiente,unidadDominante,reglaMaterialPendiente,materialBasePendiente,numProforma,
+    derivadosProforma,completarDesdeProforma,reclamosCompletados,
     S,ESTADOS,ESTADOS_ACTA
   };
 }
