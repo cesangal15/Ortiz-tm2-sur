@@ -1936,15 +1936,8 @@ function pendientesOrdenadas(){
 const CC_AREA_AJENA='3701.11.03';   // CC fijo de todo lo que no es nuestro y no se excluye (puente, planta, TM1…)
 
 // PK del texto libre de la proforma: "PK 25+300", "pk34", "K12", "34+500".
-function pkDeTexto(t){
-  if(!t) return null;
-  const s=String(t);
-  let m=s.match(/P\.?K\.?\s*[.:]?\s*(\d{1,3})(?:\s*\+\s*\d{1,3})?/i);
-  if(!m) m=s.match(/(?:^|[^\d+.,])(\d{1,3})\s*\+\s*\d{3}(?:\D|$)/);
-  if(!m) return null;
-  const n=parseInt(m[1],10);
-  return isNaN(n)?null:n;
-}
+// PK (km entero) del texto, derivado de pkMetros para no divergir nunca del abscisado.
+function pkDeTexto(t){ const mm=pkMetros(t); return mm==null?null:Math.floor(mm/1000); }
 
 // Número de la PROFORMA (cantidad/km/m3km): llegan como texto formateado y el punto suele
 // ser DECIMAL ("18.8" del formato del Excel), al revés de parseNum (es-CO, punto = miles).
@@ -1960,17 +1953,21 @@ function numProforma(v){
 }
 
 // Abscisa en METROS desde texto libre: "PK 25+300"→25300, "33800"→33800, "33"→33000.
+// Abscisa en METROS desde cualquier formato de proforma:
+//   "PK 25+300" / "PR 16+500" / "9+040" → km + offset (metros literales)
+//   "10.25" / "26,1" / "37.6"           → km CON DECIMALES → ×1000 (10250, 26100, 37600)
+//   "16" / "70"                          → km entero (<100) → ×1000
+//   "33800" / "16300"                    → ya en metros (≥100)
 function pkMetros(t){
   if(t==null||t==='') return null;
-  if(typeof t==='number') return t>=100?t:t*1000;
-  const s=String(t);
-  let m=s.match(/P\.?K\.?\s*[.:]?\s*(\d{1,3})(?:\s*\+\s*(\d{1,3}))?/i);
-  if(!m) m=s.match(/(?:^|[^\d+.,])(\d{1,3})\s*\+\s*(\d{3})(?:\D|$)/);
-  if(m) return parseInt(m[1],10)*1000+(m[2]?parseInt(m[2],10):0);
-  m=s.match(/^\s*(\d{4,6})\s*$/);            // ya viene en metros
-  if(m) return parseInt(m[1],10);
-  m=s.match(/^\s*(\d{1,3})\s*$/);            // número suelto pequeño = km
-  if(m) return parseInt(m[1],10)*1000;
+  if(typeof t==='number') return t>=100?Math.round(t):Math.round(t*1000);
+  const s=String(t).trim();
+  let m=s.match(/(\d{1,3})\s*\+\s*(\d{1,3})/);              // km + offset explícito
+  if(m) return parseInt(m[1],10)*1000+parseInt(m[2],10);
+  m=s.match(/(\d{1,3})[.,](\d{1,3})(?!\d)/);               // km con decimales (0,25 km = 250 m)
+  if(m) return Math.round(parseFloat(m[1]+'.'+m[2])*1000);
+  m=s.match(/(\d{1,6})/);                                   // entero suelto: km (<100) o metros (≥100)
+  if(m){ const n=parseInt(m[1],10); return n>=100?n:n*1000; }
   return null;
 }
 
