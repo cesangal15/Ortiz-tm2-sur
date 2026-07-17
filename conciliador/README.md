@@ -114,7 +114,12 @@ ampliables en la config); si la proforma trae `KM` / `TOTAL M3/KM` propios,
 se capturan y se usan SOLO como respaldo cuando las reglas de César no pueden
 calcular (el acta paga las reglas propias, no lo que reclame el contratista). **Kilometrajes:** K = origen
 (en GRANULARES el texto tal cual: "Planta Putana", "AVENSA"…; en TERRAPLEN la
-abscisa en metros), L = PK destino en metros, y **M Km totales** con las
+abscisa en metros), L = PK destino en metros. La abscisa se normaliza a metros
+venga como venga en la proforma (`pkMetros`): "PR 16+500"→16500, **km con
+decimales "10.25"→10250 / "26,1"→26100 / "37.6"→37600**, "16"→16000,
+"33800"→33800 — así la resta de distancia siempre corre y el PK para el CC se
+lee bien (antes "10.25" se quedaba tal cual y la fórmula no ejecutaba). **M Km
+totales** con las
 reglas verificadas contra la BASE 2026 (config `kmPorOrigen`, editable):
 origen Putana → PK destino/1000 + 2,5; Avensa → 25,7 fijo y Pekin → 67,5 fijo
 (siempre van al PK33); resto → |destino − origen|/1000 (abscisas en metros).
