@@ -148,8 +148,8 @@ function configSeed(){
       placa:['placa','placa vehiculo'],
       cantidad:['mts','m3','cantidad material (m3)','cubicacion','m3 vehiculo','total m3','cantidad transportada'],
       viajes:['no viajes','node viajes','no de viajes','viaje'],
-      origen:['origen','sitio de procedencia','cargue','pk origen uf1','pk inicial'],
-      destino:['obra','destino','sitio de descargue','descargue','pk final uf1','pk final'],
+      origen:['origen','sitio de procedencia','cargue','pk origen uf1','pk inicial','pr inicial','pr origen','pr de origen'],
+      destino:['obra','destino','sitio de descargue','descargue','pk final uf1','pk final','pr final','pr destino','pr de destino'],
       material:['material','tipo material','tipo de material','material transportado','clase de material','producto'],
       // km/m3km de la proforma: SOLO respaldo del bloque de pendientes cuando las reglas
       // propias (kmPorOrigen / resta de abscisas) no pueden calcular (el acta paga las
