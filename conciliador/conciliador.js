@@ -150,7 +150,7 @@ function configSeed(){
       viajes:['no viajes','node viajes','no de viajes','viaje'],
       origen:['origen','sitio de procedencia','cargue','pk origen uf1','pk inicial','pr inicial','pr origen','pr de origen'],
       destino:['obra','destino','sitio de descargue','descargue','pk final uf1','pk final','pr final','pr destino','pr de destino'],
-      material:['material','tipo material','tipo de material','material transportado','clase de material','producto'],
+      material:['material','tipo material','tipo de material','material transportado','clase de material','producto','descripcion material','descripcion del material','descripcion de material','descripcion'],
       // km/m3km de la proforma: SOLO respaldo del bloque de pendientes cuando las reglas
       // propias (kmPorOrigen / resta de abscisas) no pueden calcular (el acta paga las
       // reglas de César, no lo que reclame el contratista)
