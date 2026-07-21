@@ -270,7 +270,7 @@ const S={
   // workbooks a la espera de que el usuario señale la hoja (caso borde: sin 'BASE 2026')
   basePendiente:{},           // tipo -> {wb, archivo, hojas:[]}
   corte:null,                 // ver abrirCorte()
-  pdfs:[],                    // {name, kind:'pdf'|'img', bytes:Uint8Array, numPages, doc?, url?, error?}
+  pdfs:[],                    // {name, kind:'pdf'|'img', bytes:Uint8Array, numPages, ambito, ambitoAuto, doc?, url?, error?}
   ocr:{running:false,cancel:false,hecho:0,total:0,paginas:{},candidatos:{},descartados:{},editadas:{},revisadas:{}},
   ui:{paso:1,filtroEstado:null,faltanteSel:null,detalle:null,soloRevision:false,tsvHeader:false,avisoLS:false}
 };
@@ -1334,6 +1334,28 @@ function faltantes(){
     :[];
 }
 
+/* ---- Ámbito de los PDFs de partes (jul-2026): búsqueda exclusiva por base ----
+   Cada PDF se marca según qué partes trae: GRANULARES, TERRAPLEN o AMBAS (mezclado).
+   El cruce OCR solo empareja cada página con faltantes COMPATIBLES con el ámbito del
+   PDF: un parecido a 1 dígito con un número de la OTRA base ya no genera candidato ni
+   vuelve la página "candidata". AMBAS = comportamiento anterior (se cruza con todo).
+   El ámbito se SUGIERE por el nombre del archivo con las mismas reglas de hojas del
+   contratista, pero César lo confirma (marca "auto" hasta que lo toque). PDFs de
+   sesiones viejas sin dato = AMBAS. */
+function ambitoPdfDe(p){ return (p&&p.ambito)||'AMBAS'; }
+function ambitoPdfPorNombre(name){ return ambitoPdfDe(S.pdfs.find(x=>x.name===name)); }
+function ambitoCompatible(pdfAmb,rcAmb){
+  if(!pdfAmb||pdfAmb==='AMBAS') return true;
+  if(!rcAmb||rcAmb==='AMBAS') return true;
+  return pdfAmb===rcAmb;
+}
+function etiquetaAmbito(a){ return a==='GRANULARES'?'Granulares':a==='TERRAPLEN'?'Terraplén':'Mezclado (ambas)'; }
+function sugerirAmbitoPdf(nombre){
+  const c=S.corte?getContratista(S.corte.contratistaId):null;
+  const r=c?resolverAmbitoHoja(nombre,c):null;
+  return (r&&(r.ambito==='GRANULARES'||r.ambito==='TERRAPLEN'))?r.ambito:'AMBAS';
+}
+
 // Vista INVERSA del OCR: clasifica cada página de cada PDF cargado.
 //   evidencia        → ya confirmada como comprobante de alguna remisión
 //   candidata        → algún token coincide (exacto o a 1 dígito) con una faltante actual
@@ -1347,18 +1369,27 @@ function faltantes(){
 //   sin_procesar     → aún no se le ha corrido OCR
 function clasificarPaginas(){
   const claims=S.corte?S.corte.reclamos.filter(r=>r.remision):[];
-  const faltSet=new Set(),faltSC=new Set(),allSet=new Set(),allSC=new Set();
-  for(const rc of claims){
-    allSet.add(rc.remision); allSC.add(rc.remSC);
-    if(rc.estado==='NO_ENCONTRADA'){ faltSet.add(rc.remision); faltSC.add(rc.remSC); }
-  }
   const evid=new Set();
   if(S.corte) for(const rc of S.corte.reclamos) if(rc.evidencia) evid.add(rc.evidencia.archivo+'#'+rc.evidencia.pagina);
+  // Sets por ámbito de PDF: las páginas de un PDF de TERRAPLEN solo se comparan con
+  // reclamos/faltantes de terraplén (o de hojas AMBAS); ídem GRANULARES.
+  const porAmbito={};
+  const setsPara=(amb)=>{
+    if(porAmbito[amb]) return porAmbito[amb];
+    const o={faltSet:new Set(),faltSC:new Set(),allSet:new Set(),allSC:new Set()};
+    for(const rc of claims){
+      if(!ambitoCompatible(amb,rc.ambito)) continue;
+      o.allSet.add(rc.remision); o.allSC.add(rc.remSC);
+      if(rc.estado==='NO_ENCONTRADA'){ o.faltSet.add(rc.remision); o.faltSC.add(rc.remSC); }
+    }
+    return porAmbito[amb]=o;
+  };
   const coincide=(t,set,setSC)=>set.has(t)||setSC.has(sinCeros(t))||set.has(sinCeros(t));
-  const esFalt=t=>{ if(coincide(t,faltSet,faltSC)) return true; for(const f of faltSet) if(dist1(t,f)<=1) return true; return false; };
   const paginas=[]; const counts={evidencia:0,candidata:0,descartada:0,reconocida:0,sin_coincidencia:0,sin_lectura:0,sin_procesar:0};
   for(let fi=0;fi<S.pdfs.length;fi++){
     const p=S.pdfs[fi]; if(p.error) continue;
+    const sets=setsPara(ambitoPdfDe(p));
+    const esFalt=t=>{ if(coincide(t,sets.faltSet,sets.faltSC)) return true; for(const f of sets.faltSet) if(dist1(t,f)<=1) return true; return false; };
     for(let pg=1;pg<=p.numPages;pg++){
       const key=p.name+'#'+pg;
       let cat,toks=[];
@@ -1368,7 +1399,7 @@ function clasificarPaginas(){
         toks=S.ocr.paginas[key]||[];
         if(toks.some(esFalt)) cat='candidata';
         else if(S.ocr.revisadas[key]) cat='descartada';
-        else if(toks.some(t=>coincide(t,allSet,allSC))) cat='reconocida';
+        else if(toks.some(t=>coincide(t,sets.allSet,sets.allSC))) cat='reconocida';
         else if(toks.length) cat='sin_coincidencia';
         else cat='sin_lectura';
       }
@@ -1384,6 +1415,10 @@ function vistaPaso5(){
   const falt=faltantes();
   const archivos=S.pdfs.map((p,i)=>`<tr><td>${p.kind==='pdf'?'📕':'🖼️'} ${escapeHtml(p.name)}</td>
     <td>${p.error?'<span style="color:var(--error)">'+escapeHtml(p.error)+'</span>':p.numPages+' pág.'}</td>
+    <td>${p.error?'':`<select style="width:auto;padding:4px 8px;font-size:11px" title="Qué partes trae este archivo: sus páginas solo se cruzan con las faltantes de esa base"
+      onchange="Paso5.setAmbito(${i},this.value)">
+      ${['AMBAS','GRANULARES','TERRAPLEN'].map(a=>`<option value="${a}" ${ambitoPdfDe(p)===a?'selected':''}>${etiquetaAmbito(a)}</option>`).join('')}
+    </select>${p.ambitoAuto?' <span class="note" style="font-size:10px" title="sugerido por el nombre del archivo — confírmalo">auto</span>':''}`}</td>
     <td><button class="btn sec mini" onclick="Paso5.verPaginas(${i})">Hojear</button></td></tr>`).join('');
   const lista=falt.map(rc=>{
     const cands=(S.ocr.candidatos[rc.remision]||[]).filter(c=>!S.ocr.descartados[rc.remision+'|'+c.key]);
@@ -1399,7 +1434,10 @@ function vistaPaso5(){
   <div class="card"><h3>📎 Partes escaneados</h3>
     <label class="filebox"><input type="file" multiple accept=".pdf,.jpg,.jpeg,.png" onchange="Paso5.cargar(this)">
       <div class="fb-title">Agregar PDFs o imágenes de partes</div><div class="fb-sub">1–3 partes por página · también acepta jpg/png sueltos</div></label>
-    ${S.pdfs.length?`<div class="tbl-wrap" style="margin-top:10px"><table class="tbl"><tr><th>Archivo</th><th>Páginas</th><th></th></tr>${archivos}</table></div>`:''}
+    ${S.pdfs.length?`<div class="tbl-wrap" style="margin-top:10px"><table class="tbl"><tr><th>Archivo</th><th>Páginas</th><th>Partes de…</th><th></th></tr>${archivos}</table></div>
+    <div class="note" style="margin-top:6px"><b>Partes de…</b>: si el archivo trae solo partes de una base (p. ej. solo terraplén), márcalo y sus páginas
+    se cruzan ÚNICAMENTE con las faltantes de esa base — un número parecido de la otra base ya no sale como candidato.
+    “Mezclado (ambas)” busca contra todas (comportamiento de siempre). El sistema lo sugiere por el nombre del archivo (marca <i>auto</i>); confírmalo tú.</div>`:''}
   </div>
   <div class="card"><h3>🔍 OCR dirigido</h3>
     ${!falt.length?'<div class="alert ok">No hay remisiones NO_ENCONTRADA: no hace falta OCR.</div>':`
@@ -1453,6 +1491,7 @@ const Paso5={
   // Las páginas ya OCR-eadas quedan en caché; si después cambian las faltantes (nueva
   // proforma, cambio de ámbito de hoja, re-conciliación), se re-cruzan sin repetir OCR.
   recruzar(){
+    this._podarCandidatos();
     const falt=faltantes(); if(!falt.length) return;
     for(const key of Object.keys(S.ocr.paginas)){
       const i=key.lastIndexOf('#'); if(i<0) continue;
@@ -1460,6 +1499,23 @@ const Paso5={
       const fi=S.pdfs.findIndex(p=>p.name===name);
       this._cruzar(name,pg,fi,S.ocr.paginas[key]||[],falt);
     }
+  },
+  // Retira candidatos que quedaron incompatibles tras marcar/cambiar el ámbito de un PDF
+  // (los comprobantes ya CONFIRMADOS no se tocan: eso es evidencia decidida por César).
+  // PDF no re-cargado tras importar sesión → ámbito desconocido → se conserva.
+  _podarCandidatos(){
+    if(!S.corte) return;
+    for(const rem of Object.keys(S.ocr.candidatos)){
+      const rc=S.corte.reclamos.find(r=>r.remision===rem);
+      if(!rc||!rc.ambito||rc.ambito==='AMBAS') continue;
+      S.ocr.candidatos[rem]=S.ocr.candidatos[rem].filter(c=>ambitoCompatible(ambitoPdfPorNombre(c.file),rc.ambito));
+    }
+  },
+  setAmbito(idx,val){
+    const p=S.pdfs[idx]; if(!p) return;
+    p.ambito=val; p.ambitoAuto=false;
+    autosave(); render();   // render en Paso 5 → recruzar(): poda y re-cruza con el nuevo ámbito
+    toast('Ámbito de '+p.name+' → '+etiquetaAmbito(val)+'. Cruces actualizados.');
   },
   postRender(){
     if(S.ui.faltanteSel) this._renderCandidatos(S.ui.faltanteSel);
@@ -1486,14 +1542,21 @@ const Paso5={
     const p=S.pdfs[fileIdx]; if(!p) return;
     const key=p.name+'#'+pg;
     const toks=S.ocr.paginas[key]||[];
-    const falt=faltantes();
+    const amb=ambitoPdfDe(p);
+    const faltTodas=faltantes();
+    const falt=faltTodas.filter(rc=>ambitoCompatible(amb,rc.ambito));
+    const otras=faltTodas.filter(rc=>!ambitoCompatible(amb,rc.ambito));
     const rev=this._porRevisar();
     const idx=rev.findIndex(x=>x.fi===fileIdx&&x.pg===pg);
-    const chips=falt.map(rc=>{
+    const chip=rc=>{
       const cerca=toks.some(t=>dist1(t,rc.remision)<=1||sinCeros(t)===rc.remSC);
       return `<button class="btn mini ${cerca?'':'sec'} mono" title="confirmar esta página como comprobante de ${escapeHtml(rc.remision)}"
         onclick="Paso5.asignarFaltante('${rc.id}',${fileIdx},${pg})">${escapeHtml(rc.remision)}${cerca?' ≈':''}</button>`;
-    }).join(' ');
+    };
+    const chips=falt.map(chip).join(' ');
+    // faltantes de la otra base: ocultas por el ámbito del PDF, pero a un clic por si el ámbito está mal
+    const chipsOtras=otras.length?`<details style="margin-bottom:8px"><summary class="note" style="cursor:pointer">${otras.length} faltante${otras.length===1?'':'s'} de la otra base oculta${otras.length===1?'':'s'} (este PDF está marcado “${etiquetaAmbito(amb)}”)</summary>
+      <div class="flexrow" style="margin-top:6px">${otras.map(chip).join(' ')}</div></details>`:'';
     abrirModal(`<h3>🧐 Revisar parte — ${escapeHtml(p.name)} · página ${pg}</h3>
       <div class="kv" style="margin:6px 0 8px">
         <span>${toks.length?'OCR leyó: <b class="mono">'+escapeHtml(toks.join(', '))+'</b>':'OCR sin lectura'}${S.ocr.editadas[key]?' ✏️ (corregida a mano)':''}</span>
@@ -1503,7 +1566,8 @@ const Paso5={
       </div>
       <div class="note" style="margin-bottom:6px">¿El número de este parte es alguna de las FALTANTES (${falt.length})? Clic en ella y queda confirmada
       (≈ = a un dígito de lo leído). Si no es ninguna, descártala: es reproceso (una remisión que ya está en la base).</div>
-      <div class="flexrow" style="margin-bottom:8px">${chips||'<span class="note">no quedan faltantes por confirmar 🎉</span>'}</div>
+      <div class="flexrow" style="margin-bottom:8px">${chips||'<span class="note">no quedan faltantes '+(otras.length?'de este ámbito ':'')+'por confirmar 🎉</span>'}</div>
+      ${chipsOtras}
       <div class="flexrow" style="margin-bottom:10px">
         <button class="btn mini danger" onclick="Paso5.noCoincide(${fileIdx},${pg})">✕ No es ninguna faltante — quitar de la lista</button>
         <button class="btn sec mini" onclick="Paso5.editarLectura(${fileIdx},${pg})">✏️ Corregir lectura OCR</button>
@@ -1638,7 +1702,11 @@ const Paso5={
       for(const f of files){
         const bytes=new Uint8Array(await f.arrayBuffer());
         const esImg=/\.(jpe?g|png)$/i.test(f.name);
-        const entry={name:f.name,kind:esImg?'img':'pdf',bytes,numPages:1,doc:null,error:null};
+        // ámbito: el guardado en la sesión importada gana; si no, se sugiere por el nombre
+        const meta=((S._esperado&&S._esperado.pdfs)||[]).find(m=>m.name===f.name);
+        const entry={name:f.name,kind:esImg?'img':'pdf',bytes,numPages:1,doc:null,error:null,
+          ambito:(meta&&meta.ambito)||sugerirAmbitoPdf(f.name),
+          ambitoAuto:(meta&&meta.ambito)?!!meta.ambitoAuto:true};
         if(!esImg){
           try{
             await ensurePdfjs();
@@ -1692,10 +1760,12 @@ const Paso5={
       await ensurePdfjs();
       await loadScript(CDN.tesseract);
       worker=await Tesseract.createWorker('eng');
-      const faltSet=new Set(); const faltSC=new Set();
-      for(const rc of falt){ faltSet.add(rc.remision); faltSC.add(rc.remSC); }
       for(let fi=0;fi<S.pdfs.length;fi++){
         const p=S.pdfs[fi]; if(p.error) continue;
+        // corte temprano de la pasada A: solo cuentan las faltantes compatibles con el ámbito del PDF
+        const faltPdf=falt.filter(rc=>ambitoCompatible(ambitoPdfDe(p),rc.ambito));
+        const faltSet=new Set(); const faltSC=new Set();
+        for(const rc of faltPdf){ faltSet.add(rc.remision); faltSC.add(rc.remSC); }
         for(let pg=1;pg<=p.numPages;pg++){
           if(S.ocr.cancel) throw new Error('cancelado');
           const key=p.name+'#'+pg;
@@ -1775,8 +1845,11 @@ const Paso5={
     return out;
   },
   _cruzar(fileName,pg,fileIdx,tokens,falt){
+    // exclusividad por ámbito: un PDF marcado TERRAPLEN no ofrece candidatos de granulares
+    const amb=ambitoPdfPorNombre(fileName);
     for(const tk of tokens){
       for(const rc of falt){
+        if(!ambitoCompatible(amb,rc.ambito)) continue;
         let nivel=null;
         if(tk===rc.remision||sinCeros(tk)===rc.remSC) nivel='verde';
         else if(dist1(tk,rc.remision)<=1) nivel='naranja';
@@ -2494,7 +2567,7 @@ function sesionSerializable(){
       GRANULARES:S.bases.GRANULARES?{archivo:S.bases.GRANULARES.archivo,hoja:S.bases.GRANULARES.hoja,utiles:S.bases.GRANULARES.utiles}:null,
       TERRAPLEN:S.bases.TERRAPLEN?{archivo:S.bases.TERRAPLEN.archivo,hoja:S.bases.TERRAPLEN.hoja,utiles:S.bases.TERRAPLEN.utiles}:null
     },
-    pdfMeta:S.pdfs.map(p=>({name:p.name,pages:p.numPages,kind:p.kind})),
+    pdfMeta:S.pdfs.map(p=>({name:p.name,pages:p.numPages,kind:p.kind,ambito:ambitoPdfDe(p),ambitoAuto:!!p.ambitoAuto})),
     ocr:{paginas:S.ocr.paginas,candidatos:S.ocr.candidatos,descartados:S.ocr.descartados,editadas:S.ocr.editadas,revisadas:S.ocr.revisadas}
   };
 }
@@ -2610,6 +2683,7 @@ if(typeof module!=='undefined'&&module.exports){
     marcarDuplicadas,conciliarPendientes,reconciliar,setEstado,conteoEstados,
     resetReclamo,hojasSospechosas,
     obsReclamo,filasActa,resumenCorte,cmpRemision,faltantes,pendientesOrdenadas,
+    ambitoPdfDe,ambitoPdfPorNombre,ambitoCompatible,etiquetaAmbito,sugerirAmbitoPdf,clasificarPaginas,
     pkDeTexto,ccCatalogo,propuestaPendiente,valoresActaPendiente,pendientesConComprobante,filasActaPendientes,CC_AREA_AJENA,
     pkMetros,kmTotalesPendiente,unidadDominante,reglaMaterialPendiente,materialBasePendiente,numProforma,
     derivadosProforma,completarDesdeProforma,reclamosCompletados,
