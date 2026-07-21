@@ -146,7 +146,7 @@ function configSeed(){
     aliasColumnasSecundarias:{
       fecha:['fecha','fecha del servicio'],
       placa:['placa','placa vehiculo'],
-      cantidad:['mts','m3','cantidad material (m3)','cubicacion','m3 vehiculo','total m3','cantidad transportada'],
+      cantidad:['mts','m3','cantidad material (m3)','cantidad material','cantidad de material','cantidad','cubicacion','cubicacion vehiculo','cubicacion del vehiculo','cubicaje','m3 vehiculo','total m3','cantidad transportada'],
       viajes:['no viajes','node viajes','no de viajes','viaje'],
       origen:['origen','sitio de procedencia','cargue','pk origen uf1','pk inicial','pr inicial','pr origen','pr de origen'],
       destino:['obra','destino','sitio de descargue','descargue','pk final uf1','pk final','pr final','pr destino','pr de destino'],
@@ -2098,7 +2098,16 @@ function ccCatalogo(tipo){
 //  · sin señal suficiente → CC vacío (lo pone César)
 function propuestaPendiente(rc){
   const s=rc.secundarios||{};
-  const texto=normTexto([s.destino,s.origen,rc.obs].filter(Boolean).join(' '));
+  // El origen es el sitio de CARGUE (PLANTA PUTANA, AVENSA, PEKIN…): son lugares nuestros.
+  // Su texto NO debe disparar "área ajena" aunque contenga una palabra de área (p.ej. la
+  // "PLANTA" de "PLANTA PUTANA" ≠ planta de hormigón). Si el origen es un cargue conocido
+  // (config.kmPorOrigen) se excluye del escaneo de áreas; el área siempre está en el destino/obs.
+  const origenConocido=(S.config.kmPorOrigen||[]).some(rg=>{
+    try{ return new RegExp(rg.patron,'i').test(normTexto(s.origen||'')); }catch(_){ return false; }
+  });
+  const partesArea=[s.destino,rc.obs];
+  if(!origenConocido) partesArea.push(s.origen);
+  const texto=normTexto(partesArea.filter(Boolean).join(' '));
   for(const a of (S.config.areasObservadas||[])){
     const an=normTexto(a);
     if(an&&texto.indexOf(an)>=0) return {area:a,cc:CC_AREA_AJENA};
