@@ -147,9 +147,9 @@ function configSeed(){
       fecha:['fecha','fecha del servicio'],
       placa:['placa','placa vehiculo'],
       cantidad:['mts','m3','cantidad material (m3)','cantidad material','cantidad de material','cantidad','cubicacion','cubicacion vehiculo','cubicacion del vehiculo','cubicaje','m3 vehiculo','total m3','cantidad transportada'],
-      viajes:['no viajes','node viajes','no de viajes','viaje','cant viaje','cant viajes','cantidad viajes','no de viaje'],
+      viajes:['no viajes','node viajes','no de viajes','viaje','viajes','cant viaje','cant viajes','cantidad viajes','no de viaje'],
       origen:['origen','sitio de procedencia','cargue','pk origen uf1','pk inicial','pr inicial','pr origen','pr de origen'],
-      destino:['obra','destino','sitio de descargue','descargue','pk final uf1','pk final','pr final','pr destino','pr de destino'],
+      destino:['destino','sitio de descargue','descargue','pk final uf1','pk final','pr final','pr destino','pr de destino','obra'],
       material:['material','tipo material','tipo de material','material transportado','clase de material','producto','descripcion material','descripcion del material','descripcion de material','descripcion'],
       // km/m3km de la proforma: SOLO respaldo del bloque de pendientes cuando las reglas
       // propias (kmPorOrigen / resta de abscisas) no pueden calcular (el acta paga las
@@ -240,14 +240,22 @@ function cargarConfig(){
         // migración: mapeo material→CC (jul-2026); se re-siembra si aún no trae nombreBase
         if(!c.ccPorMaterial||!Object.values(c.ccPorMaterial).some(arr=>(arr||[]).some(r=>r.nombreBase)))
           c.ccPorMaterial=configSeed().ccPorMaterial;
-        // migración: alias de secundarias nuevos (material/km/m3km…) se FUSIONAN con los guardados
+        // migración: alias de secundarias. El ORDEN del seed manda (la detección usa
+        // prioridad por orden: p.ej. 'cubicaje' debe vencer a 'total m3'); se anexan al
+        // final solo los alias propios del usuario que el seed no trae, para no perderlos.
         if(c.aliasColumnasSecundarias){
           const seedAl=configSeed().aliasColumnasSecundarias;
           for(const k of Object.keys(seedAl)){
-            if(!c.aliasColumnasSecundarias[k]) c.aliasColumnasSecundarias[k]=seedAl[k];
-            else for(const a of seedAl[k]) if(c.aliasColumnasSecundarias[k].indexOf(a)<0) c.aliasColumnasSecundarias[k].push(a);
+            const user=c.aliasColumnasSecundarias[k]||[];
+            const merged=seedAl[k].slice();
+            for(const a of user) if(merged.indexOf(a)<0) merged.push(a);
+            c.aliasColumnasSecundarias[k]=merged;
           }
         }
+        // migración: alias de remisión nuevos (recibo no, remesa…) se fusionan con los guardados
+        if(c.aliasColumnaRemision){
+          for(const a of configSeed().aliasColumnaRemision) if(c.aliasColumnaRemision.indexOf(a)<0) c.aliasColumnaRemision.push(a);
+        } else c.aliasColumnaRemision=configSeed().aliasColumnaRemision;
         // migración: km totales por origen (jul-2026)
         if(!c.kmPorOrigen) c.kmPorOrigen=configSeed().kmPorOrigen;
         return c;
@@ -352,13 +360,20 @@ function detectarEncabezado(ws,cfg){
 
 function detectarSecundarias(ws,fila,colRem,cfg){
   const rng=refRange(ws); const maxC=Math.min(rng.cols,60);
+  // Encabezados normalizados de la fila (una sola pasada).
+  const heads=[];
+  for(let c=0;c<maxC;c++) heads.push(c===colRem?null:normCol(cellText(ws,colLetter(c)+fila)));
   const map={};
   for(const campo of Object.keys(cfg.aliasColumnasSecundarias||{})){
     const al=cfg.aliasColumnasSecundarias[campo].map(normCol);
-    for(let c=0;c<maxC;c++){
-      if(c===colRem) continue;
-      const t=normCol(cellText(ws,colLetter(c)+fila));
-      if(t && al.indexOf(t)>=0){ map[campo]=c; break; }
+    // Prioridad por ORDEN DE ALIAS, no por posición de columna: gana el primer alias de
+    // la lista que exista como encabezado (así 'cubicaje' vence a 'total m3' aunque esté
+    // más a la derecha; 'destino' vence a 'obra'). Entre columnas con el mismo encabezado,
+    // la de más a la izquierda. Los alias van del más específico/confiable al más laxo.
+    for(const a of al){
+      if(!a) continue;
+      const c=heads.indexOf(a);
+      if(c>=0){ map[campo]=c; break; }
     }
   }
   return map;
