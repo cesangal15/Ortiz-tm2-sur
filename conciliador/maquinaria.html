@@ -53,7 +53,8 @@ tr.dosPartes td.rep{color:var(--warn);font-weight:600;}
 <div id="page">
 
   <div class="alert info" style="max-width:900px">
-    Genera el <b>grid día-a-día</b> (un renglón por cada día del período, incluidos los días sin uso) para
+    Genera el <b>grid día-a-día</b> (todos los días del período, incluidos los sin uso; los días repartidos
+    entre varios CC salen con <b>un renglón por parte</b> y el standby proporcional a las horas) para
     pegar en el acta con <b>Pegado especial → Omitir blancos</b>. Lee la hoja <b>BASE MAQUINARIA</b> del Excel que subas
     y no escribe ningún maestro. La página calcula <b>I = FINAL−INICIAL</b> y escribe el <b>standby (J)</b>;
     <b>K se elimina</b> y <b>L</b> se deja vacía para la fórmula del template (<code>=+J</code>).
@@ -455,39 +456,56 @@ function generar(){
   // Identidad de la máquina (constante) para rellenar días sin parte
   const ident=identidadMaquina(porDia);
 
-  const filasOut=[]; const huecos=[];
+  const filasOut=[]; const huecos=[]; let dias=0;
   for(let d=desde; d<=hasta; d=addDaysISO(d,1)){
-    const partes=porDia.get(d)||[];
+    dias++;
+    const partes=(porDia.get(d)||[]).slice().sort((a,b)=>(a.inicial==null?1:0)-(b.inicial==null?1:0) || (a.inicial||0)-(b.inicial||0));
     const esDom=weekday(d)===0, esFes=festivos.has(d);
-    const row={ A:nActa, B:fmtFecha(d), C:'', D:ident.codRaw, E:ident.tipo, F:ident.proveedor,
-                G:'', H:'', I:'', J:standby, K:'', L:'', M:'', N:'', _cls:'' , iso:d };
+    const base=()=>({ A:nActa, B:fmtFecha(d), C:'', D:ident.codRaw, E:ident.tipo, F:ident.proveedor,
+                G:'', H:'', I:'', J:standby, K:'', L:'', M:'', N:'', _cls:'' , iso:d });
     if(partes.length){
-      // Horómetro: INICIAL = mínimo, FINAL = máximo de los partes del día
-      const inis=partes.map(p=>p.inicial).filter(v=>v!=null);
-      const fins=partes.map(p=>p.final).filter(v=>v!=null);
-      const ini=inis.length?Math.min(...inis):null;
-      const fin=fins.length?Math.max(...fins):null;
-      row.G=ini==null?'':ini;
-      row.H=fin==null?'':fin;
-      row.I=(ini!=null&&fin!=null)?round2(fin-ini):'';   // <- calculado por la página (I = FINAL−INICIAL)
-      row.C=uniqJoin(partes.map(p=>p.reporte));
-      row.M=firstNonEmpty(partes.map(p=>p.cc));
-      row.N=firstNonEmpty(partes.map(p=>p.obs));
+      // Un renglón POR PARTE: días repartidos entre varios CC salen con todos sus renglones.
+      // El standby del día (J) se reparte proporcional a las horas de cada parte (50/50 → 2,5 y 2,5).
+      const shares=repartirStandby(partes,standby);
+      partes.forEach((p,i)=>{
+        const row=base();
+        row.G=p.inicial==null?'':p.inicial;
+        row.H=p.final==null?'':p.final;
+        row.I=(p.inicial!=null&&p.final!=null)?round2(p.final-p.inicial):'';  // I = FINAL−INICIAL del parte
+        row.J=shares[i];
+        row.C=p.reporte; row.M=p.cc; row.N=p.obs;
+        if(partes.length>=2) row._cls='dosPartes';
+        filasOut.push(row);
+      });
       if(partes.length>=2){
-        row._cls='dosPartes';
-        row.N=(row.N?row.N+' · ':'')+'2 partes — revisar';
-        huecos.push({iso:d,tipo:'dos',detalle:partes.length+' partes ese día'});
+        huecos.push({iso:d,tipo:'dos',detalle:partes.length+' renglones (reparto CC) · stand by '+shares.map(s=>String(s).replace('.',',')).join(' / ')});
       }
     } else {
       // Día sin parte: domingo/festivo se clasifican (sin resaltar); el resto se resalta naranja.
+      const row=base();
       if(esDom){ row.N='Domingo'; row._cls='libre'; huecos.push({iso:d,tipo:'dom',detalle:'Domingo'}); }
       else if(esFes){ row.N='Festivo'; row._cls='libre'; huecos.push({iso:d,tipo:'fes',detalle:'Festivo'}); }
       else { row.N='SIN PARTE · revisar'; row._cls='sinparte'; huecos.push({iso:d,tipo:'sp',detalle:'Sin parte'}); }
+      filasOut.push(row);
     }
-    filasOut.push(row);
   }
   S.out={ filasOut, huecos, nActa, cod:document.getElementById('codTxt').value.trim() };
-  render(filasOut,huecos,matched);
+  render(filasOut,huecos,matched,dias);
+}
+
+// Reparte el standby del día entre los partes, proporcional a sus horas de horómetro
+// (FINAL−INICIAL de cada parte). Si algún parte no tiene horómetro, reparte en partes iguales.
+// Redondeo a 2 decimales ajustando el último renglón para que la suma dé el standby exacto.
+function repartirStandby(partes,standby){
+  const n=partes.length;
+  if(n===1||standby==null) return partes.map(()=>standby);
+  const hs=partes.map(p=>(p.inicial!=null&&p.final!=null)?Math.max(0,p.final-p.inicial):null);
+  const tot=hs.every(h=>h!=null)?hs.reduce((a,b)=>a+b,0):0;
+  const raw=(tot>0)?hs.map(h=>standby*h/tot):partes.map(()=>standby/n);
+  const shares=raw.map(round2);
+  const dif=round2(standby-shares.reduce((a,b)=>a+b,0));
+  shares[n-1]=round2(shares[n-1]+dif);
+  return shares;
 }
 
 function identidadMaquina(porDia){
@@ -501,35 +519,34 @@ function identidadMaquina(porDia){
   const moda=m=>{ let best='',n=-1; for(const [k,v] of m) if(v>n){best=k;n=v;} return best; };
   return { codRaw: codRaw||document.getElementById('codTxt').value.trim(), tipo:moda(cont.tipo), proveedor:moda(cont.prov) };
 }
-function firstNonEmpty(arr){ for(const x of arr) if(x&&String(x).trim()) return String(x).trim(); return ''; }
-function uniqJoin(arr){ const seen=new Set(),out=[]; for(const x of arr){ const t=String(x||'').trim(); if(t&&!seen.has(t)){ seen.add(t); out.push(t); } } return out.join(' / '); }
 
 /* ---------- Render ---------- */
 const COLS=[['A','N° Acta'],['B','Fecha'],['C','Reporte'],['D','Cód. equipo'],['E','Tipo'],['F','Proveedor'],
   ['G','Inicial'],['H','Final'],['I','Total'],['J','Stand by'],['K','—'],['L','—'],['M','C. Coste'],['N','Observaciones']];
 const KEYS=['A','B','C','D','E','F','G','H','I','J','K','L','M','N'];
 
-function render(filasOut,huecos,matched){
+function render(filasOut,huecos,matched,dias){
   // Resumen
   const nSp=huecos.filter(h=>h.tipo==='sp').length, nDom=huecos.filter(h=>h.tipo==='dom').length,
         nFes=huecos.filter(h=>h.tipo==='fes').length, nDos=huecos.filter(h=>h.tipo==='dos').length,
-        conParte=filasOut.filter(r=>r._cls!=='sinparte').length;
+        conParte=filasOut.filter(r=>r._cls!=='sinparte'&&r._cls!=='libre').length;
   document.getElementById('statLine').innerHTML=
-    `<span>Días: <b>${filasOut.length}</b></span>`+
+    `<span>Días: <b>${dias}</b></span>`+
+    `<span>Renglones: <b>${filasOut.length}</b></span>`+
     `<span>Con parte: <b>${conParte}</b></span>`+
     `<span>Partes leídos: <b>${matched}</b></span>`+
     `<span><span class="pill sp">SIN PARTE</span> <b>${nSp}</b></span>`+
     `<span><span class="pill dom">Domingo</span> <b>${nDom}</b></span>`+
     `<span><span class="pill fes">Festivo</span> <b>${nFes}</b></span>`+
-    `<span><span class="pill dos">2 partes</span> <b>${nDos}</b></span>`;
+    `<span><span class="pill dos">Reparto CC</span> <b>${nDos}</b></span>`;
 
   // Tabla de huecos
   const ht=document.getElementById('huecosTbl');
   if(huecos.length){
-    const pillOf={sp:'sp',dom:'dom',fes:'fes',dos:'dos'}, labOf={sp:'SIN PARTE · revisar',dom:'Domingo',fes:'Festivo',dos:'2 partes'};
+    const pillOf={sp:'sp',dom:'dom',fes:'fes',dos:'dos'}, labOf={sp:'SIN PARTE · revisar',dom:'Domingo',fes:'Festivo',dos:'Reparto CC'};
     ht.innerHTML='<thead><tr><th>Fecha</th><th>Marca</th><th>Detalle</th></tr></thead><tbody>'+
       huecos.map(h=>`<tr><td>${fmtFecha(h.iso)}</td><td><span class="pill ${pillOf[h.tipo]}">${labOf[h.tipo]}</span></td><td class="note">${escapeHtml(h.detalle)}</td></tr>`).join('')+'</tbody>';
-  } else ht.innerHTML='<tbody><tr><td class="note">Sin huecos: todos los días tienen un parte único.</td></tr></tbody>';
+  } else ht.innerHTML='<tbody><tr><td class="note">Sin novedades: todos los días tienen un parte único.</td></tr></tbody>';
   document.getElementById('huecosCard').style.display='block';
 
   // Grid de salida
@@ -545,7 +562,7 @@ function render(filasOut,huecos,matched){
   }).join('')+'</tbody>';
   ot.innerHTML=head+body;
   document.getElementById('outCard').style.display='block';
-  document.getElementById('genNote').textContent=`✓ ${filasOut.length} días generados`;
+  document.getElementById('genNote').textContent=`✓ ${dias} días · ${filasOut.length} renglones`;
   document.getElementById('outCard').scrollIntoView({behavior:'smooth',block:'start'});
 }
 function dispVal(v){ if(v==null||v==='') return ''; if(typeof v==='number') return String(v).replace('.',','); return String(v); }
