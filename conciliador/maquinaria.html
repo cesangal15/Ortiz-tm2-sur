@@ -94,11 +94,10 @@ select.ccsel{width:auto;min-width:150px;padding:3px 6px;font-size:12px;border-co
         <div class="hint">Default: 16 del mes anterior → 15 del mes actual.</div>
       </div>
       <div>
-        <label class="fld">N° de Acta (col. A)</label>
-        <input type="text" id="nActa" placeholder="p.ej. 042">
-        <label class="fld" style="margin-top:8px">Standby h/día (col. J)</label>
+        <label class="fld">Standby h/día (col. J)</label>
         <input type="number" id="standby" value="5" step="0.5" min="0">
-        <div class="hint">Default 5 (alquiladas). Se escribe en todos los días.</div>
+        <div class="hint">Default 5 (alquiladas). Se escribe en todos los días.<br>
+        La col. A sale sola: <b>UF1</b> si el CC del renglón es 3701.x, <b>UF2</b> si es 3702.x.</div>
       </div>
     </div>
     <div style="margin-top:14px">
@@ -438,7 +437,6 @@ function generar(){
   if(!S.ws){ toast('⚠️ Primero carga la base.'); return; }
   const cod=norm(document.getElementById('codTxt').value);
   const desde=document.getElementById('desde').value, hasta=document.getElementById('hasta').value;
-  const nActa=document.getElementById('nActa').value.trim();
   const standby=parseNum(document.getElementById('standby').value);
   if(!cod){ toast('⚠️ Indica el código de equipo.'); return; }
   if(!desde||!hasta){ toast('⚠️ Indica el período (desde/hasta).'); return; }
@@ -465,7 +463,7 @@ function generar(){
     dias++;
     const partes=(porDia.get(d)||[]).slice().sort((a,b)=>(a.inicial==null?1:0)-(b.inicial==null?1:0) || (a.inicial||0)-(b.inicial||0));
     const esDom=weekday(d)===0, esFes=festivos.has(d);
-    const base=()=>({ A:nActa, B:fmtFecha(d), C:'', D:ident.codRaw, E:ident.tipo, F:ident.proveedor,
+    const base=()=>({ A:'', B:fmtFecha(d), C:'', D:ident.codRaw, E:ident.tipo, F:ident.proveedor,
                 G:'', H:'', I:'', J:standby, K:'', L:'', M:'', N:'', _cls:'' , iso:d });
     if(partes.length){
       // Un renglón POR PARTE: días repartidos entre varios CC salen con todos sus renglones.
@@ -491,6 +489,7 @@ function generar(){
         } else if(o.cc && !p.cc){
           row.M=o.cc; // columna vacía: se toma el CC de la observación
         }
+        row.A=ufDeCC(row.M);   // col. A estandarizada: UF1 (3701.x) / UF2 (3702.x)
         // Si la obs trae % y difiere del reparto real por horas, avisar (no cambia J).
         if(o.pct!=null && totH>0 && hs[i]!=null){
           const pctHoras=Math.round(100*hs[i]/totH);
@@ -512,7 +511,7 @@ function generar(){
       filasOut.push(row);
     }
   }
-  S.out={ filasOut, huecos, nActa, cod:document.getElementById('codTxt').value.trim() };
+  S.out={ filasOut, huecos, cod:document.getElementById('codTxt').value.trim(), desde, hasta };
   render(filasOut,huecos,matched,dias);
 }
 
@@ -533,6 +532,8 @@ function repartirStandby(partes,standby){
 
 // CC normalizado para comparar (trim; tolera espacios alrededor de los puntos)
 function normCC(s){ return String(s==null?'':s).replace(/\s+/g,'').trim(); }
+// UF por prefijo del CC: 3701.x → UF1, 3702.x → UF2 (otro/vacío → '')
+function ufDeCC(cc){ const t=normCC(cc); if(t.indexOf('3701')===0) return 'UF1'; if(t.indexOf('3702')===0) return 'UF2'; return ''; }
 // Saca de la observación el CC que escribe el digitador (patrón 3701.07.01) y el % si lo trae.
 function extraerCCObs(obs){
   const t=String(obs==null?'':obs);
@@ -554,7 +555,7 @@ function identidadMaquina(porDia){
 }
 
 /* ---------- Render ---------- */
-const COLS=[['A','N° Acta'],['B','Fecha'],['C','Reporte'],['D','Cód. equipo'],['E','Tipo'],['F','Proveedor'],
+const COLS=[['A','UF'],['B','Fecha'],['C','Reporte'],['D','Cód. equipo'],['E','Tipo'],['F','Proveedor'],
   ['G','Inicial'],['H','Final'],['I','Total'],['J','Stand by'],['K','—'],['L','—'],['M','C. Coste'],['N','Observaciones']];
 const KEYS=['A','B','C','D','E','F','G','H','I','J','K','L','M','N'];
 
@@ -622,8 +623,11 @@ const Maq={
       if(![...sel.options].some(o=>o.value===v)){ const o=document.createElement('option'); o.value=v; o.textContent=v+' (manual)'; sel.appendChild(o); }
       sel.value=v;
     }
-    S.out.filasOut[idx].M=v;
-    toast('CC del renglón '+S.out.filasOut[idx].B+' → '+v);
+    const row=S.out.filasOut[idx];
+    row.M=v;
+    row.A=ufDeCC(v);   // la UF de la col. A sigue al CC elegido
+    const tr=sel.closest('tr'); if(tr) tr.children[0].textContent=row.A;
+    toast('CC del renglón '+row.B+' → '+v+(row.A?' ('+row.A+')':''));
   }
 };
 
@@ -651,8 +655,7 @@ document.getElementById('btnCopy').addEventListener('click',async ()=>{
 });
 function nombreArchivo(ext){
   const cod=(S.out.cod||'maquina').replace(/[^\w\-]+/g,'_');
-  const acta=S.out.nActa?('_acta'+S.out.nActa.replace(/[^\w\-]+/g,'')):'';
-  return 'maquinaria_'+cod+acta+'.'+ext;
+  return 'maquinaria_'+cod+'_'+S.out.desde+'_'+S.out.hasta+'.'+ext;
 }
 
 document.getElementById('btnGen').addEventListener('click',generar);
