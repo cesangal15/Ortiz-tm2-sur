@@ -32,11 +32,13 @@ function sinCeros(s){ return String(s).replace(/^0+(?=.)/,''); }
 // Empresa / valores de base: sin tildes, sin puntos, mayúsculas, espacios colapsados.
 function normTexto(s){ if(s==null) return ''; return quitarTildes(String(s)).toUpperCase().replace(/\./g,'').replace(/\s+/g,' ').trim(); }
 
-// Nombres de columna de proforma: minúsculas, sin tildes, sin puntos/№/#/º, sin saltos de línea.
+// Nombres de columna de proforma: minúsculas, sin tildes, sin puntos/№/#/º, sin saltos de
+// línea, y superíndices ¹²³ → dígitos normales (así 'M³' == 'm3', 'M³*Km' == 'm3*km').
 function normCol(s){
   if(s==null) return '';
   return quitarTildes(String(s)).toLowerCase()
     .replace(/[\r\n]+/g,' ')
+    .replace(/¹/g,'1').replace(/²/g,'2').replace(/³/g,'3')
     .replace(/[.#º°№]/g,'')
     .replace(/\s+/g,' ').trim();
 }
@@ -154,7 +156,7 @@ function configSeed(){
       // km/m3km de la proforma: SOLO respaldo del bloque de pendientes cuando las reglas
       // propias (kmPorOrigen / resta de abscisas) no pueden calcular (el acta paga las
       // reglas de César, no lo que reclame el contratista)
-      km:['km','kms','km totales','kilometros','kilometros totales','total km'],
+      km:['km','kms','km totales','kilometros','kilometros totales','total km','distancia','distancia (km)','distancia km'],
       m3km:['total m3/km','m3/km','m3km','total m3km','m3 x km','m3*km','transporte m3*km','transporte de material m3*km']
     },
     // Material → sufijo de CC para la propuesta del bloque de pendientes (Paso 7).
