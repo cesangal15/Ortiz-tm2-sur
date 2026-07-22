@@ -96,8 +96,11 @@ select.ccsel{width:auto;min-width:150px;padding:3px 6px;font-size:12px;border-co
       <div>
         <label class="fld">Standby h/día (col. J)</label>
         <input type="number" id="standby" value="5" step="0.5" min="0">
-        <div class="hint">Default 5 (alquiladas). Se escribe en todos los días.<br>
-        La col. A sale sola: <b>UF1</b> si el CC del renglón es 3701.x, <b>UF2</b> si es 3702.x.</div>
+        <div class="hint">Default 5 (alquiladas). Se escribe en todos los días.</div>
+        <label class="fld" style="margin-top:8px">Fila del acta donde pega el 1er renglón</label>
+        <input type="number" id="filaActa" value="5" step="1" min="1">
+        <div class="hint">La col. A lleva la <b>fórmula</b> UF (SI.CONJUNTO sobre M: 3701→UF1, 3702→UF2, resto→Revisar).
+        En el xlsx la referencia se ajusta sola al pegar; en el TSV se arma con esta fila (M5, M6…).</div>
       </div>
     </div>
     <div style="margin-top:14px">
@@ -125,7 +128,7 @@ select.ccsel{width:auto;min-width:150px;padding:3px 6px;font-size:12px;border-co
     <div class="flexrow" style="margin-bottom:10px">
       <button class="btn" id="btnXlsx">⬇ Descargar xlsx</button>
       <button class="btn sec" id="btnCopy">📋 Copiar todo (TSV)</button>
-      <span class="note right">Decimales con coma · fechas dd/mm/aaaa · I y J calculadas · K eliminada · L vacía (fórmula)</span>
+      <span class="note right">A = fórmula UF (SI.CONJUNTO) · decimales con coma · fechas dd/mm/aaaa · I y J calculadas · K eliminada · L vacía (fórmula)</span>
     </div>
     <div class="tbl-wrap"><table class="tbl tbl-out" id="outTbl"></table></div>
   </div>
@@ -508,6 +511,7 @@ function generar(){
       if(esDom){ row.N='Domingo'; row._cls='libre'; huecos.push({iso:d,tipo:'dom',detalle:'Domingo'}); }
       else if(esFes){ row.N='Festivo'; row._cls='libre'; huecos.push({iso:d,tipo:'fes',detalle:'Festivo'}); }
       else { row.N='SIN PARTE · revisar'; row._cls='sinparte'; huecos.push({iso:d,tipo:'sp',detalle:'Sin parte'}); }
+      row.A=ufDeCC(row.M);   // sin CC → la fórmula dará "Revisar"
       filasOut.push(row);
     }
   }
@@ -532,8 +536,14 @@ function repartirStandby(partes,standby){
 
 // CC normalizado para comparar (trim; tolera espacios alrededor de los puntos)
 function normCC(s){ return String(s==null?'':s).replace(/\s+/g,'').trim(); }
-// UF por prefijo del CC: 3701.x → UF1, 3702.x → UF2 (otro/vacío → '')
-function ufDeCC(cc){ const t=normCC(cc); if(t.indexOf('3701')===0) return 'UF1'; if(t.indexOf('3702')===0) return 'UF2'; return ''; }
+// UF por prefijo del CC, con la MISMA semántica de la fórmula del acta:
+// SI.CONJUNTO(IZQUIERDA(M;4)="3701";"UF1"; ...="3702";"UF2"; VERDADERO;"Revisar")
+function ufDeCC(cc){ const t=normCC(cc); if(t.indexOf('3701')===0) return 'UF1'; if(t.indexOf('3702')===0) return 'UF2'; return 'Revisar'; }
+// La fórmula que va en la col. A. formulaUF_EN = como se guarda en el xlsx (nombres en inglés,
+// IFS es "función futura" → prefijo _xlfn); Excel la muestra localizada (SI.CONJUNTO).
+// formulaUF_ES = texto es-CO para el TSV (se pega literal, por eso lleva la fila real del acta).
+function formulaUF_EN(fila){ const m='LEFT(M'+fila+',4)'; return '_xlfn.IFS('+m+'="3701","UF1",'+m+'="3702","UF2",TRUE,"Revisar")'; }
+function formulaUF_ES(fila){ const m='IZQUIERDA(M'+fila+';4)'; return '=SI.CONJUNTO('+m+'="3701";"UF1";'+m+'="3702";"UF2";VERDADERO;"Revisar")'; }
 // Saca de la observación el CC que escribe el digitador (patrón 3701.07.01) y el % si lo trae.
 function extraerCCObs(obs){
   const t=String(obs==null?'':obs);
@@ -642,15 +652,20 @@ function aoaSalida(blank){
 document.getElementById('btnXlsx').addEventListener('click',()=>{
   if(!S.out){ return; }
   const ws=XLSX.utils.aoa_to_sheet(aoaSalida(null));
+  // Col. A = fórmula UF real (referencia relativa a la fila del archivo: al copiar y
+  // pegar el bloque en el acta, Excel ajusta M1→M5 etc. solo). v = resultado precalculado.
+  S.out.filasOut.forEach((r,i)=>{ ws['A'+(i+1)]={t:'s', v:(r.A||'Revisar'), f:formulaUF_EN(i+1)}; });
   const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'MAQUINARIA');
   XLSX.writeFile(wb,nombreArchivo('xlsx'));
   toast('⬇ xlsx descargado ('+S.out.filasOut.length+' filas). Pega con «Omitir blancos».');
 });
 document.getElementById('btnCopy').addEventListener('click',async ()=>{
   if(!S.out){ return; }
+  const fila0=Math.max(1,parseInt(document.getElementById('filaActa').value,10)||5);
   const rows=aoaSalida('');
-  const tsv=rows.map(r=>r.map(v=>fmtNumTSV(v)).join('\t')).join('\n');
-  try{ await navigator.clipboard.writeText(tsv); toast('📋 Bloque copiado ('+rows.length+' filas). Pega con «Omitir blancos».'); }
+  // Col. A = fórmula en texto es-CO con la fila REAL del acta (el texto se pega literal).
+  const tsv=rows.map((r,i)=>r.map((v,c)=>c===0?formulaUF_ES(fila0+i):fmtNumTSV(v)).join('\t')).join('\n');
+  try{ await navigator.clipboard.writeText(tsv); toast('📋 Bloque copiado ('+rows.length+' filas, fórmula A desde fila '+fila0+'). Pega con «Omitir blancos».'); }
   catch(e){ toast('⚠️ No se pudo copiar al portapapeles.'); }
 });
 function nombreArchivo(ext){
