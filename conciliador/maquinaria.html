@@ -97,9 +97,10 @@ tr.dosPartes td.rep{color:var(--warn);font-weight:600;}
       </div>
     </div>
     <div style="margin-top:14px">
-      <label class="fld">Festivos del período (uno por línea o separados por coma)</label>
-      <textarea id="festivos" rows="2" placeholder="2026-06-16&#10;20/07/2026"></textarea>
-      <div class="hint">Los domingos se marcan solos por la fecha. Aquí solo los festivos que apliquen.</div>
+      <label class="fld">Festivos (Colombia 2026–2027 ya incluidos)</label>
+      <div id="festInfo" class="hint" style="margin-bottom:6px"></div>
+      <textarea id="festivos" rows="2" placeholder="Festivos extra o de otros años (uno por línea o separados por coma)"></textarea>
+      <div class="hint">Los domingos y los festivos oficiales de Colombia (2026–2027) se marcan solos. Aquí solo agregas festivos extra o de años no incluidos.</div>
     </div>
     <div style="margin-top:14px" class="flexrow">
       <button class="btn" id="btnGen">⚙️ Generar grid</button>
@@ -378,15 +379,53 @@ function llenarCodigos(){
   dl.innerHTML=cods.map(([k,v])=>`<option value="${escapeHtml(v.label)}">`).join('');
 }
 document.getElementById('codSel').addEventListener('change',e=>{ if(e.target.value) document.getElementById('codTxt').value=e.target.value; });
-document.getElementById('desde').addEventListener('change',()=>{ if(S.filas.length) llenarCodigos(); });
-document.getElementById('hasta').addEventListener('change',()=>{ if(S.filas.length) llenarCodigos(); });
+document.getElementById('desde').addEventListener('change',()=>{ refreshFestInfo(); if(S.filas.length) llenarCodigos(); });
+document.getElementById('hasta').addEventListener('change',()=>{ refreshFestInfo(); if(S.filas.length) llenarCodigos(); });
 
 /* ---------- Festivos ---------- */
-function parseFestivos(){
+// Festivos de Colombia fijos en la herramienta (tomados de los calendarios de César).
+// Para agregar años futuros, añade otra entrada AÑO:[ 'YYYY-MM-DD', ... ].
+const FESTIVOS_CO={
+  2026:['2026-01-01','2026-01-12','2026-03-23','2026-04-02','2026-04-03','2026-05-01','2026-05-18',
+        '2026-06-08','2026-06-15','2026-06-29','2026-07-13','2026-07-20','2026-08-07','2026-08-17',
+        '2026-10-12','2026-11-02','2026-11-16','2026-12-08','2026-12-25'],
+  2027:['2027-01-01','2027-01-11','2027-03-22','2027-03-25','2027-03-26','2027-05-01','2027-05-10',
+        '2027-05-31','2027-06-07','2027-07-05','2027-07-12','2027-07-20','2027-08-07','2027-08-16',
+        '2027-10-18','2027-11-01','2027-11-15','2027-12-08','2027-12-25']
+};
+// Festivos escritos a mano en el textarea (extras o años no incluidos)
+function parseFestivosManual(){
   const raw=document.getElementById('festivos').value||'';
   const set=new Set();
   raw.split(/[\n,;]+/).forEach(t=>{ const iso=parseFechaTexto(t.trim()); if(iso) set.add(iso); });
   return set;
+}
+// Años sin tabla fija dentro de [desde,hasta] (para avisar que hay que pegarlos a mano)
+function aniosSinTabla(desde,hasta){
+  const out=[]; if(!desde||!hasta) return out;
+  for(let y=+desde.slice(0,4); y<=+hasta.slice(0,4); y++) if(!FESTIVOS_CO[y]) out.push(y);
+  return out;
+}
+// Conjunto de festivos aplicable al período: tabla fija (de los años que toque) + manuales.
+function festivosAplicables(desde,hasta){
+  const set=parseFestivosManual();
+  for(const y of Object.keys(FESTIVOS_CO)) for(const iso of FESTIVOS_CO[y]) set.add(iso);
+  return set;
+}
+// Muestra los festivos fijos que caen dentro del período (transparencia) + aviso de años faltantes.
+function refreshFestInfo(){
+  const desde=document.getElementById('desde').value, hasta=document.getElementById('hasta').value;
+  const el=document.getElementById('festInfo'); if(!el) return;
+  if(!desde||!hasta){ el.textContent=''; return; }
+  const enRango=[];
+  for(const y of Object.keys(FESTIVOS_CO)) for(const iso of FESTIVOS_CO[y]) if(iso>=desde&&iso<=hasta) enRango.push(iso);
+  enRango.sort();
+  const faltan=aniosSinTabla(desde,hasta);
+  let html='';
+  if(enRango.length) html+='✅ Festivos oficiales en el período: '+enRango.map(fmtFecha).join(' · ');
+  else html+='Sin festivos oficiales dentro del período.';
+  if(faltan.length) html+=`<br>⚠️ No tengo tabla para ${faltan.join(', ')}: pega esos festivos abajo.`;
+  el.innerHTML=html;
 }
 
 /* ---------- Generación del grid ---------- */
@@ -399,7 +438,7 @@ function generar(){
   if(!cod){ toast('⚠️ Indica el código de equipo.'); return; }
   if(!desde||!hasta){ toast('⚠️ Indica el período (desde/hasta).'); return; }
   if(desde>hasta){ toast('⚠️ «Desde» es posterior a «Hasta».'); return; }
-  const festivos=parseFestivos();
+  const festivos=festivosAplicables(desde,hasta);
 
   // Partes de la máquina dentro del período, agrupados por día
   const porDia=new Map();
@@ -540,6 +579,9 @@ function nombreArchivo(ext){
 }
 
 document.getElementById('btnGen').addEventListener('click',generar);
+
+// Muestra los festivos oficiales del período inicial (todas las consts ya están definidas aquí).
+refreshFestInfo();
 </script>
 </body>
 </html>
