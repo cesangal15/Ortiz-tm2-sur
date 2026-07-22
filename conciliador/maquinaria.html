@@ -29,6 +29,10 @@ tr.dosPartes td.rep{color:var(--warn);font-weight:600;}
 .pill.dom{background:rgba(122,128,160,0.16);color:var(--muted);border:1px solid rgba(122,128,160,.35);}
 .pill.fes{background:rgba(52,152,219,0.14);color:#5dade2;border:1px solid rgba(52,152,219,.4);}
 .pill.dos{background:rgba(155,89,182,0.14);color:#c39bd6;border:1px solid rgba(155,89,182,.4);}
+.pill.cc{background:rgba(231,76,60,0.14);color:#f1948a;border:1px solid rgba(231,76,60,.4);}
+.pill.pct{background:rgba(243,156,18,0.14);color:#ffb84d;border:1px solid rgba(243,156,18,.4);}
+td.ccconf{background:rgba(231,76,60,0.10);}
+select.ccsel{width:auto;min-width:150px;padding:3px 6px;font-size:12px;border-color:rgba(231,76,60,0.5);}
 .statline{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin-bottom:8px;}
 .statline b{color:var(--text);font-weight:700;}
 .tbl-out th,.tbl-out td{white-space:nowrap;text-align:right;}
@@ -467,6 +471,8 @@ function generar(){
       // Un renglón POR PARTE: días repartidos entre varios CC salen con todos sus renglones.
       // El standby del día (J) se reparte proporcional a las horas de cada parte (50/50 → 2,5 y 2,5).
       const shares=repartirStandby(partes,standby);
+      const hs=partes.map(p=>(p.inicial!=null&&p.final!=null)?Math.max(0,p.final-p.inicial):null);
+      const totH=hs.every(h=>h!=null)?hs.reduce((a,b)=>a+b,0):0;
       partes.forEach((p,i)=>{
         const row=base();
         row.G=p.inicial==null?'':p.inicial;
@@ -475,6 +481,23 @@ function generar(){
         row.J=shares[i];
         row.C=p.reporte; row.M=p.cc; row.N=p.obs;
         if(partes.length>=2) row._cls='dosPartes';
+        // Cruce CC columna vs CC de la observación (el digitador suele escribirlo ahí).
+        // Si difieren: predomina la observación (M = CC de la obs), pero queda MARCADO para corroborar.
+        const o=extraerCCObs(p.obs);
+        if(o.cc && p.cc && o.cc!==normCC(p.cc)){
+          row._ccConf={base:normCC(p.cc), obs:o.cc, pct:o.pct};
+          row.M=o.cc;
+          huecos.push({iso:d,tipo:'cc',detalle:'columna dice '+normCC(p.cc)+' · obs dice '+o.cc+(o.pct!=null?' ('+o.pct+'%)':' (sin %)')+' → se usó la obs; corrobora en el grid'});
+        } else if(o.cc && !p.cc){
+          row.M=o.cc; // columna vacía: se toma el CC de la observación
+        }
+        // Si la obs trae % y difiere del reparto real por horas, avisar (no cambia J).
+        if(o.pct!=null && totH>0 && hs[i]!=null){
+          const pctHoras=Math.round(100*hs[i]/totH);
+          if(Math.abs(pctHoras-o.pct)>3){
+            huecos.push({iso:d,tipo:'pct',detalle:'obs dice '+o.pct+'% pero las horas dan '+pctHoras+'% ('+String(hs[i]).replace('.',',')+' h de '+String(round2(totH)).replace('.',',')+') · J quedó por horas: '+String(shares[i]).replace('.',',')});
+          }
+        }
         filasOut.push(row);
       });
       if(partes.length>=2){
@@ -508,6 +531,16 @@ function repartirStandby(partes,standby){
   return shares;
 }
 
+// CC normalizado para comparar (trim; tolera espacios alrededor de los puntos)
+function normCC(s){ return String(s==null?'':s).replace(/\s+/g,'').trim(); }
+// Saca de la observación el CC que escribe el digitador (patrón 3701.07.01) y el % si lo trae.
+function extraerCCObs(obs){
+  const t=String(obs==null?'':obs);
+  const mcc=t.match(/\d{4}(?:\s*\.\s*\d{2}){2,3}/);       // 3701.07.01 (o con un segmento más)
+  const mp=t.match(/(\d{1,3}(?:[.,]\d+)?)\s*%/);
+  return { cc: mcc?normCC(mcc[0]):null, pct: mp?parseFloat(mp[1].replace(',','.')):null };
+}
+
 function identidadMaquina(porDia){
   // Moda de tipo/proveedor y el codRaw tal como viene en la base
   const cont={tipo:new Map(),prov:new Map()}; let codRaw='';
@@ -529,6 +562,7 @@ function render(filasOut,huecos,matched,dias){
   // Resumen
   const nSp=huecos.filter(h=>h.tipo==='sp').length, nDom=huecos.filter(h=>h.tipo==='dom').length,
         nFes=huecos.filter(h=>h.tipo==='fes').length, nDos=huecos.filter(h=>h.tipo==='dos').length,
+        nCC=huecos.filter(h=>h.tipo==='cc').length, nPct=huecos.filter(h=>h.tipo==='pct').length,
         conParte=filasOut.filter(r=>r._cls!=='sinparte'&&r._cls!=='libre').length;
   document.getElementById('statLine').innerHTML=
     `<span>Días: <b>${dias}</b></span>`+
@@ -538,12 +572,15 @@ function render(filasOut,huecos,matched,dias){
     `<span><span class="pill sp">SIN PARTE</span> <b>${nSp}</b></span>`+
     `<span><span class="pill dom">Domingo</span> <b>${nDom}</b></span>`+
     `<span><span class="pill fes">Festivo</span> <b>${nFes}</b></span>`+
-    `<span><span class="pill dos">Reparto CC</span> <b>${nDos}</b></span>`;
+    `<span><span class="pill dos">Reparto CC</span> <b>${nDos}</b></span>`+
+    `<span><span class="pill cc">CC ≠ obs</span> <b>${nCC}</b></span>`+
+    `<span><span class="pill pct">% ≠ horas</span> <b>${nPct}</b></span>`;
 
   // Tabla de huecos
   const ht=document.getElementById('huecosTbl');
   if(huecos.length){
-    const pillOf={sp:'sp',dom:'dom',fes:'fes',dos:'dos'}, labOf={sp:'SIN PARTE · revisar',dom:'Domingo',fes:'Festivo',dos:'Reparto CC'};
+    const pillOf={sp:'sp',dom:'dom',fes:'fes',dos:'dos',cc:'cc',pct:'pct'},
+          labOf={sp:'SIN PARTE · revisar',dom:'Domingo',fes:'Festivo',dos:'Reparto CC',cc:'CC ≠ obs',pct:'% ≠ horas'};
     ht.innerHTML='<thead><tr><th>Fecha</th><th>Marca</th><th>Detalle</th></tr></thead><tbody>'+
       huecos.map(h=>`<tr><td>${fmtFecha(h.iso)}</td><td><span class="pill ${pillOf[h.tipo]}">${labOf[h.tipo]}</span></td><td class="note">${escapeHtml(h.detalle)}</td></tr>`).join('')+'</tbody>';
   } else ht.innerHTML='<tbody><tr><td class="note">Sin novedades: todos los días tienen un parte único.</td></tr></tbody>';
@@ -552,10 +589,16 @@ function render(filasOut,huecos,matched,dias){
   // Grid de salida
   const ot=document.getElementById('outTbl');
   const head='<thead><tr>'+COLS.map(([c,t])=>`<th>${c}<span class="colhead">${escapeHtml(t)}</span></th>`).join('')+'</tr></thead>';
-  const body='<tbody>'+filasOut.map(r=>{
+  const body='<tbody>'+filasOut.map((r,idx)=>{
     const cls=r._cls?` class="${r._cls}"`:'';
     return '<tr'+cls+'>'+KEYS.map(k=>{
       const extra=(k==='N'&&r._cls==='sinparte')?'obs':(k==='C'&&r._cls==='dosPartes')?'rep':'';
+      // Conflicto CC columna vs observación: celda M editable (predomina la obs, tú corroboras)
+      if(k==='M'&&r._ccConf){
+        const c=r._ccConf;
+        const opts=[c.obs,c.base].map(v=>`<option value="${escapeHtml(v)}"${v===r.M?' selected':''}>${escapeHtml(v)}${v===c.obs?' (obs)':' (col.)'}</option>`).join('');
+        return `<td class="ccconf"><select class="ccsel" onchange="Maq.setCC(${idx},this)"><option value="__otro__">✏️ otro…</option>${opts}</select></td>`;
+      }
       const disp=(k==='K'||k==='L')?'<span class="removed">'+(k==='K'?'(elim.)':'(fórm.)')+'</span>':escapeHtml(dispVal(r[k]));
       return `<td class="${extra}">${disp}</td>`;
     }).join('')+'</tr>';
@@ -566,6 +609,23 @@ function render(filasOut,huecos,matched,dias){
   document.getElementById('outCard').scrollIntoView({behavior:'smooth',block:'start'});
 }
 function dispVal(v){ if(v==null||v==='') return ''; if(typeof v==='number') return String(v).replace('.',','); return String(v); }
+
+// Corrección en línea del CC en conflicto: lo elegido queda en la fila y sale así en los exportes.
+const Maq={
+  setCC(idx,sel){
+    let v=sel.value;
+    if(v==='__otro__'){
+      const cur=S.out.filasOut[idx].M;
+      const t=prompt('Centro de coste para este renglón:',cur);
+      if(t==null||!t.trim()){ sel.value=cur; return; }   // canceló: volver a lo que estaba
+      v=normCC(t);
+      if(![...sel.options].some(o=>o.value===v)){ const o=document.createElement('option'); o.value=v; o.textContent=v+' (manual)'; sel.appendChild(o); }
+      sel.value=v;
+    }
+    S.out.filasOut[idx].M=v;
+    toast('CC del renglón '+S.out.filasOut[idx].B+' → '+v);
+  }
+};
 
 /* ---------- Exportes ---------- */
 // SOLO el bloque de valores A–N (sin fila de encabezado), para pegar con «Omitir blancos»
