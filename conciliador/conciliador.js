@@ -634,6 +634,34 @@ function reconciliar(){
   return {revisadas,resueltas};
 }
 
+// MODO SIN PROFORMA: el contratista no envió proforma; simplemente se toman de la(s) base(s)
+// de sus ámbitos TODOS sus recibos (empresa ∈ alias) con fecha dentro del rango elegido, y
+// se marcan como ENCONTRADAS para que vayan al acta. No requieren PDF (ya están digitados).
+// Reemplaza cualquier reclamo previo del corte (es un modo distinto al de proforma). Solo se
+// toman filas con empresa identificable: las de empresa vacía se omiten (no se asume dueño).
+function tomarRecibosBase(inicio,fin){
+  const c=getContratista(S.corte.contratistaId);
+  const aliasNorm=(c?c.alias:[]).map(normTexto);
+  let n=0, sinEmpresa=0; const basesUsadas=[];
+  S.corte.reclamos=[]; S.corte.proformas=[]; S.corte.yaNoReclamadas=[]; S.corte.secuencia=0;
+  for(const amb of (c?c.ambitos:[])){
+    const base=S.bases[amb]; if(!base) continue;
+    basesUsadas.push(amb);
+    for(const row of base.rows){
+      if(!row.fecha || row.fecha<inicio || row.fecha>fin) continue;
+      if(aliasNorm.indexOf(row.empresaNorm)<0){ if(!row.empresaNorm) sinEmpresa++; continue; }
+      const rc=mkReclamo({remision:row.rem, ambito:row.tipo, archivo:'(sin proforma)',
+        hoja:base.hoja, fila:row.fila, secundarios:{}});
+      rc.sinProforma=true;
+      clasificar(rc,row,S.config,true,'sin proforma — tomado de la base');
+      S.corte.reclamos.push(rc);
+      n++;
+    }
+  }
+  S.corte.sinProforma={inicio,fin,generadoEn:nowISO(),bases:basesUsadas};
+  return {n,sinEmpresa,basesUsadas};
+}
+
 /* ============================ 6. MÁQUINA DE ESTADOS ============================ */
 
 // Toda transición guarda: estado anterior, nuevo, fecha-hora, nota, auto/manual.
@@ -895,6 +923,7 @@ const Paso2={
 function vistaPaso3(){
   if(!S.corte) return `<div class="paso-title">Paso 3 · Cargar proforma</div><div class="alert warn">Primero abre un corte (Paso 2).</div>`;
   const c=getContratista(S.corte.contratistaId);
+  const q=S.corte.quincena;
   let lista='';
   for(const pf of S.corte.proformas){
     lista+=`<div class="card"><h3>📄 ${escapeHtml(pf.archivo)}</h3><div class="tbl-wrap"><table class="tbl">
@@ -946,6 +975,19 @@ function vistaPaso3(){
     </div>
   </div>
   ${lista||'<div class="note">Aún no hay archivos de proforma cargados.</div>'}
+  <div class="card" style="border-color:var(--warn)"><h3>📥 Sin proforma — tomar recibos de la base</h3>
+    <div class="note" style="margin-bottom:10px">Cuando el contratista <b>no envió proforma</b>: la herramienta toma directamente
+    de la(s) base(s) de <b>${escapeHtml((c.ambitos||[]).join(' + '))}</b> todos los recibos de <b>${escapeHtml(c.nombre)}</b>
+    (identificados por empresa) con fecha dentro del rango. Van al acta como ENCONTRADAS y no necesitan PDF.
+    Reemplaza lo que haya en el corte.</div>
+    <div class="grid2">
+      <div><label class="fld">Desde</label><input type="date" id="spIni" value="${escapeHtml(S.corte.sinProforma?S.corte.sinProforma.inicio:q.inicio)}"></div>
+      <div><label class="fld">Hasta</label><input type="date" id="spFin" value="${escapeHtml(S.corte.sinProforma?S.corte.sinProforma.fin:q.fin)}"></div>
+    </div>
+    <div style="margin-top:10px" class="flexrow">
+      <button class="btn" onclick="Paso3.sinProforma()">Tomar recibos de la base →</button>
+      ${S.corte.sinProforma?`<span class="note">✅ Activo: ${S.corte.reclamos.length} recibos entre ${fmtFecha(S.corte.sinProforma.inicio)} → ${fmtFecha(S.corte.sinProforma.fin)}. Vuelve a generar para cambiar el rango.</span>`:''}
+    </div></div>
   ${S.corte.yaNoReclamadas.length?`<div class="alert warn"><b>Ya no reclamadas tras reemplazo:</b> ${S.corte.yaNoReclamadas.map(escapeHtml).join(', ')}</div>`:''}
   ${S.corte.reclamos.length?`<div class="flexrow"><button class="btn" onclick="UI.go(4)">Ver conciliación (${S.corte.reclamos.length}) →</button></div>`:''}`;
 }
@@ -966,6 +1008,23 @@ const Paso3={
       rd.readAsArrayBuffer(f);
     }
     input.value='';
+  },
+  sinProforma(){
+    const ini=$('spIni').value, fin=$('spFin').value;
+    if(!ini||!fin||fin<ini){ toast('❌ Revisa las fechas (desde ≤ hasta)'); return; }
+    const c=getContratista(S.corte.contratistaId);
+    const basesRel=(c?c.ambitos:[]).filter(a=>S.bases[a]);
+    if(!basesRel.length){ toast('❌ Primero carga la base del contratista (Paso 1)'); return; }
+    const falta=(c?c.ambitos:[]).filter(a=>!S.bases[a]);
+    if(S.corte.reclamos.length&&!confirm('Se reemplazarán las '+S.corte.reclamos.length+' reclamadas actuales del corte por los recibos de la base. ¿Continuar?')) return;
+    const r=tomarRecibosBase(ini,fin);
+    autosave(); render();
+    const cc=conteoEstados();
+    let msg=`✅ Sin proforma: ${r.n} recibos de la base → ${cc.ENCONTRADA} al acta`;
+    if(cc.EXCLUIDA_UF3) msg+=` · ${cc.EXCLUIDA_UF3} UF3`;
+    if(r.sinEmpresa) msg+=` · ${r.sinEmpresa} filas sin empresa omitidas`;
+    if(falta.length) msg+=` · ⚠️ falta base ${falta.join(', ')}`;
+    toast(msg,6000);
   },
   _procesarArchivo(wb,nombre){
     const c=getContratista(S.corte.contratistaId);
@@ -1995,6 +2054,7 @@ function vistaPaso6(){
 
 function obsReclamo(rc,comp){
   const o=[];
+  if(rc.sinProforma) o.push('sin proforma (recibo de base)');
   if(rc.marcas.indexOf('AREA_OBSERVADA')>=0&&rc.subtipo) o.push('área '+rc.subtipo);
   if(rc.marcas.indexOf('REZAGO')>=0&&rc.candidato&&rc.candidato.fecha) o.push('rezago '+fmtRezago(rc.candidato.fecha));
   if(rc.estado==='ACEPTADA_MANUAL') o.push('resuelta manual');
@@ -2374,6 +2434,7 @@ function resumenCorte(){
   const q=S.corte.quincena;
   const lin=[];
   lin.push('CORTE '+(contr?contr.nombre:S.corte.contratistaId)+' · '+fmtFecha(q.inicio)+' → '+fmtFecha(q.fin));
+  if(S.corte.sinProforma) lin.push('MODO SIN PROFORMA — recibos tomados de la base ('+(S.corte.sinProforma.bases||[]).join('+')+') entre '+fmtFecha(S.corte.sinProforma.inicio)+' → '+fmtFecha(S.corte.sinProforma.fin));
   lin.push('Reclamadas: '+S.corte.reclamos.length);
   for(const e of ESTADOS){ if(c[e]) lin.push('  '+ETIQUETA[e]+': '+c[e]); }
   const listar=(titulo,arr,fmt)=>{ if(arr.length){ lin.push(''); lin.push(titulo+' ('+arr.length+'):'); for(const rc of arr) lin.push('  '+(fmt?fmt(rc):rc.remision)); } };
@@ -2704,7 +2765,7 @@ if(typeof module!=='undefined'&&module.exports){
     resolverAmbitoHoja,detectarEncabezado,detectarSecundarias,extraerTokens,esParSospechoso,
     mkReclamo,extraerReclamosHoja,
     snap,areaObservada,buscarCandidatos,buscarSinCeros,conciliarReclamo,clasificar,
-    marcarDuplicadas,conciliarPendientes,reconciliar,setEstado,conteoEstados,
+    marcarDuplicadas,conciliarPendientes,reconciliar,tomarRecibosBase,setEstado,conteoEstados,
     resetReclamo,hojasSospechosas,
     obsReclamo,filasActa,resumenCorte,cmpRemision,faltantes,pendientesOrdenadas,
     ambitoPdfDe,ambitoPdfPorNombre,ambitoCompatible,etiquetaAmbito,sugerirAmbitoPdf,clasificarPaginas,
