@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Acta de Maquinaria — Conciliador TM2 Sur</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<!-- SheetJS (mismo patrón que el modo Viajes: 100% en el navegador, sin backend) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Reutiliza el chrome del conciliador (tema oscuro, DM Sans/Syne, acento naranja) -->
+<link rel="stylesheet" href="conciliador.css">
+<style>
+/* El modo Maquinaria no usa sidebar: una sola columna (sobrescribe el layout flex del chrome) */
+body{display:block;}
+#page{max-width:1200px;margin:0 auto;padding:0 20px 90px;}
+.topbar{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--border);padding:14px 20px 0;margin:0 -20px 18px;}
+.topbar .logo h1{font-size:17px;font-weight:800;}
+.topbar .logo p{font-size:11px;color:var(--muted);margin-top:2px;}
+.topbar .modo-menu{border-bottom:none;padding:10px 0 12px;max-width:360px;}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+@media(max-width:820px){.grid3{grid-template-columns:1fr;}}
+.hint{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.45;}
+tr.sinparte td{background:rgba(243,156,18,0.10);}
+tr.sinparte td.obs{color:#ffb84d;font-weight:600;}
+tr.libre td{color:var(--muted);}
+tr.dosPartes td.rep{color:var(--warn);font-weight:600;}
+.pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:700;letter-spacing:.3px;}
+.pill.sp{background:rgba(243,156,18,0.14);color:#ffb84d;border:1px solid rgba(243,156,18,.4);}
+.pill.dom{background:rgba(122,128,160,0.16);color:var(--muted);border:1px solid rgba(122,128,160,.35);}
+.pill.fes{background:rgba(52,152,219,0.14);color:#5dade2;border:1px solid rgba(52,152,219,.4);}
+.pill.dos{background:rgba(155,89,182,0.14);color:#c39bd6;border:1px solid rgba(155,89,182,.4);}
+.statline{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin-bottom:8px;}
+.statline b{color:var(--text);font-weight:700;}
+.tbl-out th,.tbl-out td{white-space:nowrap;text-align:right;}
+.tbl-out th:nth-child(-n+6),.tbl-out td:nth-child(-n+6),
+.tbl-out th:last-child,.tbl-out td:last-child{text-align:left;}
+.colhead{font-size:9px;color:var(--muted);font-weight:600;display:block;}
+.removed{opacity:.4;font-style:italic;}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="logo">
+    <h1>🚜 Acta de Maquinaria</h1>
+    <p>Corte diario de máquina alquilada · TM2 Sur</p>
+  </div>
+  <div class="modo-menu">
+    <a class="modo-tab" href="index.html">🚚 Viajes</a>
+    <a class="modo-tab active" href="maquinaria.html">🚜 Maquinaria</a>
+  </div>
+</div>
+
+<div id="page">
+
+  <div class="alert info" style="max-width:900px">
+    Genera el <b>grid día-a-día</b> (un renglón por cada día del período, incluidos los días sin uso) para
+    pegar en el acta con <b>Pegado especial → Omitir blancos</b>. Lee la hoja <b>BASE MAQUINARIA</b> del Excel que subas
+    y no escribe ningún maestro. La página calcula <b>I = FINAL−INICIAL</b> y escribe el <b>standby (J)</b>;
+    <b>K se elimina</b> y <b>L</b> se deja vacía para la fórmula del template (<code>=+J</code>).
+  </div>
+
+  <!-- ---- Entradas ---- -->
+  <div class="card">
+    <h3>1 · Base de maquinaria</h3>
+    <label class="filebox" id="fileBox">
+      <input type="file" id="fileIn" accept=".xlsx,.xls,.xlsm">
+      <div class="fb-title" id="fbTitle">Seleccionar Excel (hoja BASE MAQUINARIA)</div>
+      <div class="fb-sub" id="fbSub">La tabla plana de partes diarios. El encabezado está en la fila 3.</div>
+    </label>
+    <div id="hojaPick" style="margin-top:10px;display:none"></div>
+    <div id="baseInfo" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card">
+    <h3>2 · Parámetros del acta</h3>
+    <div class="grid3">
+      <div>
+        <label class="fld">Código de equipo (COD. EQUIPO)</label>
+        <input type="text" id="codTxt" placeholder="p.ej. CAT900 / NH69" list="codList" autocomplete="off">
+        <datalist id="codList"></datalist>
+        <select id="codSel" style="margin-top:6px"><option value="">— códigos del período —</option></select>
+        <div class="hint">Una máquina por acta. El desplegable se llena con los códigos hallados en el período.</div>
+      </div>
+      <div>
+        <label class="fld">Desde</label>
+        <input type="date" id="desde">
+        <label class="fld" style="margin-top:8px">Hasta</label>
+        <input type="date" id="hasta">
+        <div class="hint">Default: 16 del mes anterior → 15 del mes actual.</div>
+      </div>
+      <div>
+        <label class="fld">N° de Acta (col. A)</label>
+        <input type="text" id="nActa" placeholder="p.ej. 042">
+        <label class="fld" style="margin-top:8px">Standby h/día (col. J)</label>
+        <input type="number" id="standby" value="5" step="0.5" min="0">
+        <div class="hint">Default 5 (alquiladas). Se escribe en todos los días.</div>
+      </div>
+    </div>
+    <div style="margin-top:14px">
+      <label class="fld">Festivos del período (uno por línea o separados por coma)</label>
+      <textarea id="festivos" rows="2" placeholder="2026-06-16&#10;20/07/2026"></textarea>
+      <div class="hint">Los domingos se marcan solos por la fecha. Aquí solo los festivos que apliquen.</div>
+    </div>
+    <div style="margin-top:14px" class="flexrow">
+      <button class="btn" id="btnGen">⚙️ Generar grid</button>
+      <span class="note" id="genNote"></span>
+    </div>
+  </div>
+
+  <!-- ---- Reporte de huecos ---- -->
+  <div class="card" id="huecosCard" style="display:none">
+    <h3>Reporte de huecos — revisar antes de pegar</h3>
+    <div class="statline" id="statLine"></div>
+    <div class="tbl-wrap"><table class="tbl" id="huecosTbl"></table></div>
+  </div>
+
+  <!-- ---- Salida ---- -->
+  <div class="card" id="outCard" style="display:none">
+    <h3>Grid del acta (A–N) — listo para pegar con «Omitir blancos»</h3>
+    <div class="flexrow" style="margin-bottom:10px">
+      <button class="btn" id="btnXlsx">⬇ Descargar xlsx</button>
+      <button class="btn sec" id="btnCopy">📋 Copiar todo (TSV)</button>
+      <span class="note right">Decimales con coma · fechas dd/mm/aaaa · I y J calculadas · K eliminada · L vacía (fórmula)</span>
+    </div>
+    <div class="tbl-wrap"><table class="tbl tbl-out" id="outTbl"></table></div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* =====================================================================
+   Modo Maquinaria — lógica autocontenida (sin backend, sin red).
+   Reutiliza los patrones del motor de Viajes (fechas ISO, lectura de
+   celdas SheetJS, TSV con coma) pero es independiente de conciliador.js.
+   ===================================================================== */
+
+/* ---------- Helpers de texto/fecha (mismos criterios que el conciliador) ---------- */
+function quitarTildes(s){ return String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+function norm(s){ return quitarTildes(s).toUpperCase().replace(/[.º°№#]/g,'').replace(/[\r\n]+/g,' ').replace(/\s+/g,' ').trim(); }
+function escapeHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function serialToISO(n){
+  if(!isFinite(n) || n<20000 || n>80000) return null;
+  const d=new Date(Math.round((n-25569)*86400000));
+  return isNaN(d.getTime())?null:d.toISOString().slice(0,10);
+}
+function parseFechaTexto(s){
+  if(!s) return null;
+  const t=String(s).trim();
+  let m=t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m) return m[1]+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[3]).padStart(2,'0');
+  m=t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if(m){ let y=+m[3]; if(y<100) y+=2000; const mo=+m[2], d=+m[1];
+    if(mo<1||mo>12||d<1||d>31) return null;
+    return y+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0'); }
+  return null;
+}
+function parseFechaCell(c){
+  if(!c || c.v==null) return null;
+  if(c.v instanceof Date) return isNaN(c.v.getTime())?null:isoLocal(c.v);
+  if(c.t==='n') return serialToISO(c.v);
+  return parseFechaTexto(c.w!==undefined?c.w:c.v);
+}
+// Date -> ISO usando componentes UTC (SheetJS crea fechas a medianoche UTC con cellDates)
+function isoLocal(d){ return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0'); }
+function fmtFecha(iso){ if(!iso) return ''; const p=String(iso).split('-'); return p.length===3?(p[2]+'/'+p[1]+'/'+p[0]):String(iso); }
+
+function parseNum(v){
+  if(v==null||v==='') return null;
+  if(typeof v==='number') return isFinite(v)?v:null;
+  let t=String(v).trim(); if(!t) return null;
+  // formato es-CO "1.234,5"; si no hay coma, quita separadores de miles con punto
+  if(t.indexOf(',')>=0) t=t.replace(/\./g,'').replace(',','.');
+  const n=parseFloat(t); return isFinite(n)?n:null;
+}
+function numCell(ws,addr){
+  const c=ws[addr]; if(!c||c.v==null) return null;
+  if(c.t==='n') return isFinite(c.v)?c.v:null;
+  return parseNum(c.w!==undefined?c.w:c.v);
+}
+function cellText(ws,addr){
+  const c=ws[addr]; if(!c||c.v==null) return '';
+  if(c.w!==undefined) return String(c.w).trim();
+  return String(c.v).trim();
+}
+function round2(x){ return x==null?null:Math.round(x*100)/100; }
+function fmtNumTSV(v){ if(v==null||v==='') return ''; if(typeof v==='number'){ return String(v).replace('.',','); } return String(v); }
+
+/* ---------- Utilidades de celdas/columnas SheetJS ---------- */
+function letterToNum(s){ let n=0; for(const ch of s) n=n*26+(ch.charCodeAt(0)-64); return n-1; }
+function colLetter(n){ let s=''; n=n+1; while(n>0){ const r=(n-1)%26; s=String.fromCharCode(65+r)+s; n=Math.floor((n-1)/26); } return s; }
+function refRange(ws){
+  const ref=ws && ws['!ref']; if(!ref) return {rows:0,cols:0};
+  let m=ref.match(/:([A-Z]+)(\d+)$/);
+  if(m) return {rows:+m[2], cols:letterToNum(m[1])+1};
+  m=ref.match(/^([A-Z]+)(\d+)$/);
+  return m?{rows:+m[2],cols:letterToNum(m[1])+1}:{rows:0,cols:0};
+}
+function addDaysISO(iso,d){ const p=iso.split('-').map(Number); const dt=new Date(Date.UTC(p[0],p[1]-1,p[2])); dt.setUTCDate(dt.getUTCDate()+d); return isoLocal(dt); }
+function weekday(iso){ const p=iso.split('-').map(Number); return new Date(Date.UTC(p[0],p[1]-1,p[2])).getUTCDay(); } // 0=domingo
+
+/* ---------- Estado ---------- */
+const S={ wb:null, ws:null, cols:null, headerRow:0, filas:[], nombreArchivo:'' };
+
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>t.style.display='none',3600); }
+
+/* ---------- Default período: 16 mes anterior -> 15 mes actual ---------- */
+(function initPeriodo(){
+  const hoy=new Date();
+  const y=hoy.getFullYear(), m=hoy.getMonth(); // 0-based
+  const desde=new Date(y,m-1,16), hasta=new Date(y,m,15);
+  const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  document.getElementById('desde').value=iso(desde);
+  document.getElementById('hasta').value=iso(hasta);
+})();
+
+/* ---------- Carga del archivo ---------- */
+document.getElementById('fileIn').addEventListener('change', async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  S.nombreArchivo=f.name;
+  document.getElementById('fbTitle').textContent=f.name;
+  document.getElementById('fbSub').textContent='Leyendo…';
+  try{
+    const buf=await f.arrayBuffer();
+    S.wb=XLSX.read(buf,{type:'array',cellDates:true});
+    document.getElementById('fileBox').classList.add('loaded');
+    elegirHoja();
+  }catch(err){
+    document.getElementById('fbSub').textContent='⚠️ No se pudo leer el archivo.';
+    toast('⚠️ Error leyendo el Excel: '+err.message);
+  }
+});
+
+function elegirHoja(){
+  const names=S.wb.SheetNames;
+  const target=names.find(n=>norm(n)==='BASE MAQUINARIA') || names.find(n=>norm(n).indexOf('BASE MAQUINARIA')>=0) || names.find(n=>norm(n).indexOf('MAQUINARIA')>=0);
+  const pick=document.getElementById('hojaPick');
+  if(target){ pick.style.display='none'; cargarHoja(target); return; }
+  // No encontrada: que el usuario la señale
+  pick.style.display='block';
+  pick.innerHTML='<div class="alert warn">No encontré la hoja <b>BASE MAQUINARIA</b>. Señálala:</div>'+
+    '<select id="hojaSel">'+names.map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('')+'</select> '+
+    '<button class="btn mini" id="hojaOk">Usar esta hoja</button>';
+  document.getElementById('hojaOk').onclick=()=>cargarHoja(document.getElementById('hojaSel').value);
+}
+
+/* ---------- Detección de encabezados (fila 3, resuelto por texto) ---------- */
+// Construye la etiqueta de grupo (filas 1–2) por columna, expandiendo celdas combinadas.
+function grupoPorColumna(ws,headerRow,cols){
+  const merges=ws['!merges']||[];
+  const g=new Array(cols).fill('');
+  for(let gr=Math.max(0,headerRow-2); gr<headerRow; gr++){
+    for(let c=0;c<cols;c++){
+      let val=cellText(ws,colLetter(c)+(gr+1));
+      if(!val){ // ¿cubierta por una combinación?
+        const mm=merges.find(m=>gr>=m.s.r&&gr<=m.e.r&&c>=m.s.c&&c<=m.e.c);
+        if(mm) val=cellText(ws,colLetter(mm.s.c)+(mm.s.r+1));
+      }
+      if(val) g[c]=(g[c]?g[c]+' ':'')+val;
+    }
+  }
+  return g.map(norm);
+}
+// Elige la fila de encabezado: la que contenga FECHA y COD EQUIPO (escanea las primeras filas).
+function detectarHeaderRow(ws,rows,cols){
+  const lim=Math.min(rows,8);
+  for(let r=0;r<lim;r++){
+    let hasFecha=false,hasCod=false;
+    for(let c=0;c<cols;c++){ const h=norm(cellText(ws,colLetter(c)+(r+1)));
+      if(h==='FECHA') hasFecha=true;
+      if(h.indexOf('COD EQUIPO')>=0||h.indexOf('CODIGO EQUIPO')>=0) hasCod=true; }
+    if(hasFecha&&hasCod) return r;
+  }
+  return 2; // default: fila 3 (índice 2)
+}
+
+function resolverColumnas(ws,headerRow,cols){
+  const H=[], G=grupoPorColumna(ws,headerRow,cols);
+  for(let c=0;c<cols;c++) H[c]=norm(cellText(ws,colLetter(c)+(headerRow+1)));
+
+  // Primera columna cuyo encabezado cumple pred; opcional preferencia de grupo.
+  function find(pred, grupoPref){
+    let cand=[]; for(let c=0;c<cols;c++) if(pred(H[c])) cand.push(c);
+    if(!cand.length) return -1;
+    if(grupoPref){ const pref=cand.filter(c=>G[c].indexOf(grupoPref)>=0); if(pref.length) return pref[0]; }
+    return cand[0];
+  }
+  const eq=t=>(h=>h===t);
+  const has=t=>(h=>h.indexOf(t)>=0);
+
+  return {
+    fecha:      find(eq('FECHA')),
+    reporte:    find(h=>h==='REPORTE'||h.indexOf('REPORTE')>=0),
+    cod:        find(h=>h.indexOf('COD EQUIPO')>=0||h.indexOf('CODIGO EQUIPO')>=0),
+    tipo:       find(has('TIPO DE EQUIPO'))>=0? find(has('TIPO DE EQUIPO')) : find(has('TIPO')),
+    marca:      find(eq('MARCA')),
+    placa:      find(has('PLACA')),
+    proveedor:  find(has('PROVEEDOR')),
+    // Horómetro: preferir el grupo HOROMETRO (evita el INICIAL2/kilometraje col V y el TOTAL HORAS A FACT)
+    inicial:    (find(eq('INICIAL'),'HOROMETRO')>=0? find(eq('INICIAL'),'HOROMETRO') : find(eq('INICIAL'))),
+    final:      (find(eq('FINAL'),'HOROMETRO')>=0? find(eq('FINAL'),'HOROMETRO') : find(eq('FINAL'))),
+    total:      (find(eq('TOTAL'),'HOROMETRO')>=0? find(eq('TOTAL'),'HOROMETRO') : find(eq('TOTAL'))),
+    cc:         find(h=>h.indexOf('CENTRO DE COSTE')>=0||h.indexOf('CENTRO DE COSTO')>=0||h.indexOf('CENTRO COSTE')>=0),
+    obs:        find(has('OBSERVAC')),   // la primera (col AR)
+    operador:   find(has('OPERADOR'))
+  };
+}
+
+/* ---------- Lectura de filas ---------- */
+function cargarHoja(name){
+  S.ws=S.wb.Sheets[name];
+  const {rows,cols}=refRange(S.ws);
+  if(!rows||!cols){ document.getElementById('baseInfo').innerHTML='<div class="alert err">La hoja está vacía.</div>'; return; }
+  S.headerRow=detectarHeaderRow(S.ws,rows,cols);
+  S.cols=resolverColumnas(S.ws,S.headerRow,cols);
+  const C=S.cols;
+  const filas=[];
+  for(let r=S.headerRow+1; r<rows; r++){   // r es 0-based; celda = r+1
+    const rr=r+1;
+    const fecha=C.fecha>=0? parseFechaCell(S.ws[colLetter(C.fecha)+rr]) : null;
+    const codRaw=C.cod>=0? cellText(S.ws,colLetter(C.cod)+rr) : '';
+    const cod=norm(codRaw);
+    if(!fecha) continue;                    // fila basura (#REF!, #N/A, vacía)
+    if(!cod || cod[0]==='#') continue;      // COD. EQUIPO inválido
+    filas.push({
+      fecha, cod, codRaw:codRaw.trim(),
+      reporte:  C.reporte>=0? cellText(S.ws,colLetter(C.reporte)+rr):'',
+      tipo:     C.tipo>=0? cellText(S.ws,colLetter(C.tipo)+rr):'',
+      marca:    C.marca>=0? cellText(S.ws,colLetter(C.marca)+rr):'',
+      placa:    C.placa>=0? cellText(S.ws,colLetter(C.placa)+rr):'',
+      proveedor:C.proveedor>=0? cellText(S.ws,colLetter(C.proveedor)+rr):'',
+      inicial:  C.inicial>=0? numCell(S.ws,colLetter(C.inicial)+rr):null,
+      final:    C.final>=0? numCell(S.ws,colLetter(C.final)+rr):null,
+      total:    C.total>=0? numCell(S.ws,colLetter(C.total)+rr):null,
+      cc:       C.cc>=0? cellText(S.ws,colLetter(C.cc)+rr):'',
+      obs:      C.obs>=0? cellText(S.ws,colLetter(C.obs)+rr):'',
+      operador: C.operador>=0? cellText(S.ws,colLetter(C.operador)+rr):''
+    });
+  }
+  S.filas=filas;
+  infoBase(name);
+  llenarCodigos();
+}
+
+function faltantes(){
+  const C=S.cols, req={fecha:'FECHA',cod:'COD. EQUIPO',inicial:'INICIAL (horómetro)',final:'FINAL (horómetro)'};
+  return Object.entries(req).filter(([k])=>C[k]<0).map(([,v])=>v);
+}
+function infoBase(name){
+  const falt=faltantes();
+  const rangoF=S.filas.reduce((a,f)=>{ if(!a.min||f.fecha<a.min)a.min=f.fecha; if(!a.max||f.fecha>a.max)a.max=f.fecha; return a; },{});
+  let html=`<div class="kv"><span>Hoja: <b>${escapeHtml(name)}</b></span>`+
+    `<span>Encabezado: <b>fila ${S.headerRow+1}</b></span>`+
+    `<span>Filas útiles: <b>${S.filas.length}</b></span>`;
+  if(rangoF.min) html+=`<span>Fechas: <b>${fmtFecha(rangoF.min)} → ${fmtFecha(rangoF.max)}</b></span>`;
+  html+='</div>';
+  if(falt.length) html+=`<div class="alert warn" style="margin-top:8px">No encontré estas columnas por su encabezado: <b>${falt.map(escapeHtml).join(', ')}</b>. Revisa la fila de encabezado.</div>`;
+  document.getElementById('baseInfo').innerHTML=html;
+}
+
+/* ---------- Poblado del desplegable de códigos (dentro del período) ---------- */
+function llenarCodigos(){
+  const desde=document.getElementById('desde').value, hasta=document.getElementById('hasta').value;
+  const mapa=new Map();
+  for(const f of S.filas){
+    if(desde && f.fecha<desde) continue;
+    if(hasta && f.fecha>hasta) continue;
+    const cur=mapa.get(f.cod)||{n:0,label:f.codRaw||f.cod};
+    cur.n++; mapa.set(f.cod,cur);
+  }
+  const cods=[...mapa.entries()].sort((a,b)=>a[0]<b[0]?-1:1);
+  const sel=document.getElementById('codSel');
+  sel.innerHTML='<option value="">— códigos del período ('+cods.length+') —</option>'+
+    cods.map(([k,v])=>`<option value="${escapeHtml(v.label)}">${escapeHtml(v.label)} (${v.n})</option>`).join('');
+  const dl=document.getElementById('codList');
+  dl.innerHTML=cods.map(([k,v])=>`<option value="${escapeHtml(v.label)}">`).join('');
+}
+document.getElementById('codSel').addEventListener('change',e=>{ if(e.target.value) document.getElementById('codTxt').value=e.target.value; });
+document.getElementById('desde').addEventListener('change',()=>{ if(S.filas.length) llenarCodigos(); });
+document.getElementById('hasta').addEventListener('change',()=>{ if(S.filas.length) llenarCodigos(); });
+
+/* ---------- Festivos ---------- */
+function parseFestivos(){
+  const raw=document.getElementById('festivos').value||'';
+  const set=new Set();
+  raw.split(/[\n,;]+/).forEach(t=>{ const iso=parseFechaTexto(t.trim()); if(iso) set.add(iso); });
+  return set;
+}
+
+/* ---------- Generación del grid ---------- */
+function generar(){
+  if(!S.ws){ toast('⚠️ Primero carga la base.'); return; }
+  const cod=norm(document.getElementById('codTxt').value);
+  const desde=document.getElementById('desde').value, hasta=document.getElementById('hasta').value;
+  const nActa=document.getElementById('nActa').value.trim();
+  const standby=parseNum(document.getElementById('standby').value);
+  if(!cod){ toast('⚠️ Indica el código de equipo.'); return; }
+  if(!desde||!hasta){ toast('⚠️ Indica el período (desde/hasta).'); return; }
+  if(desde>hasta){ toast('⚠️ «Desde» es posterior a «Hasta».'); return; }
+  const festivos=parseFestivos();
+
+  // Partes de la máquina dentro del período, agrupados por día
+  const porDia=new Map();
+  let matched=0;
+  for(const f of S.filas){
+    if(f.cod!==cod) continue;
+    if(f.fecha<desde||f.fecha>hasta) continue;
+    matched++;
+    if(!porDia.has(f.fecha)) porDia.set(f.fecha,[]);
+    porDia.get(f.fecha).push(f);
+  }
+  if(!matched){ toast('⚠️ Sin partes para «'+document.getElementById('codTxt').value+'» en el período.'); }
+
+  // Identidad de la máquina (constante) para rellenar días sin parte
+  const ident=identidadMaquina(porDia);
+
+  const filasOut=[]; const huecos=[];
+  for(let d=desde; d<=hasta; d=addDaysISO(d,1)){
+    const partes=porDia.get(d)||[];
+    const esDom=weekday(d)===0, esFes=festivos.has(d);
+    const row={ A:nActa, B:fmtFecha(d), C:'', D:ident.codRaw, E:ident.tipo, F:ident.proveedor,
+                G:'', H:'', I:'', J:standby, K:'', L:'', M:'', N:'', _cls:'' , iso:d };
+    if(partes.length){
+      // Horómetro: INICIAL = mínimo, FINAL = máximo de los partes del día
+      const inis=partes.map(p=>p.inicial).filter(v=>v!=null);
+      const fins=partes.map(p=>p.final).filter(v=>v!=null);
+      const ini=inis.length?Math.min(...inis):null;
+      const fin=fins.length?Math.max(...fins):null;
+      row.G=ini==null?'':ini;
+      row.H=fin==null?'':fin;
+      row.I=(ini!=null&&fin!=null)?round2(fin-ini):'';   // <- calculado por la página (I = FINAL−INICIAL)
+      row.C=uniqJoin(partes.map(p=>p.reporte));
+      row.M=firstNonEmpty(partes.map(p=>p.cc));
+      row.N=firstNonEmpty(partes.map(p=>p.obs));
+      if(partes.length>=2){
+        row._cls='dosPartes';
+        row.N=(row.N?row.N+' · ':'')+'2 partes — revisar';
+        huecos.push({iso:d,tipo:'dos',detalle:partes.length+' partes ese día'});
+      }
+    } else {
+      // Día sin parte: domingo/festivo se clasifican (sin resaltar); el resto se resalta naranja.
+      if(esDom){ row.N='Domingo'; row._cls='libre'; huecos.push({iso:d,tipo:'dom',detalle:'Domingo'}); }
+      else if(esFes){ row.N='Festivo'; row._cls='libre'; huecos.push({iso:d,tipo:'fes',detalle:'Festivo'}); }
+      else { row.N='SIN PARTE · revisar'; row._cls='sinparte'; huecos.push({iso:d,tipo:'sp',detalle:'Sin parte'}); }
+    }
+    filasOut.push(row);
+  }
+  S.out={ filasOut, huecos, nActa, cod:document.getElementById('codTxt').value.trim() };
+  render(filasOut,huecos,matched);
+}
+
+function identidadMaquina(porDia){
+  // Moda de tipo/proveedor y el codRaw tal como viene en la base
+  const cont={tipo:new Map(),prov:new Map()}; let codRaw='';
+  for(const partes of porDia.values()) for(const p of partes){
+    if(!codRaw && p.codRaw) codRaw=p.codRaw;
+    if(p.tipo) cont.tipo.set(p.tipo,(cont.tipo.get(p.tipo)||0)+1);
+    if(p.proveedor) cont.prov.set(p.proveedor,(cont.prov.get(p.proveedor)||0)+1);
+  }
+  const moda=m=>{ let best='',n=-1; for(const [k,v] of m) if(v>n){best=k;n=v;} return best; };
+  return { codRaw: codRaw||document.getElementById('codTxt').value.trim(), tipo:moda(cont.tipo), proveedor:moda(cont.prov) };
+}
+function firstNonEmpty(arr){ for(const x of arr) if(x&&String(x).trim()) return String(x).trim(); return ''; }
+function uniqJoin(arr){ const seen=new Set(),out=[]; for(const x of arr){ const t=String(x||'').trim(); if(t&&!seen.has(t)){ seen.add(t); out.push(t); } } return out.join(' / '); }
+
+/* ---------- Render ---------- */
+const COLS=[['A','N° Acta'],['B','Fecha'],['C','Reporte'],['D','Cód. equipo'],['E','Tipo'],['F','Proveedor'],
+  ['G','Inicial'],['H','Final'],['I','Total'],['J','Stand by'],['K','—'],['L','—'],['M','C. Coste'],['N','Observaciones']];
+const KEYS=['A','B','C','D','E','F','G','H','I','J','K','L','M','N'];
+
+function render(filasOut,huecos,matched){
+  // Resumen
+  const nSp=huecos.filter(h=>h.tipo==='sp').length, nDom=huecos.filter(h=>h.tipo==='dom').length,
+        nFes=huecos.filter(h=>h.tipo==='fes').length, nDos=huecos.filter(h=>h.tipo==='dos').length,
+        conParte=filasOut.filter(r=>r._cls!=='sinparte').length;
+  document.getElementById('statLine').innerHTML=
+    `<span>Días: <b>${filasOut.length}</b></span>`+
+    `<span>Con parte: <b>${conParte}</b></span>`+
+    `<span>Partes leídos: <b>${matched}</b></span>`+
+    `<span><span class="pill sp">SIN PARTE</span> <b>${nSp}</b></span>`+
+    `<span><span class="pill dom">Domingo</span> <b>${nDom}</b></span>`+
+    `<span><span class="pill fes">Festivo</span> <b>${nFes}</b></span>`+
+    `<span><span class="pill dos">2 partes</span> <b>${nDos}</b></span>`;
+
+  // Tabla de huecos
+  const ht=document.getElementById('huecosTbl');
+  if(huecos.length){
+    const pillOf={sp:'sp',dom:'dom',fes:'fes',dos:'dos'}, labOf={sp:'SIN PARTE · revisar',dom:'Domingo',fes:'Festivo',dos:'2 partes'};
+    ht.innerHTML='<thead><tr><th>Fecha</th><th>Marca</th><th>Detalle</th></tr></thead><tbody>'+
+      huecos.map(h=>`<tr><td>${fmtFecha(h.iso)}</td><td><span class="pill ${pillOf[h.tipo]}">${labOf[h.tipo]}</span></td><td class="note">${escapeHtml(h.detalle)}</td></tr>`).join('')+'</tbody>';
+  } else ht.innerHTML='<tbody><tr><td class="note">Sin huecos: todos los días tienen un parte único.</td></tr></tbody>';
+  document.getElementById('huecosCard').style.display='block';
+
+  // Grid de salida
+  const ot=document.getElementById('outTbl');
+  const head='<thead><tr>'+COLS.map(([c,t])=>`<th>${c}<span class="colhead">${escapeHtml(t)}</span></th>`).join('')+'</tr></thead>';
+  const body='<tbody>'+filasOut.map(r=>{
+    const cls=r._cls?` class="${r._cls}"`:'';
+    return '<tr'+cls+'>'+KEYS.map(k=>{
+      const extra=(k==='N'&&r._cls==='sinparte')?'obs':(k==='C'&&r._cls==='dosPartes')?'rep':'';
+      const disp=(k==='K'||k==='L')?'<span class="removed">'+(k==='K'?'(elim.)':'(fórm.)')+'</span>':escapeHtml(dispVal(r[k]));
+      return `<td class="${extra}">${disp}</td>`;
+    }).join('')+'</tr>';
+  }).join('')+'</tbody>';
+  ot.innerHTML=head+body;
+  document.getElementById('outCard').style.display='block';
+  document.getElementById('genNote').textContent=`✓ ${filasOut.length} días generados`;
+  document.getElementById('outCard').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function dispVal(v){ if(v==null||v==='') return ''; if(typeof v==='number') return String(v).replace('.',','); return String(v); }
+
+/* ---------- Exportes ---------- */
+// SOLO el bloque de valores A–N (sin fila de encabezado), para pegar con «Omitir blancos»
+// sin desalinear. K queda vacía (eliminada) y L vacía (la calcula la fórmula =+J del template).
+// blank = valor para las celdas vacías: en xlsx debe ser null (celda REALMENTE vacía, así
+// «Omitir blancos» no pisa las fórmulas del template); en TSV '' (campo vacío = celda en blanco al pegar).
+function aoaSalida(blank){
+  return S.out.filasOut.map(r=>KEYS.map(k=>{ const v=r[k]; return (v==null||v==='')?blank:v; }));
+}
+document.getElementById('btnXlsx').addEventListener('click',()=>{
+  if(!S.out){ return; }
+  const ws=XLSX.utils.aoa_to_sheet(aoaSalida(null));
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'MAQUINARIA');
+  XLSX.writeFile(wb,nombreArchivo('xlsx'));
+  toast('⬇ xlsx descargado ('+S.out.filasOut.length+' filas). Pega con «Omitir blancos».');
+});
+document.getElementById('btnCopy').addEventListener('click',async ()=>{
+  if(!S.out){ return; }
+  const rows=aoaSalida('');
+  const tsv=rows.map(r=>r.map(v=>fmtNumTSV(v)).join('\t')).join('\n');
+  try{ await navigator.clipboard.writeText(tsv); toast('📋 Bloque copiado ('+rows.length+' filas). Pega con «Omitir blancos».'); }
+  catch(e){ toast('⚠️ No se pudo copiar al portapapeles.'); }
+});
+function nombreArchivo(ext){
+  const cod=(S.out.cod||'maquina').replace(/[^\w\-]+/g,'_');
+  const acta=S.out.nActa?('_acta'+S.out.nActa.replace(/[^\w\-]+/g,'')):'';
+  return 'maquinaria_'+cod+acta+'.'+ext;
+}
+
+document.getElementById('btnGen').addEventListener('click',generar);
+</script>
+</body>
+</html>
