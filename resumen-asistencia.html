@@ -467,6 +467,16 @@ function seccionCompletar(d){
   // Los "presente sin CC" ya vienen en faltantes como sin_reportar (incompleto=true), así que basta
   // con recorrer faltantes — sin duplicar. Etiqueta según sea incompleto o nunca reportado.
   faltantes.filter(f=>f.tipo==='sin_reportar').forEach(f=>comp.push({codigo:f.codigo,cedula:f.cedula,nombre:f.nombre,cargo:f.cargo,cuadrilla:f.cuadrilla,tag: f.incompleto?'presente sin CC':'sin reportar'}));
+  // D85: personal EVENTUAL (estado=eventual en PERSONAL, p. ej. el encargado Javier): nunca aparece
+  // como faltante ni en los KPI/avisos de "sin reportar", pero se ofrece AQUÍ para marcarlo presente
+  // los dom/fest u ocasiones puntuales. Solo si aún no tiene fila reportada ese día (si ya se subió,
+  // se corrige desde el detalle por cuadrilla, como cualquier fila).
+  const repKeys={}; (d.filas||[]).forEach(f=>{ repKeys[String(f.codigo||'').trim()||('CED:'+String(f.cedula||'').trim())]=1; });
+  (d.eventuales||[]).forEach(p=>{
+    const k=String(p.codigo||'').trim()||('CED:'+String(p.cedula||'').trim());
+    if(repKeys[k]) return;
+    comp.push({codigo:p.codigo,cedula:p.cedula,nombre:p.nombre,cargo:p.cargo,cuadrilla:p.cuadrilla,tag:'eventual'});
+  });
   if(!comp.length) return '';
   STATE._comp=comp;
   const catMotivos=d.catMotivos||[], j=Object.assign({},d.jornada||{});

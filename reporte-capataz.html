@@ -233,16 +233,18 @@ let lineaIdx = 0, eqIdx = 0;
 window.onload = function(){
   // D82: sesión en localStorage (sobrevive cierre del navegador en zona muerta)
   const rol=localStorage.getItem('rol'), usuario=localStorage.getItem('usuario');
-  if(!rol || (rol!=='capataz' && rol!=='admin' && rol!=='encargado')){ window.location.href='index.html'; return; }
+  // D85: el residente (tierras) también puede reportar como si fuera capataz (antes lo botaba al login).
+  if(!rol || (rol!=='capataz' && rol!=='admin' && rol!=='encargado' && rol!=='residente')){ window.location.href='index.html'; return; }
   document.getElementById('userDisplay').textContent=usuario||'capataz';
   if(rol==='admin'){var _bm=document.getElementById('btnMenu');if(_bm)_bm.style.display='inline-block';}
-  document.getElementById('backBtn').textContent = (rol==='encargado') ? '← Volver' : 'Salir';
+  document.getElementById('backBtn').textContent = (rol==='encargado'||rol==='residente') ? '← Volver' : 'Salir';
   document.getElementById('fechaReporte').value=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
   addLinea();
 };
 function logout(){
   const rol=localStorage.getItem('rol');
   if(rol==='encargado'){ window.location.href='encargado.html'; return; }
+  if(rol==='residente'){ window.location.href='residente.html'; return; }   // D85: vuelve a su panel
   // solo la sesión: la cola de envíos pendientes NO se borra al cerrar sesión (D82)
   localStorage.removeItem('usuario'); localStorage.removeItem('rol');
   window.location.href='index.html';
