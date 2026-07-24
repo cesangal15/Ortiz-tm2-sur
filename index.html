@@ -79,10 +79,10 @@ const USUARIOS = {
   // capataces de una sola área se comportan EXACTAMENTE igual que hoy (no-regresión). Para darle a un
   // capataz las dos áreas basta con añadirle `areas: ['odt','odl']` a su fila (el reporte-drenajes
   // deriva el área de cada línea del CC del ítem: 06.*→ODT, 07.*→ODL).
-  'mauricio':      { clave: 'dren2026',  rol: 'capataz_odt',   redirige: 'seleccion-reporte.html' },
-  'eduardo':       { clave: 'dren2026',  rol: 'capataz_odt',   redirige: 'seleccion-reporte.html' },
-  'enrique':       { clave: 'dren2026',  rol: 'capataz_odt',   redirige: 'seleccion-reporte.html' },
-  'jairo':         { clave: 'dren2026',  rol: 'capataz_odl',   redirige: 'seleccion-reporte.html' },
+  'mauricio':      { clave: 'dren2026',  rol: 'capataz_odt', areas: ['odt','odl'],  redirige: 'seleccion-reporte.html' },
+  'eduardo':       { clave: 'dren2026',  rol: 'capataz_odt',  areas: ['odt','odl'],  redirige: 'seleccion-reporte.html' },
+  'enrique':       { clave: 'dren2026',  rol: 'capataz_odt',  areas: ['odt','odl'],  redirige: 'seleccion-reporte.html' },
+  'jairo':         { clave: 'dren2026',  rol: 'capataz_odl', areas: ['odt','odl'],   redirige: 'seleccion-reporte.html' },
   // Doble deber (D72): revisan su panel de drenajes + el resumen de asistencia de SU área (odt/odl),
   // así que aterrizan en seleccion-reporte.html.
   // D84: la residente ODT salió a UF3 → se elimina el login `residente_odt`. La residente ODL asume
