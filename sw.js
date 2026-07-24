@@ -18,7 +18,9 @@
  * archivo). Con network-first, el CONTENIDO de los archivos se refresca solo al haber señal — un
  * cambio de texto en un HTML NO requiere subir la versión.
  */
-const CACHE_V = 'tm2-v1';
+// D84: se sube la versión para que los equipos en campo reciban el login nuevo (sin ariel/albert/
+// residente_odt, con residente_dren) y el reporte de drenajes multi-área ya precacheados.
+const CACHE_V = 'tm2-v2';
 const FONT_CACHE = CACHE_V + '-fonts';
 
 // Lista explícita: shell + capturas + app. NO precachear las páginas fuera de alcance

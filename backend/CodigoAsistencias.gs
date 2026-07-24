@@ -41,7 +41,12 @@ const SHEET_ID = '1KrhzaIg3BSspyi0oH0gHkAJnSRXaOIdel_pKaMVHX9w';
 const PERSONAL_HEADERS      = ['cedula','codigo','nombre','cargo','cuadrilla','responsable','estado','fecha_retiro','fecha_ingreso'];
 // D72: `area` (col 3) etiqueta cada cuadrilla como tierras/odt/odl para que residente_odt/residente_odl
 // vean SOLO su área en el resumen. Celda vacía en filas viejas = 'tierras' (retrocompatible).
-const CUADRILLAS_HEADERS    = ['cuadrilla','responsables','area'];
+// D84: `estado` (col 4) saca una cuadrilla de circulación SIN borrar su fila (borrarla dejaría huérfano
+// el histórico de ASISTENCIA, que la referencia por nombre). `activa`/`inactiva`; VACÍO = activa
+// (retrocompatible). El filtro aplica al ROSTER ESPERADO (roster, faltantes, estado, export, selectores
+// y gestión), NO a lo ya reportado: las filas de fechas anteriores de una cuadrilla inactiva siguen
+// saliendo en el resumen y el export.
+const CUADRILLAS_HEADERS    = ['cuadrilla','responsables','area','estado'];
 // D72: `turno` (col 17) guarda el turno con que se reportó cada persona, para que el export conozca la
 // jornada programada y calcule las extras (Opción A: extra = lo trabajado más allá de la salida del
 // turno). Vacío en filas viejas = turno diurno estándar (el export arma la jornada por defecto del día).
@@ -124,34 +129,48 @@ function readSheet(name, headers){
 }
 function norm(s){ return String(s==null?'':s).trim().toLowerCase(); }
 
-/* ---------- área (D72) ---------- */
-// Área que revisa un usuario en el resumen: residente_odt/odl ven SOLO su área; el resto (residente
-// general, admin, jeisson) ven todas ('' = sin filtro).
-function areaDeUsuario(usuario){
+/* ---------- área (D72 / D84) ---------- */
+// Helper único de áreas por usuario (mismo criterio que el frontend, D84): devuelve el ARRAY de áreas
+// que revisa un usuario. residente_odt/odl ven SOLO su área; residente_dren ve ['odt','odl']; el
+// residente "general"/jeisson son de TIERRAS (D74b); admin devuelve [] = SIN filtro (ve todas).
+//   residente_odt  -> ['odt']       residente_odl  -> ['odl']
+//   residente_dren -> ['odt','odl'] residente/jeisson -> ['tierras']   admin (u otro) -> []
+function areasDeUsuario(usuario){
   const u=norm(usuario);
-  if(u==='residente_odt') return 'odt';
-  if(u==='residente_odl') return 'odl';
-  // D74b: el residente "general" es en realidad el de TIERRAS (ODT/ODL tienen su propio residente); jeisson
-  // hereda los permisos del residente de tierras. Solo el admin ve TODAS (y puede filtrar por área).
-  if(u==='residente' || u==='jeisson') return 'tierras';
-  return '';
+  if(u==='residente_odt')  return ['odt'];
+  if(u==='residente_odl')  return ['odl'];
+  if(u==='residente_dren') return ['odt','odl'];   // D84: residente de drenajes unificado
+  if(u==='residente' || u==='jeisson') return ['tierras'];
+  return [];   // admin: sin filtro (puede filtrar por &area=)
 }
-// Área efectiva de una petición: la forzada por el usuario; si NO tiene (admin), respeta un &area= de filtro.
-// Así el admin puede ver "como si fuera" tierras/ODT/ODL; los usuarios con área forzada no la pueden burlar.
-function areaEfectiva(e){
-  let area=areaDeUsuario((e.parameter&&e.parameter.usuario)||'');
-  if(!area){ const af=norm(e.parameter&&e.parameter.area); if(af==='tierras'||af==='odt'||af==='odl') area=af; }
-  return area;
+// Áreas efectivas de una petición: las forzadas por el usuario; si NO tiene (admin), respeta un &area=
+// de filtro. [] = sin filtro (admin sin &area). Los usuarios con área forzada no la pueden burlar.
+function areasEfectivas(e){
+  let areas=areasDeUsuario((e.parameter&&e.parameter.usuario)||'');
+  if(!areas.length){ const af=norm(e.parameter&&e.parameter.area); if(af==='tierras'||af==='odt'||af==='odl') areas=[af]; }
+  return areas;
 }
+// ¿La cuadrilla `c` cae dentro de las áreas dadas? [] = sin filtro (todas). Compat con === anterior.
+function cuadrillaEnAreas(c, areas, cuadArea){ return !areas.length || areas.indexOf(cuadArea[c]||'tierras')>=0; }
 // Mapa cuadrilla -> área desde la hoja CUADRILLAS. Vacío o cuadrilla desconocida = 'tierras'.
 function areaDeCuadrillaMap(){
   const m={}; readSheet('CUADRILLAS', CUADRILLAS_HEADERS).forEach(r=>{ m[r.cuadrilla]=norm(r.area)||'tierras'; });
   return m;
 }
-// Área de quien REPORTA (para filtrar CC_USADOS): residente de área por su rol; capataz/mairy por sus
-// cuadrillas si todas son de la misma área. Mezcla o desconocido = '' (sin filtro: ve todas).
+// D84: ¿la cuadrilla está activa? `estado` vacío = activa (retrocompatible); solo 'inactiva' la saca.
+function cuadrillaActiva(r){ return norm(r.estado)!=='inactiva'; }
+// Set con los NOMBRES de las cuadrillas inactivas (para filtrar rápido el roster esperado).
+function cuadrillasInactivasSet(){
+  const s={}; readSheet('CUADRILLAS', CUADRILLAS_HEADERS).forEach(r=>{ if(!cuadrillaActiva(r)) s[r.cuadrilla]=true; });
+  return s;
+}
+// Área de quien REPORTA (para filtrar CC_USADOS): residente de UNA área por su rol; capataz/mairy por
+// sus cuadrillas si todas son de la misma área. Mezcla, multi-área (residente_dren) o desconocido =
+// '' (sin filtro: ve todas).
 function areaDeReportante(usuario){
-  const porRol=areaDeUsuario(usuario); if(porRol) return porRol;
+  const porRol=areasDeUsuario(usuario);
+  if(porRol.length===1) return porRol[0];   // residente_odt/odl, residente/jeisson (tierras)
+  if(porRol.length>1)   return '';           // D84: residente_dren ve los CC de ambas áreas
   const cuads=cuadrillasDeUsuario(usuario), map=areaDeCuadrillaMap(); let a=null;
   for(let i=0;i<cuads.length;i++){ const ar=map[cuads[i]]||'tierras'; if(a===null) a=ar; else if(a!==ar) return ''; }
   return a===null ? '' : a;
@@ -272,7 +291,8 @@ function usuarioAliases(u){
 }
 function cuadrillasDeUsuario(usuario){
   const u=norm(usuario);
-  const todas=readSheet('CUADRILLAS', CUADRILLAS_HEADERS);
+  // D84: las cuadrillas inactivas salen de circulación (no se ofrecen para reportar/seleccionar).
+  const todas=readSheet('CUADRILLAS', CUADRILLAS_HEADERS).filter(cuadrillaActiva);
   if(u==='admin') return todas.map(r=>r.cuadrilla); // admin elige cuadrilla (§3)
   const alias=usuarioAliases(u);
   return todas.filter(r=>{
@@ -317,19 +337,30 @@ function roster(e){
 /* ---------- GET asistencia: resumen del día para el residente/jeisson ---------- */
 function asistenciaDia(e){
   const fecha=fdate(e.parameter.fecha);
-  // D72/D74b: se limita todo (filas, cuadrillas, faltantes) al área del usuario (tierras/odt/odl); el admin
-  // ve todas o filtra por &area=. Un residente de área/tierras no puede burlar su alcance.
-  const area=areaEfectiva(e);
+  // D72/D74b/D84: se limita todo (filas, cuadrillas, faltantes) a las áreas del usuario (tierras/odt/odl,
+  // o ambas para residente_dren); el admin ve todas o filtra por &area=. Un residente de área/tierras no
+  // puede burlar su alcance.
+  const areas=areasEfectivas(e);
   const cuadArea=areaDeCuadrillaMap();
-  const enArea=function(cuadrilla){ return !area || (cuadArea[cuadrilla]||'tierras')===area; };
+  const enArea=function(cuadrilla){ return cuadrillaEnAreas(cuadrilla, areas, cuadArea); };
+  // Las filas YA reportadas NO se filtran por estado de la cuadrilla (D84): una cuadrilla inactivada
+  // hoy debe seguir mostrando sus filas de fechas anteriores. El filtro de inactivas aplica solo al
+  // ROSTER ESPERADO (cuadrillasCat / personalActivo → estado y faltantes).
   const filas=readSheet('ASISTENCIA', ASISTENCIA_HEADERS).filter(r=> fdate(r.fecha)===fecha && enArea(r.cuadrilla))
     .map(r=>({ id_registro:r.id_registro, timestamp:r.timestamp, fecha:fdate(r.fecha), reporta:r.reporta,
       cuadrilla:r.cuadrilla, codigo:r.codigo, cedula:r.cedula, nombre:r.nombre, cargo:r.cargo, cc:r.cc,
       proyecto:r.proyecto, hora_entrada:ftime(r.hora_entrada), hora_salida:ftime(r.hora_salida),
       presente:r.presente, motivo_ausencia:r.motivo_ausencia, observacion:r.observacion, turno:String(r.turno||'') }));
-  const cuadrillasCat=readSheet('CUADRILLAS', CUADRILLAS_HEADERS).filter(cq=>enArea(cq.cuadrilla));
+  // D84: la lista de cuadrillas del resumen incluye las ACTIVAS (roster de hoy) MÁS cualquier inactiva
+  // que TENGA filas reportadas en esa fecha — así una cuadrilla desactivada hoy sigue mostrando su
+  // detalle (y su estado "reportó") en fechas anteriores, sin ensuciar el roster de hoy (el filtro de
+  // inactivas aplica al roster esperado, no a lo ya reportado).
+  const cuadConFilas={}; filas.forEach(f=>{ cuadConFilas[f.cuadrilla]=true; });
+  const cuadrillasCat=readSheet('CUADRILLAS', CUADRILLAS_HEADERS).filter(cq=>enArea(cq.cuadrilla) && (cuadrillaActiva(cq) || cuadConFilas[cq.cuadrilla]));
   // D72: roster date-aware + por área — "se esperaba" a esta persona en ESA fecha (no la foto de hoy).
-  const personalActivo=readSheet('PERSONAL', PERSONAL_HEADERS).filter(p=>activaEnFecha(p, fecha) && enArea(p.cuadrilla));
+  // D84: excluye a la gente de cuadrillas inactivas del roster esperado (no de las filas reportadas).
+  const inactivas=cuadrillasInactivasSet();
+  const personalActivo=readSheet('PERSONAL', PERSONAL_HEADERS).filter(p=>activaEnFecha(p, fecha) && enArea(p.cuadrilla) && !inactivas[p.cuadrilla]);
   // Una fila cuenta como REPORTE COMPLETO solo si: ausente con motivo, o presente CON centro de costo.
   // Presente SIN CC (el capataz la dejó pasar sin actividad) = como si NO se hubiera reportado
   // (decisión del residente, jul-2026): NO cuenta presente y va a faltantes para completarla.
@@ -378,14 +409,17 @@ function asistenciaDia(e){
   // y todos los motivos de ausencia (CAT_MOTIVOS completo) — para poder registrar uno especial.
   // catCCUsados sigue siendo el subconjunto frecuente del área revisada: el frontend lo muestra primero.
   const catCC=readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
-  const catCCUsados=ccUsadosParaArea(area);   // D72: en el resumen, CC frecuentes del área revisada ('' = todas)
+  // D72/D84: CC frecuentes del área revisada; con una sola área usa la suya, con varias (residente_dren)
+  // o sin filtro (admin) muestra todos ('').
+  const catCCUsados=ccUsadosParaArea(areas.length===1 ? areas[0] : '');
   const catMotivos=motivosCatalogo();
   const turnos=readSheet('TURNOS', TURNOS_HEADERS).map(t=>({ turno:String(t.turno||''), tipo_dia:norm(t.tipo_dia),
     entrada:ftime(t.entrada), salida:ftime(t.salida), descanso_ini:ftime(t.descanso_ini), descanso_fin:ftime(t.descanso_fin),
     cruza_medianoche: String(t.cruza_medianoche||'').toUpperCase()==='SI' }));
-  // D73: indicador de extras del admin del día (solo para el residente general/admin; un residente de área
-  // no las ve — son de tierras). El resumen muestra "Extras admin: registradas ✓ / sin registrar".
-  const extrasAdmin = (area==='odt'||area==='odl') ? [] : extrasAdminDelDia(fecha);   // D74b: tierras/admin las ven; ODT/ODL no
+  // D73/D84: indicador de extras del admin del día. Son CC de TIERRAS: se muestran solo si la vista
+  // incluye tierras (residente/jeisson) o no filtra (admin). ODT/ODL y residente_dren NO las ven.
+  const verExtras = !areas.length || areas.indexOf('tierras')>=0;
+  const extrasAdmin = verExtras ? extrasAdminDelDia(fecha) : [];
   const notas = notasDelDia(fecha).filter(n=>enArea(n.cuadrilla));   // D74: notas del día del área revisada
   // D76: config + festivos también en el resumen, para que el detalle por cuadrilla clasifique ordinarias/
   // extras EXACTO como el Parte de Navision (mismo clasificarHoras que el export), sin otra llamada.
@@ -399,8 +433,8 @@ function asistenciaDia(e){
  * borrar lo que ya reportó el responsable. Permitido a residente, admin y jeisson. */
 function guardarIndividual(body){
   const usuario=norm(body.usuario);
-  // D72: los residentes de área (odt/odl) también completan faltantes de SU gente.
-  if(['residente','admin','jeisson','residente_odt','residente_odl'].indexOf(usuario)<0)
+  // D72/D84: los residentes de área (odt/odl) y el unificado (residente_dren) también completan faltantes.
+  if(['residente','admin','jeisson','residente_odt','residente_odl','residente_dren'].indexOf(usuario)<0)
     return json({ok:false, error:'No autorizado para completar faltantes.'});
   const fecha=fdate(body.fecha), ts=new Date();
   const sh=getSheet('ASISTENCIA', ASISTENCIA_HEADERS), need=ASISTENCIA_HEADERS.length, last=sh.getLastRow();
@@ -427,23 +461,29 @@ function guardarIndividual(body){
 
 /* ---------- GET personal: gestión (residente general/admin ven todo; residente_odt/odl SOLO su área — D72) ---------- */
 function personalCompleto(e){
-  const area=areaEfectiva(e);   // residente/jeisson=tierras, odt/odl su área, admin todo o filtra por &area=
+  // D72/D84: residente/jeisson=tierras, odt/odl su área, residente_dren=ambas, admin todo o filtra por &area=
+  const areas=areasEfectivas(e);
   const cuadArea=areaDeCuadrillaMap();
-  const enArea=function(c){ return !area || (cuadArea[c]||'tierras')===area; };
+  const enArea=function(c){ return cuadrillaEnAreas(c, areas, cuadArea); };
   const personal=readSheet('PERSONAL', PERSONAL_HEADERS).filter(p=>enArea(p.cuadrilla)).map(p=>({ _row:p._row, cedula:p.cedula||'', codigo:p.codigo||'',
     nombre:p.nombre||'', cargo:p.cargo||'', cuadrilla:p.cuadrilla||'', responsable:p.responsable||'',
     estado:p.estado||'activo', fecha_retiro:fdate(p.fecha_retiro), fecha_ingreso:fdate(p.fecha_ingreso) }));
-  const cuadrillas=readSheet('CUADRILLAS', CUADRILLAS_HEADERS).filter(c=>enArea(c.cuadrilla)).map(c=>({ cuadrilla:c.cuadrilla||'', responsables:c.responsables||'' }));
+  // D84: los SELECTORES de cuadrilla (destinos de alta/mover) excluyen las inactivas.
+  const cuadrillas=readSheet('CUADRILLAS', CUADRILLAS_HEADERS).filter(c=>enArea(c.cuadrilla) && cuadrillaActiva(c)).map(c=>({ cuadrilla:c.cuadrilla||'', responsables:c.responsables||'' }));
   return json({ ok:true, personal, cuadrillas });
 }
 
 /* ---------- GET export: crudo del día completo para el generador Navision (cliente, SheetJS) ---------- */
 function exportDia(e){
   const fecha=fdate(e.parameter.fecha);
-  // D72/D74b: residente(tierras)/residente_odt/odl exportan SOLO su área; el admin todo o filtra por &area=.
-  const area=areaEfectiva(e);
+  // D72/D74b/D84: residente(tierras)/residente_odt/odl exportan SOLO su área; residente_dren exporta
+  // ODT+ODL en un SOLO archivo (el Parte se arma por día×proyecto y los CC ya distinguen el capítulo,
+  // así que mezclar áreas no requiere lógica extra); el admin todo o filtra por &area=. Las filas ya
+  // reportadas NO se filtran por estado de cuadrilla (D84): una cuadrilla inactivada hoy sigue
+  // exportando sus filas de fechas anteriores.
+  const areas=areasEfectivas(e);
   const cuadArea=areaDeCuadrillaMap();
-  const enArea=function(cuadrilla){ return !area || (cuadArea[cuadrilla]||'tierras')===area; };
+  const enArea=function(cuadrilla){ return cuadrillaEnAreas(cuadrilla, areas, cuadArea); };
   const filas=readSheet('ASISTENCIA', ASISTENCIA_HEADERS).filter(r=> fdate(r.fecha)===fecha && enArea(r.cuadrilla))
     .map(r=>({ codigo:r.codigo||'', cedula:r.cedula||'', nombre:r.nombre||'', cargo:r.cargo||'',
       cuadrilla:r.cuadrilla||'', cc:r.cc||'', proyecto:String(r.proyecto||''),
@@ -466,9 +506,10 @@ function exportDia(e){
     entrada:ftime(t.entrada), salida:ftime(t.salida), descanso_ini:ftime(t.descanso_ini), descanso_fin:ftime(t.descanso_fin),
     cruza_medianoche: String(t.cruza_medianoche||'').toUpperCase()==='SI' }));
   // EXTRAS_ADMIN (D73): registros del admin del día para que el generador Navision inyecte su fila por
-  // día×proyecto. Solo al residente general/admin (area=''); un residente de área (odt/odl) NO recibe las
-  // extras del admin (son CC de tierras 3701/3702, ajenas a su archivo).
-  const extrasAdmin = (area==='odt'||area==='odl') ? [] : extrasAdminDelDia(fecha);   // D74b: tierras/admin las ven; ODT/ODL no
+  // día×proyecto. Son CC de TIERRAS (3701/3702): solo se incluyen si la vista abarca tierras (residente
+  // general/admin); un residente de área (odt/odl) o el unificado (residente_dren) NO las reciben.
+  const verExtras = !areas.length || areas.indexOf('tierras')>=0;
+  const extrasAdmin = verExtras ? extrasAdminDelDia(fecha) : [];   // D74b/D84
   return json({ ok:true, fecha, filas, proyectoDefecto, catTrabajadores, config:getConfigMap(), festivos:getFestivos(), turnos, extrasAdmin });
 }
 
@@ -582,12 +623,14 @@ function notasDelDia(fecha){
 /* ---------- POST personal: alta / retiro / mover / reactivar — SOLO residente/admin ---------- */
 function gestionPersonal(body){
   const usuario=norm(body.usuario);
-  // D72/D74b: admin gestiona TODO; residente/jeisson gestionan tierras; residente_odt/odl gestionan su área.
-  if(['residente','admin','jeisson','residente_odt','residente_odl'].indexOf(usuario)<0)
+  // D72/D74b/D84: admin gestiona TODO; residente/jeisson gestionan tierras; residente_odt/odl gestionan su
+  // área; residente_dren gestiona ODT+ODL (incluido MOVER una persona de una cuadrilla ODT a una ODL y
+  // viceversa — la validación de área acepta el ARRAY de áreas del usuario, no un valor único).
+  if(['residente','admin','jeisson','residente_odt','residente_odl','residente_dren'].indexOf(usuario)<0)
     return json({ok:false, error:'No autorizado: solo residente o admin.'});
-  const areaUsr=areaDeUsuario(usuario);              // '' = todas (residente general/admin)
+  const areasUsr=areasDeUsuario(usuario);            // [] = todas (residente general/admin)
   const cuadArea=areaDeCuadrillaMap();
-  const okArea=function(cuadrilla){ return !areaUsr || (cuadArea[cuadrilla]||'tierras')===areaUsr; };
+  const okArea=function(cuadrilla){ return cuadrillaEnAreas(cuadrilla, areasUsr, cuadArea); };
   const sh=getSheet('PERSONAL', PERSONAL_HEADERS);
   const op=body.op||'';
 
@@ -603,8 +646,9 @@ function gestionPersonal(body){
   }
   const row=Number(body._row);
   if(!row || row<2) return json({ok:false, error:'Falta identificar la persona (_row).'});
-  // D72: un residente de área solo puede retirar/reactivar/reingresar/mover filas de SU área.
-  if(areaUsr){
+  // D72/D84: un residente de área (o el unificado) solo puede retirar/reactivar/reingresar/mover filas
+  // de sus áreas. [] = sin restricción (residente general/admin).
+  if(areasUsr.length){
     const srcChk=readSheet('PERSONAL', PERSONAL_HEADERS).find(p=>p._row===row);
     if(!srcChk || !okArea(srcChk.cuadrilla)) return json({ok:false, error:'Esa persona no es de tu área.'});
   }
@@ -688,12 +732,16 @@ function setupHojas(){
 
   const cuadSh=getSheet('CUADRILLAS', CUADRILLAS_HEADERS);
   if(cuadSh.getLastRow()<2){
-    // D72: 3ª columna = área. Las cuadrillas de drenajes (ODT/ODL) las pega el usuario cuando llegue
-    // el listado real (cuadrilla · responsables(login) · odt|odl); aquí solo van las de tierras.
-    cuadSh.getRange(2,1,7,3).setValues([
-      ['ANGEL','angel','tierras'], ['ROBINSON','robinson','tierras'], ['ALBERT','albert','tierras'],
-      ['ARIEL','ariel','tierras'], ['ALEJANDRO','alejandro','tierras'], ['OPERADORES','jeisson','tierras'],
-      ['VOLQUETEROS','mairy','tierras']
+    // D72: 3ª columna = área. D84: 4ª columna = estado (vacío = activa). Las cuadrillas de drenajes
+    // (ODT/ODL) las pega el usuario cuando llegue el listado real (cuadrilla · responsables(login) ·
+    // odt|odl · estado); aquí solo van las de tierras.
+    // D84 (post-salida a UF3): ALBERT queda con `maleja` como ÚNICA responsable (albert salió a UF3;
+    // maleja ya la reportaba, D75). ARIEL queda INACTIVA y sin responsable (ariel salió a UF3; su gente
+    // se movió a ROBINSON). Ambas conservan su nombre para no dejar huérfano el histórico de ASISTENCIA.
+    cuadSh.getRange(2,1,7,4).setValues([
+      ['ANGEL','angel','tierras',''], ['ROBINSON','robinson','tierras',''], ['ALBERT','maleja','tierras',''],
+      ['ARIEL','','tierras','inactiva'], ['ALEJANDRO','alejandro','tierras',''], ['OPERADORES','jeisson','tierras',''],
+      ['VOLQUETEROS','mairy','tierras','']
     ]);
   }
 

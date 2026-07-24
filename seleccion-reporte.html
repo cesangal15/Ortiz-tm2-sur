@@ -52,9 +52,8 @@
 // Tiles por usuario (§3 del prompt): capataces y las chequeadoras con doble deber (mairy/maleja/luzdary)
 // conservan su reporte de obra + asistencia; jeisson (rol asistencia_plus) solo tiene asistencia
 // (reporta operadores) + resumen sin gestión.
+// D84: `albert` y `ariel` salieron a UF3 → se eliminan sus tiles (ya no tienen login).
 const TILES = {
-  'albert':     [{href:'reporte-capataz.html', ico:'📋', t:'Reporte de Capataz', p:'Actividades del día con producción y maquinaria'}],
-  'ariel':      [{href:'reporte-capataz.html', ico:'📋', t:'Reporte de Capataz', p:'Actividades del día con producción y maquinaria'}],
   'angel':      [{href:'reporte-capataz.html', ico:'📋', t:'Reporte de Capataz', p:'Actividades del día con producción y maquinaria'}],
   'alejo':      [{href:'reporte-capataz.html', ico:'📋', t:'Reporte de Capataz', p:'Actividades del día con producción y maquinaria'}],
   'alejandro':  [{href:'reporte-capataz.html', ico:'📋', t:'Reporte de Capataz', p:'Actividades del día con producción y maquinaria'}],
@@ -76,7 +75,11 @@ const TILES = {
   'residente_odt': [{href:'residente-drenajes.html', ico:'🌧️', t:'Panel de Drenajes ODT', p:'Bandeja, envío a DATA y WhatsApp de tu área'},
                     {href:'resumen-asistencia.html', ico:'📋', t:'Resumen de asistencias ODT', p:'Resumen del día y Excel Navision de tu área'}],
   'residente_odl': [{href:'residente-drenajes.html', ico:'🌧️', t:'Panel de Drenajes ODL', p:'Bandeja, envío a DATA y WhatsApp de tu área'},
-                    {href:'resumen-asistencia.html', ico:'📋', t:'Resumen de asistencias ODL', p:'Resumen del día y Excel Navision de tu área'}]
+                    {href:'resumen-asistencia.html', ico:'📋', t:'Resumen de asistencias ODL', p:'Resumen del día y Excel Navision de tu área'}],
+  // D84: residente de drenajes UNIFICADO (ODT + ODL en un solo usuario). El panel y el resumen le
+  // muestran las dos áreas juntas.
+  'residente_dren': [{href:'residente-drenajes.html', ico:'🌧️', t:'Panel de Drenajes', p:'Bandeja combinada ODT + ODL, envío a DATA y WhatsApp'},
+                     {href:'resumen-asistencia.html', ico:'📋', t:'Resumen de asistencias', p:'Resumen del día y Excel Navision de ODT y ODL'}]
 };
 const ASISTENCIA_TILE = {href:'asistencia.html', ico:'👷', t:'Asistencia de personal', p:'Reporta la asistencia de tu cuadrilla'};
 // Admin tiene acceso a todo el sistema (D65): si llega aquí (p. ej. con "atrás" del navegador en vez
@@ -105,8 +108,8 @@ window.onload = function(){
   }
   let tiles=TILES[usuario].slice();
   // El tile de "reportar asistencia de tu cuadrilla" es solo para quien reporta gente (capataces/mairy).
-  // jeisson ya lo trae en su lista; los residentes de área (D72) revisan, no reportan cuadrilla.
-  if(usuario!=='jeisson' && rol!=='residente_odt' && rol!=='residente_odl') tiles.push(ASISTENCIA_TILE);
+  // jeisson ya lo trae en su lista; los residentes de área (D72) y el unificado (D84) revisan, no reportan.
+  if(usuario!=='jeisson' && rol!=='residente_odt' && rol!=='residente_odl' && rol!=='residente_dren') tiles.push(ASISTENCIA_TILE);
   document.getElementById('tiles').innerHTML = tiles.map(t=>
     `<a class="tile" href="${t.href}"><div class="ico">${t.ico}</div><div class="t-main"><h2>${t.t}</h2><p>${t.p}</p></div><div class="arrow">→</div></a>`
   ).join('');
