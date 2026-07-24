@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Acta de Maquinaria — Conciliador TM2 Sur</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<!-- SheetJS (mismo patrón que el modo Viajes: 100% en el navegador, sin backend) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Reutiliza el chrome del conciliador (tema oscuro, DM Sans/Syne, acento naranja) -->
+<link rel="stylesheet" href="conciliador.css">
+<style>
+/* El modo Maquinaria no usa sidebar: una sola columna (sobrescribe el layout flex del chrome) */
+body{display:block;}
+#page{max-width:1200px;margin:0 auto;padding:0 20px 90px;}
+.topbar{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--border);padding:14px 20px 0;margin:0 -20px 18px;}
+.topbar .logo h1{font-size:17px;font-weight:800;}
+.topbar .logo p{font-size:11px;color:var(--muted);margin-top:2px;}
+.topbar .modo-menu{border-bottom:none;padding:10px 0 12px;max-width:360px;}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+@media(max-width:820px){.grid3{grid-template-columns:1fr;}}
+.hint{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.45;}
+tr.sinparte td{background:rgba(243,156,18,0.10);}
+tr.sinparte td.obs{color:#ffb84d;font-weight:600;}
+tr.libre td{color:var(--muted);}
+tr.dosPartes td.rep{color:var(--warn);font-weight:600;}
+.pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:700;letter-spacing:.3px;}
+.pill.sp{background:rgba(243,156,18,0.14);color:#ffb84d;border:1px solid rgba(243,156,18,.4);}
+.pill.dom{background:rgba(122,128,160,0.16);color:var(--muted);border:1px solid rgba(122,128,160,.35);}
+.pill.fes{background:rgba(52,152,219,0.14);color:#5dade2;border:1px solid rgba(52,152,219,.4);}
+.pill.dos{background:rgba(155,89,182,0.14);color:#c39bd6;border:1px solid rgba(155,89,182,.4);}
+.pill.cc{background:rgba(231,76,60,0.14);color:#f1948a;border:1px solid rgba(231,76,60,.4);}
+.pill.pct{background:rgba(243,156,18,0.14);color:#ffb84d;border:1px solid rgba(243,156,18,.4);}
+td.ccconf{background:rgba(231,76,60,0.10);}
+select.ccsel{width:auto;min-width:150px;padding:3px 6px;font-size:12px;border-color:rgba(231,76,60,0.5);}
+.statline{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin-bottom:8px;}
+.statline b{color:var(--text);font-weight:700;}
+.tbl-out th,.tbl-out td{white-space:nowrap;text-align:right;}
+.tbl-out th:nth-child(-n+6),.tbl-out td:nth-child(-n+6),
+.tbl-out th:last-child,.tbl-out td:last-child{text-align:left;}
+.colhead{font-size:9px;color:var(--muted);font-weight:600;display:block;}
+.removed{opacity:.4;font-style:italic;}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="logo">
+    <h1>🚜 Acta de Maquinaria</h1>
+    <p>Corte diario de máquina alquilada · TM2 Sur</p>
+  </div>
+  <div class="modo-menu">
+    <a class="modo-tab" href="index.html">🚚 Viajes</a>
+    <a class="modo-tab active" href="maquinaria.html">🚜 Maquinaria</a>
+  </div>
+</div>
+
+<div id="page">
+
+  <div class="alert info" style="max-width:900px">
+    Genera el <b>grid día-a-día</b> (todos los días del período, incluidos los sin uso; los días repartidos
+    entre varios CC salen con <b>un renglón por parte</b> y el standby proporcional a las horas) para
+    pegar en el acta con <b>Pegado especial → Omitir blancos</b>. Lee la hoja <b>BASE MAQUINARIA</b> del Excel que subas
+    y no escribe ningún maestro. La página calcula <b>I = FINAL−INICIAL</b> y escribe el <b>standby (J)</b>;
+    <b>K se elimina</b> y <b>L</b> se deja vacía para la fórmula del template (<code>=+J</code>).
+  </div>
+
+  <!-- ---- Entradas ---- -->
+  <div class="card">
+    <h3>1 · Base de maquinaria</h3>
+    <label class="filebox" id="fileBox">
+      <input type="file" id="fileIn" accept=".xlsx,.xls,.xlsm">
+      <div class="fb-title" id="fbTitle">Seleccionar Excel (hoja BASE MAQUINARIA)</div>
+      <div class="fb-sub" id="fbSub">La tabla plana de partes diarios. El encabezado está en la fila 3.</div>
+    </label>
+    <div id="hojaPick" style="margin-top:10px;display:none"></div>
+    <div id="baseInfo" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card">
+    <h3>2 · Parámetros del acta</h3>
+    <div class="grid3">
+      <div>
+        <label class="fld">Código de equipo (COD. EQUIPO)</label>
+        <input type="text" id="codTxt" placeholder="p.ej. CAT900 / NH69" list="codList" autocomplete="off">
+        <datalist id="codList"></datalist>
+        <select id="codSel" style="margin-top:6px"><option value="">— códigos del período —</option></select>
+        <div class="hint">Una máquina por acta. El desplegable se llena con los códigos hallados en el período.</div>
+      </div>
+      <div>
+        <label class="fld">Desde</label>
+        <input type="date" id="desde">
+        <label class="fld" style="margin-top:8px">Hasta</label>
+        <input type="date" id="hasta">
+        <div class="hint">Default: 16 del mes anterior → 15 del mes actual.</div>
+      </div>
+      <div>
+        <label class="fld">Standby h/día (col. J)</label>
+        <input type="number" id="standby" value="5" step="0.5" min="0">
+        <div class="hint">Default 5 (alquiladas). Se escribe en todos los días.</div>
+        <label class="fld" style="margin-top:8px">Fila del acta donde pega el 1er renglón</label>
+        <input type="number" id="filaActa" value="5" step="1" min="1">
+        <div class="hint">La col. A lleva la <b>fórmula</b> UF (SI.CONJUNTO sobre M: 3701→UF1, 3702→UF2, resto→Revisar).
+        En el xlsx la referencia se ajusta sola al pegar; en el TSV se arma con esta fila (M5, M6…).</div>
+      </div>
+    </div>
+    <div style="margin-top:14px">
+      <label class="fld">Festivos (Colombia 2026–2027 ya incluidos)</label>
+      <div id="festInfo" class="hint" style="margin-bottom:6px"></div>
+      <textarea id="festivos" rows="2" placeholder="Festivos extra o de otros años (uno por línea o separados por coma)"></textarea>
+      <div class="hint">Los domingos y los festivos oficiales de Colombia (2026–2027) se marcan solos. Aquí solo agregas festivos extra o de años no incluidos.</div>
+    </div>
+    <div style="margin-top:14px" class="flexrow">
+      <button class="btn" id="btnGen">⚙️ Generar grid</button>
+      <span class="note" id="genNote"></span>
+    </div>
+  </div>
+
+  <!-- ---- Reporte de huecos ---- -->
+  <div class="card" id="huecosCard" style="display:none">
+    <h3>Reporte de huecos — revisar antes de pegar</h3>
+    <div class="statline" id="statLine"></div>
+    <div class="tbl-wrap"><table class="tbl" id="huecosTbl"></table></div>
+  </div>
+
+  <!-- ---- Salida ---- -->
+  <div class="card" id="outCard" style="display:none">
+    <h3>Grid del acta (A–N) — listo para pegar con «Omitir blancos»</h3>
+    <div class="flexrow" style="margin-bottom:10px">
+      <button class="btn" id="btnXlsx">⬇ Descargar xlsx</button>
+      <button class="btn sec" id="btnCopy">📋 Copiar todo (TSV)</button>
+      <span class="note right">A = fórmula UF (SI.CONJUNTO) · decimales con coma · fechas dd/mm/aaaa · I y J calculadas · K eliminada · L vacía (fórmula)</span>
+    </div>
+    <div class="tbl-wrap"><table class="tbl tbl-out" id="outTbl"></table></div>
+  </div>
+
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* =====================================================================
+   Modo Maquinaria — lógica autocontenida (sin backend, sin red).
+   Reutiliza los patrones del motor de Viajes (fechas ISO, lectura de
+   celdas SheetJS, TSV con coma) pero es independiente de conciliador.js.
+   ===================================================================== */
+
+/* ---------- Helpers de texto/fecha (mismos criterios que el conciliador) ---------- */
+function quitarTildes(s){ return String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+function norm(s){ return quitarTildes(s).toUpperCase().replace(/[.º°№#]/g,'').replace(/[\r\n]+/g,' ').replace(/\s+/g,' ').trim(); }
+function escapeHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function serialToISO(n){
+  if(!isFinite(n) || n<20000 || n>80000) return null;
+  const d=new Date(Math.round((n-25569)*86400000));
+  return isNaN(d.getTime())?null:d.toISOString().slice(0,10);
+}
+function parseFechaTexto(s){
+  if(!s) return null;
+  const t=String(s).trim();
+  let m=t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m) return m[1]+'-'+String(+m[2]).padStart(2,'0')+'-'+String(+m[3]).padStart(2,'0');
+  m=t.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if(m){ let y=+m[3]; if(y<100) y+=2000; const mo=+m[2], d=+m[1];
+    if(mo<1||mo>12||d<1||d>31) return null;
+    return y+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0'); }
+  return null;
+}
+function parseFechaCell(c){
+  if(!c || c.v==null) return null;
+  if(c.v instanceof Date) return isNaN(c.v.getTime())?null:isoLocal(c.v);
+  if(c.t==='n') return serialToISO(c.v);
+  return parseFechaTexto(c.w!==undefined?c.w:c.v);
+}
+// Date -> ISO usando componentes UTC (SheetJS crea fechas a medianoche UTC con cellDates)
+function isoLocal(d){ return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0'); }
+function fmtFecha(iso){ if(!iso) return ''; const p=String(iso).split('-'); return p.length===3?(p[2]+'/'+p[1]+'/'+p[0]):String(iso); }
+
+function parseNum(v){
+  if(v==null||v==='') return null;
+  if(typeof v==='number') return isFinite(v)?v:null;
+  let t=String(v).trim(); if(!t) return null;
+  // formato es-CO "1.234,5"; si no hay coma, quita separadores de miles con punto
+  if(t.indexOf(',')>=0) t=t.replace(/\./g,'').replace(',','.');
+  const n=parseFloat(t); return isFinite(n)?n:null;
+}
+function numCell(ws,addr){
+  const c=ws[addr]; if(!c||c.v==null) return null;
+  if(c.t==='n') return isFinite(c.v)?c.v:null;
+  return parseNum(c.w!==undefined?c.w:c.v);
+}
+function cellText(ws,addr){
+  const c=ws[addr]; if(!c||c.v==null) return '';
+  if(c.w!==undefined) return String(c.w).trim();
+  return String(c.v).trim();
+}
+function round2(x){ return x==null?null:Math.round(x*100)/100; }
+function fmtNumTSV(v){ if(v==null||v==='') return ''; if(typeof v==='number'){ return String(v).replace('.',','); } return String(v); }
+
+/* ---------- Utilidades de celdas/columnas SheetJS ---------- */
+function letterToNum(s){ let n=0; for(const ch of s) n=n*26+(ch.charCodeAt(0)-64); return n-1; }
+function colLetter(n){ let s=''; n=n+1; while(n>0){ const r=(n-1)%26; s=String.fromCharCode(65+r)+s; n=Math.floor((n-1)/26); } return s; }
+function refRange(ws){
+  const ref=ws && ws['!ref']; if(!ref) return {rows:0,cols:0};
+  let m=ref.match(/:([A-Z]+)(\d+)$/);
+  if(m) return {rows:+m[2], cols:letterToNum(m[1])+1};
+  m=ref.match(/^([A-Z]+)(\d+)$/);
+  return m?{rows:+m[2],cols:letterToNum(m[1])+1}:{rows:0,cols:0};
+}
+function addDaysISO(iso,d){ const p=iso.split('-').map(Number); const dt=new Date(Date.UTC(p[0],p[1]-1,p[2])); dt.setUTCDate(dt.getUTCDate()+d); return isoLocal(dt); }
+function weekday(iso){ const p=iso.split('-').map(Number); return new Date(Date.UTC(p[0],p[1]-1,p[2])).getUTCDay(); } // 0=domingo
+
+/* ---------- Estado ---------- */
+const S={ wb:null, ws:null, cols:null, headerRow:0, filas:[], nombreArchivo:'' };
+
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>t.style.display='none',3600); }
+
+/* ---------- Default período: 16 mes anterior -> 15 mes actual ---------- */
+(function initPeriodo(){
+  const hoy=new Date();
+  const y=hoy.getFullYear(), m=hoy.getMonth(); // 0-based
+  const desde=new Date(y,m-1,16), hasta=new Date(y,m,15);
+  const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  document.getElementById('desde').value=iso(desde);
+  document.getElementById('hasta').value=iso(hasta);
+})();
+
+/* ---------- Carga del archivo ---------- */
+document.getElementById('fileIn').addEventListener('change', async e=>{
+  const f=e.target.files[0]; if(!f) return;
+  S.nombreArchivo=f.name;
+  document.getElementById('fbTitle').textContent=f.name;
+  document.getElementById('fbSub').textContent='Leyendo…';
+  try{
+    const buf=await f.arrayBuffer();
+    S.wb=XLSX.read(buf,{type:'array',cellDates:true});
+    document.getElementById('fileBox').classList.add('loaded');
+    elegirHoja();
+  }catch(err){
+    document.getElementById('fbSub').textContent='⚠️ No se pudo leer el archivo.';
+    toast('⚠️ Error leyendo el Excel: '+err.message);
+  }
+});
+
+function elegirHoja(){
+  const names=S.wb.SheetNames;
+  const target=names.find(n=>norm(n)==='BASE MAQUINARIA') || names.find(n=>norm(n).indexOf('BASE MAQUINARIA')>=0) || names.find(n=>norm(n).indexOf('MAQUINARIA')>=0);
+  const pick=document.getElementById('hojaPick');
+  if(target){ pick.style.display='none'; cargarHoja(target); return; }
+  // No encontrada: que el usuario la señale
+  pick.style.display='block';
+  pick.innerHTML='<div class="alert warn">No encontré la hoja <b>BASE MAQUINARIA</b>. Señálala:</div>'+
+    '<select id="hojaSel">'+names.map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('')+'</select> '+
+    '<button class="btn mini" id="hojaOk">Usar esta hoja</button>';
+  document.getElementById('hojaOk').onclick=()=>cargarHoja(document.getElementById('hojaSel').value);
+}
+
+/* ---------- Detección de encabezados (fila 3, resuelto por texto) ---------- */
+// Construye la etiqueta de grupo (filas 1–2) por columna, expandiendo celdas combinadas.
+function grupoPorColumna(ws,headerRow,cols){
+  const merges=ws['!merges']||[];
+  const g=new Array(cols).fill('');
+  for(let gr=Math.max(0,headerRow-2); gr<headerRow; gr++){
+    for(let c=0;c<cols;c++){
+      let val=cellText(ws,colLetter(c)+(gr+1));
+      if(!val){ // ¿cubierta por una combinación?
+        const mm=merges.find(m=>gr>=m.s.r&&gr<=m.e.r&&c>=m.s.c&&c<=m.e.c);
+        if(mm) val=cellText(ws,colLetter(mm.s.c)+(mm.s.r+1));
+      }
+      if(val) g[c]=(g[c]?g[c]+' ':'')+val;
+    }
+  }
+  return g.map(norm);
+}
+// Elige la fila de encabezado: la que contenga FECHA y COD EQUIPO (escanea las primeras filas).
+function detectarHeaderRow(ws,rows,cols){
+  const lim=Math.min(rows,8);
+  for(let r=0;r<lim;r++){
+    let hasFecha=false,hasCod=false;
+    for(let c=0;c<cols;c++){ const h=norm(cellText(ws,colLetter(c)+(r+1)));
+      if(h==='FECHA') hasFecha=true;
+      if(h.indexOf('COD EQUIPO')>=0||h.indexOf('CODIGO EQUIPO')>=0) hasCod=true; }
+    if(hasFecha&&hasCod) return r;
+  }
+  return 2; // default: fila 3 (índice 2)
+}
+
+function resolverColumnas(ws,headerRow,cols){
+  const H=[], G=grupoPorColumna(ws,headerRow,cols);
+  for(let c=0;c<cols;c++) H[c]=norm(cellText(ws,colLetter(c)+(headerRow+1)));
+
+  // Primera columna cuyo encabezado cumple pred; opcional preferencia de grupo.
+  function find(pred, grupoPref){
+    let cand=[]; for(let c=0;c<cols;c++) if(pred(H[c])) cand.push(c);
+    if(!cand.length) return -1;
+    if(grupoPref){ const pref=cand.filter(c=>G[c].indexOf(grupoPref)>=0); if(pref.length) return pref[0]; }
+    return cand[0];
+  }
+  const eq=t=>(h=>h===t);
+  const has=t=>(h=>h.indexOf(t)>=0);
+
+  return {
+    fecha:      find(eq('FECHA')),
+    reporte:    find(h=>h==='REPORTE'||h.indexOf('REPORTE')>=0),
+    cod:        find(h=>h.indexOf('COD EQUIPO')>=0||h.indexOf('CODIGO EQUIPO')>=0),
+    tipo:       find(has('TIPO DE EQUIPO'))>=0? find(has('TIPO DE EQUIPO')) : find(has('TIPO')),
+    marca:      find(eq('MARCA')),
+    placa:      find(has('PLACA')),
+    proveedor:  find(has('PROVEEDOR')),
+    // Horómetro: preferir el grupo HOROMETRO (evita el INICIAL2/kilometraje col V y el TOTAL HORAS A FACT)
+    inicial:    (find(eq('INICIAL'),'HOROMETRO')>=0? find(eq('INICIAL'),'HOROMETRO') : find(eq('INICIAL'))),
+    final:      (find(eq('FINAL'),'HOROMETRO')>=0? find(eq('FINAL'),'HOROMETRO') : find(eq('FINAL'))),
+    total:      (find(eq('TOTAL'),'HOROMETRO')>=0? find(eq('TOTAL'),'HOROMETRO') : find(eq('TOTAL'))),
+    cc:         find(h=>h.indexOf('CENTRO DE COSTE')>=0||h.indexOf('CENTRO DE COSTO')>=0||h.indexOf('CENTRO COSTE')>=0),
+    obs:        find(has('OBSERVAC')),   // la primera (col AR)
+    operador:   find(has('OPERADOR'))
+  };
+}
+
+/* ---------- Lectura de filas ---------- */
+function cargarHoja(name){
+  S.ws=S.wb.Sheets[name];
+  const {rows,cols}=refRange(S.ws);
+  if(!rows||!cols){ document.getElementById('baseInfo').innerHTML='<div class="alert err">La hoja está vacía.</div>'; return; }
+  S.headerRow=detectarHeaderRow(S.ws,rows,cols);
+  S.cols=resolverColumnas(S.ws,S.headerRow,cols);
+  const C=S.cols;
+  const filas=[];
+  for(let r=S.headerRow+1; r<rows; r++){   // r es 0-based; celda = r+1
+    const rr=r+1;
+    const fecha=C.fecha>=0? parseFechaCell(S.ws[colLetter(C.fecha)+rr]) : null;
+    const codRaw=C.cod>=0? cellText(S.ws,colLetter(C.cod)+rr) : '';
+    const cod=norm(codRaw);
+    if(!fecha) continue;                    // fila basura (#REF!, #N/A, vacía)
+    if(!cod || cod[0]==='#') continue;      // COD. EQUIPO inválido
+    filas.push({
+      fecha, cod, codRaw:codRaw.trim(),
+      reporte:  C.reporte>=0? cellText(S.ws,colLetter(C.reporte)+rr):'',
+      tipo:     C.tipo>=0? cellText(S.ws,colLetter(C.tipo)+rr):'',
+      marca:    C.marca>=0? cellText(S.ws,colLetter(C.marca)+rr):'',
+      placa:    C.placa>=0? cellText(S.ws,colLetter(C.placa)+rr):'',
+      proveedor:C.proveedor>=0? cellText(S.ws,colLetter(C.proveedor)+rr):'',
+      inicial:  C.inicial>=0? numCell(S.ws,colLetter(C.inicial)+rr):null,
+      final:    C.final>=0? numCell(S.ws,colLetter(C.final)+rr):null,
+      total:    C.total>=0? numCell(S.ws,colLetter(C.total)+rr):null,
+      cc:       C.cc>=0? cellText(S.ws,colLetter(C.cc)+rr):'',
+      obs:      C.obs>=0? cellText(S.ws,colLetter(C.obs)+rr):'',
+      operador: C.operador>=0? cellText(S.ws,colLetter(C.operador)+rr):''
+    });
+  }
+  S.filas=filas;
+  infoBase(name);
+  llenarCodigos();
+}
+
+function faltantes(){
+  const C=S.cols, req={fecha:'FECHA',cod:'COD. EQUIPO',inicial:'INICIAL (horómetro)',final:'FINAL (horómetro)'};
+  return Object.entries(req).filter(([k])=>C[k]<0).map(([,v])=>v);
+}
+function infoBase(name){
+  const falt=faltantes();
+  const rangoF=S.filas.reduce((a,f)=>{ if(!a.min||f.fecha<a.min)a.min=f.fecha; if(!a.max||f.fecha>a.max)a.max=f.fecha; return a; },{});
+  let html=`<div class="kv"><span>Hoja: <b>${escapeHtml(name)}</b></span>`+
+    `<span>Encabezado: <b>fila ${S.headerRow+1}</b></span>`+
+    `<span>Filas útiles: <b>${S.filas.length}</b></span>`;
+  if(rangoF.min) html+=`<span>Fechas: <b>${fmtFecha(rangoF.min)} → ${fmtFecha(rangoF.max)}</b></span>`;
+  html+='</div>';
+  if(falt.length) html+=`<div class="alert warn" style="margin-top:8px">No encontré estas columnas por su encabezado: <b>${falt.map(escapeHtml).join(', ')}</b>. Revisa la fila de encabezado.</div>`;
+  document.getElementById('baseInfo').innerHTML=html;
+}
+
+/* ---------- Poblado del desplegable de códigos (dentro del período) ---------- */
+function llenarCodigos(){
+  const desde=document.getElementById('desde').value, hasta=document.getElementById('hasta').value;
+  const mapa=new Map();
+  for(const f of S.filas){
+    if(desde && f.fecha<desde) continue;
+    if(hasta && f.fecha>hasta) continue;
+    const cur=mapa.get(f.cod)||{n:0,label:f.codRaw||f.cod};
+    cur.n++; mapa.set(f.cod,cur);
+  }
+  const cods=[...mapa.entries()].sort((a,b)=>a[0]<b[0]?-1:1);
+  const sel=document.getElementById('codSel');
+  sel.innerHTML='<option value="">— códigos del período ('+cods.length+') —</option>'+
+    cods.map(([k,v])=>`<option value="${escapeHtml(v.label)}">${escapeHtml(v.label)} (${v.n})</option>`).join('');
+  const dl=document.getElementById('codList');
+  dl.innerHTML=cods.map(([k,v])=>`<option value="${escapeHtml(v.label)}">`).join('');
+}
+document.getElementById('codSel').addEventListener('change',e=>{ if(e.target.value) document.getElementById('codTxt').value=e.target.value; });
+document.getElementById('desde').addEventListener('change',()=>{ refreshFestInfo(); if(S.filas.length) llenarCodigos(); });
+document.getElementById('hasta').addEventListener('change',()=>{ refreshFestInfo(); if(S.filas.length) llenarCodigos(); });
+
+/* ---------- Festivos ---------- */
+// Festivos de Colombia fijos en la herramienta (tomados de los calendarios de César).
+// Para agregar años futuros, añade otra entrada AÑO:[ 'YYYY-MM-DD', ... ].
+const FESTIVOS_CO={
+  2026:['2026-01-01','2026-01-12','2026-03-23','2026-04-02','2026-04-03','2026-05-01','2026-05-18',
+        '2026-06-08','2026-06-15','2026-06-29','2026-07-13','2026-07-20','2026-08-07','2026-08-17',
+        '2026-10-12','2026-11-02','2026-11-16','2026-12-08','2026-12-25'],
+  2027:['2027-01-01','2027-01-11','2027-03-22','2027-03-25','2027-03-26','2027-05-01','2027-05-10',
+        '2027-05-31','2027-06-07','2027-07-05','2027-07-12','2027-07-20','2027-08-07','2027-08-16',
+        '2027-10-18','2027-11-01','2027-11-15','2027-12-08','2027-12-25']
+};
+// Festivos escritos a mano en el textarea (extras o años no incluidos)
+function parseFestivosManual(){
+  const raw=document.getElementById('festivos').value||'';
+  const set=new Set();
+  raw.split(/[\n,;]+/).forEach(t=>{ const iso=parseFechaTexto(t.trim()); if(iso) set.add(iso); });
+  return set;
+}
+// Años sin tabla fija dentro de [desde,hasta] (para avisar que hay que pegarlos a mano)
+function aniosSinTabla(desde,hasta){
+  const out=[]; if(!desde||!hasta) return out;
+  for(let y=+desde.slice(0,4); y<=+hasta.slice(0,4); y++) if(!FESTIVOS_CO[y]) out.push(y);
+  return out;
+}
+// Conjunto de festivos aplicable al período: tabla fija (de los años que toque) + manuales.
+function festivosAplicables(desde,hasta){
+  const set=parseFestivosManual();
+  for(const y of Object.keys(FESTIVOS_CO)) for(const iso of FESTIVOS_CO[y]) set.add(iso);
+  return set;
+}
+// Muestra los festivos fijos que caen dentro del período (transparencia) + aviso de años faltantes.
+function refreshFestInfo(){
+  const desde=document.getElementById('desde').value, hasta=document.getElementById('hasta').value;
+  const el=document.getElementById('festInfo'); if(!el) return;
+  if(!desde||!hasta){ el.textContent=''; return; }
+  const enRango=[];
+  for(const y of Object.keys(FESTIVOS_CO)) for(const iso of FESTIVOS_CO[y]) if(iso>=desde&&iso<=hasta) enRango.push(iso);
+  enRango.sort();
+  const faltan=aniosSinTabla(desde,hasta);
+  let html='';
+  if(enRango.length) html+='✅ Festivos oficiales en el período: '+enRango.map(fmtFecha).join(' · ');
+  else html+='Sin festivos oficiales dentro del período.';
+  if(faltan.length) html+=`<br>⚠️ No tengo tabla para ${faltan.join(', ')}: pega esos festivos abajo.`;
+  el.innerHTML=html;
+}
+
+/* ---------- Generación del grid ---------- */
+function generar(){
+  if(!S.ws){ toast('⚠️ Primero carga la base.'); return; }
+  const cod=norm(document.getElementById('codTxt').value);
+  const desde=document.getElementById('desde').value, hasta=document.getElementById('hasta').value;
+  const standby=parseNum(document.getElementById('standby').value);
+  if(!cod){ toast('⚠️ Indica el código de equipo.'); return; }
+  if(!desde||!hasta){ toast('⚠️ Indica el período (desde/hasta).'); return; }
+  if(desde>hasta){ toast('⚠️ «Desde» es posterior a «Hasta».'); return; }
+  const festivos=festivosAplicables(desde,hasta);
+
+  // Partes de la máquina dentro del período, agrupados por día
+  const porDia=new Map();
+  let matched=0;
+  for(const f of S.filas){
+    if(f.cod!==cod) continue;
+    if(f.fecha<desde||f.fecha>hasta) continue;
+    matched++;
+    if(!porDia.has(f.fecha)) porDia.set(f.fecha,[]);
+    porDia.get(f.fecha).push(f);
+  }
+  if(!matched){ toast('⚠️ Sin partes para «'+document.getElementById('codTxt').value+'» en el período.'); }
+
+  // Identidad de la máquina (constante) para rellenar días sin parte
+  const ident=identidadMaquina(porDia);
+
+  const filasOut=[]; const huecos=[]; let dias=0;
+  for(let d=desde; d<=hasta; d=addDaysISO(d,1)){
+    dias++;
+    const partes=(porDia.get(d)||[]).slice().sort((a,b)=>(a.inicial==null?1:0)-(b.inicial==null?1:0) || (a.inicial||0)-(b.inicial||0));
+    const esDom=weekday(d)===0, esFes=festivos.has(d);
+    const base=()=>({ A:'', B:fmtFecha(d), C:'', D:ident.codRaw, E:ident.tipo, F:ident.proveedor,
+                G:'', H:'', I:'', J:standby, K:'', L:'', M:'', N:'', _cls:'' , iso:d });
+    if(partes.length){
+      // Un renglón POR PARTE: días repartidos entre varios CC salen con todos sus renglones.
+      // El standby del día (J) se reparte proporcional a las horas de cada parte (50/50 → 2,5 y 2,5).
+      const shares=repartirStandby(partes,standby);
+      const hs=partes.map(p=>(p.inicial!=null&&p.final!=null)?Math.max(0,p.final-p.inicial):null);
+      const totH=hs.every(h=>h!=null)?hs.reduce((a,b)=>a+b,0):0;
+      partes.forEach((p,i)=>{
+        const row=base();
+        row.G=p.inicial==null?'':p.inicial;
+        row.H=p.final==null?'':p.final;
+        row.I=(p.inicial!=null&&p.final!=null)?round2(p.final-p.inicial):'';  // I = FINAL−INICIAL del parte
+        row.J=shares[i];
+        row.C=p.reporte; row.M=p.cc; row.N=p.obs;
+        if(partes.length>=2) row._cls='dosPartes';
+        // Cruce CC columna vs CC de la observación (el digitador suele escribirlo ahí).
+        // Si difieren: predomina la observación (M = CC de la obs), pero queda MARCADO para corroborar.
+        const o=extraerCCObs(p.obs);
+        if(o.cc && p.cc && o.cc!==normCC(p.cc)){
+          row._ccConf={base:normCC(p.cc), obs:o.cc, pct:o.pct};
+          row.M=o.cc;
+          huecos.push({iso:d,tipo:'cc',detalle:'columna dice '+normCC(p.cc)+' · obs dice '+o.cc+(o.pct!=null?' ('+o.pct+'%)':' (sin %)')+' → se usó la obs; corrobora en el grid'});
+        } else if(o.cc && !p.cc){
+          row.M=o.cc; // columna vacía: se toma el CC de la observación
+        }
+        row.A=ufDeCC(row.M);   // col. A estandarizada: UF1 (3701.x) / UF2 (3702.x)
+        // Si la obs trae % y difiere del reparto real por horas, avisar (no cambia J).
+        if(o.pct!=null && totH>0 && hs[i]!=null){
+          const pctHoras=Math.round(100*hs[i]/totH);
+          if(Math.abs(pctHoras-o.pct)>3){
+            huecos.push({iso:d,tipo:'pct',detalle:'obs dice '+o.pct+'% pero las horas dan '+pctHoras+'% ('+String(hs[i]).replace('.',',')+' h de '+String(round2(totH)).replace('.',',')+') · J quedó por horas: '+String(shares[i]).replace('.',',')});
+          }
+        }
+        filasOut.push(row);
+      });
+      if(partes.length>=2){
+        huecos.push({iso:d,tipo:'dos',detalle:partes.length+' renglones (reparto CC) · stand by '+shares.map(s=>String(s).replace('.',',')).join(' / ')});
+      }
+    } else {
+      // Día sin parte: domingo/festivo se clasifican (sin resaltar); el resto se resalta naranja.
+      const row=base();
+      if(esDom){ row.N='Domingo'; row._cls='libre'; huecos.push({iso:d,tipo:'dom',detalle:'Domingo'}); }
+      else if(esFes){ row.N='Festivo'; row._cls='libre'; huecos.push({iso:d,tipo:'fes',detalle:'Festivo'}); }
+      else { row.N='SIN PARTE · revisar'; row._cls='sinparte'; huecos.push({iso:d,tipo:'sp',detalle:'Sin parte'}); }
+      row.A=ufDeCC(row.M);   // sin CC → la fórmula dará "Revisar"
+      filasOut.push(row);
+    }
+  }
+  S.out={ filasOut, huecos, cod:document.getElementById('codTxt').value.trim(), desde, hasta };
+  render(filasOut,huecos,matched,dias);
+}
+
+// Reparte el standby del día entre los partes, proporcional a sus horas de horómetro
+// (FINAL−INICIAL de cada parte). Si algún parte no tiene horómetro, reparte en partes iguales.
+// Redondeo a 2 decimales ajustando el último renglón para que la suma dé el standby exacto.
+function repartirStandby(partes,standby){
+  const n=partes.length;
+  if(n===1||standby==null) return partes.map(()=>standby);
+  const hs=partes.map(p=>(p.inicial!=null&&p.final!=null)?Math.max(0,p.final-p.inicial):null);
+  const tot=hs.every(h=>h!=null)?hs.reduce((a,b)=>a+b,0):0;
+  const raw=(tot>0)?hs.map(h=>standby*h/tot):partes.map(()=>standby/n);
+  const shares=raw.map(round2);
+  const dif=round2(standby-shares.reduce((a,b)=>a+b,0));
+  shares[n-1]=round2(shares[n-1]+dif);
+  return shares;
+}
+
+// CC normalizado para comparar (trim; tolera espacios alrededor de los puntos)
+function normCC(s){ return String(s==null?'':s).replace(/\s+/g,'').trim(); }
+// UF por prefijo del CC, con la MISMA semántica de la fórmula del acta:
+// SI.CONJUNTO(IZQUIERDA(M;4)="3701";"UF1"; ...="3702";"UF2"; VERDADERO;"Revisar")
+function ufDeCC(cc){ const t=normCC(cc); if(t.indexOf('3701')===0) return 'UF1'; if(t.indexOf('3702')===0) return 'UF2'; return 'Revisar'; }
+// La fórmula que va en la col. A. formulaUF_EN = como se guarda en el xlsx (nombres en inglés,
+// IFS es "función futura" → prefijo _xlfn); Excel la muestra localizada (SI.CONJUNTO).
+// formulaUF_ES = texto es-CO para el TSV (se pega literal, por eso lleva la fila real del acta).
+function formulaUF_EN(fila){ const m='LEFT(M'+fila+',4)'; return '_xlfn.IFS('+m+'="3701","UF1",'+m+'="3702","UF2",TRUE,"Revisar")'; }
+function formulaUF_ES(fila){ const m='IZQUIERDA(M'+fila+';4)'; return '=SI.CONJUNTO('+m+'="3701";"UF1";'+m+'="3702";"UF2";VERDADERO;"Revisar")'; }
+// Saca de la observación el CC que escribe el digitador (patrón 3701.07.01) y el % si lo trae.
+function extraerCCObs(obs){
+  const t=String(obs==null?'':obs);
+  const mcc=t.match(/\d{4}(?:\s*\.\s*\d{2}){2,3}/);       // 3701.07.01 (o con un segmento más)
+  const mp=t.match(/(\d{1,3}(?:[.,]\d+)?)\s*%/);
+  return { cc: mcc?normCC(mcc[0]):null, pct: mp?parseFloat(mp[1].replace(',','.')):null };
+}
+
+function identidadMaquina(porDia){
+  // Moda de tipo/proveedor y el codRaw tal como viene en la base
+  const cont={tipo:new Map(),prov:new Map()}; let codRaw='';
+  for(const partes of porDia.values()) for(const p of partes){
+    if(!codRaw && p.codRaw) codRaw=p.codRaw;
+    if(p.tipo) cont.tipo.set(p.tipo,(cont.tipo.get(p.tipo)||0)+1);
+    if(p.proveedor) cont.prov.set(p.proveedor,(cont.prov.get(p.proveedor)||0)+1);
+  }
+  const moda=m=>{ let best='',n=-1; for(const [k,v] of m) if(v>n){best=k;n=v;} return best; };
+  return { codRaw: codRaw||document.getElementById('codTxt').value.trim(), tipo:moda(cont.tipo), proveedor:moda(cont.prov) };
+}
+
+/* ---------- Render ---------- */
+const COLS=[['A','UF'],['B','Fecha'],['C','Reporte'],['D','Cód. equipo'],['E','Tipo'],['F','Proveedor'],
+  ['G','Inicial'],['H','Final'],['I','Total'],['J','Stand by'],['K','—'],['L','—'],['M','C. Coste'],['N','Observaciones']];
+const KEYS=['A','B','C','D','E','F','G','H','I','J','K','L','M','N'];
+
+function render(filasOut,huecos,matched,dias){
+  // Resumen
+  const nSp=huecos.filter(h=>h.tipo==='sp').length, nDom=huecos.filter(h=>h.tipo==='dom').length,
+        nFes=huecos.filter(h=>h.tipo==='fes').length, nDos=huecos.filter(h=>h.tipo==='dos').length,
+        nCC=huecos.filter(h=>h.tipo==='cc').length, nPct=huecos.filter(h=>h.tipo==='pct').length,
+        conParte=filasOut.filter(r=>r._cls!=='sinparte'&&r._cls!=='libre').length;
+  document.getElementById('statLine').innerHTML=
+    `<span>Días: <b>${dias}</b></span>`+
+    `<span>Renglones: <b>${filasOut.length}</b></span>`+
+    `<span>Con parte: <b>${conParte}</b></span>`+
+    `<span>Partes leídos: <b>${matched}</b></span>`+
+    `<span><span class="pill sp">SIN PARTE</span> <b>${nSp}</b></span>`+
+    `<span><span class="pill dom">Domingo</span> <b>${nDom}</b></span>`+
+    `<span><span class="pill fes">Festivo</span> <b>${nFes}</b></span>`+
+    `<span><span class="pill dos">Reparto CC</span> <b>${nDos}</b></span>`+
+    `<span><span class="pill cc">CC ≠ obs</span> <b>${nCC}</b></span>`+
+    `<span><span class="pill pct">% ≠ horas</span> <b>${nPct}</b></span>`;
+
+  // Tabla de huecos
+  const ht=document.getElementById('huecosTbl');
+  if(huecos.length){
+    const pillOf={sp:'sp',dom:'dom',fes:'fes',dos:'dos',cc:'cc',pct:'pct'},
+          labOf={sp:'SIN PARTE · revisar',dom:'Domingo',fes:'Festivo',dos:'Reparto CC',cc:'CC ≠ obs',pct:'% ≠ horas'};
+    ht.innerHTML='<thead><tr><th>Fecha</th><th>Marca</th><th>Detalle</th></tr></thead><tbody>'+
+      huecos.map(h=>`<tr><td>${fmtFecha(h.iso)}</td><td><span class="pill ${pillOf[h.tipo]}">${labOf[h.tipo]}</span></td><td class="note">${escapeHtml(h.detalle)}</td></tr>`).join('')+'</tbody>';
+  } else ht.innerHTML='<tbody><tr><td class="note">Sin novedades: todos los días tienen un parte único.</td></tr></tbody>';
+  document.getElementById('huecosCard').style.display='block';
+
+  // Grid de salida
+  const ot=document.getElementById('outTbl');
+  const head='<thead><tr>'+COLS.map(([c,t])=>`<th>${c}<span class="colhead">${escapeHtml(t)}</span></th>`).join('')+'</tr></thead>';
+  const body='<tbody>'+filasOut.map((r,idx)=>{
+    const cls=r._cls?` class="${r._cls}"`:'';
+    return '<tr'+cls+'>'+KEYS.map(k=>{
+      const extra=(k==='N'&&r._cls==='sinparte')?'obs':(k==='C'&&r._cls==='dosPartes')?'rep':'';
+      // Conflicto CC columna vs observación: celda M editable (predomina la obs, tú corroboras)
+      if(k==='M'&&r._ccConf){
+        const c=r._ccConf;
+        const opts=[c.obs,c.base].map(v=>`<option value="${escapeHtml(v)}"${v===r.M?' selected':''}>${escapeHtml(v)}${v===c.obs?' (obs)':' (col.)'}</option>`).join('');
+        return `<td class="ccconf"><select class="ccsel" onchange="Maq.setCC(${idx},this)"><option value="__otro__">✏️ otro…</option>${opts}</select></td>`;
+      }
+      const disp=(k==='K'||k==='L')?'<span class="removed">'+(k==='K'?'(elim.)':'(fórm.)')+'</span>':escapeHtml(dispVal(r[k]));
+      return `<td class="${extra}">${disp}</td>`;
+    }).join('')+'</tr>';
+  }).join('')+'</tbody>';
+  ot.innerHTML=head+body;
+  document.getElementById('outCard').style.display='block';
+  document.getElementById('genNote').textContent=`✓ ${dias} días · ${filasOut.length} renglones`;
+  document.getElementById('outCard').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function dispVal(v){ if(v==null||v==='') return ''; if(typeof v==='number') return String(v).replace('.',','); return String(v); }
+
+// Corrección en línea del CC en conflicto: lo elegido queda en la fila y sale así en los exportes.
+const Maq={
+  setCC(idx,sel){
+    let v=sel.value;
+    if(v==='__otro__'){
+      const cur=S.out.filasOut[idx].M;
+      const t=prompt('Centro de coste para este renglón:',cur);
+      if(t==null||!t.trim()){ sel.value=cur; return; }   // canceló: volver a lo que estaba
+      v=normCC(t);
+      if(![...sel.options].some(o=>o.value===v)){ const o=document.createElement('option'); o.value=v; o.textContent=v+' (manual)'; sel.appendChild(o); }
+      sel.value=v;
+    }
+    const row=S.out.filasOut[idx];
+    row.M=v;
+    row.A=ufDeCC(v);   // la UF de la col. A sigue al CC elegido
+    const tr=sel.closest('tr'); if(tr) tr.children[0].textContent=row.A;
+    toast('CC del renglón '+row.B+' → '+v+(row.A?' ('+row.A+')':''));
+  }
+};
+
+/* ---------- Exportes ---------- */
+// SOLO el bloque de valores A–N (sin fila de encabezado), para pegar con «Omitir blancos»
+// sin desalinear. K queda vacía (eliminada) y L vacía (la calcula la fórmula =+J del template).
+// blank = valor para las celdas vacías: en xlsx debe ser null (celda REALMENTE vacía, así
+// «Omitir blancos» no pisa las fórmulas del template); en TSV '' (campo vacío = celda en blanco al pegar).
+function aoaSalida(blank){
+  return S.out.filasOut.map(r=>KEYS.map(k=>{ const v=r[k]; return (v==null||v==='')?blank:v; }));
+}
+document.getElementById('btnXlsx').addEventListener('click',()=>{
+  if(!S.out){ return; }
+  const ws=XLSX.utils.aoa_to_sheet(aoaSalida(null));
+  // Col. A = fórmula UF real (referencia relativa a la fila del archivo: al copiar y
+  // pegar el bloque en el acta, Excel ajusta M1→M5 etc. solo). v = resultado precalculado.
+  S.out.filasOut.forEach((r,i)=>{ ws['A'+(i+1)]={t:'s', v:(r.A||'Revisar'), f:formulaUF_EN(i+1)}; });
+  const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'MAQUINARIA');
+  XLSX.writeFile(wb,nombreArchivo('xlsx'));
+  toast('⬇ xlsx descargado ('+S.out.filasOut.length+' filas). Pega con «Omitir blancos».');
+});
+document.getElementById('btnCopy').addEventListener('click',async ()=>{
+  if(!S.out){ return; }
+  const fila0=Math.max(1,parseInt(document.getElementById('filaActa').value,10)||5);
+  const rows=aoaSalida('');
+  // Col. A = fórmula en texto es-CO con la fila REAL del acta (el texto se pega literal).
+  const tsv=rows.map((r,i)=>r.map((v,c)=>c===0?formulaUF_ES(fila0+i):fmtNumTSV(v)).join('\t')).join('\n');
+  try{ await navigator.clipboard.writeText(tsv); toast('📋 Bloque copiado ('+rows.length+' filas, fórmula A desde fila '+fila0+'). Pega con «Omitir blancos».'); }
+  catch(e){ toast('⚠️ No se pudo copiar al portapapeles.'); }
+});
+function nombreArchivo(ext){
+  const cod=(S.out.cod||'maquina').replace(/[^\w\-]+/g,'_');
+  return 'maquinaria_'+cod+'_'+S.out.desde+'_'+S.out.hasta+'.'+ext;
+}
+
+document.getElementById('btnGen').addEventListener('click',generar);
+
+// Muestra los festivos oficiales del período inicial (todas las consts ya están definidas aquí).
+refreshFestInfo();
+</script>
+</body>
+</html>
