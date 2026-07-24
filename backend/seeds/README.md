@@ -8,7 +8,9 @@ los .xlsx maestros).
 ## Orden de pegado (una sola vez, tras redeploy + `setupHojas()`)
 
 1. **CUADRILLAS_odt.tsv** → hoja `CUADRILLAS`, debajo de las de tierras.
-   `cuadrilla · responsables(login) · area`. Tres cuadrillas ODT (una por capataz):
+   `cuadrilla · responsables(login) · area · estado`. La 4ª columna `estado` (D84) saca una cuadrilla
+   de circulación sin borrar su fila (`activa`/`inactiva`; **vacío = activa**). Tres cuadrillas ODT
+   (una por capataz):
    - `EDUARDO` → responsable `eduardo` (LUIS EDUARDO DORADO LOPEZ, UF1/3701)
    - `MAURICIO` → responsable `mauricio` (HERNAN MAURICIO QUIROGA, UF2/3702)
    - `ENRIQUE` → responsable `enrique` (nuevo, aún sin gente; el residente le mueve personal después)
@@ -66,6 +68,26 @@ es del día siguiente (nocturnos). **No hace falta pegar este TSV**: `setupHojas
 hoja TURNOS con estos mismos valores (si está vacía). El TSV queda como respaldo/edición manual.
 El backend los sirve en `?action=roster` (`turnos`) para PRE-LLENAR la entrada/salida del reporte;
 la clasificación de extras/recargos nocturnos (columnas G–N Navison) sigue pendiente de confirmar.
+
+## D84 — columna `estado` en CUADRILLAS + checklist de la salida a UF3
+
+D84 agrega la columna **`estado`** a `CUADRILLAS` (4ª columna; `activa`/`inactiva`, **vacío = activa**,
+retrocompatible). `setupHojas()` ya la siembra; en una hoja ya existente basta con **añadir el
+encabezado `estado`** (el backend auto-sana los encabezados al leer). Una cuadrilla `inactiva`
+desaparece del roster de hoy, de los faltantes, del export y de los selectores, pero **sus filas de
+fechas anteriores siguen saliendo** en el resumen y el export (el filtro aplica al roster esperado, no
+a lo ya reportado).
+
+**Checklist operativo de la salida a UF3 (se hace A MANO en el Sheet, el código no lo automatiza):**
+
+1. `ariel` y `albert` están en `PERSONAL` con `cargo=CAPATAZ`. Se **retiran** con
+   `fecha_retiro = 2026-07-27` (primer día NO trabajado). **No se borran.**
+2. La gente de la cuadrilla **ARIEL** ya se movió a **ROBINSON**. ARIEL queda vacía → marcar su
+   `estado = inactiva` (sin hueco pendiente).
+3. La gente de **ALBERT** pasó a Robinson en obra, **pero en el sistema la reporta `maleja`**: la
+   cuadrilla **ALBERT se conserva con el mismo nombre** y `maleja` queda como **única responsable**
+   (editar la celda `responsables` de ALBERT y dejar solo `maleja`). Renombrar la cuadrilla dejaría el
+   histórico apuntando a una cuadrilla inexistente. `maleja` ya tiene doble deber (D75) → cero código.
 
 ## Notas
 

@@ -75,6 +75,19 @@
   .loading{text-align:center;padding:30px;color:var(--muted);font-size:14px;}
   .saved-flag{font-size:12px;color:var(--success);margin-left:8px;display:none;}
   .nota-maq{font-size:11px;color:var(--muted);margin-top:6px;}
+  /* D84: chips de filtro de área (presentación), badges por área y grupos de área en la bandeja combinada */
+  .filtro-chips{display:flex;gap:8px;margin:0 0 4px;flex-wrap:wrap;}
+  .fchip{font-size:12px;font-weight:600;padding:6px 14px;border-radius:20px;border:1px solid var(--border);background:var(--input-bg);color:var(--muted);cursor:pointer;font-family:'DM Sans',sans-serif;}
+  .fchip.act{border-color:var(--accent);color:var(--accent);background:rgba(245,166,35,0.08);}
+  .badge.odt{border-color:rgba(58,155,220,0.4);color:var(--uf1);}
+  .badge.odl{border-color:rgba(155,89,182,0.4);color:var(--uf2);}
+  .grupo-area{font-family:'Syne',sans-serif;font-size:13px;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin:18px 0 8px;padding-bottom:4px;border-bottom:1px solid var(--border);}
+  .tot-area-hdr{color:var(--accent)!important;font-weight:700;}
+  .wa-toggle-row{margin-top:8px;text-align:right;}
+  .wa-toggle{font-size:12px;color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+  .wa-toggle input{accent-color:var(--accent);width:auto;}
+  .wa-sub{margin-bottom:14px;}
+  .wa-sub pre{white-space:pre-wrap;font-size:12.5px;line-height:1.6;margin-top:8px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:12px;overflow:auto;max-height:260px;}
   @media(max-width:480px){.estado-grid{grid-template-columns:1fr;}.add-grid{grid-template-columns:1fr 1fr;}}
 </style>
 </head>
@@ -109,44 +122,63 @@
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
 
-/* Área del panel (D70): el residente hace de "encargado" de SU área. La bandeja se pide con
- * &area= (el backend filtra por la columna `area`/CC), el envío a DATA pisa el día SOLO en esta
- * área (enmienda operativa de D03) y el WhatsApp usa el formato propio de drenajes. */
-let AREA='odt';
-// Capataces nominales por área (D70): la sección "quién falta" del panel los compara contra los
-// que reportaron ese día. Mismo criterio que CAPATACES_ESPERADOS de tierras (encargado.html).
+/* Panel del residente de drenajes (D70/D84). Hace de "encargado" de su(s) área(s): la bandeja se pide
+ * con &area= (el backend filtra por la columna `area`/CC), el envío a DATA pisa el día SOLO en esa área
+ * (enmienda operativa de D03) y el WhatsApp usa el formato propio de drenajes.
+ * D84: el residente UNIFICADO (residente_dren) ve ODT y ODL JUNTOS en un solo panel:
+ *   - la bandeja se consulta UNA VEZ POR ÁREA y se fusiona en cliente (sin cambiar el contrato del endpoint);
+ *   - chips de filtro Todas/ODT/ODL (solo presentación, no altera qué se envía);
+ *   - al enviar dispara UNA llamada enviar_data POR ÁREA presente (nunca un envío mezclado, rompería D70(c));
+ *   - guard anti-borrado: un área sin NINGUNA fila en la bandeja de ese día NO se llama (un payload vacío
+ *     con `area` borraría lo que esa área ya tuviera en DATA ese día). */
+let AREAS=['odt'];   // áreas del panel (residente_dren = ['odt','odl'])
+let MULTI=false;     // true = panel combinado ODT+ODL
+let AREA='odt';      // área "activa" en modo de una sola área (compat)
+let FILTRO='all';    // chip de presentación: 'all' | 'odt' | 'odl'
+const WA_KEY='dren_wa_modo';   // recuerda la última elección del toggle de WhatsApp ('combinado'|'porarea')
+
+// D84: helper único de áreas por rol (mismo criterio que el backend). residente_dren/admin ven ambas.
+function resolverAreas(rol){
+  if(rol==='residente_odt') return ['odt'];
+  if(rol==='residente_odl') return ['odl'];
+  if(rol==='residente_dren'||rol==='admin') return ['odt','odl'];
+  return ['odt'];
+}
+
+// Capataces nominales por área (D70): la sección "quién falta" del panel los compara contra los que
+// reportaron ese día. Mismo criterio que CAPATACES_ESPERADOS de tierras (encargado.html). NO cambia con
+// D84: cada capataz sigue esperado solo en su área primaria (D84 §3).
 const CAPATACES_ESPERADOS_POR_AREA={ odt:['mauricio','eduardo','enrique'], odl:['jairo'] };
 
+// STATE.cantidades/maquinas/observaciones llevan cada una su `_area` (odt/odl), fijada al fusionar las
+// bandejas de cada área. El resto de campos vienen crudos del backend (bandeja).
 let STATE={ fecha:'', cantidades:[], maquinas:[], observaciones:[] };
 /* catálogo de la BASE (?action=drenajes) para el add-line del residente */
 let MARCADORES=[], ITEMS=[];
 
 window.onload = async function(){
   const rol=localStorage.getItem('rol'), usuario=localStorage.getItem('usuario');
-  const OK=['residente_odt','residente_odl','admin'];
+  const OK=['residente_odt','residente_odl','residente_dren','admin'];
   if(!rol || OK.indexOf(rol)<0){ window.location.href='index.html'; return; }
   document.getElementById('userDisplay').textContent=usuario||'residente';
-  if(rol==='residente_odt') AREA='odt';
-  else if(rol==='residente_odl') AREA='odl';
-  else { // admin: área por query (?area=odl) o selector
-    const q=new URLSearchParams(location.search).get('area');
-    AREA=(q==='odl')?'odl':'odt';
-    document.getElementById('areaField').style.display='block';
-    document.getElementById('areaSel').value=AREA;
-    var _bm=document.getElementById('btnMenu'); if(_bm) _bm.style.display='inline-block';
-  }
+  AREAS=resolverAreas(rol); MULTI=AREAS.length>1; AREA=AREAS[0];
+  // D84: el admin ve las dos áreas combinadas (los chips filtran la vista); el selector de área de una
+  // sola área ya no aplica y queda oculto. Solo se muestra el botón de menú del admin.
+  if(rol==='admin'){ var _bm=document.getElementById('btnMenu'); if(_bm) _bm.style.display='inline-block'; }
   pintarTitulo();
   document.getElementById('fecha').value=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'}); // D50
   cargarCatalogo();
 };
 function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); window.location.href='index.html'; }
 function pintarTitulo(){
-  const n=(AREA==='odt')?'ODT · Transversal':'ODL · Longitudinal';
-  document.getElementById('hdrLabel').textContent='Bandeja · Drenajes '+(AREA==='odt'?'ODT':'ODL');
+  const n = MULTI ? 'ODT + ODL' : ((AREA==='odt')?'ODT · Transversal':'ODL · Longitudinal');
+  const tag = MULTI ? 'ODT+ODL' : (AREA==='odt'?'ODT':'ODL');
+  document.getElementById('hdrLabel').textContent='Bandeja · Drenajes '+tag;
   document.getElementById('hdrTitle').textContent='🚧 Drenajes — '+n;
 }
+// (Selector de área del admin — dead en D84; se conserva por si se reactivara una sola área.)
 function cambiarArea(){
-  AREA=document.getElementById('areaSel').value==='odl'?'odl':'odt';
+  AREA=document.getElementById('areaSel').value==='odl'?'odl':'odt'; AREAS=[AREA]; MULTI=false;
   pintarTitulo();
   document.getElementById('resultados').innerHTML='<div class="empty-state"><div class="icon">🗓️</div><p>Consulta de nuevo para ver la bandeja de '+AREA.toUpperCase()+'</p></div>';
 }
@@ -172,28 +204,39 @@ function fmt(n){ return (Math.round(n*100)/100).toLocaleString('es-CO'); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function numH(v){ const n=parseFloat(v); return isNaN(n)?0:n; }
 function esNoche(c){ return String(c.turno_noche||'').toUpperCase()==='SI' || c.turno_noche===true; }
+function nombreArea(ar){ return (ar==='odt')?'Drenaje Transversal (ODT)':'Drenaje Longitudinal (ODL)'; }
+
+/* áreas visibles según el chip de presentación (no altera qué se envía) */
+function areasVisibles(){ if(!MULTI) return AREAS.slice(); if(FILTRO==='odt') return ['odt']; if(FILTRO==='odl') return ['odl']; return AREAS.slice(); }
+function setFiltro(v){ FILTRO=v; render(); }
 
 async function consultar(){
   const fecha=document.getElementById('fecha').value;
   if(!fecha){ alert('Selecciona una fecha'); return; }
-  document.getElementById('resultados').innerHTML='<div class="loading">⏳ Cargando bandeja de '+AREA.toUpperCase()+'...</div>';
+  document.getElementById('resultados').innerHTML='<div class="loading">⏳ Cargando bandeja de '+(MULTI?'ODT + ODL':AREA.toUpperCase())+'...</div>';
   try{
-    const url=`${APPS_SCRIPT_URL}?action=bandeja&fecha=${fecha}&area=${AREA}`;
-    const resp=await fetch(url); const data=await resp.json();
-    STATE.fecha=fecha;
-    STATE.cantidades=(data.cantidades||[]).map(c=>({...c, largo:parseFloat(c.largo)||0, _inc:(c.estado!=='descartado'&&c.estado!=='no_data'), _nodata:(c.estado==='no_data')}));
-    STATE.maquinas=data.maquinas||[];
-    STATE.observaciones=data.observaciones||[];
+    STATE.fecha=fecha; STATE.cantidades=[]; STATE.maquinas=[]; STATE.observaciones=[];
+    // D84: una consulta a la bandeja POR ÁREA (sin cambiar el contrato del endpoint) y fusión en cliente.
+    for(const ar of AREAS){
+      const url=`${APPS_SCRIPT_URL}?action=bandeja&fecha=${fecha}&area=${ar}`;
+      const resp=await fetch(url); const data=await resp.json();
+      (data.cantidades||[]).forEach(c=>STATE.cantidades.push(Object.assign({}, c, {
+        _area:ar, largo:parseFloat(c.largo)||0,
+        _inc:(c.estado!=='descartado'&&c.estado!=='no_data'), _nodata:(c.estado==='no_data') })));
+      (data.maquinas||[]).forEach(m=>STATE.maquinas.push(Object.assign({}, m, {_area:ar})));
+      (data.observaciones||[]).forEach(o=>STATE.observaciones.push(Object.assign({}, o, {_area:ar})));
+    }
     render();
   }catch(err){
     document.getElementById('resultados').innerHTML=`<div class="empty-state"><div class="icon">⚠️</div><p>No se pudo consultar. Revisa el Apps Script o la conexión.</p></div>`;
   }
 }
 
-/* agrupación por ACTIVIDAD (descripción verbatim del ítem) — drenajes no usa las categorías de tierras */
-function calcTotales(){
+/* agrupación por ACTIVIDAD (descripción verbatim del ítem) dentro de UN área — drenajes no usa las
+ * categorías de tierras; los totales NUNCA se suman entre áreas (capítulos distintos, D84). */
+function calcTotalesArea(ar){
   const t={}, order=[];
-  STATE.cantidades.forEach(c=>{ if(!c._inc) return;
+  STATE.cantidades.forEach(c=>{ if(c._area!==ar || !c._inc) return;
     const k=(c.descripcion||c.actividad||'—')+'||'+(c.unidad||'');
     if(!t[k]){ t[k]={desc:(c.descripcion||c.actividad||'—'), uni:c.unidad||'', total:0}; order.push(k); }
     t[k].total+=c.largo;
@@ -216,94 +259,162 @@ function persTxt(c){
 
 function render(){
   const cont=document.getElementById('resultados');
-  const esperados=CAPATACES_ESPERADOS_POR_AREA[AREA]||[];
-  const repC=new Set(STATE.cantidades.map(c=>c.reporta).concat(STATE.maquinas.map(m=>m.reporta)).filter(Boolean));
-  const faltC=esperados.filter(c=>!repC.has(c));
-  const {t,order}=calcTotales();
+  const vis=areasVisibles();
   let html='';
-  html+='<div class="section-title">Estado de reportes ('+AREA.toUpperCase()+')</div><div class="estado-grid">';
-  html+='<div class="estado-box"><h3>Reportaron</h3><div class="chips">'+
-    ([...repC].length? [...repC].map(c=>`<span class="chip ok">✓ ${esc(c)}</span>`).join(''):'<span class="chip">—</span>')+'</div></div>';
-  html+='<div class="estado-box"><h3>Capataces que faltan</h3><div class="chips">'+
-    (faltC.length? faltC.map(c=>`<span class="chip no">${esc(c)}</span>`).join(''):'<span class="chip ok">Todos</span>')+'</div></div>';
-  html+='</div>';
+  if(MULTI){
+    const nOdt=STATE.cantidades.filter(c=>c._area==='odt').length, nOdl=STATE.cantidades.filter(c=>c._area==='odl').length;
+    const chip=(val,lbl,n)=>`<button class="fchip ${FILTRO===val?'act':''}" onclick="setFiltro('${val}')">${lbl} (${n})</button>`;
+    html+='<div class="filtro-chips">'+chip('all','Todas',STATE.cantidades.length)+chip('odt','ODT',nOdt)+chip('odl','ODL',nOdl)+'</div>';
+  }
 
-  html+='<div class="section-title">Totales del día (solo incluidos)</div><div class="totales">';
-  if(order.length){
-    order.forEach(k=>{ const o=t[k];
-      html+=`<div class="tot-row"><span class="cat">${esc(o.desc)}</span><span class="val">${fmt(o.total)} ${esc(o.uni)}</span></div>`; });
-  } else html+='<div class="cat" style="color:var(--muted)">Sin cantidades incluidas</div>';
-  html+='</div>';
+  // Estado de reportes — por área visible
+  vis.forEach(ar=>{ html+=renderEstadoArea(ar); });
+
+  // Totales del día — separados por área (encabezado con el total de líneas de cada área)
+  html+='<div class="section-title">Totales del día (solo incluidos)</div>';
+  vis.forEach(ar=>{ html+=renderTotalesArea(ar); });
 
   html+='<div class="section-title">Bandeja del día <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);font-size:11px;">(prende/apaga para incluir en DATA)</span></div>';
   html+='<div id="bandejaBox">'+renderBandeja()+'</div>';
   html+=renderAddCard();
 
-  html+='<div class="section-title">Máquinas del área ('+STATE.maquinas.length+')</div>'+renderMaquinas();
+  const maqVis=STATE.maquinas.filter(m=>vis.indexOf(m._area)>=0);
+  html+='<div class="section-title">Máquinas'+(MULTI?'':' del área')+' ('+maqVis.length+')</div>'+renderMaquinas();
 
   html+='<div class="actions">'+
-    '<button class="btn-action primary" onclick="enviar()">📤 Enviar a DATA ('+AREA.toUpperCase()+')<span class="saved-flag" id="savedFlag">enviado ✓</span></button>'+
+    '<button class="btn-action primary" onclick="enviar()">📤 Enviar a DATA ('+(MULTI?'ODT + ODL':AREA.toUpperCase())+')<span class="saved-flag" id="savedFlag">enviado ✓</span></button>'+
     '<button class="btn-action" onclick="generarMensaje()">📲 Generar WhatsApp</button>'+
     '</div>';
+  if(MULTI){
+    const porArea=waModo()==='porarea';
+    html+='<div class="wa-toggle-row"><label class="wa-toggle"><input type="checkbox" onchange="toggleWa()" '+(porArea?'checked':'')+'> WhatsApp: uno por área (si no, un solo mensaje)</label></div>';
+  }
   html+='<div class="msg-box" id="msgBox"></div>';
   cont.innerHTML=html;
 }
 
+function renderEstadoArea(ar){
+  const esperados=CAPATACES_ESPERADOS_POR_AREA[ar]||[];
+  const repC=new Set(STATE.cantidades.filter(c=>c._area===ar).map(c=>c.reporta)
+    .concat(STATE.maquinas.filter(m=>m._area===ar).map(m=>m.reporta)).filter(Boolean));
+  const faltC=esperados.filter(c=>!repC.has(c));
+  let html='<div class="section-title">Estado de reportes ('+ar.toUpperCase()+')</div><div class="estado-grid">';
+  html+='<div class="estado-box"><h3>Reportaron</h3><div class="chips">'+
+    ([...repC].length? [...repC].map(c=>`<span class="chip ok">✓ ${esc(c)}</span>`).join(''):'<span class="chip">—</span>')+'</div></div>';
+  html+='<div class="estado-box"><h3>Capataces que faltan</h3><div class="chips">'+
+    (faltC.length? faltC.map(c=>`<span class="chip no">${esc(c)}</span>`).join(''):'<span class="chip ok">Todos</span>')+'</div></div>';
+  html+='</div>';
+  return html;
+}
+function renderTotalesArea(ar){
+  const {t,order}=calcTotalesArea(ar);
+  const nInc=STATE.cantidades.filter(c=>c._area===ar && c._inc).length;
+  let html='<div class="totales">';
+  html+=`<div class="tot-row"><span class="cat tot-area-hdr">${ar.toUpperCase()}</span><span class="val">${nInc} línea${nInc!==1?'s':''}</span></div>`;
+  if(order.length){
+    order.forEach(k=>{ const o=t[k];
+      html+=`<div class="tot-row"><span class="cat">${esc(o.desc)}</span><span class="val">${fmt(o.total)} ${esc(o.uni)}</span></div>`; });
+  } else html+='<div class="cat" style="color:var(--muted)">Sin cantidades incluidas</div>';
+  html+='</div>';
+  return html;
+}
+
+function lineaHtml(c, idx){
+  const uf=c.uf||ufFromPk(c.pk_inicial);
+  const pers=persTxt(c);
+  const nota=String(c.nota_libre||'').trim();
+  const areaBadge = MULTI ? ` <span class="badge ${c._area}">${c._area.toUpperCase()}</span>` : '';
+  return `<div class="linea-item ${c._inc?'':'off'}" id="li_${idx}">
+    <button class="tog ${c._inc?'on':'no'}" onclick="toggleInc(${idx})">${c._inc?'✓':'✕'}</button>
+    <div class="li-main"><div class="li-act">${esc(ubicTxt(c))}</div>
+    <div class="li-sub"><span class="src ${c.rol==='encargado'||String(c.rol||'').indexOf('residente')===0?'enc':'cap'}">${esc(c.rol||'?')}·${esc(c.reporta||'?')}</span>${areaBadge}${uf?` <span class="badge ${uf.toLowerCase()}">${esc(uf)}</span>`:''} ${esc(c.centro_costo||'')}</div>
+    ${pers?`<div class="li-pers">👷 ${pers}</div>`:''}
+    ${nota?`<div class="li-nota">📝 ${esc(nota)}</div>`:''}</div>
+    <div class="li-largo"><input type="number" step="any" value="${c.largo}" onchange="editLargo(${idx},this.value)"></div>
+    <div class="li-unit">${esc(c.unidad||'')}</div>
+  </div>`;
+}
 function renderBandeja(){
-  if(!STATE.cantidades.length) return '<div class="empty-state" style="padding:20px;"><p>La bandeja de '+AREA.toUpperCase()+' está vacía para esta fecha.</p></div>';
-  let html=''; const byAct={}, orderAct=[];
-  STATE.cantidades.forEach((c,idx)=>{ const k=c.descripcion||c.actividad||'—';
-    if(!byAct[k]){ byAct[k]=[]; orderAct.push(k); } byAct[k].push({c,idx}); });
-  orderAct.forEach(k=>{
-    html+=`<div class="grupo-cat">${esc(k)}</div>`;
-    byAct[k].forEach(({c,idx})=>{
-      const uf=c.uf||ufFromPk(c.pk_inicial);
-      const pers=persTxt(c);
-      const nota=String(c.nota_libre||'').trim();
-      html+=`<div class="linea-item ${c._inc?'':'off'}" id="li_${idx}">
-        <button class="tog ${c._inc?'on':'no'}" onclick="toggleInc(${idx})">${c._inc?'✓':'✕'}</button>
-        <div class="li-main"><div class="li-act">${esc(ubicTxt(c))}</div>
-        <div class="li-sub"><span class="src ${c.rol==='encargado'||String(c.rol||'').indexOf('residente')===0?'enc':'cap'}">${esc(c.rol||'?')}·${esc(c.reporta||'?')}</span>${uf?` <span class="badge ${uf.toLowerCase()}">${esc(uf)}</span>`:''} ${esc(c.centro_costo||'')}</div>
-        ${pers?`<div class="li-pers">👷 ${pers}</div>`:''}
-        ${nota?`<div class="li-nota">📝 ${esc(nota)}</div>`:''}</div>
-        <div class="li-largo"><input type="number" step="any" value="${c.largo}" onchange="editLargo(${idx},this.value)"></div>
-        <div class="li-unit">${esc(c.unidad||'')}</div>
-      </div>`;
+  const vis=areasVisibles();
+  const items=STATE.cantidades.map((c,idx)=>({c,idx})).filter(x=>vis.indexOf(x.c._area)>=0);
+  if(!items.length) return '<div class="empty-state" style="padding:20px;"><p>La bandeja está vacía para esta fecha'+(MULTI&&FILTRO!=='all'?(' en '+FILTRO.toUpperCase()):'')+'.</p></div>';
+  let html='';
+  vis.forEach(ar=>{
+    const arr=items.filter(x=>x.c._area===ar);
+    if(!arr.length) return;
+    if(MULTI) html+='<div class="grupo-area">'+(ar==='odt'?'ODT · Transversal':'ODL · Longitudinal')+' ('+arr.length+')</div>';
+    const byAct={}, orderAct=[];
+    arr.forEach(({c,idx})=>{ const k=c.descripcion||c.actividad||'—';
+      if(!byAct[k]){ byAct[k]=[]; orderAct.push(k); } byAct[k].push({c,idx}); });
+    orderAct.forEach(k=>{
+      html+=`<div class="grupo-cat">${esc(k)}</div>`;
+      byAct[k].forEach(({c,idx})=>{ html+=lineaHtml(c,idx); });
     });
   });
   return html;
 }
-/* add-line del residente: marcador (ODT) o PK (ODL) + ítem del catálogo + cantidad */
+/* add-line del residente: actividad del catálogo (de las áreas del panel) + marcador (ODT) o PK (ODL).
+ * D84: el área de la línea se DERIVA del CC del ítem elegido (nunca se teclea); en modo combinado la
+ * ubicación (marcador/PK) se ajusta al ítem elegido. */
+function itemsAddArea(){
+  const seen={}, its=[];
+  ITEMS.forEach(it=>{ if(AREAS.indexOf(it.area)<0) return; const k=(it.corto||it.cc)+'|'+String(it.desc||'').trim(); if(seen[k])return; seen[k]=1; its.push(it); });
+  return its;
+}
 function renderAddCard(){
   if(!ITEMS.length) return '<div class="add-card"><div class="nota-maq">⚠ Catálogo de la BASE no cargado; recarga la página para poder agregar líneas.</div></div>';
-  const seen={}; let opts='<option value="">— Actividad —</option>';
-  const its=[]; ITEMS.forEach(it=>{ if(it.area!==AREA) return; const k=(it.corto||it.cc)+'|'+String(it.desc||'').trim(); if(seen[k])return; seen[k]=1; its.push(it); });
-  its.forEach((it,i)=>{ opts+=`<option value="${i}">${esc(it.desc)}${it.unidad?(' ['+esc(it.unidad)+']'):''}</option>`; });
+  const its=itemsAddArea();
   window._ADD_ITEMS=its;
-  let ubic='';
-  if(AREA==='odt'){
-    let mo='<option value="">— Marcador —</option>';
-    MARCADORES.forEach((m,i)=>{ mo+=`<option value="${i}">${esc(m.elemento)}${m.pk?(' · '+esc(m.pk)):''}</option>`; });
-    ubic=`<div><label>Marcador ODT</label><select id="addMarc">${mo}</select></div>`;
+  let opts='<option value="">— Actividad —</option>';
+  if(MULTI){
+    [['odt','ODT · Transversal (06.*)'],['odl','ODL · Longitudinal (07.*)']].forEach(g=>{
+      if(AREAS.indexOf(g[0])<0) return;
+      const grp=its.map((it,i)=>({it,i})).filter(x=>x.it.area===g[0]);
+      if(!grp.length) return;
+      opts+='<optgroup label="'+esc(g[1])+'">';
+      grp.forEach(x=>{ opts+=`<option value="${x.i}">${esc(x.it.desc)}${x.it.unidad?(' ['+esc(x.it.unidad)+']'):''}</option>`; });
+      opts+='</optgroup>';
+    });
   } else {
-    ubic=`<div><label>PK inicial</label><input type="text" id="addPk" placeholder="14+635"></div>`;
+    its.forEach((it,i)=>{ opts+=`<option value="${i}">${esc(it.desc)}${it.unidad?(' ['+esc(it.unidad)+']'):''}</option>`; });
   }
+  // En combinado la ubicación se llena según el ítem (onAddActChange); en una sola área es estática.
+  const ubic = MULTI ? '<div id="addUbic"></div>' : (AREA==='odt' ? addUbicOdtHtml() : addUbicOdlHtml());
   return `<div class="add-card"><div class="add-grid">
-    <div><label>Agregar (residente)</label><select id="addAct">${opts}</select></div>
+    <div><label>Agregar (residente)</label><select id="addAct" onchange="onAddActChange()">${opts}</select></div>
     ${ubic}
     <div><label>Cantidad</label><input type="number" step="any" id="addCant" placeholder="0"></div>
     <button class="btn-add" onclick="addLinea()">+ Añadir</button>
   </div></div>`;
 }
+function addUbicOdtHtml(){
+  let mo='<option value="">— Marcador —</option>';
+  MARCADORES.forEach((m,i)=>{ mo+=`<option value="${i}">${esc(m.elemento)}${m.pk?(' · '+esc(m.pk)):''}</option>`; });
+  return `<div><label>Marcador ODT</label><select id="addMarc">${mo}</select></div>`;
+}
+function addUbicOdlHtml(){
+  return `<div><label>PK inicial</label><input type="text" id="addPk" placeholder="14+635"></div>`;
+}
+// D84 (combinado): al elegir la actividad, muestra el marcador (ítem 06→ODT) o el PK (ítem 07→ODL).
+function onAddActChange(){
+  if(!MULTI) return;
+  const its=window._ADD_ITEMS||[]; const v=document.getElementById('addAct').value;
+  const it=v!==''?its[parseInt(v,10)]:null;
+  const cont=document.getElementById('addUbic'); if(!cont) return;
+  cont.innerHTML = it ? (it.area==='odt'?addUbicOdtHtml():addUbicOdlHtml()) : '';
+}
 function renderMaquinas(){
-  if(!STATE.maquinas.length) return '<div class="empty-state" style="padding:16px;"><p>Sin máquinas reportadas en '+AREA.toUpperCase()+'</p></div>'
+  const vis=areasVisibles();
+  const maqs=STATE.maquinas.filter(m=>vis.indexOf(m._area)>=0);
+  if(!maqs.length) return '<div class="empty-state" style="padding:16px;"><p>Sin máquinas reportadas'+(MULTI?'':' en '+AREA.toUpperCase())+'</p></div>'
     +'<div class="nota-maq">Sin catálogo de máquinas de drenajes (V1): se listan solo las reportadas por los capataces; no hay lista de faltantes.</div>';
   let html='';
-  STATE.maquinas.forEach(m=>{
+  maqs.forEach(m=>{
     const h=(m.horas_operadas===''||m.horas_operadas==null)?'':(fmt(numH(m.horas_operadas))+'h');
+    const areaBadge = MULTI ? ` <span class="badge ${m._area}">${m._area.toUpperCase()}</span>` : '';
     html+=`<div class="linea-item">
       <span class="maq-id">${esc(m.id_maquina||'—')}</span>
-      <div class="li-main"><div class="li-sub">${esc(m.operador||'s/op')} · <span class="src cap">${esc(m.reporta||'?')}</span></div></div>
+      <div class="li-main"><div class="li-sub">${esc(m.operador||'s/op')} · <span class="src cap">${esc(m.reporta||'?')}</span>${areaBadge}</div></div>
       <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:14px;white-space:nowrap;">${h||'—'}</div></div>`;
   });
   html+='<div class="nota-maq">Captura libre (V1): estas máquinas no pasan a Captura_Diaria (a_captura=NO); van al WhatsApp del área.</div>';
@@ -311,28 +422,26 @@ function renderMaquinas(){
 }
 
 function toggleInc(idx){ STATE.cantidades[idx]._inc=!STATE.cantidades[idx]._inc; render(); }
-function editLargo(idx,val){ STATE.cantidades[idx].largo=parseFloat(val)||0; refreshTot(); }
-function refreshTot(){ const {t,order}=calcTotales(); const box=document.querySelector('.totales'); if(!box)return;
-  let html='';
-  if(order.length){ order.forEach(k=>{ const o=t[k];
-    html+=`<div class="tot-row"><span class="cat">${esc(o.desc)}</span><span class="val">${fmt(o.total)} ${esc(o.uni)}</span></div>`; }); }
-  else html='<div class="cat" style="color:var(--muted)">Sin cantidades incluidas</div>';
-  box.innerHTML=html;
-}
+function editLargo(idx,val){ STATE.cantidades[idx].largo=parseFloat(val)||0; render(); }
+
 function addLinea(){
   const its=window._ADD_ITEMS||[];
   const ai=document.getElementById('addAct').value;
   if(ai===''){ alert('Elige una actividad'); return; }
   const it=its[parseInt(ai,10)];
   const cant=parseFloat(document.getElementById('addCant').value)||0;
+  // D84: el área de la línea la fija el CC del ítem (en combinado) o el área del panel (una sola área).
+  const lineArea = MULTI ? it.area : AREA;
   let elemento='', pk='', abs=null;
-  if(AREA==='odt'){
-    const mi=document.getElementById('addMarc').value;
+  if(lineArea==='odt'){
+    const marcEl=document.getElementById('addMarc');
+    const mi=marcEl?marcEl.value:'';
     if(mi===''){ alert('Elige el marcador ODT'); return; }
     const mk=MARCADORES[parseInt(mi,10)];
     elemento=mk.elemento; pk=mk.pk||''; abs=(mk.abs===''||mk.abs==null)?null:Number(mk.abs);
   } else {
-    pk=document.getElementById('addPk').value.trim();
+    const pkEl=document.getElementById('addPk');
+    pk=pkEl?pkEl.value.trim():'';
     if(!pk){ alert('Escribe el PK'); return; }
     elemento=buildElemento(pk,''); abs=pkToMeters(pk);
   }
@@ -340,8 +449,8 @@ function addLinea(){
   STATE.cantidades.push({ id_registro:'', reporta:'(residente)', rol:localStorage.getItem('rol')||'residente',
     grupo:'DRENAJES Y ESTRUCTURAS',
     // capítulo por defecto del área; los ítems "extra" (D71: Demolición de Estructuras) traen el suyo
-    capitulo: it.capitulo || ((AREA==='odt')?'DRENAJE TRANSVERSAL':'DRENAJE LONGITUDINAL'),
-    area: AREA,   // D71: fija el área de la línea (necesaria para ítems cuyo CC deriva 'tierras')
+    capitulo: it.capitulo || ((lineArea==='odt')?'DRENAJE TRANSVERSAL':'DRENAJE LONGITUDINAL'),
+    area: lineArea, _area: lineArea,   // D71/D84: fija el área de la línea (envío y agrupación)
     actividad:it.desc, descripcion:it.desc,
     centro_costo:proy?`${proy}.${it.corto||it.cc}`:(it.cc||''), unidad:it.unidad||'', uf, proyecto:proy,
     elemento, pk_inicial:pk, pk_final:'', abs_inicial:abs, abs_final:abs,
@@ -350,29 +459,68 @@ function addLinea(){
   render();
 }
 
+/* ---------- envío a DATA: UNA llamada enviar_data POR ÁREA presente (D84, crítico) ----------
+ * Nunca un envío mezclado (rompería D70(c)). Guard anti-borrado: un área sin NINGUNA fila en la bandeja
+ * de ese día NO se llama — un payload vacío con `area` borraría lo que esa área ya tuviera en DATA ese
+ * día. Envío secuencial; si una llamada falla, NO se continúa con la siguiente y se dice cuál quedó sin
+ * enviar. Resultado: conteo REAL devuelto por el servidor por área (D30). */
 async function enviar(){
-  const incluidas=STATE.cantidades.filter(c=>c._inc);
-  if(!confirm('Vas a enviar '+incluidas.length+' filas a DATA para el '+STATE.fecha+'.\n\nEsto reemplaza SOLO lo del área '+AREA.toUpperCase()+' de ese día (tierras y la otra área no se tocan). ¿Continuar?')) return;
-  try{
-    const resp=await fetch(APPS_SCRIPT_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body:JSON.stringify({action:'enviar_data', fecha:STATE.fecha, area:AREA, cantidades:incluidas})});
-    const res=await resp.json();
-    if(!res||!res.ok) throw new Error((res&&res.error)||'Respuesta inesperada');
-    const f=document.getElementById('savedFlag'); f.style.display='inline'; setTimeout(()=>f.style.display='none',3000);
-  }catch(err){ alert('⚠ No se pudo enviar: '+err.message); }
+  // Guard: solo áreas que TIENEN al menos una fila en la bandeja de ese día.
+  const areasEnvio=AREAS.filter(ar=> STATE.cantidades.some(c=>c._area===ar));
+  if(!areasEnvio.length){ alert('No hay filas en la bandeja para enviar en este día.'); return; }
+  const plan=areasEnvio.map(ar=>{
+    const rows=STATE.cantidades.filter(c=>c._area===ar);
+    const incluidas=rows.filter(c=>c._inc);
+    return { ar, incluidas, inc:incluidas.length, desc:rows.length-incluidas.length };
+  });
+  let txt='Vas a enviar a DATA para el '+STATE.fecha+':\n\n';
+  plan.forEach(p=>{ txt+='• '+p.ar.toUpperCase()+': '+p.inc+' incluidas'+(p.desc?(' · '+p.desc+' descartadas'):'')+'\n'; });
+  txt+='\nSe PISA ese día '+(plan.length>1?'en cada una de esas áreas':'en '+plan[0].ar.toUpperCase())+' (tierras'+(plan.length>1?' y la otra área':'')+' no se tocan). ¿Continuar?';
+  if(!confirm(txt)) return;
+
+  const hechas=[];
+  for(let i=0;i<plan.length;i++){
+    const p=plan[i];
+    try{
+      const resp=await fetch(APPS_SCRIPT_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body:JSON.stringify({action:'enviar_data', fecha:STATE.fecha, area:p.ar, cantidades:p.incluidas})});
+      const res=await resp.json();
+      if(!res||!res.ok) throw new Error((res&&res.error)||'Respuesta inesperada');
+      hechas.push({ar:p.ar, n:(res.enviadas!=null?res.enviadas:p.inc)});
+    }catch(err){
+      const pend=plan.slice(i).map(x=>x.ar.toUpperCase());
+      const box=document.getElementById('msgBox'); box.style.display='block';
+      box.textContent='⚠ Falló el envío de '+p.ar.toUpperCase()+': '+err.message+'\n\n'
+        +'Enviadas: '+(hechas.length? hechas.map(h=>h.ar.toUpperCase()+' ('+h.n+')').join(' · '):'ninguna')+'\n'
+        +'SIN enviar: '+pend.join(', ')+'. Vuelve a intentar (solo se reenvían las que faltan).';
+      return;
+    }
+  }
+  const f=document.getElementById('savedFlag'); if(f){ f.style.display='inline'; setTimeout(()=>f.style.display='none',3000); }
+  const box=document.getElementById('msgBox'); box.style.display='block';
+  box.textContent='✅ Enviado a DATA ('+STATE.fecha+'):\n'+hechas.map(h=>'• '+h.ar.toUpperCase()+': '+h.n+' fila'+(h.n!==1?'s':'')+' ✓').join('\n');
 }
 
-/* WhatsApp de drenajes (D70): por actividad → línea por marcador/PK con cantidad, personal,
- * turno de noche y notas; luego las máquinas del área. */
-function generarMensaje(){
-  const {t,order}=calcTotales();
-  const f=new Date(STATE.fecha+'T12:00:00');
-  const dd=String(f.getDate()).padStart(2,'0'), mm=String(f.getMonth()+1).padStart(2,'0'), yy=String(f.getFullYear()).slice(2);
-  const nombre=(AREA==='odt')?'Drenaje Transversal (ODT)':'Drenaje Longitudinal (ODL)';
-  let msg=`*Reporte de actividades de ${nombre} ${dd}/${mm}/${yy}*\n——————————\n`;
+/* ---------- WhatsApp de drenajes (D70/D84) ----------
+ * Default (un solo mensaje del día): en combinado lleva las dos secciones tituladas; en una sola área,
+ * el formato de siempre. Toggle "uno por área" (recordado en localStorage): un mensaje independiente por
+ * área, cada uno con su botón de copiar. */
+function waModo(){ return localStorage.getItem(WA_KEY)==='porarea' ? 'porarea' : 'combinado'; }
+function toggleWa(){
+  localStorage.setItem(WA_KEY, waModo()==='porarea'?'combinado':'porarea');
+  const box=document.getElementById('msgBox'); if(box && box.style.display==='block') generarMensaje();
+}
+function copiarWa(ar){ const t=window['_WA_'+ar]||''; if(navigator.clipboard) navigator.clipboard.writeText(t).then(()=>{},()=>{}); }
+function copiarTxt(t){ if(navigator.clipboard) navigator.clipboard.writeText(t).then(()=>{},()=>{}); }
+function waFecha(){ const f=new Date(STATE.fecha+'T12:00:00');
+  return String(f.getDate()).padStart(2,'0')+'/'+String(f.getMonth()+1).padStart(2,'0')+'/'+String(f.getFullYear()).slice(2); }
+// Cuerpo de UN área (actividades · personal · máquinas · observaciones), sin el encabezado del mensaje.
+function buildCuerpoArea(ar){
+  const {t}=calcTotalesArea(ar);
   const byAct={}, orderAct=[];
-  STATE.cantidades.forEach(c=>{ if(!c._inc) return; const k=(c.descripcion||c.actividad||'—')+'||'+(c.unidad||'');
+  STATE.cantidades.forEach(c=>{ if(c._area!==ar || !c._inc) return; const k=(c.descripcion||c.actividad||'—')+'||'+(c.unidad||'');
     if(!byAct[k]){ byAct[k]=[]; orderAct.push(k); } byAct[k].push(c); });
+  let msg='';
   orderAct.forEach(k=>{
     const o=t[k], lines=byAct[k];
     msg+=`\n* *${o.desc}: ${fmt(o.total)} ${o.uni}\n`;
@@ -382,21 +530,42 @@ function generarMensaje(){
       const nota=String(c.nota_libre||'').trim(); if(nota) msg+=`  📝 ${nota}\n`;
     });
   });
-  // personal total del día (solo líneas incluidas)
   let totOf=0, totAy=0, hayNoche=false;
-  STATE.cantidades.forEach(c=>{ if(!c._inc) return; totOf+=numH(c.personal_oficiales); totAy+=numH(c.personal_ayudantes); if(esNoche(c)) hayNoche=true; });
+  STATE.cantidades.forEach(c=>{ if(c._area!==ar || !c._inc) return; totOf+=numH(c.personal_oficiales); totAy+=numH(c.personal_ayudantes); if(esNoche(c)) hayNoche=true; });
   if(totOf||totAy) msg+=`\n*Personal:* ${fmt(totOf)} oficiales · ${fmt(totAy)} ayudantes${hayNoche?' · incluye turno de noche 🌙':''}\n`;
-  if(STATE.maquinas.length){
+  const maqs=STATE.maquinas.filter(m=>m._area===ar);
+  if(maqs.length){
     msg+='\n*Máquinas:*\n';
-    STATE.maquinas.forEach(m=>{
-      const h=(m.horas_operadas===''||m.horas_operadas==null)?'':(' '+fmt(numH(m.horas_operadas))+'h');
-      msg+=`- ${m.id_maquina||'—'}${m.operador?(' ('+m.operador+')'):''}${h}\n`;
-    });
+    maqs.forEach(m=>{ const h=(m.horas_operadas===''||m.horas_operadas==null)?'':(' '+fmt(numH(m.horas_operadas))+'h');
+      msg+=`- ${m.id_maquina||'—'}${m.operador?(' ('+m.operador+')'):''}${h}\n`; });
   }
-  const obsArr=(STATE.observaciones||[]).filter(o=>o.observacion);
+  const obsArr=STATE.observaciones.filter(o=>o._area===ar && o.observacion);
   if(obsArr.length){ msg+='\n*OBSERVACIONES:*\n'; obsArr.forEach(o=>{ msg+=`${o.reporta||'?'}: ${o.observacion}\n`; }); }
-  const box=document.getElementById('msgBox'); box.style.display='block'; box.textContent=msg;
-  if(navigator.clipboard) navigator.clipboard.writeText(msg).then(()=>{},()=>{});
+  return msg;
+}
+function generarMensaje(){
+  const box=document.getElementById('msgBox'); box.style.display='block';
+  const dfx=waFecha();
+  if(!MULTI){
+    const msg=`*Reporte de actividades de ${nombreArea(AREA)} ${dfx}*\n——————————\n`+buildCuerpoArea(AREA);
+    box.textContent=msg; copiarTxt(msg); return;
+  }
+  if(waModo()==='porarea'){
+    let html='';
+    AREAS.forEach(ar=>{
+      const msg=`*Reporte de actividades de ${nombreArea(ar)} ${dfx}*\n——————————\n`+buildCuerpoArea(ar);
+      window['_WA_'+ar]=msg;
+      html+='<div class="wa-sub"><button class="btn-add" onclick="copiarWa(\''+ar+'\')">📋 Copiar '+ar.toUpperCase()+'</button><pre>'+esc(msg)+'</pre></div>';
+    });
+    box.innerHTML=html;
+  } else {
+    let msg=`*Reporte de drenajes ${dfx}*\n——————————\n`;
+    AREAS.forEach(ar=>{
+      const cuerpo=buildCuerpoArea(ar);
+      msg+=`\n*${(ar==='odt'?'DRENAJE TRANSVERSAL':'DRENAJE LONGITUDINAL')}*\n`+(cuerpo.trim()?cuerpo:'(sin actividades incluidas)\n')+'——————————\n';
+    });
+    box.textContent=msg; copiarTxt(msg);
+  }
 }
 </script>
 </body>

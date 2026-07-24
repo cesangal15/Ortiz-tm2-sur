@@ -14,9 +14,9 @@
 │                        ├── jefe.html (jefe · residente · admin — resumen post-DATA,      │
 │                        │             filtro Área tierras/ODT/ODL + copiado por área)     │
 │                        ├── reporte-drenajes.html (capataz_odt · capataz_odl · admin;     │
-│                        │             modo ODT/ODL por rol — marcador o PK + ítems BASE)  │
-│                        └── residente-drenajes.html (residente_odt · residente_odl ·     │
-│                                      admin — bandeja/DATA/WhatsApp SOLO de su área)      │
+│                        │      área de cada línea por CC 06→ODT/07→ODL; campo areas D84)  │
+│                        └── residente-drenajes.html (residente_dren · residente_odt/odl   │
+│                                   · admin — bandeja combinada ODT+ODL, envío x área D84) │
 │  Sesión: localStorage {usuario, rol} (D82; antes sessionStorage). Credenciales hardcoded │
 │  en index.html.                                                                          │
 │  Admin: botón "← Menú" en toda pantalla interna vuelve a menu.html sin cerrar sesión.    │
@@ -73,20 +73,27 @@
 2. **Chequeadora** entra → fecha, origen → N líneas {PK destino, tipo destino (Terraplén·Puente·ODL·ODT·Botadero), bloque de placas} + maquinaria (excavadoras del origen). Pega el desglose por placa estilo WhatsApp; el sistema parsea placa+viajes, calcula el **volumen real de la línea = Σ(viajes×cubicaje)** leyendo la hoja CUBICAJE (D53 sobre D06). Placa no registrada → fallback **14 fijo** (D54) + flag (naranja + `cubicaje_origen`=default). Cada placa se guarda en VOLQUETAS con su cubicaje y m3_placa. **Excavación = por ORIGEN, acumulada (D63):** la excavación se registra DONDE SE HIZO EL CORTE = el origen, así que el reporte genera **UNA sola fila de excavación = Σ(volúmenes de todas las líneas)** al PK del origen (Masivo 2→19+800, Masivo 1→14+400, Diviso→21+500, todos ≤30→UF1/3701; Complementario/Otro→el PK que teclea la chequeadora), del que derivan PK/ELEMENTO/ABS/UF/PROYECTO/CC. El **terraplén NO cambia**: 1 fila por línea con destino=Terraplén, al PK de DESTINO. No aprovechable acumulada sigue disparando ZODME (D17). Las excavadoras reportadas van a MAQUINARIA con producción = total excavado del día **repartido en partes iguales** entre ellas (D54; el encargado reconcilia duplicados con el capataz, D51).
 3. Ambos envían → BANDEJA (+ MAQUINARIA). Confirmación real del servidor (cuenta de filas guardadas).
 
-## Flujo de captura — DRENAJES (D70)
+## Flujo de captura — DRENAJES (D70 / D84)
 
-1. **Capataz ODT** (`capataz_odt`) entra a `reporte-drenajes.html` → elige el **marcador de obra**
-   (147 puntuales `ODT*` servidos por `?action=drenajes`, con su PK visible) → N actividades:
-   ítem `.06.*` (dropdown de la BASE, descripción verbatim) → **cantidad directa** en la unidad
-   contractual → opcional {oficiales, ayudantes, turno de noche, nota libre} → opcional máquinas
-   (texto libre: id/placa, operador, horas). **Capataz ODL** (`capataz_odl`): PK inicial (+ final
-   opcional) O un marcador ODT (descole) → ítem `.07.*` → cantidad → mismos campos.
+1. **Capataz de drenajes** entra a `reporte-drenajes.html`. Con una sola área (`capataz_odt`/
+   `capataz_odl`, sin campo `areas`) el formulario se comporta igual que hoy. **D84: con el campo
+   opcional `areas` en el login (`['odt','odl']`) el desplegable ofrece todos los ítems `.06.*` y
+   `.07.*` en una lista y el ÁREA DE CADA LÍNEA se deriva del CC del ítem** (06→ODT pide el
+   **marcador de obra**, 147 puntuales `ODT*` de `?action=drenajes`; 07→ODL pide **PK** inicial/final
+   o un marcador ODT si es descole). Por línea: **cantidad directa** en la unidad contractual +
+   opcional {oficiales, ayudantes, turno de noche, nota libre} + opcional máquinas (texto libre). El
+   resumen en vivo agrupa por área.
 2. Envía a BANDEJA (+ MAQUINARIA con `a_captura=NO`) con confirmación real (D30). El área queda en
-   la col `area` de BANDEJA (derivada del CC).
-3. **Residente del área** (`residente_odt`/`residente_odl`) revisa en `residente-drenajes.html`
-   (bandeja filtrada con `&area=`), reconcilia con toggles, edita/agrega → **Enviar a DATA**
-   (pisa el día SOLO en su área, D70/D03) → **Generar WhatsApp** (formato drenajes con
-   personal/turno de noche/máquinas).
+   la col `area` de BANDEJA (derivada del CC, por línea). Dos flujos válidos sin código extra (D84):
+   mezclar ODT+ODL en un envío, o dos envíos el mismo día (BANDEJA acumula, D02).
+3. **Residente de drenajes** revisa en `residente-drenajes.html`. Con una sola área (`residente_odt`/
+   `residente_odl`) es como hoy (bandeja filtrada `&area=`). **D84: el residente unificado
+   `residente_dren` ve ODT+ODL JUNTOS** — la bandeja se consulta una vez por área y se fusiona en
+   cliente (chips de filtro Todas/ODT/ODL, badge de área por línea, totales separados por área) →
+   **Enviar a DATA** dispara **una llamada `enviar_data` por área presente** (secuencial, con guard
+   anti-borrado: un área sin filas en la bandeja de ese día NO se llama; pisa el día SOLO en cada
+   área, D70/D03) → **Generar WhatsApp** (un mensaje con dos secciones, o uno por área, toggle
+   recordado en localStorage).
 4. `buildDataRowDrenajes` arma la fila: GRUPO "DRENAJES Y ESTRUCTURAS", CAPITULO DRENAJE
    TRANSVERSAL/LONGITUDINAL, ELEMENTO = marcador (ODT) o tramo `"tm2 pk X - Y"` (ODL), ABS del
    marcador/tramo verbatim (K/L), UF/proyecto/CC por D04+D63, DESCRIPCION verbatim (D68).
@@ -156,9 +163,13 @@ la ventana nocturna va de `CONFIG.nocturno_desde` (19:00) a `CONFIG.nocturno_has
 extra pase de las 06:00 es extra DIURNA —, en sábado un turno sin variante sabatina usa su horario de
 semana, y domingo/festivo tiene horario típico 07:00–15:00 (7h a col D, tope `domfest_tope`). Códigos sin
 catálogo pasan sin bloqueo (`codigo| NOMBRE`). Retiros = `inactivo` + `fecha_retiro`, nunca se borra una
-fila. Columnas H–N (Dom/Fest c/s compensación) y el string de `CONFIG.proyecto_3702` son parámetros
-abiertos (ver 03_BACKLOG). Este módulo **nunca** lee ni escribe BANDEJA/DATA/MAQUINARIA ni comparte
-Sheet/Script con `Codigo.gs`.
+fila. **Áreas (D72/D84):** CUADRILLAS lleva col `area` (`tierras`/`odt`/`odl`) y col **`estado`**
+(`activa`/`inactiva`, vacío=activa: inactivar sin borrar; filtra roster/faltantes/export/selectores/
+gestión, no lo ya reportado). El guard de área es `areasDeUsuario()` → **array** (residente/jeisson=
+`['tierras']`, residente_odt/odl=`['odt']`/`['odl']`, **residente_dren=`['odt','odl']`** con export
+Navision combinado, admin=`[]` sin filtro); los filtros usan `includes`. Columnas H–N (Dom/Fest c/s
+compensación) y el string de `CONFIG.proyecto_3702` son parámetros abiertos (ver 03_BACKLOG). Este módulo
+**nunca** lee ni escribe BANDEJA/DATA/MAQUINARIA ni comparte Sheet/Script con `Codigo.gs`.
 
 **Canal "solo extras" del admin (D73):** hoja **`EXTRAS_ADMIN`** (`fecha·cc·proyecto·horas·tipo·timestamp·reporta`,
 clave lógica = `fecha`, re-guardar pisa el día, sin staging) aislada del roster — el admin NO está en

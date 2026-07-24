@@ -119,9 +119,10 @@ async function cargarPlantillaBundle(){
 
 window.onload = function(){
   const rol=localStorage.getItem('rol'), usuario=localStorage.getItem('usuario');
-  // Guard: residente(tierras), admin, jeisson (rol asistencia_plus, D69) o residente de área odt/odl (D72).
+  // Guard: residente(tierras), admin, jeisson (rol asistencia_plus, D69), residente de área odt/odl (D72)
+  // o residente de drenajes unificado (residente_dren → ODT+ODL en un solo archivo, D84).
   // D74b: jeisson entraba con rol 'asistencia_plus' (NO 'jeisson'), por eso lo devolvía al login.
-  const rolesOk=['residente','admin','asistencia_plus','residente_odt','residente_odl'];
+  const rolesOk=['residente','admin','asistencia_plus','residente_odt','residente_odl','residente_dren'];
   if(!rol || rolesOk.indexOf(rol)<0){ window.location.href='index.html'; return; }
   STATE.usuario=usuario; STATE.rol=rol;
   document.getElementById('userDisplay').textContent=usuario;
@@ -270,7 +271,7 @@ function render(){
 
   // D72/D74b: gestión de personal para residente(tierras), admin, jeisson y residentes de área; el backend
   // la limita a su área (jeisson = tierras, mismos permisos que el residente de tierras).
-  if(['residente','admin','asistencia_plus','residente_odt','residente_odl'].indexOf(STATE.rol)>=0){
+  if(['residente','admin','asistencia_plus','residente_odt','residente_odl','residente_dren'].indexOf(STATE.rol)>=0){
     html+='<div class="section-title">Gestión de personal</div>';
     html+='<div class="card" id="gestionCard"><button class="btn-ghost" onclick="cargarPersonal()">Cargar personal ↻</button><div id="gestionBody" style="margin-top:12px;"></div></div>';
   }
@@ -460,7 +461,7 @@ async function guardarDetalle(idx){
  * responsable de la cuadrilla. */
 function proyectoFromCC(cc){ const m=String(cc||'').match(/^(\d{4})/); return m?m[1]:''; }
 function seccionCompletar(d){
-  if(['residente','admin','asistencia_plus','residente_odt','residente_odl'].indexOf(STATE.rol)<0) return '';
+  if(['residente','admin','asistencia_plus','residente_odt','residente_odl','residente_dren'].indexOf(STATE.rol)<0) return '';
   const faltantes=d.faltantes||[];
   const comp=[];
   // Los "presente sin CC" ya vienen en faltantes como sin_reportar (incompleto=true), así que basta
