@@ -212,6 +212,12 @@ function activaEnFecha(p, fecha){
   if(ret) return !(fecha && fecha >= ret);         // retiro con fecha: activa antes de esa fecha
   return String(p.estado||'activo')!=='inactivo';  // sin fecha de retiro: usa el estado actual
 }
+// D85: personal EVENTUAL (p. ej. el encargado Javier): trabaja solo en ocasiones puntuales (dom/fest),
+// así que NO se le espera en el día a día — no aparece en el roster del responsable ni cuenta como
+// faltante/sin-reportar — pero queda disponible en "Completar faltantes" del resumen para marcarlo
+// presente cuando sí trabaja. Se marca escribiendo `estado = eventual` en su fila de PERSONAL (la
+// columna ya existe; `activaEnFecha` lo trata como activo porque solo 'inactivo' desactiva).
+function esEventual(p){ return norm(p.estado)==='eventual'; }
 
 /* ---------- CONFIG / FESTIVOS ---------- */
 function getConfigMap(){
@@ -310,7 +316,8 @@ function roster(e){
   const fecha=e.parameter.fecha || Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy-MM-dd');
   const personalTodo=readSheet('PERSONAL', PERSONAL_HEADERS);
   // D72: roster date-aware — solo quien ya había ingresado y no estaba retirado a esa fecha.
-  const personas=personalTodo.filter(p=> activaEnFecha(p, fecha) && cuadrillas.indexOf(p.cuadrilla)>=0)
+  // D85: los eventuales no salen en el formulario del responsable (se marcan desde el resumen).
+  const personas=personalTodo.filter(p=> activaEnFecha(p, fecha) && !esEventual(p) && cuadrillas.indexOf(p.cuadrilla)>=0)
     .map(p=>({ cedula:p.cedula||'', codigo:p.codigo||'', nombre:p.nombre||'', cargo:p.cargo||'', cuadrilla:p.cuadrilla||'' }));
   const jornada=jornadaDelDia(fecha, cfg, festivos);
   // D72: se excluye el CC de supervisión del encargado/capataz del picker de bloques (confunde al reportar).
@@ -359,8 +366,15 @@ function asistenciaDia(e){
   const cuadrillasCat=readSheet('CUADRILLAS', CUADRILLAS_HEADERS).filter(cq=>enArea(cq.cuadrilla) && (cuadrillaActiva(cq) || cuadConFilas[cq.cuadrilla]));
   // D72: roster date-aware + por área — "se esperaba" a esta persona en ESA fecha (no la foto de hoy).
   // D84: excluye a la gente de cuadrillas inactivas del roster esperado (no de las filas reportadas).
+  // D85: excluye a los eventuales del roster esperado (nunca cuentan como faltantes/sin-reportar).
   const inactivas=cuadrillasInactivasSet();
-  const personalActivo=readSheet('PERSONAL', PERSONAL_HEADERS).filter(p=>activaEnFecha(p, fecha) && enArea(p.cuadrilla) && !inactivas[p.cuadrilla]);
+  const personalTodo=readSheet('PERSONAL', PERSONAL_HEADERS);
+  const personalActivo=personalTodo.filter(p=>activaEnFecha(p, fecha) && !esEventual(p) && enArea(p.cuadrilla) && !inactivas[p.cuadrilla]);
+  // D85: personal eventual del área revisada — disponible en "Completar faltantes" del resumen (para
+  // marcarlo presente los dom/fest u ocasiones puntuales) SIN aparecer como faltante. El frontend lo
+  // ofrece solo si aún no tiene fila reportada ese día.
+  const eventuales=personalTodo.filter(p=>esEventual(p) && activaEnFecha(p, fecha) && enArea(p.cuadrilla))
+    .map(p=>({ codigo:p.codigo||'', cedula:p.cedula||'', nombre:p.nombre||'', cargo:p.cargo||'', cuadrilla:p.cuadrilla||'' }));
   // Una fila cuenta como REPORTE COMPLETO solo si: ausente con motivo, o presente CON centro de costo.
   // Presente SIN CC (el capataz la dejó pasar sin actividad) = como si NO se hubiera reportado
   // (decisión del residente, jul-2026): NO cuenta presente y va a faltantes para completarla.
@@ -423,7 +437,7 @@ function asistenciaDia(e){
   const notas = notasDelDia(fecha).filter(n=>enArea(n.cuadrilla));   // D74: notas del día del área revisada
   // D76: config + festivos también en el resumen, para que el detalle por cuadrilla clasifique ordinarias/
   // extras EXACTO como el Parte de Navision (mismo clasificarHoras que el export), sin otra llamada.
-  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, jornada, catCC, catCCUsados, catMotivos, turnos, extrasAdmin, notas, config:cfg, festivos });
+  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, eventuales, jornada, catCC, catCCUsados, catMotivos, turnos, extrasAdmin, notas, config:cfg, festivos });
 }
 
 /* ---------- POST asistencia_individual: upsert por PERSONA (residente/jeisson completan faltantes) ----------

@@ -98,6 +98,14 @@
   .acum-box{background:rgba(58,155,220,0.08);border:1px solid rgba(58,155,220,0.35);border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:var(--text);}
   .acum-box b{color:var(--uf1);font-weight:700;}
   .acum-box .acum-sub{display:block;font-size:10.5px;color:var(--muted);margin-top:2px;}
+  /* D85: buscador de actividad (mismo patrón que el buscador de CC de asistencias, D78) — con las dos
+   * áreas habilitadas la lista de ítems 06.* + 07.* creció y el <select> se volvió difícil de recorrer. */
+  .act-search{position:relative;}
+  .act-results{position:absolute;top:100%;left:0;right:0;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;max-height:240px;overflow-y:auto;z-index:30;margin-top:4px;}
+  .act-opt{padding:8px 12px;font-size:12.5px;cursor:pointer;border-bottom:1px solid var(--border);}
+  .act-opt:last-child{border-bottom:none;}
+  .act-opt:hover{background:var(--surface2);color:var(--accent);}
+  .act-head{padding:5px 12px;font-size:9.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);background:var(--surface2);border-bottom:1px solid var(--border);position:sticky;top:0;}
 </style>
 </head>
 <body>
@@ -291,28 +299,60 @@ function itemsArea(){
   });
   return out;
 }
-function actividadOptions(){
-  // Pedido ODT (D70): mostrar el CC junto a la actividad para que el capataz relacione cada
-  // actividad con su centro de costo → "Descripción — 06.02 [unidad]" (CC corto, project-independiente).
+/* ---------- D85: buscador de actividad (patrón del buscador de CC de asistencias, D78) ----------
+ * Reemplaza el <select> de actividad: input de texto que filtra por descripción o CC, con las opciones
+ * agrupadas por área en modo multi-área. El índice elegido (sobre itemsArea()) se guarda en el input
+ * OCULTO `.l-act`, así el resto del código (refreshLinea/getCantidades/validate/updateResumen) sigue
+ * leyendo `.l-act` sin cambios. Etiqueta "Descripción — 06.02 [unidad]" (pedido ODT, D70). */
+const ACT_PICK_CAP=60;   // tope de opciones visibles a la vez; el resto aparece al filtrar
+function actLabel(it){ const cc=it.corto||it.cc||''; return it.desc+(cc?(' — '+cc):'')+(it.unidad?(' ['+it.unidad+']'):''); }
+function actividadPickerHtml(i){
+  return '<div class="act-search">'
+    +'<input type="text" class="l-act-q" placeholder="Buscar actividad por nombre o CC…" autocomplete="off" oninput="actPickFilter('+i+')" onfocus="actPickFilter('+i+')" onblur="actPickBlur('+i+')">'
+    +'<input type="hidden" class="l-act" value="">'
+    +'<div class="act-results" id="actres_'+i+'" style="display:none;"></div></div>';
+}
+function actPickFilter(i){
+  const b=document.getElementById('linea_'+i); if(!b) return;
+  const inp=b.querySelector('.l-act-q'), box=document.getElementById('actres_'+i);
+  if(!inp||!box) return;
+  const q=(inp.value||'').trim().toLowerCase();
   const its=itemsArea();
-  const optOf=(it,i)=>{ const cc=it.corto||it.cc||''; return '<option value="'+i+'">'+esc(it.desc)+(cc?(' — '+esc(cc)):'')+(it.unidad?(' ['+esc(it.unidad)+']'):'')+'</option>'; };
-  if(!MULTI){
-    let html='<option value="">— Selecciona actividad —</option>';
-    its.forEach((it,i)=>{ html+=optOf(it,i); });
-    return html;
-  }
-  // D84: multi-área → una sola lista con todos los ítems, agrupados por área (el área de la línea se
-  // deriva del CC del ítem). El value sigue siendo el índice de itemsArea() (se conserva al agrupar).
-  let html='<option value="">— Selecciona actividad —</option>';
-  [['odt','ODT · Transversal (06.*)'],['odl','ODL · Longitudinal (07.*)']].forEach(g=>{
-    if(AREAS.indexOf(g[0])<0) return;
-    const grp=its.map((it,i)=>({it,i})).filter(x=>x.it.area===g[0]);
+  const match=it=>!q || actLabel(it).toLowerCase().indexOf(q)>=0;
+  const groups = MULTI ? [['odt','ODT · Transversal (06.*)'],['odl','ODL · Longitudinal (07.*)']] : [[AREA,null]];
+  let h='', shown=0, total=0;
+  groups.forEach(g=>{
+    if(MULTI && AREAS.indexOf(g[0])<0) return;
+    const grp=its.map((it,idx)=>({it,idx})).filter(x=>x.it.area===g[0] && match(x.it));
+    total+=grp.length;
     if(!grp.length) return;
-    html+='<optgroup label="'+esc(g[1])+'">';
-    grp.forEach(x=>{ html+=optOf(x.it,x.i); });
-    html+='</optgroup>';
+    if(g[1]) h+='<div class="act-head">'+esc(g[1])+'</div>';
+    grp.forEach(x=>{ if(shown>=ACT_PICK_CAP) return; shown++;
+      h+='<div class="act-opt" onmousedown="actPickChoose('+i+','+x.idx+')">'+esc(actLabel(x.it))+'</div>'; });
   });
-  return html;
+  if(!h) h='<div class="act-opt" style="cursor:default;color:var(--muted)">Sin resultados</div>';
+  else if(total>shown) h+='<div class="act-opt" style="cursor:default;color:var(--muted)">…y '+(total-shown)+' más · escribe para filtrar</div>';
+  box.innerHTML=h; box.style.display='block';
+}
+// onmousedown (no onclick) para ganarle al blur del input, igual que el buscador de CC.
+function actPickChoose(i, idx){
+  const b=document.getElementById('linea_'+i); if(!b) return;
+  const it=itemsArea()[idx]; if(!it) return;
+  b.querySelector('.l-act').value=String(idx);
+  b.querySelector('.l-act-q').value=actLabel(it);
+  const box=document.getElementById('actres_'+i); if(box) box.style.display='none';
+  refreshLinea(i);
+}
+function actPickBlur(i){
+  setTimeout(function(){
+    const box=document.getElementById('actres_'+i); if(box) box.style.display='none';
+    // Si ya había una actividad elegida y el texto quedó editado a medias, se restaura la etiqueta de
+    // la elegida (la selección REAL vive en el input oculto; el texto es solo presentación).
+    const b=document.getElementById('linea_'+i); if(!b) return;
+    const sel=b.querySelector('.l-act'), q=b.querySelector('.l-act-q');
+    if(sel && sel.value!==''){ const it=itemsArea()[parseInt(sel.value,10)];
+      if(it && q && q.value.trim()!==actLabel(it)) q.value=actLabel(it); }
+  }, 200);
 }
 function marcadorOptions(conVacio){
   let html=conVacio?'<option value="">— (usar PK) —</option>':'<option value="">— Selecciona marcador —</option>';
@@ -344,8 +384,9 @@ function addLinea(){
   if(MULTI) ubic='<div id="ubic_'+i+'"></div>';
   else if(AREA==='odt') ubic=ubicOdtHtml(i);
   else ubic=ubicOdlHtml(i);
+  // D85: la actividad se elige con el buscador (antes un <select>; con 06.*+07.* juntos era muy largo).
   const actField='<div class="field"><label>Actividad <span class="req">*</span></label>'
-    +'<select class="l-act" onchange="refreshLinea('+i+')">'+actividadOptions()+'</select>'
+    +actividadPickerHtml(i)
     +'<div class="item-hint" id="hint_'+i+'"></div></div>';
   div.innerHTML=
     '<div class="linea-head"><span class="linea-num">Actividad #'+(document.querySelectorAll('.linea').length+1)+'</span>'
@@ -566,7 +607,8 @@ function validate(){
   const fecha=document.getElementById('fechaReporte'); if(!fecha.value){ fecha.classList.add('field-error'); ok=false; }
   document.querySelectorAll('#cantidadesContainer .linea').forEach(b=>{
     const sel=b.querySelector('.l-act');
-    if(sel.value===''){ sel.classList.add('field-error'); ok=false; return; }
+    // D85: el índice elegido vive en el input oculto .l-act; el error se marca en el visible .l-act-q.
+    if(sel.value===''){ (b.querySelector('.l-act-q')||sel).classList.add('field-error'); ok=false; return; }
     const it=itemsArea()[parseInt(sel.value,10)];
     const u=ubicacionDe(b);
     // D84: el área de la línea (para saber si exigir marcador o PK) sale del CC del ítem en multi-área.

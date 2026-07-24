@@ -85,13 +85,12 @@ const USUARIOS = {
   'jairo':         { clave: 'dren2026',  rol: 'capataz_odl', areas: ['odt','odl'],   redirige: 'seleccion-reporte.html' },
   // Doble deber (D72): revisan su panel de drenajes + el resumen de asistencia de SU área (odt/odl),
   // así que aterrizan en seleccion-reporte.html.
-  // D84: la residente ODT salió a UF3 → se elimina el login `residente_odt`. La residente ODL asume
-  // también ODT con un SOLO login `residente_dren` (rol residente_dren → ['odt','odl']). El panel y el
-  // resumen le muestran las dos áreas juntas. Los roles de un área (residente_odt/residente_odl) se
-  // conservan funcionando en los guards/helpers por retrocompatibilidad; `residente_odl` queda como
-  // login de respaldo de una sola área.
+  // D84: la residente ODT salió a UF3 y la residente ODL asume también ODT con un SOLO login
+  // `residente_dren` (rol residente_dren → ['odt','odl']). El panel y el resumen le muestran las dos
+  // áreas juntas. Los logins de una sola área (`residente_odt`/`residente_odl`) se ELIMINAN (decisión
+  // del usuario, jul-2026: un solo login para esa persona); los ROLES de un área se conservan en los
+  // guards/helpers por retrocompatibilidad, por si algún día vuelve un residente de una sola área.
   'residente_dren': { clave: 'Ortiz2026', rol: 'residente_dren', redirige: 'seleccion-reporte.html' },
-  'residente_odl': { clave: 'Ortiz2026', rol: 'residente_odl', redirige: 'seleccion-reporte.html' },
   // Chequeadoras (claves: comparten una contraseña común; usuario se compara en minúsculas).
   // maleja/mairy/luzdary tienen doble deber (reporte de obra + asistencia de su cuadrilla): aterrizan
   // en seleccion-reporte.html. maleja -> cuadrilla ALBERT, luzdary -> cuadrilla ALEJANDRO (se definen
