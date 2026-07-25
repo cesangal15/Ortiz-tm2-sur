@@ -23,7 +23,8 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);fon
 h1,h2,h3{font-family:'Syne',sans-serif;}
 button{font-family:'DM Sans',sans-serif;}
 
-.topbar{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--border);padding:14px 20px 12px;}
+.topbar{position:sticky;top:0;z-index:10;background:var(--bg);border-bottom:1px solid var(--border);padding:14px 20px 12px;display:flex;align-items:center;justify-content:space-between;gap:16px;}
+.topbar a.btn{text-decoration:none;}
 .topbar h1{font-size:17px;font-weight:800;}
 .topbar p{font-size:11px;color:var(--muted);margin-top:2px;}
 #page{max-width:1240px;margin:0 auto;padding:18px 20px 90px;}
@@ -87,8 +88,12 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
 <body>
 
 <div class="topbar">
-  <h1>🚜 Reparto de producción de maquinaria</h1>
-  <p>Mensual, de un solo paso · TM2 Sur</p>
+  <div>
+    <h1>🚜 Reparto de producción de maquinaria</h1>
+    <p>Mensual, de un solo paso · TM2 Sur</p>
+  </div>
+  <!-- Solo cuando la página se sirve desde el sitio (no al abrirla desde el disco) -->
+  <a class="btn sec" id="btnMenu" href="menu.html" style="display:none">← Menú</a>
 </div>
 
 <div id="page">
@@ -409,6 +414,10 @@ function ufDeProyecto(p){ return p==='3701'?'UF1':(p==='3702'?'UF2':''); }
 const S={ prod:{wb:null,nombre:''}, jefe:{wb:null,nombre:''}, out:null };
 
 /* ============================ CARGA ============================ */
+
+// El "← Menú" solo tiene sentido servida desde el sitio: al abrir el archivo desde el
+// disco (file://) no hay menu.html al lado y el enlace quedaría roto.
+if(location.protocol==='http:' || location.protocol==='https:') document.getElementById('btnMenu').style.display='';
 
 function initParams(){
   document.getElementById('propias').value = MAQUINAS_PROPIAS.join(', ');
