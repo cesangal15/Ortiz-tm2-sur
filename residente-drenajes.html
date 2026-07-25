@@ -205,6 +205,14 @@ function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;',
 function numH(v){ const n=parseFloat(v); return isNaN(n)?0:n; }
 function esNoche(c){ return String(c.turno_noche||'').toUpperCase()==='SI' || c.turno_noche===true; }
 function nombreArea(ar){ return (ar==='odt')?'Drenaje Transversal (ODT)':'Drenaje Longitudinal (ODL)'; }
+/* D86: ¿la observación general pertenece al área consultada? Espejo de `obsEnArea` del backend: la
+ * columna `area` de OBSERVACIONES puede traer una lista ('odt,odl') y, si viene vacía o no viene
+ * (backend anterior a D86), la fila es de tierras — nunca de drenajes. */
+function obsEsDelArea(o, ar){
+  const raw=String((o&&o.area)||'').trim().toLowerCase();
+  const lista = raw ? raw.split(',').map(s=>s.trim()).filter(s=>!!s) : ['tierras'];
+  return lista.indexOf(ar)>=0;
+}
 
 /* áreas visibles según el chip de presentación (no altera qué se envía) */
 function areasVisibles(){ if(!MULTI) return AREAS.slice(); if(FILTRO==='odt') return ['odt']; if(FILTRO==='odl') return ['odl']; return AREAS.slice(); }
@@ -224,7 +232,12 @@ async function consultar(){
         _area:ar, largo:parseFloat(c.largo)||0,
         _inc:(c.estado!=='descartado'&&c.estado!=='no_data'), _nodata:(c.estado==='no_data') })));
       (data.maquinas||[]).forEach(m=>STATE.maquinas.push(Object.assign({}, m, {_area:ar})));
-      (data.observaciones||[]).forEach(o=>STATE.observaciones.push(Object.assign({}, o, {_area:ar})));
+      // D86: la observación GENERAL del día es de quien la escribe, no de la bandeja completa. El
+      // backend ya la filtra por área, pero el filtro se repite aquí (y trata la fila SIN `area` como
+      // tierras, que es lo que son todas las anteriores a D86) para que el WhatsApp de ODT/ODL no
+      // arrastre las observaciones de tierras ni siquiera contra un backend sin redesplegar.
+      (data.observaciones||[]).forEach(o=>{ if(!obsEsDelArea(o, ar)) return;
+        STATE.observaciones.push(Object.assign({}, o, {_area:ar})); });
     }
     render();
   }catch(err){
