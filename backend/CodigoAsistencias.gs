@@ -131,15 +131,20 @@ function norm(s){ return String(s==null?'':s).trim().toLowerCase(); }
 
 /* ---------- área (D72 / D84) ---------- */
 // Helper único de áreas por usuario (mismo criterio que el frontend, D84): devuelve el ARRAY de áreas
-// que revisa un usuario. residente_odt/odl ven SOLO su área; residente_dren ve ['odt','odl']; el
-// residente "general"/jeisson son de TIERRAS (D74b); admin devuelve [] = SIN filtro (ve todas).
-//   residente_odt  -> ['odt']       residente_odl  -> ['odl']
-//   residente_dren -> ['odt','odl'] residente/jeisson -> ['tierras']   admin (u otro) -> []
+// que revisa un usuario. residente_odt/odl ven SOLO su área; residente_dren y duvan ven ['odt','odl'];
+// el residente "general"/jeisson son de TIERRAS (D74b); admin devuelve [] = SIN filtro (ve todas).
+//   residente_odt  -> ['odt']              residente_odl  -> ['odl']
+//   residente_dren -> ['odt','odl']        duvan -> ['odt','odl']  (D88: solo asistencias)
+//   residente/jeisson -> ['tierras']       admin (u otro) -> []
 function areasDeUsuario(usuario){
   const u=norm(usuario);
   if(u==='residente_odt')  return ['odt'];
   if(u==='residente_odl')  return ['odl'];
   if(u==='residente_dren') return ['odt','odl'];   // D84: residente de drenajes unificado
+  // D88: `duvan` = el jeisson de drenajes (asistencias de ODT+ODL y nada más). Mismo alcance de datos
+  // que residente_dren en este módulo; lo que NO tiene es el panel/reporte de drenajes (eso va por rol
+  // en el frontend, no por este helper).
+  if(u==='duvan')          return ['odt','odl'];
   if(u==='residente' || u==='jeisson') return ['tierras'];
   return [];   // admin: sin filtro (puede filtrar por &area=)
 }
@@ -448,7 +453,8 @@ function asistenciaDia(e){
 function guardarIndividual(body){
   const usuario=norm(body.usuario);
   // D72/D84: los residentes de área (odt/odl) y el unificado (residente_dren) también completan faltantes.
-  if(['residente','admin','jeisson','residente_odt','residente_odl','residente_dren'].indexOf(usuario)<0)
+  // D88: `duvan` (asistencias de drenajes) igual, acotado a ODT+ODL por areasDeUsuario.
+  if(['residente','admin','jeisson','duvan','residente_odt','residente_odl','residente_dren'].indexOf(usuario)<0)
     return json({ok:false, error:'No autorizado para completar faltantes.'});
   const fecha=fdate(body.fecha), ts=new Date();
   const sh=getSheet('ASISTENCIA', ASISTENCIA_HEADERS), need=ASISTENCIA_HEADERS.length, last=sh.getLastRow();
@@ -640,7 +646,8 @@ function gestionPersonal(body){
   // D72/D74b/D84: admin gestiona TODO; residente/jeisson gestionan tierras; residente_odt/odl gestionan su
   // área; residente_dren gestiona ODT+ODL (incluido MOVER una persona de una cuadrilla ODT a una ODL y
   // viceversa — la validación de área acepta el ARRAY de áreas del usuario, no un valor único).
-  if(['residente','admin','jeisson','residente_odt','residente_odl','residente_dren'].indexOf(usuario)<0)
+  // D88: `duvan` gestiona el personal de ODT+ODL (mismo alcance que residente_dren en asistencias).
+  if(['residente','admin','jeisson','duvan','residente_odt','residente_odl','residente_dren'].indexOf(usuario)<0)
     return json({ok:false, error:'No autorizado: solo residente o admin.'});
   const areasUsr=areasDeUsuario(usuario);            // [] = todas (residente general/admin)
   const cuadArea=areaDeCuadrillaMap();

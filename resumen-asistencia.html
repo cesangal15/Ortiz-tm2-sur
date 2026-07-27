@@ -122,7 +122,8 @@ window.onload = function(){
   // Guard: residente(tierras), admin, jeisson (rol asistencia_plus, D69), residente de área odt/odl (D72)
   // o residente de drenajes unificado (residente_dren → ODT+ODL en un solo archivo, D84).
   // D74b: jeisson entraba con rol 'asistencia_plus' (NO 'jeisson'), por eso lo devolvía al login.
-  const rolesOk=['residente','admin','asistencia_plus','residente_odt','residente_odl','residente_dren'];
+  // D88: `asistencia_plus_dren` (duvan) = jeisson pero de drenajes (ODT+ODL, solo asistencias).
+  const rolesOk=['residente','admin','asistencia_plus','asistencia_plus_dren','residente_odt','residente_odl','residente_dren'];
   if(!rol || rolesOk.indexOf(rol)<0){ window.location.href='index.html'; return; }
   STATE.usuario=usuario; STATE.rol=rol;
   document.getElementById('userDisplay').textContent=usuario;
@@ -130,6 +131,9 @@ window.onload = function(){
   bm.style.display='inline-block';
   if(rol==='admin'){ bm.onclick=function(){location.href='menu.html';}; bm.textContent='← Menú'; }
   else if(rol==='residente'){ bm.onclick=function(){location.href='residente.html';}; }
+  // D88: duvan entra directo aquí (no tiene tiles en seleccion-reporte.html) → no hay a dónde volver;
+  // se oculta el botón y le queda solo "Salir".
+  else if(rol==='asistencia_plus_dren'){ bm.style.display='none'; }
   else { bm.onclick=function(){location.href='seleccion-reporte.html';}; }  // jeisson + residentes de área
   STATE.fecha=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
   restaurarPlantilla();
@@ -271,7 +275,8 @@ function render(){
 
   // D72/D74b: gestión de personal para residente(tierras), admin, jeisson y residentes de área; el backend
   // la limita a su área (jeisson = tierras, mismos permisos que el residente de tierras).
-  if(['residente','admin','asistencia_plus','residente_odt','residente_odl','residente_dren'].indexOf(STATE.rol)>=0){
+  // D88: duvan (asistencia_plus_dren) igual pero acotado por el backend a ODT+ODL.
+  if(['residente','admin','asistencia_plus','asistencia_plus_dren','residente_odt','residente_odl','residente_dren'].indexOf(STATE.rol)>=0){
     html+='<div class="section-title">Gestión de personal</div>';
     html+='<div class="card" id="gestionCard"><button class="btn-ghost" onclick="cargarPersonal()">Cargar personal ↻</button><div id="gestionBody" style="margin-top:12px;"></div></div>';
   }
@@ -461,7 +466,7 @@ async function guardarDetalle(idx){
  * responsable de la cuadrilla. */
 function proyectoFromCC(cc){ const m=String(cc||'').match(/^(\d{4})/); return m?m[1]:''; }
 function seccionCompletar(d){
-  if(['residente','admin','asistencia_plus','residente_odt','residente_odl','residente_dren'].indexOf(STATE.rol)<0) return '';
+  if(['residente','admin','asistencia_plus','asistencia_plus_dren','residente_odt','residente_odl','residente_dren'].indexOf(STATE.rol)<0) return '';
   const faltantes=d.faltantes||[];
   const comp=[];
   // Los "presente sin CC" ya vienen en faltantes como sin_reportar (incompleto=true), así que basta

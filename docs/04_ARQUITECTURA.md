@@ -119,7 +119,7 @@
 ┌── GITHUB PAGES (mismo repo, mismo login index.html) ──────────────────┐
 │  seleccion-reporte.html (capataces/mairy/jeisson: tiles según usuario) │
 │  asistencia.html         (responsable de cuadrilla + admin)           │
-│  resumen-asistencia.html (residente, admin, jeisson)                  │
+│  resumen-asistencia.html (residente, admin, jeisson, duvan=ODT+ODL)   │
 │  mis-extras.html         (SOLO admin: canal "solo extras", D73)       │
 └────────────────────────┬────────────────────────────────────────────--┘
                           │ fetch GET/POST (text/plain), URL PROPIA
@@ -167,7 +167,8 @@ fila. **Áreas (D72/D84):** CUADRILLAS lleva col `area` (`tierras`/`odt`/`odl`) 
 (`activa`/`inactiva`, vacío=activa: inactivar sin borrar; filtra roster/faltantes/export/selectores/
 gestión, no lo ya reportado). El guard de área es `areasDeUsuario()` → **array** (residente/jeisson=
 `['tierras']`, residente_odt/odl=`['odt']`/`['odl']`, **residente_dren=`['odt','odl']`** con export
-Navision combinado, admin=`[]` sin filtro); los filtros usan `includes`. Columnas H–N (Dom/Fest c/s
+Navision combinado, **duvan=`['odt','odl']`** (D88: solo asistencias, sin panel de drenajes),
+admin=`[]` sin filtro); los filtros usan `includes`. Columnas H–N (Dom/Fest c/s
 compensación) y el string de `CONFIG.proyecto_3702` son parámetros abiertos (ver 03_BACKLOG). Este módulo
 **nunca** lee ni escribe BANDEJA/DATA/MAQUINARIA ni comparte Sheet/Script con `Codigo.gs`.
 
