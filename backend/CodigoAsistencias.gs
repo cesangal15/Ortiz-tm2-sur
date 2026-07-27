@@ -18,6 +18,8 @@
  *   GET  ?action=personal                    -> PERSONAL completo + CUADRILLAS (gestión)
  *   GET  ?action=export&fecha=…              -> filas crudas del día (todas) + catálogos para el
  *                                                generador Navision (cliente decide por proyecto)
+ *   GET  ?action=ausencias&desde=&hasta=…    -> seguimiento de ausencias por RANGO (D93): ausencias
+ *                                                reportadas (con motivo) + días sin reportar
  *   POST {action:'reporte_asistencia', fecha, cuadrilla, reporta, filas:[…]}
  *                                             -> pisa fecha+cuadrilla, escribe (confirma conteo, D30)
  *   POST {action:'personal', op:'alta'|'retiro'|'mover'|'reactivar', usuario, …}
@@ -282,6 +284,7 @@ function doGet(e){
   if(a==='asistencia') return asistenciaDia(e);
   if(a==='personal')   return personalCompleto(e);
   if(a==='export')     return exportDia(e);
+  if(a==='ausencias')  return ausenciasRango(e);   // D93: seguimiento de ausencias por rango
   // EXTRAS_ADMIN (D73): registro del día para prefill/edición en mis-extras.html; `extras_admin_dia`
   // es alias (mismo handler) para el indicador del residente en resumen-asistencia.html.
   if(a==='extras_admin' || a==='extras_admin_dia') return extrasAdminDia(e);
@@ -549,6 +552,88 @@ function exportDia(e){
   const verExtras = !areas.length || areas.indexOf('tierras')>=0;
   const extrasAdmin = verExtras ? extrasAdminDelDia(fecha) : [];   // D74b/D84
   return json({ ok:true, fecha, filas, proyectoDefecto, catTrabajadores, config:getConfigMap(), festivos:getFestivos(), turnos, extrasAdmin });
+}
+
+/* ---------- GET ausencias: seguimiento de ausencias por RANGO de fechas (D93) ----------
+ * Para el seguimiento del personal: "de tal fecha a tal fecha, quién faltó y por qué motivo".
+ * Devuelve DOS listas, ambas ya acotadas al área del usuario (mismo criterio que el resumen del día):
+ *   - `filas`       : ausencias REPORTADAS (presente='No'), con su motivo verbatim. Es lo que se filtra
+ *                     por motivo en el frontend. Sin motivo escrito -> '(sin motivo)'.
+ *   - `sinReportar` : días en que la CUADRILLA sí reportó pero a la persona no la incluyeron (ni presente
+ *                     ni ausente). No es una ausencia confirmada, pero es un hueco de seguimiento; el
+ *                     frontend lo suma solo si se pide (checkbox). Se excluyen los domingos/festivos
+ *                     (D81: ese día trabaja solo el personal disponible, casi todos quedan sin reportar
+ *                     por diseño) y los días en que la cuadrilla NO reportó nada (no se puede concluir).
+ * Roster date-aware (D72) y eventuales fuera (D85), igual que los faltantes del día.
+ * Solo lectura: no escribe nada. */
+const MAX_DIAS_RANGO = 186;   // ~6 meses: tope defensivo para no reventar el tiempo de Apps Script
+
+// Lista de fechas 'yyyy-MM-dd' entre desde y hasta (inclusive). Aritmética con Date local (Bogotá no
+// tiene DST); el formateo es el mismo patrón de fdate, nunca toISOString (D50).
+function diasDelRango(desde, hasta){
+  const p=String(desde).split('-'), out=[];
+  let d=new Date(Number(p[0]), Number(p[1])-1, Number(p[2])), guard=0;
+  while(guard++ <= MAX_DIAS_RANGO+1){
+    const s=d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+    if(s>hasta) break;
+    out.push(s);
+    d.setDate(d.getDate()+1);
+  }
+  return out;
+}
+// Clave de persona: código si lo tiene, si no la cédula (mismo criterio que faltantes/guardarIndividual).
+function keyPersona(codigo, cedula){
+  const c=String(codigo||'').trim();
+  return c ? ('COD:'+c) : ('CED:'+String(cedula||'').trim());
+}
+function ausenciasRango(e){
+  const desde=fdate(e.parameter.desde), hasta=fdate(e.parameter.hasta);
+  if(!desde || !hasta) return json({ok:false, error:'Faltan las fechas del rango (desde/hasta).'});
+  if(hasta < desde)    return json({ok:false, error:'El rango está invertido: "hasta" es anterior a "desde".'});
+  const dias=diasDelRango(desde, hasta);
+  if(dias.length > MAX_DIAS_RANGO) return json({ok:false, error:'Rango demasiado largo (máximo '+MAX_DIAS_RANGO+' días). Consulta por tramos.'});
+
+  const areas=areasEfectivas(e);
+  const cuadArea=areaDeCuadrillaMap();
+  const enArea=function(c){ return cuadrillaEnAreas(c, areas, cuadArea); };
+
+  // Filas del rango (todas las áreas del usuario). Las YA reportadas no se filtran por estado de
+  // cuadrilla (D84): una cuadrilla inactivada hoy conserva su histórico.
+  const enRango=readSheet('ASISTENCIA', ASISTENCIA_HEADERS).filter(function(r){
+    const f=fdate(r.fecha); return f>=desde && f<=hasta && enArea(r.cuadrilla);
+  });
+
+  const filas=enRango.filter(r=> String(r.presente||'')==='No').map(r=>({
+    fecha:fdate(r.fecha), codigo:String(r.codigo||''), cedula:String(r.cedula||''), nombre:String(r.nombre||''),
+    cargo:String(r.cargo||''), cuadrilla:String(r.cuadrilla||''), reporta:String(r.reporta||''),
+    motivo: String(r.motivo_ausencia||'').trim() || '(sin motivo)', tipo:'ausente'
+  }));
+
+  // Huecos: la cuadrilla reportó ese día pero la persona no salió en el reporte.
+  const festivos=getFestivos();
+  const repDia={}, cuadRepDia={};
+  enRango.forEach(function(r){
+    const f=fdate(r.fecha), c=String(r.cuadrilla||'');
+    (repDia[f]=repDia[f]||{})[keyPersona(r.codigo, r.cedula)]=true;
+    (cuadRepDia[f]=cuadRepDia[f]||{})[c]=true;
+  });
+  const inactivas=cuadrillasInactivasSet();
+  const personal=readSheet('PERSONAL', PERSONAL_HEADERS)
+    .filter(p=> !esEventual(p) && enArea(p.cuadrilla) && !inactivas[p.cuadrilla]);
+  const sinReportar=[];
+  dias.forEach(function(f){
+    if(tipoJornada(f, festivos)==='domfest') return;          // D81: dom/fest no se reporta por roster
+    const rep=repDia[f]||{}, cuadOk=cuadRepDia[f]||{};
+    personal.forEach(function(p){
+      if(!cuadOk[String(p.cuadrilla||'')]) return;             // la cuadrilla no reportó: nada que concluir
+      if(!activaEnFecha(p, f)) return;                          // aún no ingresaba / ya estaba retirada
+      if(rep[keyPersona(p.codigo, p.cedula)]) return;            // sí salió en el reporte de ese día
+      sinReportar.push({ fecha:f, codigo:String(p.codigo||''), cedula:String(p.cedula||''), nombre:String(p.nombre||''),
+        cargo:String(p.cargo||''), cuadrilla:String(p.cuadrilla||''), reporta:'', motivo:'(no reportado)', tipo:'sin_reportar' });
+    });
+  });
+
+  return json({ ok:true, desde, hasta, dias:dias.length, filas, sinReportar, catMotivos:motivosCatalogo() });
 }
 
 /* ---------- EXTRAS_ADMIN (D73): canal "solo extras" del admin ----------

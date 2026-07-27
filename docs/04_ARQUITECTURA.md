@@ -133,6 +133,9 @@
 │  GET  ?action=personal             → PERSONAL + CUADRILLAS (gestión)  │
 │  GET  ?action=export&fecha=…       → crudo del día + catálogos        │
 │                                       (el cliente arma el Excel)       │
+│  GET  ?action=ausencias&desde=&hasta=→ ausencias del RANGO con motivo   │
+│                                       + días no reportados (D93,       │
+│                                       solo lectura, máx 186 días)      │
 │  POST {reporte_asistencia,…}       → pisa fecha+cuadrilla, escritura   │
 │                                       DIRECTA (sin bandeja, D03)       │
 │  POST {personal, op, usuario,…}    → valida usuario ∈{residente,admin}│
