@@ -182,7 +182,13 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
             en el catálogo) y todo lo que no sea proyecto <b>3701/3702</b> (el parte trae también UF6, UF9, UF10…).</div>
         </div>
         <div>
-          <label class="fld">Mapa actividad → CC (una regla por línea: <code>texto = cc[,cc]</code>)</label>
+          <label class="fld">Solo horas — no reciben producción</label>
+          <input type="text" id="soloHorasMaq" placeholder="p. ej. CAT320, NH69 (vacío = todas reparten)">
+          <div class="hint">Máquinas que aparecen en el parte con horas pero cuya producción prefieres que repartan las demás
+            (una retirada de la obra que el jefe sigue reportando, una alquilada que no quieres que cargue producción…).
+            Sus <b>horas siguen saliendo</b> en <code>fact_jefe</code> —«Maquinas Junio» las necesita—, pero no entran al reparto.
+            <b>Vacío por defecto:</b> si el jefe le reporta horas a una máquina, se asume que trabajó.</div>
+          <label class="fld" style="margin-top:12px">Mapa actividad → CC (una regla por línea: <code>texto = cc[,cc]</code>)</label>
           <textarea id="mapaAct" rows="8"></textarea>
           <div class="hint">Gana la primera regla que <b>aparezca</b> en el nombre de la columna (por eso SUBBASE va antes que
             BASE GRANULAR, y NO APROVECHABLE antes que APROVECHABLE). La no aprovechable acredita
@@ -524,6 +530,7 @@ function leerParams(){
   });
   return {
     propias: propias,
+    soloHorasMaq: new Set(document.getElementById('soloHorasMaq').value.split(/[,\n;]+/).map(s=>normCod(s)).filter(Boolean)),
     mapa: mapa.length?mapa:MAPA_ACTIVIDAD,
     pctBull: Math.min(100,Math.max(0,parseFloat(document.getElementById('pctBull').value)||0))/100,
     zodmeCruce: document.getElementById('zodmeCruce').checked,
@@ -883,7 +890,10 @@ function pesosDe(cands, fecha, proyecto, item, jefe, cruzarUF){
 }
 
 function repartir(P, dsProd, jefe){
-  const flota=[...jefe.maquinas.values()].filter(m=>m.propia && !m.excluida && m.tipo);
+  // `flotaTodas` emite filas (sus horas van a fact_jefe); `flota` son las que además
+  // reciben producción — las marcadas «solo horas» quedan fuera del reparto.
+  const flotaTodas=[...jefe.maquinas.values()].filter(m=>m.propia && !m.excluida && m.tipo);
+  const flota=flotaTodas.filter(m=>!P.soloHorasMaq.has(m.cod));
   const asign=[];        // {cod,tipo,fecha,proyecto,item,noAprov,produccion,base}
   const huerfanas=[];
   const basesUsadas=new Map();
@@ -927,7 +937,7 @@ function repartir(P, dsProd, jefe){
 
   /* ---- Filas de fact_jefe: una por máquina · día · proyecto · item · SUB ACTIVIDAD ---- */
   const idx=new Map(), filas=[];
-  const flotaMap=new Map(flota.map(m=>[m.cod,m]));
+  const flotaMap=new Map(flotaTodas.map(m=>[m.cod,m]));
   function fila(cod,tipo,fecha,proyecto,item,sub){
     const k=[cod,fecha,proyecto,item,sub].join('|');
     let f=idx.get(k);
@@ -1147,18 +1157,22 @@ function render(){
 
   /* --- Máquinas --- */
   const maqs=[...jefe.maquinas.values()].sort((a,b)=>a.cod.localeCompare(b.cod));
+  const prodMaq=new Map();
+  rep.filas.forEach(f=>{ if(f.produccion!=null) prodMaq.set(f.maquina,(prodMaq.get(f.maquina)||0)+f.produccion); });
   h='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Código</th><th>Tipo (parte)</th><th>Tipo</th>'+
-    '<th>Estado</th><th class="num">Horas del corte</th><th>Centros de coste</th></tr></thead><tbody>';
+    '<th>Estado</th><th class="num">Horas del corte</th><th class="num">Producción</th><th>Centros de coste</th></tr></thead><tbody>';
   for(const m of maqs){
     let chip;
     if(m.excluida) chip='<span class="chip mu">excluida (vibro/compactadora)</span>';
     else if(!m.propia) chip='<span class="chip in">alquilada / no propia</span>';
     else if(!m.tipo) chip='<span class="chip wa">tipo no reconocido</span>';
+    else if(P.soloHorasMaq.has(m.cod)) chip='<span class="chip in">solo horas (parámetro)</span>';
     else chip='<span class="chip ok">propia · reparte</span>';
     const ccs=[...m.cc.entries()].sort().map(([k,v])=>{ const p=k.split('|'); return (p[0]?p[0]+'.':'')+p[1]+' ('+n1(v)+' h)'; }).join(' · ');
     h+='<tr><td class="mono">'+escapeHtml(m.cod)+'</td><td class="note">'+escapeHtml(m.tipoRaw)+'</td>'+
        '<td>'+escapeHtml(NOMBRE_TIPO[m.tipo]||'—')+'</td><td>'+chip+'</td>'+
-       '<td class="num">'+n1(m.horasTotal)+'</td><td class="note">'+escapeHtml(ccs)+'</td></tr>';
+       '<td class="num">'+n1(m.horasTotal)+'</td><td class="num">'+(prodMaq.has(m.cod)?n0(prodMaq.get(m.cod)):'—')+'</td>'+
+       '<td class="note">'+escapeHtml(ccs)+'</td></tr>';
   }
   h+='</tbody></table></div>';
   document.getElementById('maqBox').innerHTML=h;
