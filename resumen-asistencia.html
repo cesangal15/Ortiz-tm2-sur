@@ -84,7 +84,7 @@
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbymgvQX03ZqS_YzIz5l6WVesasDUMYwGOFItrggTJCdsFhcjXQvDPVz03E7mNcZQ4Nq/exec";
 let STATE = { usuario:'', rol:'', fecha:'', data:null, exportCache:{}, tplBuf:null, tplName:'', tplRecordada:false, tplBundle:false, filaInicio:2, personal:null, completar:{}, persQuery:'', areaFiltro:'',
-  // D93 — seguimiento de ausencias por rango (independiente del día del resumen): se conserva entre
+  // D94 — seguimiento de ausencias por rango (independiente del día del resumen): se conserva entre
   // re-renders (render() reconstruye el contenedor completo) para no perder la consulta ni los filtros.
   aus:{ abierto:false, desde:'', hasta:'', data:null, cargando:false, error:'', motivo:'', cuadrilla:'', q:'', incluirSinRep:false, vista:'persona' } };
 
@@ -270,7 +270,7 @@ function render(){
 
   html+=seccionCompletar(d);
 
-  html+=seccionAusencias();   // D93: seguimiento de ausencias por rango de fechas
+  html+=seccionAusencias();   // D94: seguimiento de ausencias por rango de fechas
 
   html+='<div class="section-title">Descargar Excel Navision</div>';
   html+=exportCardHtml();
@@ -285,7 +285,7 @@ function render(){
 
   document.getElementById('container').innerHTML=html;
   if(STATE.personal) renderPersonal();
-  renderAusFiltros(); renderAusResultados();   // D93: repinta lo ya consultado tras un re-render
+  renderAusFiltros(); renderAusResultados();   // D94: repinta lo ya consultado tras un re-render
 }
 
 /* ================= BUSCADOR DE CC (D78) =================
@@ -603,7 +603,7 @@ async function guardarCompletar(){
   }catch(err){ msg.innerHTML='<div class="aviso">⚠️ '+esc(err.message||err)+'</div>'; }
 }
 
-/* ================= SEGUIMIENTO DE AUSENCIAS POR RANGO (D93) =================
+/* ================= SEGUIMIENTO DE AUSENCIAS POR RANGO (D94) =================
  * Pedido del usuario (jul-2026): "de cierta fecha a cierta fecha, ver quiénes faltaron y filtrarlo
  * según el motivo, para hacerle seguimiento al personal". Va en ESTA pantalla (no en una nueva) porque
  * quien hace el seguimiento es el mismo que revisa el resumen (residente / jeisson / duvan / admin) y

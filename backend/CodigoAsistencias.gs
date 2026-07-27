@@ -18,7 +18,7 @@
  *   GET  ?action=personal                    -> PERSONAL completo + CUADRILLAS (gestión)
  *   GET  ?action=export&fecha=…              -> filas crudas del día (todas) + catálogos para el
  *                                                generador Navision (cliente decide por proyecto)
- *   GET  ?action=ausencias&desde=&hasta=…    -> seguimiento de ausencias por RANGO (D93): ausencias
+ *   GET  ?action=ausencias&desde=&hasta=…    -> seguimiento de ausencias por RANGO (D94): ausencias
  *                                                reportadas (con motivo) + días sin reportar
  *   POST {action:'reporte_asistencia', fecha, cuadrilla, reporta, filas:[…]}
  *                                             -> pisa fecha+cuadrilla, escribe (confirma conteo, D30)
@@ -36,6 +36,13 @@
 
 // El usuario reemplaza este placeholder si crea un Sheet nuevo; ya viene fijado al Sheet entregado.
 const SHEET_ID = '1KrhzaIg3BSspyi0oH0gHkAJnSRXaOIdel_pKaMVHX9w';
+
+// D93 — tamaño mínimo de expansión de la grilla (filas). Una hoja de Sheets nace con 1.000 filas;
+// cuando se agotan, un setValues en bloque falla entero ("The coordinates of the range are outside
+// the dimensions of the sheet") y el usuario tenía que añadir filas a mano para que la información
+// volviera a cargar. Se crece en bloques de este tamaño para no fragmentar la grilla. Es el ÚNICO
+// número a cambiar si se quiere otro tamaño de bloque.
+const BLOQUE_FILAS = 1000;
 
 // D72: `fecha_ingreso` (col 9) hace el roster "date-aware": el alta puede ser retroactiva ("desde
 // cierto día") y el retiro lleva su propia fecha. Celda vacía en filas viejas = sin límite inferior
@@ -111,11 +118,41 @@ function ftime(v){
   if(m) return ('0'+m[1]).slice(-2)+':'+m[2];
   return s.slice(0,5);
 }
+/**
+ * D93 — Garantiza que la hoja tenga filas suficientes para escribir n filas a partir de la última
+ * fila con datos. Crece en bloques (BLOQUE_FILAS) para no fragmentar la grilla. Idempotente y
+ * barata: si hay espacio, no hace NADA (una sola lectura de getLastRow/getMaxRows, cero escrituras).
+ * La inserción es SIEMPRE después de la última fila de la GRILLA (insertRowsAfter(getMaxRows())),
+ * así que jamás desplaza ni pisa filas existentes.
+ * NO pre-crea filas vacías "por si acaso": el techo del archivo es de 10 millones de celdas sumando
+ * todas las hojas y las filas vacías consumen cupo y degradan el rendimiento.
+ * Mismo helper, idéntico, en Codigo.gs (son dos proyectos de Apps Script separados, D69).
+ */
+function ensureRows_(sheet, n) {
+  var necesarias = sheet.getLastRow() + (n || 1);
+  var faltan = necesarias - sheet.getMaxRows();
+  if (faltan > 0) {
+    sheet.insertRowsAfter(sheet.getMaxRows(), Math.max(faltan, BLOQUE_FILAS));
+  }
+}
+
+/**
+ * D93 — Garantiza que la hoja tenga al menos nCols columnas (el mismo problema, en el otro eje).
+ * Solo garantiza CAPACIDAD para los encabezados que el código ya define: no cambia el orden ni el
+ * número de columnas de ninguna hoja.
+ */
+function ensureCols_(sheet, nCols) {
+  var faltan = nCols - sheet.getMaxColumns();
+  if (faltan > 0) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), faltan);
+  }
+}
+
 function getSheet(name, headers){
   const ss=SpreadsheetApp.openById(SHEET_ID); let sh=ss.getSheetByName(name);
   if(!sh) sh=ss.insertSheet(name);
   const need=headers.length;
-  if(sh.getMaxColumns()<need) sh.insertColumnsAfter(sh.getMaxColumns(), need-sh.getMaxColumns());
+  ensureCols_(sh, need);   // D93: ancho de grilla suficiente para los encabezados de esta hoja
   if(sh.getLastRow()===0){ sh.getRange(1,1,1,need).setValues([headers]); return sh; }
   const cur=sh.getRange(1,1,1,need).getValues()[0];
   let diff=false; for(let i=0;i<need;i++){ if(String(cur[i]||'')!==headers[i]){ diff=true; break; } }
@@ -284,7 +321,7 @@ function doGet(e){
   if(a==='asistencia') return asistenciaDia(e);
   if(a==='personal')   return personalCompleto(e);
   if(a==='export')     return exportDia(e);
-  if(a==='ausencias')  return ausenciasRango(e);   // D93: seguimiento de ausencias por rango
+  if(a==='ausencias')  return ausenciasRango(e);   // D94: seguimiento de ausencias por rango
   // EXTRAS_ADMIN (D73): registro del día para prefill/edición en mis-extras.html; `extras_admin_dia`
   // es alias (mismo handler) para el indicador del residente en resumen-asistencia.html.
   if(a==='extras_admin' || a==='extras_admin_dia') return extrasAdminDia(e);
@@ -496,7 +533,11 @@ function guardarIndividual(body){
   const todas=rows.concat(nuevas);
   sh.clearContents();
   sh.getRange(1,1,1,need).setValues([ASISTENCIA_HEADERS]);
-  if(todas.length) sh.getRange(2,1,todas.length,need).setValues(todas);
+  // D93: capacidad antes de la escritura en bloque. Va DESPUÉS del encabezado a propósito: tras el
+  // clearContents la hoja queda con getLastRow()=1 (el encabezado), así que ensureRows_ pide
+  // exactamente 1+todas.length filas — las que ocupa la reescritura completa.
+  if(todas.length){ ensureRows_(sh, todas.length);
+    sh.getRange(2,1,todas.length,need).setValues(todas); }
   return json({ok:true, filas:nuevas.length});
 }
 
@@ -554,7 +595,7 @@ function exportDia(e){
   return json({ ok:true, fecha, filas, proyectoDefecto, catTrabajadores, config:getConfigMap(), festivos:getFestivos(), turnos, extrasAdmin });
 }
 
-/* ---------- GET ausencias: seguimiento de ausencias por RANGO de fechas (D93) ----------
+/* ---------- GET ausencias: seguimiento de ausencias por RANGO de fechas (D94) ----------
  * Para el seguimiento del personal: "de tal fecha a tal fecha, quién faltó y por qué motivo".
  * Devuelve DOS listas, ambas ya acotadas al área del usuario (mismo criterio que el resumen del día):
  *   - `filas`       : ausencias REPORTADAS (presente='No'), con su motivo verbatim. Es lo que se filtra
@@ -675,7 +716,8 @@ function guardarExtrasAdmin(body){
   rows.push([fecha, cc, proyecto, horas, tipo, new Date(), body.reporta||'admin']);
   sh.clearContents();
   sh.getRange(1,1,1,need).setValues([EXTRAS_ADMIN_HEADERS]);
-  if(rows.length) sh.getRange(2,1,rows.length,need).setValues(rows);
+  if(rows.length){ ensureRows_(sh, rows.length);   // D93
+    sh.getRange(2,1,rows.length,need).setValues(rows); }
   return json({ ok:true, msg:'Extra guardada: '+fecha+' · '+horas+'h '+tipo+' · '+cc+' (proyecto '+(proyecto||'?')+').', proyecto });
 }
 // POST {action:'extras_admin_delete', fecha} → elimina la fila del día.
@@ -688,7 +730,11 @@ function borrarExtrasAdmin(body){
   rows = rows.filter(r=> fdate(r[0])!==fecha);
   sh.clearContents();
   sh.getRange(1,1,1,need).setValues([EXTRAS_ADMIN_HEADERS]);
-  if(rows.length) sh.getRange(2,1,rows.length,need).setValues(rows);
+  // D93: aquí el bloque solo puede DECRECER (se filtra el día), así que ensureRows_ nunca expandirá;
+  // se llama igual para que toda escritura en bloque pase por el mismo guardián (es barata y no
+  // escribe si hay espacio).
+  if(rows.length){ ensureRows_(sh, rows.length);
+    sh.getRange(2,1,rows.length,need).setValues(rows); }
   const borradas=antes-rows.length;
   return json({ ok:true, msg: borradas ? ('Extra del '+fecha+' eliminada.') : ('No había extra registrada el '+fecha+'.'), borradas });
 }
@@ -718,7 +764,10 @@ function guardarAsistencia(body){
   const todas=keep.concat(nuevas);
   sh.clearContents();
   sh.getRange(1,1,1,need).setValues([ASISTENCIA_HEADERS]);
-  if(todas.length) sh.getRange(2,1,todas.length,need).setValues(todas);
+  // D93: capacidad antes de reescribir el bloque completo (ver nota en guardarIndividual: tras el
+  // clearContents + encabezado, getLastRow()=1, así que se piden 1+todas.length filas).
+  if(todas.length){ ensureRows_(sh, todas.length);
+    sh.getRange(2,1,todas.length,need).setValues(todas); }
   // D74: nota libre del día por cuadrilla (pisa fecha+cuadrilla, igual que las filas).
   upsertNotaDia(fecha, cuadrilla, reporta, body.nota, ts);
   return json({ ok:true, filas:nuevas.length });
@@ -734,7 +783,8 @@ function upsertNotaDia(fecha, cuadrilla, reporta, nota, ts){
   if(txt) rows.push([f, c, reporta||'', txt, ts||new Date()]);       // si hay texto, la reescribe
   sh.clearContents();
   sh.getRange(1,1,1,need).setValues([NOTAS_ASISTENCIA_HEADERS]);
-  if(rows.length) sh.getRange(2,1,rows.length,need).setValues(rows);
+  if(rows.length){ ensureRows_(sh, rows.length);   // D93
+    sh.getRange(2,1,rows.length,need).setValues(rows); }
 }
 function notasDelDia(fecha){
   const f=fdate(fecha);
@@ -839,6 +889,7 @@ function setupHojas(){
   // usuario ya cargó la hoja, no se pisa. Horas como texto 'HH:MM' (00:00 = medianoche, fin de cena).
   const turSh=getSheet('TURNOS', TURNOS_HEADERS);
   if(turSh.getLastRow()<2){
+    ensureRows_(turSh, 10);   // D93 (no-op en hoja nueva: la semilla cabe de sobra en las 1.000 filas)
     turSh.getRange(2,1,10,7).setValues([
       ['1','lv',     '07:00','15:30','12:00','13:00','NO'],
       ['1','sabado', '07:00','11:30','',     '',     'NO'],
@@ -862,6 +913,7 @@ function setupHojas(){
     // D84 (post-salida a UF3): ALBERT queda con `maleja` como ÚNICA responsable (albert salió a UF3;
     // maleja ya la reportaba, D75). ARIEL queda INACTIVA y sin responsable (ariel salió a UF3; su gente
     // se movió a ROBINSON). Ambas conservan su nombre para no dejar huérfano el histórico de ASISTENCIA.
+    ensureRows_(cuadSh, 7);   // D93
     cuadSh.getRange(2,1,7,4).setValues([
       ['ANGEL','angel','tierras',''], ['ROBINSON','robinson','tierras',''], ['ALBERT','maleja','tierras',''],
       ['ARIEL','','tierras','inactiva'], ['ALEJANDRO','alejandro','tierras',''], ['OPERADORES','jeisson','tierras',''],
@@ -871,6 +923,7 @@ function setupHojas(){
 
   const cfgSh=getSheet('CONFIG', CONFIG_HEADERS);
   if(cfgSh.getLastRow()<2){
+    ensureRows_(cfgSh, 16);   // D93
     cfgSh.getRange(2,1,16,2).setValues([
       ['ord_lun_vie','7.5'], ['ord_sabado','4.5'], ['ord_domingo','0'],
       ['entrada_lv','07:00'], ['salida_lv','15:30'], ['entrada_sab','07:00'], ['salida_sab','11:30'],
@@ -908,6 +961,23 @@ function setupHojas(){
       '2027-05-31','2027-06-07','2027-07-05','2027-07-20','2027-08-07','2027-08-16','2027-10-18',
       '2027-11-01','2027-11-15','2027-12-08','2027-12-25'
     ];
+    ensureRows_(festSh, festivos.length);   // D93
     festSh.getRange(2,1,festivos.length,1).setValues(festivos.map(f=>[f]));
   }
+}
+
+/**
+ * D93 — Diagnóstico de CAPACIDAD de la grilla. Ejecutar desde el editor de Apps Script y revisar el
+ * log (Ver > Registro de ejecución). Muestra, por hoja: filas usadas / filas totales / columnas
+ * usadas / columnas totales y cuántas filas libres quedan. NO escribe datos: es solo lectura.
+ */
+function diagnosticoCapacidad() {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  ss.getSheets().forEach(function (sh) {
+    Logger.log(
+      sh.getName() + ' → filas ' + sh.getLastRow() + '/' + sh.getMaxRows() +
+      ' (libres ' + (sh.getMaxRows() - sh.getLastRow()) + ')' +
+      ' · cols ' + sh.getLastColumn() + '/' + sh.getMaxColumns()
+    );
+  });
 }
