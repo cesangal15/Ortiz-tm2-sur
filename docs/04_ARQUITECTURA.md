@@ -117,8 +117,8 @@
 
 ```
 ┌── GITHUB PAGES (mismo repo, mismo login index.html) ──────────────────┐
-│  seleccion-reporte.html (capataces/mairy/jeisson: tiles según usuario) │
-│  asistencia.html         (responsable de cuadrilla + admin)           │
+│  seleccion-reporte.html (capataces/mairy/jeisson/duvan: tiles x usuario)│
+│  asistencia.html         (responsable de cuadrilla + admin + duvan)   │
 │  resumen-asistencia.html (residente, admin, jeisson, duvan=ODT+ODL)   │
 │  mis-extras.html         (SOLO admin: canal "solo extras", D73)       │
 └────────────────────────┬────────────────────────────────────────────--┘
@@ -168,7 +168,11 @@ fila. **Áreas (D72/D84):** CUADRILLAS lleva col `area` (`tierras`/`odt`/`odl`) 
 gestión, no lo ya reportado). El guard de área es `areasDeUsuario()` → **array** (residente/jeisson=
 `['tierras']`, residente_odt/odl=`['odt']`/`['odl']`, **residente_dren=`['odt','odl']`** con export
 Navision combinado, **duvan=`['odt','odl']`** (D88: solo asistencias, sin panel de drenajes),
-admin=`[]` sin filtro); los filtros usan `includes`. Columnas H–N (Dom/Fest c/s
+admin=`[]` sin filtro); los filtros usan `includes`. **Quién reporta qué cuadrilla** lo resuelve
+`cuadrillasDeUsuario`: por la columna `responsables` para capataces/mairy/jeisson, TODAS para `admin` y
+**todas las de sus áreas para `duvan`** (D88, sin mirar `responsables`); siempre solo las **activas**.
+Los CC "frecuentes" (`ccUsadosParaArea`) aceptan área o **array** de áreas: mandan las forzadas por el
+rol y, si no hay, se derivan de las cuadrillas del reportante (`areaDeReportante`). Columnas H–N (Dom/Fest c/s
 compensación) y el string de `CONFIG.proyecto_3702` son parámetros abiertos (ver 03_BACKLOG). Este módulo
 **nunca** lee ni escribe BANDEJA/DATA/MAQUINARIA ni comparte Sheet/Script con `Codigo.gs`.
 
