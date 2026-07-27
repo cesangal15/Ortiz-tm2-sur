@@ -172,14 +172,17 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
       <summary>Máquinas propias y mapa actividad → CC (editable)</summary>
       <div class="grid2" style="margin-top:10px">
         <div>
-          <label class="fld">Máquinas propias (códigos, separados por coma)</label>
+          <label class="fld">Máquinas que entran al reparto (aquí se agregan y se quitan)</label>
           <textarea id="propias" rows="3"></textarea>
-          <div class="hint">Se normaliza el código: se quita el prefijo <code>40BUP</code> y las motoniveladoras de 3 dígitos
-            pierden un cero (<code>MO003→MO03</code>). El <b>tipo</b> de estas máquinas sale del catálogo de la flota
-            (igual que <code>dim_maquinaria</code>), <b>no</b> del texto del parte: el jefe a veces escribe
-            «RETROCARGADORA» donde va una excavadora y la máquina se caería del reparto. Se excluyen vibros/compactadoras
-            (código <code>CR*</code>/<code>CN*</code>, o tipo con <code>COMPACTADOR</code>/<code>VIBRO</code> si el código no está
-            en el catálogo) y todo lo que no sea proyecto <b>3701/3702</b> (el parte trae también UF6, UF9, UF10…).</div>
+          <div class="hint"><b>Esta es la lista que manda:</b> una máquina que no esté aquí no reparte ni sale en
+            <code>fact_jefe</code>, aunque el parte le reporte horas. Para agregar una, escribe su código y, si no es de la
+            flota conocida, su <b>tipo</b> detrás de dos puntos: <code>EXC026:EXC</code> · <code>D150B:BULL</code> ·
+            <code>MO001:MOTO</code> · <code>FNG003:FIN</code> (o el nombre completo: <code>EXC026:EXCAVADORA</code>).
+            El tipo importa porque decide qué actividades puede recibir.
+            <b>CAT320 está fuera</b> por decisión de obra (retirada desde jun-2026, D61).
+            Se normaliza el código: se quita el prefijo <code>40BUP</code> y las motoniveladoras de 3 dígitos pierden un cero
+            (<code>MO003→MO03</code>). Siempre quedan fuera vibros/compactadoras y todo lo que no sea proyecto
+            <b>3701/3702</b> (el parte trae también UF6, UF9, UF10…).</div>
         </div>
         <div>
           <label class="fld">Solo horas — no reciben producción</label>
@@ -275,8 +278,11 @@ const TIPO_MAQUINA = {
 /* El mismo equipo aparece con códigos distintos según el papel: el parte del jefe lo
    llama `NG002`, el informe `FNG002` y el app `FNG02`. Se unifica al del informe. */
 const ALIAS_COD = { NG002:'FNG002', FNG02:'FNG002', FNG002:'FNG002' };
-// Máquinas propias (códigos ya normalizados). Editable también desde la pantalla.
-const MAQUINAS_PROPIAS = Object.keys(TIPO_MAQUINA);
+/* Máquinas que entran al reparto. Editable desde la pantalla, con tipo opcional
+   (`EXC026:EXC`) para las que no estén en el catálogo de arriba.
+   **CAT320 queda FUERA a propósito** (decisión del usuario, jul-2026): está retirada de la
+   obra desde jun-2026 (D61) y aun así el parte le sigue reportando horas. */
+const MAQUINAS_PROPIAS = ['EXC001','EXC013','EXC014','EXC015','BL005','BL009','MO03','MO04','MO09','NH69','MC705','FNG002'];
 
 // Proyectos de esta obra. El parte del jefe trae todos los frentes de la empresa (3703, 3706, 3709…).
 const PROYECTOS = ['3701','3702'];
@@ -294,10 +300,14 @@ const MAPA_ACTIVIDAD = [
   { txt:'PRESTAMO',       ccs:['02.06'] },
   { txt:'NO APROVECHABLE',ccs:['02.05','02.08'] },   // doble crédito: excavación + ZODME
   { txt:'APROVECHABLE',   ccs:['02.05'] },
-  { txt:'MSR',            ccs:['05.04'] },
   { txt:'TERRAPLENES',    ccs:['02.07'] },
   { txt:'TERRAPLEN',      ccs:['02.07'] }
 ];
+/* Actividades que se dejan FUERA del informe a propósito (decisión del usuario, jul-2026:
+   el informe va solo sobre excavación, terraplén, subbase, BTC y ZODME — «entre más
+   información, más contraproducente»). Se leen y se muestran, pero no se reparten ni
+   se avisan como error. Para volver a incluir MSR basta agregar `MSR = 05.04` al mapa. */
+const ACTIVIDADES_FUERA = ['MSR'];
 
 // Coherencia: qué tipo de máquina recibe la producción de cada CC.
 const COHERENCIA = {
@@ -525,8 +535,18 @@ document.getElementById('pctBull').addEventListener('input',e=>{
   document.getElementById('pctMotoLbl').textContent=String(round(100-v,2));
 });
 
+/* «EXC026» o «EXC026:EXC» / «EXC026 = EXCAVADORA»: el tipo opcional sirve para máquinas
+   que no están en el catálogo de la flota, sin tener que fiarse del texto del parte. */
+const ALIAS_TIPO={ EXCAVADORA:'EXC', BULLDOZER:'BULL', BULDOZER:'BULL', MOTONIVELADORA:'MOTO',
+                   FINISHER:'FIN', EXTENDEDORA:'FIN', EXC:'EXC', BULL:'BULL', MOTO:'MOTO', FIN:'FIN' };
 function leerParams(){
-  const propias=new Set(document.getElementById('propias').value.split(/[,\n;]+/).map(s=>normCod(s)).filter(Boolean));
+  const propias=new Set(), tiposManual={};
+  document.getElementById('propias').value.split(/[,\n;]+/).forEach(tok=>{
+    const p=tok.split(/[:=]/);
+    const cod=normCod(p[0]); if(!cod) return;
+    propias.add(cod);
+    if(p.length>1){ const t=ALIAS_TIPO[norm(p[1]).replace(/\s+/g,'')]; if(t) tiposManual[cod]=t; }
+  });
   const mapa=[];
   document.getElementById('mapaAct').value.split(/\n+/).forEach(l=>{
     const m=l.split('=');
@@ -536,6 +556,7 @@ function leerParams(){
   });
   return {
     propias: propias,
+    tiposManual: tiposManual,
     soloHorasMaq: new Set(document.getElementById('soloHorasMaq').value.split(/[,\n;]+/).map(s=>normCod(s)).filter(Boolean)),
     mapa: mapa.length?mapa:MAPA_ACTIVIDAD,
     pctBull: Math.min(100,Math.max(0,parseFloat(document.getElementById('pctBull').value)||0))/100,
@@ -774,7 +795,7 @@ function leerJefe(P){
 function maquinaDe(maquinas,cod,tipoRaw,P){
   let m=maquinas.get(cod);
   if(!m){
-    const delCatalogo=TIPO_MAQUINA[cod]||null;
+    const delCatalogo=P.tiposManual[cod]||TIPO_MAQUINA[cod]||null;   // el tipo escrito a mano manda
     const tipo=tipoDeEquipo(tipoRaw);
     m={ cod:cod, tipoRaw:tipoRaw||'', tipo:delCatalogo||(tipo==='EXCLUIDO'?null:tipo),
         deCatalogo:!!delCatalogo,
@@ -1105,7 +1126,12 @@ function render(){
   if(jefe.hojaAuto) avisos.push('<div class="alert warn">No existe la hoja «<b>'+escapeHtml(jefe.hojaPedida)+
     '</b>» en el archivo de partes: usé «<b>'+escapeHtml(jefe.hoja)+'</b>», que sí tiene formato de parte diario. '+
     'Si no es la que querías, corrige el nombre arriba.</div>');
-  const sinMapear=dsProd.cols.filter(c=>c.total && !c.ccs.length);
+  const esFuera=c=>ACTIVIDADES_FUERA.some(x=>norm(c.actividad).indexOf(x)>=0);
+  const fuera=dsProd.cols.filter(c=>c.total && !c.ccs.length && esFuera(c));
+  if(fuera.length) avisos.push('<div class="alert info">Actividades <b>fuera del informe</b> a propósito (no se reparten): '+
+    fuera.map(c=>escapeHtml(c.actividad+' ['+c.uf+'] = '+n0(c.total))).join(' · ')+
+    '. Para incluir alguna, agrégale su regla en el mapa actividad → CC.</div>');
+  const sinMapear=dsProd.cols.filter(c=>c.total && !c.ccs.length && !esFuera(c));
   if(sinMapear.length) avisos.push('<div class="alert warn">Columnas con producción <b>sin CC en el mapa</b> (ignoradas): '+
     sinMapear.map(c=>escapeHtml(c.actividad+' ['+c.uf+'] = '+n0(c.total))).join(' · ')+'</div>');
   const sinUF=dsProd.cols.filter(c=>c.total && c.ccs.length && !c.proyecto);
