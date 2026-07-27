@@ -157,8 +157,11 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
       <div>
         <label class="fld">Opciones</label>
         <div class="chk" style="margin-bottom:8px">
-          <input type="checkbox" id="zodmeCruce">
-          <label for="zodmeCruce">ZODME 02.08: <b>cruzar UF</b> — pesar por las horas de 02.08 en cualquier UF.</label>
+          <input type="checkbox" id="separarUF">
+          <label for="separarUF"><b>Separar por UF</b> (3701 / 3702) — <b>apagado por defecto</b>: al informe le interesa
+            la producción de la actividad, no en qué UF se hizo. Apagado, cada actividad se junta entre las dos UF y se
+            reparte por las horas totales de la máquina en esa actividad. Encendido, cada UF se reparte aparte
+            (una máquina sin horas en esa UF no recibe su producción).</label>
         </div>
         <div class="chk">
           <input type="checkbox" id="soloHoras" checked>
@@ -560,7 +563,7 @@ function leerParams(){
     soloHorasMaq: new Set(document.getElementById('soloHorasMaq').value.split(/[,\n;]+/).map(s=>normCod(s)).filter(Boolean)),
     mapa: mapa.length?mapa:MAPA_ACTIVIDAD,
     pctBull: Math.min(100,Math.max(0,parseFloat(document.getElementById('pctBull').value)||0))/100,
-    zodmeCruce: document.getElementById('zodmeCruce').checked,
+    separarUF: document.getElementById('separarUF').checked,
     soloHoras: document.getElementById('soloHoras').checked,
     desde: document.getElementById('desde').value,
     hasta: document.getElementById('hasta').value
@@ -928,15 +931,24 @@ function repartir(P, dsProd, jefe){
   const huerfanas=[];
   const basesUsadas=new Map();
 
-  // Producción del corte por (proyecto, item, aprovechable/no) — la unidad de reparto.
-  const prodUnidad=new Map();
+  /* Unidad de reparto. Por defecto **la UF no cuenta**: al informe le interesa la producción
+     de la actividad, no en qué UF se hizo, así que las dos UF se juntan y el peso es el total
+     de horas de la máquina en esa actividad. Con `separarUF` se vuelve al reparto por UF. */
+  const prodUnidad=new Map();     // clave -> total del corte
+  const prodPorProy=new Map();    // clave -> Map(proyecto -> total)  (para repartir de vuelta)
   for(const [k,v] of dsProd.prodDia){
-    const p=k.split('|'); const ku=p[1]+'|'+p[2]+'|'+p[3];
+    const p=k.split('|'), proyecto=p[1];
+    const ku=(P.separarUF?proyecto+'|':'')+p[2]+'|'+p[3];
     prodUnidad.set(ku,(prodUnidad.get(ku)||0)+v);
+    let m=prodPorProy.get(ku); if(!m){ m=new Map(); prodPorProy.set(ku,m); }
+    m.set(proyecto,(m.get(proyecto)||0)+v);
   }
 
   for(const [k,total] of prodUnidad){
-    const [proyecto,item,na]=k.split('|');
+    const partes_k=k.split('|');
+    const proyecto=P.separarUF?partes_k[0]:null;
+    const item=P.separarUF?partes_k[1]:partes_k[0];
+    const na=P.separarUF?partes_k[2]:partes_k[1];
     const noAprov=na==='1';
     const coh=COHERENCIA[item];
     if(!coh){ huerfanas.push({proyecto:proyecto,item:item,total:total,motivo:'CC sin regla de coherencia'}); continue; }
@@ -956,21 +968,37 @@ function repartir(P, dsProd, jefe){
     const shares=grupos.map(g=>sumShare>0?g.share/sumShare:1/grupos.length);
     const totales=repartirRedondeado(shares,total,DEC);
 
+    const proyectosDe=[...(prodPorProy.get(k)||new Map()).entries()];   // [[proyecto, producción], …]
+
     grupos.forEach((g,gi)=>{
-      const cruzar=P.zodmeCruce && item==='02.08';
-      const {pesos,base}=pesosDe(g.cands,proyecto,item,cruzar);
+      const {pesos,base}=pesosDe(g.cands,proyecto,item,!P.separarUF);
       const partes=repartirRedondeado(pesos,totales[gi],DEC);
-      const bk=proyecto+'|'+item+'|'+g.tipos.join('+');
+      const bk=k+'|'+g.tipos.join('+');
       const bb=basesUsadas.get(bk)||{proyecto:proyecto,item:item,tipos:g.tipos.join('+'),share:shares[gi],bases:new Map()};
       bb.bases.set(base,1); basesUsadas.set(bk,bb);
       g.cands.forEach((m,i)=>{
         if(!partes[i]) return;
-        // El total mensual de esta máquina se derrama sobre los días del corte.
-        const d=derramarEnDias(m.cod,proyecto,item,noAprov,partes[i],jefe,dsProd);
-        dsProd.dias.forEach((fecha,di)=>{
-          if(!d.partes[di]) return;
-          asign.push({ cod:m.cod, tipo:m.tipo, fecha:fecha, proyecto:proyecto, item:item,
-                       noAprov:noAprov, produccion:d.partes[di], base:base+' · '+d.base });
+        /* Sin separar UF, el total de la máquina se devuelve a los proyectos donde ELLA
+           trabajó esa actividad (así `id_proyecto` sigue teniendo sentido en fact_jefe y en
+           «Maquinas Junio»); si no tiene horas en ninguno, se sigue la forma de la producción. */
+        let porProy;
+        if(P.separarUF){
+          porProy=[[proyecto,partes[i]]];
+        }else{
+          const hs=proyectosDe.map(([pr])=>m.cc.get(pr+'|'+item)||0);
+          const pesosProy = hs.reduce((a,b)=>a+b,0)>0 ? hs : proyectosDe.map(([,v])=>v);
+          const trozos=repartirRedondeado(pesosProy,partes[i],DEC);
+          porProy=proyectosDe.map(([pr],j)=>[pr,trozos[j]]);
+        }
+        porProy.forEach(([pr,monto])=>{
+          if(!monto) return;
+          // El total de esta máquina en ese proyecto se derrama sobre los días del corte.
+          const d=derramarEnDias(m.cod,pr,item,noAprov,monto,jefe,dsProd);
+          dsProd.dias.forEach((fecha,di)=>{
+            if(!d.partes[di]) return;
+            asign.push({ cod:m.cod, tipo:m.tipo, fecha:fecha, proyecto:pr, item:item,
+                         noAprov:noAprov, produccion:d.partes[di], base:base+' · '+d.base });
+          });
         });
       });
     });
@@ -1049,13 +1077,19 @@ function repartir(P, dsProd, jefe){
   filas.sort((a,b)=> a.fecha.localeCompare(b.fecha) || a.maquina.localeCompare(b.maquina) || a.item.localeCompare(b.item));
 
   /* ---- Cuadre mensual por (proyecto, CC) ---- */
-  const repartido=new Map();
-  for(const a of asign){ const k=a.proyecto+'|'+a.item; repartido.set(k,(repartido.get(k)||0)+a.produccion); }
+  /* El cuadre se agrupa como se repartió: por CC cuando la UF no cuenta, por (UF, CC) cuando sí.
+     Si no, sin separar UF saldrían «descuadres» que no lo son (la producción de una UF la puede
+     haber hecho una máquina de la otra). */
+  const clave=(proyecto,item)=>P.separarUF?(proyecto+'|'+item):item;
+  const repartido=new Map(), leidaMap=new Map();
+  for(const a of asign){ const c=clave(a.proyecto,a.item); repartido.set(c,(repartido.get(c)||0)+a.produccion); }
+  for(const [k,v] of dsProd.prodMes){ const p=k.split('|'); const c=clave(p[0],p[1]); leidaMap.set(c,(leidaMap.get(c)||0)+v); }
   const cuadre=[];
-  for(const k of [...new Set([...dsProd.prodMes.keys(), ...repartido.keys()])].sort()){
-    const [proyecto,item]=k.split('|');
-    const leida=dsProd.prodMes.get(k)||0, rep=repartido.get(k)||0;
-    cuadre.push({ proyecto:proyecto, uf:ufDeProyecto(proyecto), item:item,
+  for(const c of [...new Set([...leidaMap.keys(), ...repartido.keys()])].sort()){
+    const p=c.split('|');
+    const proyecto=P.separarUF?p[0]:'', item=P.separarUF?p[1]:p[0];
+    const leida=leidaMap.get(c)||0, rep=repartido.get(c)||0;
+    cuadre.push({ proyecto:proyecto, uf:P.separarUF?ufDeProyecto(proyecto):'UF1+UF2', item:item,
                   actividad:(ACTIVIDAD_CC[item]?ACTIVIDAD_CC[item].act:''),
                   leida:round(leida,DEC), repartida:round(rep,DEC), dif:round(rep-leida,4) });
   }
@@ -1109,9 +1143,9 @@ function render(){
     desc.map(c=>escapeHtml(c.item+' ('+c.uf+') '+(c.dif>0?'+':'')+n2(c.dif))).join(' · ')+'</div>');
   if(rep.huerfanas.length){
     const porCC=new Map();
-    rep.huerfanas.forEach(h=>{ const k=h.item+'|'+h.proyecto; const o=porCC.get(k)||{item:h.item,proyecto:h.proyecto,total:0,motivo:h.motivo}; o.total+=h.total; porCC.set(k,o); });
+    rep.huerfanas.forEach(h=>{ const k=h.item+'|'+(h.proyecto||''); const o=porCC.get(k)||{item:h.item,proyecto:h.proyecto,total:0,motivo:h.motivo}; o.total+=h.total; porCC.set(k,o); });
     avisos.push('<div class="alert err">⚠️ <b>Producción huérfana</b> (no se repartió): '+
-      [...porCC.values()].map(h=>escapeHtml(h.item+' '+ufDeProyecto(h.proyecto)+' = '+n0(h.total)+' — '+h.motivo)).join(' · ')+'</div>');
+      [...porCC.values()].map(h=>escapeHtml(h.item+' '+(h.proyecto?ufDeProyecto(h.proyecto):'')+' = '+n0(h.total)+' — '+h.motivo)).join(' · ')+'</div>');
   }
   if(!desc.length && !rep.huerfanas.length)
     avisos.push('<div class="alert ok">✅ Cuadre exacto: toda la producción de <code>dia suelto</code> del período quedó repartida entre las máquinas propias.</div>');
@@ -1190,7 +1224,7 @@ function render(){
      '<th class="num">Repartida</th><th class="num">Δ</th><th>Base del reparto</th></tr></thead><tbody>';
   for(const c of rep.cuadre){
     totL+=c.leida; totR+=c.repartida;
-    const g=rep.bases.filter(x=>x.proyecto===c.proyecto&&x.item===c.item);
+    const g=rep.bases.filter(x=>x.item===c.item && (!P.separarUF || x.proyecto===c.proyecto));
     const detalle=g.map(x=>escapeHtml(x.tipos)+' '+n0(x.share*100)+'% · '+escapeHtml([...x.bases.keys()].join(' / '))).join(' | ');
     h+='<tr><td class="mono">'+escapeHtml(c.item)+'</td><td>'+escapeHtml(c.actividad)+'</td>'+
        '<td>'+escapeHtml(c.uf||'—')+' · '+escapeHtml(c.proyecto)+'</td>'+
