@@ -40,6 +40,8 @@
 │         (tierras/odt/odl derivada del CC con deriveArea; sin area = tierras — D70)       │
 │  POST {action:maquinaria_produccion}         → parcha col T + crea filas (redir/horas/compl, D60-62)│
 │  Regla técnica: fechas por duck-typing (getFullYear), nunca instanceof Date.            │
+│  Capacidad de grilla (D93): TODA escritura en bloque pasa por ensureRows_(sheet,n) —    │
+│  la hoja crece sola (bloques de 1.000) al agotarse sus filas; diagnosticoCapacidad().   │
 │  Redespliegue: Administrar implementaciones → editar → Nueva versión (misma URL).       │
 └────────────────────────────────────┬─────────────────────────────────────────────────--┘
                                      ▼
@@ -139,6 +141,8 @@
 │  GET  ?action=extras_admin&fecha=… → registro EXTRAS_ADMIN del día(D73)│
 │  POST {extras_admin, fecha,cc,…}   → upsert por fecha (proyecto del CC) │
 │  POST {extras_admin_delete, fecha} → borra la fila del día             │
+│  Capacidad de grilla (D93): ensureRows_ antes                          │
+│  de cada bloque; la grilla crece sola.                                 │
 └────────────────────────┬────────────────────────────────────────────--┘
                           ▼
 ┌── GOOGLE SHEET NUEVO (1KrhzaIg3BSspyi0oH0gHkAJnSRXaOIdel_pKaMVHX9w) ───┐

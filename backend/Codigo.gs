@@ -30,6 +30,13 @@
 
 const SHEET_ID = '1OEAZCcj_kgVS6jWXxOSgyvm57sOsJ7fA1mRTJPU-icM';
 
+// D93 — tamaño mínimo de expansión de la grilla (filas). Una hoja de Sheets nace con 1.000 filas;
+// cuando se agotan, un setValues en bloque falla entero ("The coordinates of the range are outside
+// the dimensions of the sheet") y el usuario tenía que añadir filas a mano para que la información
+// volviera a cargar. Se crece en bloques de este tamaño para no fragmentar la grilla. Es el ÚNICO
+// número a cambiar si se quiere otro tamaño de bloque.
+const BLOQUE_FILAS = 1000;
+
 // DATA: A–T orden del maestro ; U–AA internas
 const DATA_HEADERS = ['FECHA','ORDEN','GRUPO','CENTRO DE COSTO','CAPITULO','DESCRIPCION',
   'UNIDAD FUNCIONAL','PROYECTO','ELEMENTO','ABS INICIAL','ABS FINAL','LIBERACION','ACTA',
@@ -165,12 +172,42 @@ function fdate(v){
   return String(v).slice(0,10);
 }
 function toDate(s){ const p=String(s||'').slice(0,10).split('-'); if(p.length<3) return ''; return new Date(Number(p[0]),Number(p[1])-1,Number(p[2])); }
+/**
+ * D93 — Garantiza que la hoja tenga filas suficientes para escribir n filas a partir de la última
+ * fila con datos. Crece en bloques (BLOQUE_FILAS) para no fragmentar la grilla. Idempotente y
+ * barata: si hay espacio, no hace NADA (una sola lectura de getLastRow/getMaxRows, cero escrituras).
+ * La inserción es SIEMPRE después de la última fila de la GRILLA (insertRowsAfter(getMaxRows())),
+ * así que jamás desplaza ni pisa filas existentes.
+ * NO pre-crea filas vacías "por si acaso": el techo del archivo es de 10 millones de celdas sumando
+ * todas las hojas y las filas vacías consumen cupo y degradan el rendimiento.
+ */
+function ensureRows_(sheet, n) {
+  var necesarias = sheet.getLastRow() + (n || 1);
+  var faltan = necesarias - sheet.getMaxRows();
+  if (faltan > 0) {
+    sheet.insertRowsAfter(sheet.getMaxRows(), Math.max(faltan, BLOQUE_FILAS));
+  }
+}
+
+/**
+ * D93 — Garantiza que la hoja tenga al menos nCols columnas (el mismo problema, en el otro eje).
+ * Solo garantiza CAPACIDAD para los encabezados que el código ya define: no cambia el orden ni el
+ * número de columnas de ninguna hoja.
+ */
+function ensureCols_(sheet, nCols) {
+  var faltan = nCols - sheet.getMaxColumns();
+  if (faltan > 0) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), faltan);
+  }
+}
+
 function getSheet(name, headers){
   const ss=SpreadsheetApp.openById(SHEET_ID); let sh=ss.getSheetByName(name);
   if(!sh) sh=ss.insertSheet(name);
   const need=headers.length;
-  // asegura ancho de grilla suficiente (p. ej. MAQUINARIA pasó de 18 a 38 columnas en D52)
-  if(sh.getMaxColumns()<need) sh.insertColumnsAfter(sh.getMaxColumns(), need-sh.getMaxColumns());
+  // asegura ancho de grilla suficiente (p. ej. MAQUINARIA pasó de 18 a 38 columnas en D52; BANDEJA
+  // de 23 a 28 en D56/D70d). D93: la misma comprobación, ahora en el helper único ensureCols_.
+  ensureCols_(sh, need);
   if(sh.getLastRow()===0){ sh.getRange(1,1,1,need).setValues([headers]); return sh; }
   // auto-sana la fila de encabezados si no coincide con el esquema actual del código.
   // (tras el realineado de MAQUINARIA a Captura_Diaria, las filas con layout viejo quedan
@@ -862,12 +899,17 @@ function guardarReporte(body){
         m.motivo, uProd, actMaq, der.aCaptura, '', '']);
     });
   })();
-  if(banRows.length) banSh.getRange(banSh.getLastRow()+1,1,banRows.length,BANDEJA_HEADERS.length).setValues(banRows);
-  if(maqRows.length) maqSh.getRange(maqSh.getLastRow()+1,1,maqRows.length,MAQ_HEADERS.length).setValues(maqRows);
+  // D93: se valida la capacidad de la grilla ANTES de cada escritura en bloque (la hoja crece sola
+  // cuando se agotan sus filas; sin esto el setValues fallaba entero al llenarse la hoja).
+  if(banRows.length){ ensureRows_(banSh, banRows.length);
+    banSh.getRange(banSh.getLastRow()+1,1,banRows.length,BANDEJA_HEADERS.length).setValues(banRows); }
+  if(maqRows.length){ ensureRows_(maqSh, maqRows.length);
+    maqSh.getRange(maqSh.getLastRow()+1,1,maqRows.length,MAQ_HEADERS.length).setValues(maqRows); }
   // chequeadora: desglose por placa -> VOLQUETAS (una fila por placa). No toca DATA ni MAQUINARIA.
   // Un id_registro por línea de PK destino (placas de la misma línea comparten id).
   // Las filas (con cubicaje·m3_placa·cubicaje_origen) se construyeron arriba junto al cálculo del volumen.
   if(volRows.length){ const volSh=getSheet('VOLQUETAS', VOLQUETAS_HEADERS);
+    ensureRows_(volSh, volRows.length);   // D93
     volSh.getRange(volSh.getLastRow()+1,1,volRows.length,VOLQUETAS_HEADERS.length).setValues(volRows); }
   const obs=(body.observacion_general||'').trim();
   if(obs){
@@ -1242,7 +1284,8 @@ function maquinariaProduccionGuardar(body){
       // motivo · unidad_prod · cap_actividad · a_captura · produccion_capataz_orig · area (panel=tierras)
       motivo, (prod===''?'':'m3'), capLabel, aCap, '', '']);
   });
-  if(maqRows.length) sh.getRange(sh.getLastRow()+1,1,maqRows.length,MAQ_HEADERS.length).setValues(maqRows);
+  if(maqRows.length){ ensureRows_(sh, maqRows.length);   // D93: capacidad antes de escribir
+    sh.getRange(sh.getLastRow()+1,1,maqRows.length,MAQ_HEADERS.length).setValues(maqRows); }
   return json({ok:true, actualizadas:upd, creadas:maqRows.length});
 }
 
@@ -1273,7 +1316,10 @@ function enviarData(body){
   const clima=String(body.clima||'').trim();
   const rows=incluidas.filter(c=>c.estado!=='no_data' && areaDeFila(c.area, c.centro_costo)===area)
     .map(c=> buildDataRow(Object.assign(c,{clima:clima}), fecha, ts, c.reporta||'(encargado)', c.rol||'encargado', Utilities.getUuid()));
-  if(rows.length) sh.getRange(sh.getLastRow()+1,1,rows.length,DATA_HEADERS.length).setValues(rows);
+  // D93: el borrado de arriba usa deleteRow, que además REDUCE getMaxRows(); validar la capacidad
+  // antes de reescribir el día es justo lo que evitaba que DATA dejara de recibir al llenarse.
+  if(rows.length){ ensureRows_(sh, rows.length);
+    sh.getRange(sh.getLastRow()+1,1,rows.length,DATA_HEADERS.length).setValues(rows); }
   // 2) BANDEJA: marcar incluido / descartado SOLO las filas de esa área
   const banSh=getSheet('BANDEJA', BANDEJA_HEADERS);
   const bv=banSh.getDataRange().getValues(), bh=bv[0];
@@ -1313,6 +1359,21 @@ function actualizarDescripcionesData(){ _descripcionesDataPass(true); }
 // DESCRIPCION no tome la celda esperada. Registra qué columnas detectó (encabezados A–H), las
 // llaves CC encontradas y TODOS los candidatos de las llaves que contengan '02.08' (o cámbiese el
 // filtro abajo). No escribe nada en ninguna hoja.
+/**
+ * D93 — Diagnóstico de CAPACIDAD de la grilla. Ejecutar desde el editor de Apps Script y revisar el
+ * log (Ver > Registro de ejecución). Muestra, por hoja: filas usadas / filas totales / columnas
+ * usadas / columnas totales y cuántas filas libres quedan. NO escribe datos: es solo lectura.
+ */
+function diagnosticoCapacidad() {
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  ss.getSheets().forEach(function (sh) {
+    Logger.log(
+      sh.getName() + ' → filas ' + sh.getLastRow() + '/' + sh.getMaxRows() +
+      ' (libres ' + (sh.getMaxRows() - sh.getLastRow()) + ')' +
+      ' · cols ' + sh.getLastColumn() + '/' + sh.getMaxColumns()
+    );
+  });
+}
 function diagnosticoBase(){
   const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('BASE');
   if(!sh){ Logger.log('No existe la hoja BASE.'); return; }
