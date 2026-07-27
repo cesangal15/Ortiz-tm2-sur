@@ -83,7 +83,10 @@
 
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbymgvQX03ZqS_YzIz5l6WVesasDUMYwGOFItrggTJCdsFhcjXQvDPVz03E7mNcZQ4Nq/exec";
-let STATE = { usuario:'', rol:'', fecha:'', data:null, exportCache:{}, tplBuf:null, tplName:'', tplRecordada:false, tplBundle:false, filaInicio:2, personal:null, completar:{}, persQuery:'', areaFiltro:'' };
+let STATE = { usuario:'', rol:'', fecha:'', data:null, exportCache:{}, tplBuf:null, tplName:'', tplRecordada:false, tplBundle:false, filaInicio:2, personal:null, completar:{}, persQuery:'', areaFiltro:'',
+  // D94 — seguimiento de ausencias por rango (independiente del día del resumen): se conserva entre
+  // re-renders (render() reconstruye el contenedor completo) para no perder la consulta ni los filtros.
+  aus:{ abierto:false, desde:'', hasta:'', data:null, cargando:false, error:'', motivo:'', cuadrilla:'', q:'', incluirSinRep:false, vista:'persona' } };
 
 // Plantilla recordada entre sesiones (localStorage): así solo se sube UNA vez, no cada sesión. Se
 // guarda como base64 del .xlsx. Si es demasiado grande para localStorage, cae a "solo esta sesión".
@@ -267,6 +270,8 @@ function render(){
 
   html+=seccionCompletar(d);
 
+  html+=seccionAusencias();   // D94: seguimiento de ausencias por rango de fechas
+
   html+='<div class="section-title">Descargar Excel Navision</div>';
   html+=exportCardHtml();
 
@@ -280,6 +285,7 @@ function render(){
 
   document.getElementById('container').innerHTML=html;
   if(STATE.personal) renderPersonal();
+  renderAusFiltros(); renderAusResultados();   // D94: repinta lo ya consultado tras un re-render
 }
 
 /* ================= BUSCADOR DE CC (D78) =================
@@ -595,6 +601,251 @@ async function guardarCompletar(){
     if(data.ok){ STATE.exportCache={}; cargarResumen(); }
     else msg.innerHTML='<div class="aviso">⚠️ '+esc(data.error||'error')+'</div>';
   }catch(err){ msg.innerHTML='<div class="aviso">⚠️ '+esc(err.message||err)+'</div>'; }
+}
+
+/* ================= SEGUIMIENTO DE AUSENCIAS POR RANGO (D94) =================
+ * Pedido del usuario (jul-2026): "de cierta fecha a cierta fecha, ver quiénes faltaron y filtrarlo
+ * según el motivo, para hacerle seguimiento al personal". Va en ESTA pantalla (no en una nueva) porque
+ * quien hace el seguimiento es el mismo que revisa el resumen (residente / jeisson / duvan / admin) y
+ * así reusa el guard, el filtro por área del backend y los catálogos que ya trae la página.
+ *   - Consulta el endpoint `?action=ausencias&desde=&hasta=` (solo lectura, acotado al área del usuario).
+ *   - Filtros en el cliente: motivo, cuadrilla y buscador por nombre/cargo.
+ *   - Dos vistas: POR PERSONA (reincidencias, con el detalle de fechas) y POR FECHA (el día a día).
+ *   - Checkbox "incluir no reportados": días en que la cuadrilla reportó pero a la persona no la
+ *     incluyeron. No es una ausencia confirmada — por eso va aparte y apagado por defecto.
+ *   - Descarga CSV de lo filtrado, para adjuntar al seguimiento (no es el Parte de Navision).
+ * Es independiente de la fecha del resumen: cambiar el día de arriba no borra esta consulta. */
+const AUS_SIN_REPORTE='(no reportado)';
+function primerDiaDelMes(f){ return String(f||'').slice(0,8)+'01'; }
+function ausInit(){
+  const a=STATE.aus;
+  if(!a.hasta) a.hasta=STATE.fecha;
+  if(!a.desde) a.desde=primerDiaDelMes(STATE.fecha);
+}
+function seccionAusencias(){
+  ausInit(); const a=STATE.aus;
+  let h='<div style="display:flex;justify-content:space-between;align-items:center;margin:22px 0 10px;">'
+    + '<span style="font-family:\'Syne\',sans-serif;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">🔎 Seguimiento de ausencias (rango)</span>'
+    + `<button class="mini-btn" onclick="ausToggle(this)">${a.abierto?'Ocultar':'Mostrar'}</button></div>`;
+  h+=`<div id="ausPanel" class="card" style="display:${a.abierto?'block':'none'};">`;
+  h+='<p style="font-size:12px;color:var(--muted);margin-bottom:10px;">Quién faltó entre dos fechas y por qué motivo, para el seguimiento del personal. Solo lectura: no modifica ninguna asistencia.</p>';
+  h+='<div class="row">'
+    + `<div class="field" style="max-width:170px;"><label>Desde</label><input type="date" id="ausDesde" value="${esc(a.desde)}"></div>`
+    + `<div class="field" style="max-width:170px;"><label>Hasta</label><input type="date" id="ausHasta" value="${esc(a.hasta)}"></div>`
+    + '<div class="field" style="flex:0;"><button class="btn" onclick="ausConsultar()">Consultar →</button></div>'
+    + '</div>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">'
+    + '<button class="mini-btn" onclick="ausRangoRapido(\'mes\')">Este mes</button>'
+    + '<button class="mini-btn" onclick="ausRangoRapido(\'30\')">Últimos 30 días</button>'
+    + '<button class="mini-btn" onclick="ausRangoRapido(\'mesant\')">Mes pasado</button>'
+    + '</div>';
+  h+='<div id="ausFiltros" style="margin-top:14px;"></div><div id="ausResultados"></div>';
+  h+='</div>';
+  return h;
+}
+function ausToggle(btn){
+  STATE.aus.abierto=!STATE.aus.abierto;
+  const el=document.getElementById('ausPanel'); if(el) el.style.display=STATE.aus.abierto?'block':'none';
+  if(btn) btn.textContent=STATE.aus.abierto?'Ocultar':'Mostrar';
+}
+// Atajos de rango. Fechas en hora de Bogotá (D50: nunca toISOString).
+function ausRangoRapido(cual){
+  const hoy=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
+  const p=hoy.split('-'); const y=Number(p[0]), m=Number(p[1]);
+  let desde=hoy, hasta=hoy;
+  if(cual==='mes'){ desde=primerDiaDelMes(hoy); }
+  else if(cual==='30'){ const d=new Date(y, m-1, Number(p[2])); d.setDate(d.getDate()-29);
+    desde=d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+  else if(cual==='mesant'){ const ini=new Date(y, m-2, 1), fin=new Date(y, m-1, 0);
+    const f=x=>x.getFullYear()+'-'+('0'+(x.getMonth()+1)).slice(-2)+'-'+('0'+x.getDate()).slice(-2);
+    desde=f(ini); hasta=f(fin); }
+  STATE.aus.desde=desde; STATE.aus.hasta=hasta;
+  const de=document.getElementById('ausDesde'), ha=document.getElementById('ausHasta');
+  if(de) de.value=desde; if(ha) ha.value=hasta;
+  ausConsultar();
+}
+async function ausConsultar(){
+  const de=document.getElementById('ausDesde'), ha=document.getElementById('ausHasta');
+  const a=STATE.aus;
+  a.desde=de?de.value:a.desde; a.hasta=ha?ha.value:a.hasta;
+  if(!a.desde || !a.hasta){ alert('Elige las dos fechas del rango.'); return; }
+  if(a.hasta < a.desde){ alert('El rango está invertido: "Hasta" es anterior a "Desde".'); return; }
+  a.cargando=true; a.error=''; a.data=null; a.motivo=''; a.cuadrilla=''; a.abiertos={};
+  renderAusFiltros(); renderAusResultados();
+  try{
+    const url=`${APPS_SCRIPT_URL}?action=ausencias&desde=${a.desde}&hasta=${a.hasta}`
+      + `&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`;
+    const resp=await fetch(url);
+    const data=await resp.json();
+    if(!data.ok) throw new Error(data.error||'ausencias');
+    // Backend sin redesplegar: doGet devuelve {ok:true, msg:'API Asistencias viva'} para una acción que
+    // aún no conoce. Se detecta por la ausencia de `filas` y se avisa con la causa real.
+    if(!data.filas) throw new Error('El Apps Script de asistencias todavía no tiene el endpoint de ausencias. Redespliega CodigoAsistencias.gs (editar implementación → versión nueva, misma URL).');
+    a.data=data;
+  }catch(err){ a.error=err.message||String(err); }
+  a.cargando=false;
+  renderAusFiltros(); renderAusResultados();
+}
+// Universo consultado según el checkbox de "no reportados" (antes de los filtros de motivo/cuadrilla/texto).
+function ausUniverso(){
+  const a=STATE.aus, d=a.data; if(!d) return [];
+  return a.incluirSinRep ? (d.filas||[]).concat(d.sinReportar||[]) : (d.filas||[]).slice();
+}
+function ausFilas(){
+  const a=STATE.aus, q=(a.q||'').trim().toLowerCase();
+  return ausUniverso().filter(f=>
+      (!a.motivo    || f.motivo===a.motivo)
+   && (!a.cuadrilla || f.cuadrilla===a.cuadrilla)
+   && (!q || (String(f.nombre)+' '+String(f.cargo)+' '+String(f.cuadrilla)).toLowerCase().indexOf(q)>=0))
+   .sort((x,y)=> x.fecha===y.fecha ? (x.nombre<y.nombre?-1:1) : (x.fecha<y.fecha?1:-1));
+}
+function ausKey(f){ return String(f.codigo||'').trim() || ('CED:'+String(f.cedula||'').trim()); }
+// Controles de filtro: viven FUERA de #ausResultados para no perder el foco del buscador al teclear
+// (mismo patrón que el filtro de gestión de personal).
+function renderAusFiltros(){
+  const box=document.getElementById('ausFiltros'); if(!box) return;
+  const a=STATE.aus;
+  if(!a.data){ box.innerHTML=''; return; }
+  const uni=ausUniverso();
+  const motivos=[]; uni.forEach(f=>{ if(motivos.indexOf(f.motivo)<0) motivos.push(f.motivo); }); motivos.sort();
+  const cuads=[];   uni.forEach(f=>{ if(cuads.indexOf(f.cuadrilla)<0) cuads.push(f.cuadrilla); }); cuads.sort();
+  let h='<div class="row">'
+    + '<div class="field"><label>Motivo</label><select onchange="ausSetFiltro(\'motivo\',this.value)">'
+    +   `<option value="">Todos los motivos</option>`
+    +   motivos.map(m=>`<option value="${esc(m)}" ${a.motivo===m?'selected':''}>${esc(m)}</option>`).join('')
+    + '</select></div>'
+    + '<div class="field"><label>Cuadrilla</label><select onchange="ausSetFiltro(\'cuadrilla\',this.value)">'
+    +   `<option value="">Todas</option>`
+    +   cuads.map(c=>`<option value="${esc(c)}" ${a.cuadrilla===c?'selected':''}>${esc(c)}</option>`).join('')
+    + '</select></div>'
+    + '<div class="field"><label>Buscar persona</label><input type="text" id="ausQ" placeholder="Nombre, cargo o cuadrilla…" '
+    +   `value="${esc(a.q)}" oninput="ausSetTexto(this.value)"></div>`
+    + '</div>';
+  h+='<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:10px;font-size:12px;color:var(--muted);">'
+    + `<label style="display:flex;gap:6px;align-items:center;text-transform:none;letter-spacing:0;margin:0;cursor:pointer;">`
+    +   `<input type="checkbox" style="width:auto;" ${a.incluirSinRep?'checked':''} onchange="ausSetSinRep(this.checked)"> `
+    +   `Incluir días <b style="color:var(--text)">no reportados</b> (la cuadrilla reportó, pero a la persona no la incluyeron)</label>`
+    + '<span style="flex:1;"></span>'
+    + `<button class="mini-btn" onclick="ausSetVista('persona')" style="${a.vista==='persona'?'border-color:var(--accent);color:var(--accent);':''}">Por persona</button>`
+    + `<button class="mini-btn" onclick="ausSetVista('fecha')" style="${a.vista==='fecha'?'border-color:var(--accent);color:var(--accent);':''}">Por fecha</button>`
+    + '</div>';
+  box.innerHTML=h;
+}
+function ausSetFiltro(k, v){ STATE.aus[k]=v; renderAusResultados(); }
+// Clic en una línea del desglose "Por motivo": filtra por ese motivo, o lo quita si ya estaba puesto.
+function ausMotivoClick(i){
+  const m=(STATE.aus._motivos||[])[i]; if(m==null) return;
+  STATE.aus.motivo = (STATE.aus.motivo===m) ? '' : m;
+  renderAusFiltros(); renderAusResultados();
+}
+function ausSetTexto(v){ STATE.aus.q=v; renderAusResultados(); }     // el input no se repinta: no pierde foco
+function ausSetVista(v){ STATE.aus.vista=v; renderAusFiltros(); renderAusResultados(); }
+function ausSetSinRep(v){ STATE.aus.incluirSinRep=v; if(STATE.aus.motivo===AUS_SIN_REPORTE && !v) STATE.aus.motivo=''; renderAusFiltros(); renderAusResultados(); }
+// El detalle se abre por índice de pintado (id DOM seguro) pero se RECUERDA por clave de persona, para
+// que siga abierto al cambiar un filtro (que repinta la lista).
+function ausToggleDetalle(i, btn){
+  const k=(STATE.aus._orden||[])[i]; if(k==null) return;
+  STATE.aus.abiertos=STATE.aus.abiertos||{};
+  STATE.aus.abiertos[k]=!STATE.aus.abiertos[k];
+  const el=document.getElementById('ausdet-'+i); if(el) el.style.display=STATE.aus.abiertos[k]?'block':'none';
+  if(btn) btn.textContent=STATE.aus.abiertos[k]?'Ocultar':'Ver fechas';
+}
+function renderAusResultados(){
+  const box=document.getElementById('ausResultados'); if(!box) return;
+  const a=STATE.aus;
+  if(a.cargando){ box.innerHTML='<div class="loading">⏳ Consultando el rango…</div>'; return; }
+  if(a.error){ box.innerHTML='<div class="aviso">⚠️ '+esc(a.error)+'</div>'; return; }
+  if(!a.data){ box.innerHTML='<p style="font-size:12.5px;color:var(--muted);margin-top:12px;">Elige el rango y pulsa <b>Consultar</b>.</p>'; return; }
+  const filas=ausFilas();
+  const personas={}; filas.forEach(f=>{ personas[ausKey(f)]=1; });
+  const dias={};     filas.forEach(f=>{ dias[f.fecha]=1; });
+  let h='<div class="kpis" style="margin-top:14px;">'
+    + `<div class="kpi"><div class="k-val">${filas.length}</div><div class="k-lbl">Ausencias</div></div>`
+    + `<div class="kpi"><div class="k-val">${Object.keys(personas).length}</div><div class="k-lbl">Personas</div></div>`
+    + `<div class="kpi"><div class="k-val">${Object.keys(dias).length}</div><div class="k-lbl">Días con ausencias</div></div>`
+    + '</div>';
+  h+=`<p style="font-size:11px;color:var(--muted);margin:2px 0 12px;">Rango ${esc(a.data.desde)} → ${esc(a.data.hasta)} (${a.data.dias} día(s)). `
+    + `${a.data.filas.length} ausencia(s) con motivo`
+    + (a.incluirSinRep ? ` · ${(a.data.sinReportar||[]).length} día(s)-persona no reportados` : '')
+    + '.</p>';
+  if(!filas.length){
+    h+='<p class="empty-state" style="padding:18px;">Sin ausencias con estos filtros.</p>';
+    box.innerHTML=h; return;
+  }
+  // Desglose por motivo (clic = filtra). Es la lectura rápida del "por qué" del periodo.
+  const porMotivo={}; ausUniverso().forEach(f=>{ porMotivo[f.motivo]=(porMotivo[f.motivo]||0)+1; });
+  const motivosOrd=Object.keys(porMotivo).sort((x,y)=>porMotivo[y]-porMotivo[x]);
+  STATE.aus._motivos=motivosOrd;   // el clic va por índice: el texto del motivo puede traer comillas
+  h+='<div class="section-title" style="margin:8px 0 6px;">Por motivo</div>'
+    + '<p style="font-size:11px;color:var(--muted);margin:-4px 0 6px;">Clic en un motivo para filtrar; otro clic lo quita.</p>'
+    + '<div class="card" style="background:var(--surface2);">';
+  motivosOrd.forEach((m,i)=>{
+    const sel=a.motivo===m;
+    h+=`<div class="cuad-row" style="cursor:pointer;${sel?'color:var(--accent);':''}" onclick="ausMotivoClick(${i})">`
+      + `<span>${esc(m)}${sel?' ✓':''}</span><b>${porMotivo[m]}</b></div>`;
+  });
+  h+='</div>';
+
+  if(a.vista==='persona'){
+    // Reincidencias: quién falta más en el periodo (lo que sirve para el seguimiento).
+    const map={};
+    filas.forEach(f=>{ const k=ausKey(f);
+      if(!map[k]) map[k]={ nombre:f.nombre, cargo:f.cargo, cuadrilla:f.cuadrilla, codigo:f.codigo, n:0, motivos:{}, fechas:[] };
+      map[k].n++; map[k].motivos[f.motivo]=(map[k].motivos[f.motivo]||0)+1; map[k].fechas.push(f);
+    });
+    const orden=Object.keys(map).sort((x,y)=> map[y].n-map[x].n || (map[x].nombre<map[y].nombre?-1:1));
+    STATE.aus._orden=orden;
+    h+='<div class="section-title" style="margin:16px 0 6px;">Por persona ('+orden.length+')</div><div class="card" style="background:var(--surface2);">';
+    orden.forEach((k,i)=>{
+      const p=map[k], det=(STATE.aus.abiertos||{})[k];
+      const mot=Object.keys(p.motivos).sort((x,y)=>p.motivos[y]-p.motivos[x])
+        .map(m=>`${esc(m)}${p.motivos[m]>1?' ×'+p.motivos[m]:''}`).join(' · ');
+      h+='<div style="border-bottom:1px solid rgba(46,52,80,0.5);padding:9px 0;">'
+        + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;">'
+        +   `<div class="nm" style="flex:1;min-width:180px;"><b>${esc(p.nombre)}</b> <small style="color:var(--muted)">${esc(p.cargo)} · ${esc(p.cuadrilla)}${p.codigo?' · cód. '+esc(p.codigo):''}</small>`
+        +   `<br><small style="color:var(--muted)">${mot}</small></div>`
+        +   `<span style="display:flex;gap:8px;align-items:center;"><span class="badge aus">${p.n} falta(s)</span>`
+        +   `<button class="mini-btn" onclick="ausToggleDetalle(${i},this)">${det?'Ocultar':'Ver fechas'}</button></span>`
+        + '</div>'
+        + `<div id="ausdet-${i}" style="display:${det?'block':'none'};margin-top:6px;">`
+        +   p.fechas.map(f=>`<div class="falt-row" style="padding:5px 0;"><span><b style="color:var(--text)">${esc(f.fecha)}</b> <small style="color:var(--muted)">${esc(f.motivo)}</small></span>`
+        +     `<small style="color:var(--muted)">${f.reporta?'reportó '+esc(f.reporta):''}</small></div>`).join('')
+        + '</div></div>';
+    });
+    h+='</div>';
+  } else {
+    // Día a día: útil para cruzar con un frente parado o un día puntual.
+    const porFecha={};
+    filas.forEach(f=>{ (porFecha[f.fecha]=porFecha[f.fecha]||[]).push(f); });
+    const fechas=Object.keys(porFecha).sort().reverse();
+    h+='<div class="section-title" style="margin:16px 0 6px;">Por fecha ('+fechas.length+')</div><div class="card" style="background:var(--surface2);">';
+    fechas.forEach(fe=>{
+      h+=`<div style="border-bottom:1px solid rgba(46,52,80,0.5);padding:9px 0;"><div style="display:flex;justify-content:space-between;">`
+        + `<b style="color:var(--accent)">${esc(fe)}</b><span class="badge aus">${porFecha[fe].length} falta(s)</span></div>`;
+      porFecha[fe].forEach(f=>{
+        h+=`<div class="falt-row" style="padding:5px 0;"><div class="nm"><b>${esc(f.nombre)}</b><small>${esc(f.cargo)} · ${esc(f.cuadrilla)}</small></div>`
+         + `<span class="badge ${f.tipo==='sin_reportar'?'sin':'aus'}">${esc(f.motivo)}</span></div>`;
+      });
+      h+='</div>';
+    });
+    h+='</div>';
+  }
+  h+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;"><button class="btn-ghost" onclick="ausCSV()">⬇️ Descargar CSV (${filas.length} fila(s))</button></div>`;
+  box.innerHTML=h;
+}
+// CSV de lo FILTRADO, para adjuntar al seguimiento del personal. UTF-8 con BOM y separador ';' (mismo
+// criterio que la digitadora: Excel en español lo abre en columnas sin pasos extra). No es el Parte.
+function ausCSV(){
+  const filas=ausFilas(); if(!filas.length) return;
+  const esc2=v=>{ const s=String(v==null?'':v); return /[";\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
+  const cab=['Fecha','Codigo','Cedula','Nombre','Cargo','Cuadrilla','Motivo','Tipo','Reporto'];
+  const lineas=[cab.join(';')].concat(filas.map(f=>[f.fecha,f.codigo,f.cedula,f.nombre,f.cargo,f.cuadrilla,f.motivo,
+    f.tipo==='sin_reportar'?'No reportado':'Ausencia reportada',f.reporta].map(esc2).join(';')));
+  const blob=new Blob(['﻿'+lineas.join('\r\n')], {type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob), a=document.createElement('a');
+  a.href=url; a.download=`Ausencias_${STATE.aus.desde}_a_${STATE.aus.hasta}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
 }
 
 /* ================= EXPORT NAVISION (SheetJS, cliente) ================= */
