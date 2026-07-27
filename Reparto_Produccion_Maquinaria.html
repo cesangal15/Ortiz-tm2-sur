@@ -128,10 +128,10 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
           <div class="fb-sub" id="sJefe">Fuente de HORAS · CC por máquina (hoja del mes)</div>
         </label>
         <label class="fld" style="margin-top:10px">Hoja del mes</label>
-        <input type="text" id="hojaJefe" value="JULIO UF1 UF2 Y UF3 ">
-        <div class="hint">Cambia cada mes (JUNIO, JULIO…). Reconozco los <b>dos formatos</b>: el parte
-          <b>día a día</b> (una fila por máquina/fecha/CC, como la hoja <code>Junio</code>) y el de
-          <b>bloques con el total del mes</b>. Si no encuentro la hoja, te dejo elegirla.</div>
+        <input type="text" id="hojaJefe" value="BASE MAQUINARIA">
+        <div class="hint">Por defecto <code>BASE MAQUINARIA</code>, que trae el <b>día a día</b> de cada máquina. Reconozco los
+          <b>dos formatos</b>: el diario (una fila por máquina/fecha/CC) y el de <b>bloques con el total del mes</b>
+          (<code>JULIO UF1 UF2 Y UF3 </code>). El corte lo busco en <b>todas</b> las hojas del libro.</div>
       </div>
     </div>
     <div id="hojaPick" style="margin-top:10px"></div>
@@ -589,13 +589,24 @@ const HDR_PARTE = {
 function detectarCabeceraParte(ws){
   const r=rangoHoja(ws);
   for(let f=r.r0; f<=Math.min(r.r1, r.r0+12); f++){
-    const cols={}, vistos={};
+    const cols={}, vistos={}, texto={};
     for(let c=r.c0;c<=r.c1;c++){
       const h=normHdr(txtAt(ws,f,c));
       if(!h) continue;
+      texto[c]=h;
       for(const k in HDR_PARTE){
         if(vistos[k]) continue;
         if(HDR_PARTE[k].indexOf(h)>=0){ cols[k]=c; vistos[k]=1; break; }
+      }
+    }
+    // `BASE MAQUINARIA` no tiene columna «HORAS TRABAJADAS»: las horas son el TOTAL del
+    // horómetro (INICIAL · FINAL · TOTAL). Se acepta solo ese TOTAL, no los otros
+    // (TOTAL2, TOTAL HORAS, TOTAL HORAS A FACTURAR…).
+    if(cols.horas===undefined){
+      for(const c in texto){
+        if(texto[c]!=='FINAL') continue;
+        const sig=Number(c)+1;
+        if(texto[sig]==='TOTAL' && texto[Number(c)-1]==='INICIAL'){ cols.horas=sig; break; }
       }
     }
     if(cols.fecha!==undefined && cols.cod!==undefined && cols.cc!==undefined && cols.horas!==undefined)
@@ -604,33 +615,63 @@ function detectarCabeceraParte(ws){
   return null;
 }
 
+/* FECHAS DE CORTE en cualquier hoja del libro: el día a día vive en `BASE MAQUINARIA`
+   pero el corte está en la hoja del mes (`JULIO UF1 UF2 Y UF3 `). */
+function buscarCorteEnLibro(wb){
+  for(const n of wb.SheetNames){
+    const ws=wb.Sheets[n]; if(!ws||!ws['!ref']) continue;
+    let a=fechaAt(ws,J_FILA_CORTE_INI,J_COL_CORTE), b=fechaAt(ws,J_FILA_CORTE_FIN,J_COL_CORTE);
+    if(a&&b) return {ini:a,fin:b,hoja:n};
+    const r=rangoHoja(ws);
+    for(let f=r.r0; f<=Math.min(r.r1,r.r0+5); f++){
+      for(let c=r.c0; c<=r.c1; c++){
+        if(normHdr(txtAt(ws,f,c)).indexOf('FECHAS DE CORTE')<0) continue;
+        const vistas=[];
+        for(let ff=f; ff<=Math.min(r.r1,f+3); ff++)
+          for(let cc=c; cc<=Math.min(r.c1,c+4); cc++){ const d=fechaAt(ws,ff,cc); if(d) vistas.push(d); }
+        vistas.sort();
+        if(vistas.length>=2) return {ini:vistas[0], fin:vistas[vistas.length-1], hoja:n};
+      }
+    }
+  }
+  return null;
+}
+
+/* Un parte diario puede arrastrar meses de historia: en ese caso el corte NO es su min/max,
+   sino el período 16→15 que termina en su última fecha. */
+function corteDeUltimoMes(maxISO){
+  const d=fechaUTC(maxISO), y=d.getUTCFullYear(), m=d.getUTCMonth(), dia=d.getUTCDate();
+  const fin  = dia>=16 ? new Date(Date.UTC(y,m+1,15)) : new Date(Date.UTC(y,m,15));
+  const ini  = new Date(Date.UTC(fin.getUTCFullYear(),fin.getUTCMonth()-1,16));
+  return { ini:isoLocal(ini), fin:isoLocal(fin) };
+}
+
 /* FECHAS DE CORTE: celdas fijas del parte por bloques, o el rango de fechas del parte diario. */
 function detectarCorte(){
-  const hoja=buscarHoja(S.jefe.wb, document.getElementById('hojaJefe').value);
-  if(!hoja) return;
-  const ws=S.jefe.wb.Sheets[hoja];
-  let ini=fechaAt(ws,J_FILA_CORTE_INI,J_COL_CORTE), fin=fechaAt(ws,J_FILA_CORTE_FIN,J_COL_CORTE);
+  let ini=null, fin=null, origen='';
+  const enLibro=buscarCorteEnLibro(S.jefe.wb);
+  if(enLibro){ ini=enLibro.ini; fin=enLibro.fin; origen='FECHAS DE CORTE de «'+enLibro.hoja+'»'; }
+
   if(!ini || !fin){
-    const cab=detectarCabeceraParte(ws);
+    const hoja=buscarHoja(S.jefe.wb, document.getElementById('hojaJefe').value);
+    const ws=hoja?S.jefe.wb.Sheets[hoja]:null;
+    const cab=ws?detectarCabeceraParte(ws):null;
     if(cab){
-      // Parte diario: el corte es el rango de fechas de sus propias filas.
       const r=rangoHoja(ws); let a=null,b=null;
       for(let f=cab.fila+1; f<=r.r1; f++){
         const d=fechaAt(ws,f,cab.cols.fecha); if(!d) continue;
         if(!a||d<a) a=d; if(!b||d>b) b=d;
       }
-      ini=ini||a; fin=fin||b;
-    }else{
-      const r=rangoHoja(ws), vistas=[];
-      for(let f=r.r0; f<=Math.min(r.r1,J_FILA_DATOS-1); f++)
-        for(let c=r.c0; c<=r.c1; c++){ const d=fechaAt(ws,f,c); if(d) vistas.push(d); }
-      vistas.sort();
-      if(vistas.length>=2){ ini=ini||vistas[0]; fin=fin||vistas[vistas.length-1]; }
+      if(a&&b){
+        const dias=Math.round((fechaUTC(b)-fechaUTC(a))/86400000);
+        if(dias>45){ const c=corteDeUltimoMes(b); ini=c.ini; fin=c.fin; origen='último período 16→15 del parte ('+dias+' días de historia)'; }
+        else { ini=a; fin=b; origen='rango de fechas del parte'; }
+      }
     }
   }
   if(ini) document.getElementById('desde').value=ini;
   if(fin) document.getElementById('hasta').value=fin;
-  if(ini&&fin) toast('📅 Corte detectado: '+fmtFecha(ini)+' → '+fmtFecha(fin));
+  if(ini&&fin) toast('📅 Corte detectado ('+origen+'): '+fmtFecha(ini)+' → '+fmtFecha(fin));
 }
 document.getElementById('hojaJefe').addEventListener('change',()=>{ if(S.jefe.wb) detectarCorte(); });
 
@@ -699,12 +740,21 @@ function leerProduccion(P){
      dias:     "fecha|cod|proy|item" -> {horas,idle,desc,operador}   (vacío en el parte mensual) */
 function leerJefe(P){
   const nombreHoja=document.getElementById('hojaJefe').value;
-  const hoja=buscarHoja(S.jefe.wb, nombreHoja);
-  if(!hoja) throw new Error('No encontré la hoja «'+nombreHoja+'» en '+S.jefe.nombre+'. Corrige el nombre de la hoja del mes.');
+  let hoja=buscarHoja(S.jefe.wb, nombreHoja), auto=false;
+  // El nombre de la hoja cambia cada mes: si el que hay escrito no está, se busca sola
+  // la primera hoja que tenga pinta de parte diario en vez de plantarse.
+  if(!hoja){
+    for(const n of S.jefe.wb.SheetNames){
+      const w=S.jefe.wb.Sheets[n];
+      if(w && w['!ref'] && detectarCabeceraParte(w)){ hoja=n; auto=true; break; }
+    }
+  }
+  if(!hoja) throw new Error('No encontré la hoja «'+nombreHoja+'» en '+S.jefe.nombre+
+    ', ni ninguna con formato de parte diario. Hojas del archivo: '+S.jefe.wb.SheetNames.join(' · '));
   const ws=S.jefe.wb.Sheets[hoja];
   const cab=detectarCabeceraParte(ws);
   const out = cab ? leerParteDiario(ws,cab,P) : leerParteMensual(ws,P);
-  out.hoja=hoja;
+  out.hoja=hoja; out.hojaAuto=auto; out.hojaPedida=nombreHoja;
   return out;
 }
 
@@ -804,10 +854,17 @@ function leerParteMensual(ws,P){
 
 /* ============================ REPARTO (por día) ============================ */
 
-/* Peso de cada candidata para un día concreto. Cascada:
-   1) horas de ESE día en el CC exacto → 2) ese día, el ítem en cualquier UF →
-   3) ese día, cualquier CC (la máquina trabajó) → 4) horas del MES en el CC exacto →
-   5) horas del mes en el ítem → 6) horas totales del mes → 7) partes iguales.
+/* Peso de cada candidata para un día concreto. Cascada, de la evidencia más fuerte a la más débil:
+     1) horas de ESE día en el CC exacto
+     2) ese día, el ítem en cualquier UF
+     3) horas del MES en el CC exacto        ← la cascada de D86
+     4) horas del mes en el ítem (cruce UF)  ←
+     5) la máquina trabajó ese día (en lo que sea)
+     6) horas totales del mes
+     7) partes iguales
+   Las horas del MES en el ítem van ANTES de «trabajó ese día» a propósito: quien hace esa
+   actividad en el mes pesa más que cualquiera que simplemente estuvo encendido ese día.
+   Al revés, el préstamo se desparramaba entre excavadoras que no hacen préstamo.
    Así nunca queda producción huérfana si hay al menos una candidata. */
 function pesosDe(cands, fecha, proyecto, item, jefe, cruzarUF){
   const hd=(m,p,it)=>{ const d=jefe.dias.get(fecha+'|'+m.cod+'|'+p+'|'+it); return d?d.horas:0; };
@@ -815,11 +872,11 @@ function pesosDe(cands, fecha, proyecto, item, jefe, cruzarUF){
   if(jefe.dias.size){
     if(!cruzarUF) niveles.push(['horas del día en el CC', cands.map(m=>hd(m,proyecto,item))]);
     niveles.push(['horas del día en el ítem (cruce UF)', cands.map(m=>PROYECTOS.reduce((a,p)=>a+hd(m,p,item),0)+hd(m,'',item))]);
-    niveles.push(['trabajó ese día', cands.map(m=>{
-      let t=0; for(const [k,d] of jefe.dias){ const p=k.split('|'); if(p[0]===fecha && p[1]===m.cod) t+=d.horas; } return t; })]);
   }
   if(!cruzarUF) niveles.push(['horas del mes en el CC', cands.map(m=>m.cc.get(proyecto+'|'+item)||0)]);
   niveles.push(['horas del mes en el ítem (cruce UF)', cands.map(m=>m.porItem.get(item)||0)]);
+  if(jefe.dias.size) niveles.push(['trabajó ese día', cands.map(m=>{
+    let t=0; for(const [k,d] of jefe.dias){ const p=k.split('|'); if(p[0]===fecha && p[1]===m.cod) t+=d.horas; } return t; })]);
   niveles.push(['horas totales del mes', cands.map(m=>m.horasTotal||0)]);
   for(const [base,pesos] of niveles) if(pesos.reduce((a,b)=>a+b,0)>0) return {pesos:pesos, base:base};
   return {pesos:cands.map(()=>1), base:'partes iguales'};
@@ -1015,6 +1072,9 @@ function render(){
         'se reparten entre los días proporcional a la producción de cada día. El total mensual de horas por máquina y CC '+
         'cuadra con el parte, pero el rendimiento diario del informe queda parejo.')+'</div>');
 
+  if(jefe.hojaAuto) avisos.push('<div class="alert warn">No existe la hoja «<b>'+escapeHtml(jefe.hojaPedida)+
+    '</b>» en el archivo de partes: usé «<b>'+escapeHtml(jefe.hoja)+'</b>», que sí tiene formato de parte diario. '+
+    'Si no es la que querías, corrige el nombre arriba.</div>');
   const sinMapear=dsProd.cols.filter(c=>c.total && !c.ccs.length);
   if(sinMapear.length) avisos.push('<div class="alert warn">Columnas con producción <b>sin CC en el mapa</b> (ignoradas): '+
     sinMapear.map(c=>escapeHtml(c.actividad+' ['+c.uf+'] = '+n0(c.total))).join(' · ')+'</div>');
