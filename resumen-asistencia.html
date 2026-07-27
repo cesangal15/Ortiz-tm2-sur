@@ -131,10 +131,7 @@ window.onload = function(){
   bm.style.display='inline-block';
   if(rol==='admin'){ bm.onclick=function(){location.href='menu.html';}; bm.textContent='← Menú'; }
   else if(rol==='residente'){ bm.onclick=function(){location.href='residente.html';}; }
-  // D88: duvan entra directo aquí (no tiene tiles en seleccion-reporte.html) → no hay a dónde volver;
-  // se oculta el botón y le queda solo "Salir".
-  else if(rol==='asistencia_plus_dren'){ bm.style.display='none'; }
-  else { bm.onclick=function(){location.href='seleccion-reporte.html';}; }  // jeisson + residentes de área
+  else { bm.onclick=function(){location.href='seleccion-reporte.html';}; }  // jeisson/duvan + residentes de área
   STATE.fecha=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
   restaurarPlantilla();
   cargarResumen();

@@ -172,6 +172,9 @@ function cuadrillasInactivasSet(){
 // Área de quien REPORTA (para filtrar CC_USADOS): residente de UNA área por su rol; capataz/mairy por
 // sus cuadrillas si todas son de la misma área. Mezcla, multi-área (residente_dren) o desconocido =
 // '' (sin filtro: ve todas).
+// D88: `roster` ya resuelve primero por `areasDeUsuario` (que sí soporta multi-área), así que este
+// helper queda como el camino de quien NO tiene área forzada por su rol (capataces, mairy, admin);
+// las dos primeras ramas se conservan por si alguien más lo llama.
 function areaDeReportante(usuario){
   const porRol=areasDeUsuario(usuario);
   if(porRol.length===1) return porRol[0];   // residente_odt/odl, residente/jeisson (tierras)
@@ -192,10 +195,14 @@ function sinCCexcluidos(list){
   const ex=ccExcluidosBloque(); if(!ex.length) return list;
   return list.filter(function(cc){ const s=String(cc||''); for(var i=0;i<ex.length;i++){ if(ex[i] && s.indexOf(ex[i])>=0) return false; } return true; });
 }
-// Lee CC_USADOS y devuelve los string_cc que aplican al área dada ('' = todas). Empty en la hoja = tierras.
+// Lee CC_USADOS y devuelve los string_cc que aplican al área dada. Empty en la hoja = tierras.
+// D88: acepta un ÁREA ('odt') o un ARRAY de áreas (['odt','odl'], para residente_dren/duvan). '' o []
+// = todas (admin y quien no tenga área forzada). Antes, multi-área caía en '' y mezclaba los CC de
+// tierras en los "frecuentes"; ahora se limitan a las áreas del usuario (intención de D84).
 function ccUsadosParaArea(area){
+  const areas = Array.isArray(area) ? area.filter(Boolean) : (area ? [area] : []);
   const rows=readSheet('CC_USADOS', CC_USADOS_HEADERS);
-  return sinCCexcluidos(rows.filter(r=> String(r.string_cc||'').trim() && (!area || (norm(r.area)||'tierras')===area))
+  return sinCCexcluidos(rows.filter(r=> String(r.string_cc||'').trim() && (!areas.length || areas.indexOf(norm(r.area)||'tierras')>=0))
              .map(r=>String(r.string_cc).trim()));
 }
 // Motivos de ausencia (D78): el catálogo completo (CAT_MOTIVOS) es para quien revisa el resumen;
@@ -305,6 +312,13 @@ function cuadrillasDeUsuario(usuario){
   // D84: las cuadrillas inactivas salen de circulación (no se ofrecen para reportar/seleccionar).
   const todas=readSheet('CUADRILLAS', CUADRILLAS_HEADERS).filter(cuadrillaActiva);
   if(u==='admin') return todas.map(r=>r.cuadrilla); // admin elige cuadrilla (§3)
+  // D88: `duvan` reporta la asistencia de TODA su área — igual que el admin (elige la cuadrilla en el
+  // formulario), pero acotado a ODT+ODL por `areasDeUsuario`. No va por la columna `responsables`:
+  // no es responsable de ninguna cuadrilla, reporta por todos los capataces de drenajes.
+  if(u==='duvan'){
+    const suyas=areasDeUsuario(u);
+    return todas.filter(r=> suyas.indexOf(norm(r.area)||'tierras')>=0).map(r=>r.cuadrilla);
+  }
   const alias=usuarioAliases(u);
   return todas.filter(r=>{
     const lista=String(r.responsables||'').split(',').map(norm);
@@ -327,7 +341,11 @@ function roster(e){
   const jornada=jornadaDelDia(fecha, cfg, festivos);
   // D72: se excluye el CC de supervisión del encargado/capataz del picker de bloques (confunde al reportar).
   const catCC=sinCCexcluidos(readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean));
-  const catCCUsados=ccUsadosParaArea(areaDeReportante(usuario));   // D72: CC frecuentes del área del reportante
+  // D72: CC frecuentes del área del reportante. D88: si el usuario tiene áreas FORZADAS por su rol
+  // (residente/jeisson=tierras, residente_odt/odl, residente_dren y duvan=odt+odl) mandan esas; si no
+  // (capataces, mairy, admin) se deriva de sus cuadrillas como hasta ahora.
+  const areasRep=areasDeUsuario(usuario);
+  const catCCUsados=ccUsadosParaArea(areasRep.length ? areasRep : areaDeReportante(usuario));
   const catMotivos=motivosUsados();   // D78: el responsable ve solo los motivos frecuentes (fallback: todos)
   // CC usados recientemente por cada cuadrilla (últimos 60 días de ASISTENCIA), más reciente primero.
   const recientesCC={};
@@ -428,9 +446,9 @@ function asistenciaDia(e){
   // y todos los motivos de ausencia (CAT_MOTIVOS completo) — para poder registrar uno especial.
   // catCCUsados sigue siendo el subconjunto frecuente del área revisada: el frontend lo muestra primero.
   const catCC=readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
-  // D72/D84: CC frecuentes del área revisada; con una sola área usa la suya, con varias (residente_dren)
-  // o sin filtro (admin) muestra todos ('').
-  const catCCUsados=ccUsadosParaArea(areas.length===1 ? areas[0] : '');
+  // D72/D84: CC frecuentes del área revisada. D88: con varias áreas (residente_dren/duvan) se pasan
+  // TODAS las suyas (antes caía en '' y mezclaba tierras); sin filtro (admin) sigue mostrando todos.
+  const catCCUsados=ccUsadosParaArea(areas);
   const catMotivos=motivosCatalogo();
   const turnos=readSheet('TURNOS', TURNOS_HEADERS).map(t=>({ turno:String(t.turno||''), tipo_dia:norm(t.tipo_dia),
     entrada:ftime(t.entrada), salida:ftime(t.salida), descanso_ini:ftime(t.descanso_ini), descanso_fin:ftime(t.descanso_fin),

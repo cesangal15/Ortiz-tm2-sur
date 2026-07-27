@@ -71,6 +71,11 @@ const TILES = {
   'jairo':      [{href:'reporte-drenajes.html', ico:'🌧️', t:'Reporte de Drenajes', p:'Actividades ODL con personal y maquinaria'}],
   'jeisson':    [{href:'asistencia.html', ico:'👷', t:'Asistencia de mi grupo', p:'Reporta la asistencia de los operadores'},
                  {href:'resumen-asistencia.html', ico:'📋', t:'Resumen de asistencias', p:'Resumen del día y descarga del Excel Navision'}],
+  // D88: duvan = el jeisson de DRENAJES (solo asistencias). Reporta CUALQUIER cuadrilla de ODT/ODL —
+  // el formulario le muestra el selector de cuadrilla igual que al admin, porque el backend le entrega
+  // las cuatro (cuadrillasDeUsuario acota por área) — y revisa el resumen combinado ODT+ODL.
+  'duvan':      [{href:'asistencia.html', ico:'👷', t:'Asistencia de drenajes', p:'Reporta la asistencia de cualquier cuadrilla ODT/ODL'},
+                 {href:'resumen-asistencia.html', ico:'📋', t:'Resumen de asistencias', p:'Resumen del día y Excel Navision de ODT y ODL'}],
   // Residentes de área (D72): su panel de drenajes + el resumen de asistencia SOLO de su área (odt/odl).
   'residente_odt': [{href:'residente-drenajes.html', ico:'🌧️', t:'Panel de Drenajes ODT', p:'Bandeja, envío a DATA y WhatsApp de tu área'},
                     {href:'resumen-asistencia.html', ico:'📋', t:'Resumen de asistencias ODT', p:'Resumen del día y Excel Navision de tu área'}],
@@ -108,8 +113,9 @@ window.onload = function(){
   }
   let tiles=TILES[usuario].slice();
   // El tile de "reportar asistencia de tu cuadrilla" es solo para quien reporta gente (capataces/mairy).
-  // jeisson ya lo trae en su lista; los residentes de área (D72) y el unificado (D84) revisan, no reportan.
-  if(usuario!=='jeisson' && rol!=='residente_odt' && rol!=='residente_odl' && rol!=='residente_dren') tiles.push(ASISTENCIA_TILE);
+  // jeisson y duvan (D88) ya lo traen en su lista; los residentes de área (D72) y el unificado (D84)
+  // revisan, no reportan.
+  if(usuario!=='jeisson' && usuario!=='duvan' && rol!=='residente_odt' && rol!=='residente_odl' && rol!=='residente_dren') tiles.push(ASISTENCIA_TILE);
   document.getElementById('tiles').innerHTML = tiles.map(t=>
     `<a class="tile" href="${t.href}"><div class="ico">${t.ico}</div><div class="t-main"><h2>${t.t}</h2><p>${t.p}</p></div><div class="arrow">→</div></a>`
   ).join('');
