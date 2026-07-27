@@ -101,6 +101,12 @@ const USUARIOS = {
   'luzdary':  { clave: 'cheq2025', rol: 'chequeadora', redirige: 'seleccion-reporte.html' },
   // Módulo de Asistencias (D69): jeisson reporta operadores + resumen sin gestión de personal.
   'jeisson':  { clave: 'Oficial2026', rol: 'asistencia_plus', redirige: 'seleccion-reporte.html' },
+  // D88: `duvan` es el equivalente de jeisson para DRENAJES — asistencias y NADA más: revisa el resumen
+  // del día, completa faltantes, descarga el Excel Navision y gestiona personal de ODT+ODL. NO entra al
+  // panel ni al reporte de drenajes (eso es de `residente_dren`), por eso lleva un rol propio
+  // `asistencia_plus_dren` en vez de reutilizar `residente_dren` (los guards de las pantallas de
+  // drenajes van por rol). Sin cuadrilla propia → entra DIRECTO al resumen (no pasa por selección).
+  'duvan':    { clave: 'Oficial2026', rol: 'asistencia_plus_dren', areas: ['odt','odl'], redirige: 'resumen-asistencia.html' },
   // Digitación de volquetas (D83, backlog 2.22): la digitadora pre-llena la BASE de transporte a
   // partir de VOLQUETAS y exporta; no ve el resto del sistema. Clave placeholder (endurecimiento 2.21).
   'digitadora': { clave: 'volquetas2026', rol: 'digitadora', redirige: 'digitadora.html' },
