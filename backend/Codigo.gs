@@ -6,7 +6,8 @@
  *
  * Endpoints:
  *   GET  ?action=bandeja&fecha=YYYY-MM-DD[&proyecto=3701][&area=tierras|odt|odl]
- *                                        -> {cantidades:[](crudo), maquinas:[]} (área derivada del CC, D69)
+ *                                        -> {cantidades:[](crudo), maquinas:[], observaciones:[]} (área derivada del CC, D69;
+ *                                           D86: las observaciones generales también se filtran por área)
  *   GET  ?action=consolidado&fecha=...   -> {cantidades:[](de DATA, ya enviado)}
  *   GET  ?action=consolidado&desde=YYYY-MM-DD&hasta=YYYY-MM-DD  -> {filas:[](A–T crudo de DATA en el rango),header,cols} (panel del jefe, solo lectura)
  *   GET  ?action=estado&fecha=...        -> {reportadas:[{id_maquina,capataz}]}
@@ -137,7 +138,13 @@ function esTipoSinProduccion(tipo){
   return t==='VIBROCOMPACTADOR' || t==='MINICARGADOR' || t==='MINIBULDOZER';
 }
 
-const OBS_HEADERS = ['id_registro','timestamp','fecha','reporta','observacion'];
+// OBSERVACIONES: observación general del día que escribe quien reporta (una fila por envío).
+// `area` (D86): área(s) a las que pertenece la observación — 'tierras' | 'odt' | 'odl' o una lista
+// separada por comas ('odt,odl') cuando un mismo reporte cubre las dos áreas de drenajes (D84).
+// Se deriva de las líneas del reporte. Filas anteriores a la columna (vacía) = 'tierras', que es lo
+// que eran: hasta D86 solo tierras escribía observación general. La bandeja filtra por esta columna,
+// así que las observaciones de tierras dejan de salir en el panel/WhatsApp de drenajes.
+const OBS_HEADERS = ['id_registro','timestamp','fecha','reporta','observacion','area'];
 
 // VOLQUETAS: desglose por placa de la chequeadora (una fila por placa). No toca DATA ni MAQUINARIA.
 // cubicaje·m3_placa·cubicaje_origen añadidos en D53 (2.10): cubicaje real por placa.
@@ -868,7 +875,9 @@ function guardarReporte(body){
     // en un reenvío; sin id_reporte (frontend viejo) se comporta como siempre.
     const obsSh=getSheet('OBSERVACIONES', OBS_HEADERS);
     const yaObs=body.id_reporte ? idsExistentes(obsSh, OBS_HEADERS, 'id_registro', fecha)[String(body.id_reporte)] : false;
-    if(!yaObs) obsSh.appendRow([body.id_reporte||Utilities.getUuid(), ts, fecha, reporta, obs]);
+    // D86: la observación se sella con el área (o áreas) de las líneas del reporte para que la
+    // bandeja de cada área muestre solo las suyas (antes las de tierras salían también en ODT/ODL).
+    if(!yaObs) obsSh.appendRow([body.id_reporte||Utilities.getUuid(), ts, fecha, reporta, obs, areasDeReporte(body.cantidades)]);
   }
   // D82: `guardadas`/`duplicadas` = filas escritas / saltadas por dedupe en este llamado. Los campos
   // cantidades/maquinas/volquetas conservan el TOTAL del reporte (guardadas + duplicadas), así el
@@ -891,11 +900,15 @@ function bandeja(e){
   const areaQ=String(e.parameter.area||'').trim().toLowerCase();
   getSheet('BANDEJA', BANDEJA_HEADERS);  // auto-sana encabezados (+ cols de área D69) antes de leer
   getSheet('MAQUINARIA', MAQ_HEADERS);   // auto-sana encabezados al layout D52 (+ area) antes de leer
+  getSheet('OBSERVACIONES', OBS_HEADERS);// auto-sana encabezados (+ col `area`, D86) antes de leer
   const cantidades=readSheet('BANDEJA').filter(r=> r.fecha===fecha && (!proy||String(r.proyecto)===proy)
     && (!areaQ || areaDeFila(r.area, r.centro_costo)===areaQ));
   const maquinas=readSheet('MAQUINARIA').filter(r=> r.fecha===fecha && (!proy||String(r.proyecto)===proy)
     && (!areaQ || areaDeFila(r.area, '')===areaQ));
-  const observaciones=readSheet('OBSERVACIONES').filter(r=>r.fecha===fecha).map(r=>({reporta:r.reporta||'', observacion:r.observacion||''}));
+  // D86: la observación general también se filtra por área (antes se devolvían TODAS las del día, así
+  // que las de tierras aparecían en el panel y el WhatsApp de ODT/ODL). Col `area` vacía = tierras.
+  const observaciones=readSheet('OBSERVACIONES').filter(r=> r.fecha===fecha && (!areaQ || obsEnArea(r.area, areaQ)))
+    .map(r=>({reporta:r.reporta||'', observacion:r.observacion||'', area:String(r.area||'tierras')}));
   return json({fecha, area:areaQ, cantidades, maquinas, observaciones});
 }
 
@@ -1063,6 +1076,23 @@ function areaDeFila(areaCol, cc){
   const a=String(areaCol==null?'':areaCol).trim().toLowerCase();
   if(a==='odt'||a==='odl') return a;
   return deriveArea(cc);
+}
+/* Área(s) de la observación GENERAL de un reporte (D86).
+ * La observación no cuelga de una línea, así que su área se deriva de las líneas del envío: se
+ * devuelven las áreas distintas que aparecen, en lista separada por comas ('odt,odl' cuando un
+ * capataz multi-área reporta los dos capítulos, D84). Reporte sin líneas => 'tierras' (el
+ * comportamiento de siempre, y el único que existía antes de esta columna). */
+function areasDeReporte(cantidades){
+  const set={}, out=[];
+  (cantidades||[]).forEach(function(c){ const a=areaDeFila(c.area, c.centro_costo); if(!set[a]){ set[a]=true; out.push(a); } });
+  return out.length ? out.sort().join(',') : 'tierras';
+}
+/* ¿La observación (columna `area` de OBSERVACIONES) pertenece al área consultada? (D86)
+ * Columna vacía = fila anterior a D86 = tierras. */
+function obsEnArea(areaCol, areaQ){
+  const raw=String(areaCol==null?'':areaCol).trim().toLowerCase();
+  const lista = raw ? raw.split(',').map(function(s){ return s.trim(); }).filter(function(s){ return !!s; }) : ['tierras'];
+  return lista.indexOf(areaQ)>=0;
 }
 
 // GET: panorama del día. Cruza el volumen oficial de DATA (por proyecto+bucket) con las filas de
