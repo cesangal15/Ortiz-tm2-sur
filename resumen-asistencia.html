@@ -395,7 +395,14 @@ function render(){
   // D88: duvan (asistencia_plus_dren) igual pero acotado por el backend a ODT+ODL.
   if(['residente','admin','asistencia_plus','asistencia_plus_dren','residente_odt','residente_odl','residente_dren'].indexOf(STATE.rol)>=0){
     html+='<div class="section-title">Gestión de personal</div>';
-    html+='<div class="card" id="gestionCard"><button class="btn-ghost" onclick="cargarPersonal()">Cargar personal ↻</button><div id="gestionBody" style="margin-top:12px;"></div></div>';
+    html+='<div class="card" id="gestionCard"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">'
+      + '<button class="btn-ghost" onclick="cargarPersonal()">Cargar personal ↻</button>'
+      // D99 (Fase 2 punto 5): el backend cachea 6 h los catálogos casi estáticos (CAT_CC, CAT_MOTIVOS,
+      // CC_USADOS, CONFIG, TURNOS, CUADRILLAS…). Lo que se edita A MANO en el Sheet no pasa por el
+      // script, así que este botón fuerza la relectura sin esperar el TTL ni redesplegar.
+      + '<button class="btn-ghost" onclick="refrescarCatalogos(this)" title="Úsalo si acabas de editar CAT_CC, motivos, CONFIG o cuadrillas directamente en el Sheet">↻ Refrescar catálogos</button>'
+      + '<span id="cacheMsg" style="font-size:12px;color:var(--muted);"></span>'
+      + '</div><div id="gestionBody" style="margin-top:12px;"></div></div>';
   }
 
   document.getElementById('container').innerHTML=html;
@@ -1315,6 +1322,26 @@ async function generarExcel(proyecto){
   }catch(err){
     msg.innerHTML='<div class="aviso">⚠️ Error generando el Excel: '+esc(err.message||err)+'</div>';
   }
+}
+
+/* D99 — Refresca el caché de catálogos del backend (6 h) y recarga el día. Solo hace falta tras editar
+ * el Sheet A MANO (CAT_CC, CAT_MOTIVOS, CC_USADOS, CONFIG, TURNOS, estado/área de CUADRILLAS): lo que
+ * se cambia desde la app ya invalida su hoja sola. Si el Apps Script no está redesplegado, el endpoint
+ * no existe y se avisa con la causa exacta en vez de fallar en silencio. */
+async function refrescarCatalogos(btn){
+  const msg=document.getElementById('cacheMsg');
+  if(btn) btn.disabled=true;
+  if(msg) msg.textContent='⏳ Refrescando…';
+  try{
+    const data=await perfFetch('cache_reset', `${APPS_SCRIPT_URL}?action=cache_reset&usuario=${encodeURIComponent(STATE.usuario)}`);
+    if(!data.ok) throw new Error(data.error||'cache_reset');
+    if(!data.hojas) throw new Error('El Apps Script todavía no tiene el refresco de catálogos. Redespliega CodigoAsistencias.gs (editar implementación → versión nueva, misma URL).');
+    if(msg) msg.textContent='✓ Catálogos releídos del Sheet.';
+    STATE.exportCache={}; STATE.personal=null;
+    cargarResumen();
+  }catch(err){
+    if(msg) msg.textContent='⚠️ '+(err.message||err);
+  }finally{ if(btn) btn.disabled=false; }
 }
 
 /* ================= GESTIÓN DE PERSONAL (solo residente/admin) ================= */

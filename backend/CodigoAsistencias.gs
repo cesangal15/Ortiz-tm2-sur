@@ -185,7 +185,96 @@ function ss_(){ if(!_ss) _ss = SpreadsheetApp.openById(SHEET_ID); return _ss; }
  * devuelve su `filter`), verificado antes de introducir la memoria.
  */
 var _memoHoja = {};
-function invalidarHoja_(nombre){ delete _memoHoja[nombre]; }
+function invalidarHoja_(nombre){ delete _memoHoja[nombre]; cacheBorrar_(nombre); }
+
+/* ================= D99 (Fase 2, punto 5) — CacheService para lo casi estático =================
+ * Medido en campo tras el redeploy de los puntos 1–4: `_ms` de servidor **5.200–5.456 ms** de un
+ * total de ~7.000 (el pintado del cliente son 2 ms). Con 11 lecturas de hoja por petición, el coste
+ * está en el ida-y-vuelta FIJO de cada `getValues`, no en el volumen (<2.000 filas). Cachear las
+ * hojas casi estáticas deja `asistenciaDia` en **3 lecturas**.
+ *
+ * NUNCA se cachean ASISTENCIA, NOTAS_ASISTENCIA ni EXTRAS_ADMIN: cambian durante el día y un caché
+ * ahí produciría datos falsos en el resumen (regla explícita del planteamiento).
+ *
+ * INVALIDACIÓN — dos caminos, porque hay dos formas de cambiar estas hojas:
+ *   1. Desde el script (alta/retiro/mover/reingreso de personal, encabezados): `invalidarHoja_` borra
+ *      la memoria de la ejecución **y** las claves de caché. Es exacta e inmediata.
+ *   2. **A mano en el Sheet** — así se mantienen CAT_CC, CAT_TRABAJADORES, CAT_MOTIVOS, CC_USADOS,
+ *      CONFIG, TURNOS y la columna `estado`/`area` de CUADRILLAS (ver 04_ARQUITECTURA). Esas ediciones
+ *      NO pasan por aquí, así que el caché las ignoraría hasta que expire. Por eso existe
+ *      `?action=cache_reset` (botón "↻ Refrescar catálogos" en el resumen): quien pega un catálogo
+ *      nuevo lo ve al instante, sin esperar el TTL ni redesplegar.
+ * `CACHE_ON=false` desactiva todo de un tirón si algún día estorba.
+ */
+const CACHE_ON        = true;
+const CACHE_TTL       = 21600;    // 6 h
+const CACHE_PREFIJO   = 'asis_v1_';
+const CACHE_TROZO     = 90000;    // < 100 KB: tope de CacheService por valor
+const CACHE_TROZOS_MAX= 10;       // ~900 KB por hoja; más grande que eso no se cachea (se lee siempre)
+// Hojas casi estáticas. Las tres vivas (ASISTENCIA, NOTAS_ASISTENCIA, EXTRAS_ADMIN) NO están y no deben estar.
+const HOJAS_CACHEABLES = { CONFIG:1, FESTIVOS:1, TURNOS:1, CAT_CC:1, CAT_TRABAJADORES:1,
+                           CAT_MOTIVOS:1, MOTIVOS_USADOS:1, CC_USADOS:1, CUADRILLAS:1, PERSONAL:1 };
+
+/* Normalización ANTES de cachear — el punto delicado de todo esto.
+ * Sheets devuelve las celdas de fecha y de hora como objetos Date. Si se cachearan tal cual, el JSON
+ * las guardaría en ISO/UTC y al volver serían strings: `fdate` cortaría la fecha en UTC (un día menos
+ * si la zona del script tiene desfase positivo) y `ftime` sacaría la hora en UTC (un 07:00 de Bogotá
+ * volvería como "12:00"). Por eso cada hoja con fechas/horas se normaliza a su forma FINAL de string
+ * con los mismos helpers de siempre (duck-typing, nunca `instanceof Date` — D31).
+ * La normalización se aplica SIEMPRE, se cachee o no, para que el resultado sea idéntico con caché
+ * frío y caliente. Es idempotente: `fdate('2026-01-01')` y `ftime('07:00')` se devuelven a sí mismos,
+ * que es justo lo que ya hacía el código de más abajo con estas columnas.
+ * Las hojas que no aparecen aquí son de puro texto y no necesitan nada. */
+function esHora_(v){ return v && typeof v === 'object' && typeof v.getHours === 'function'; }
+const NORMALIZA_HOJA = {
+  CONFIG:   function(r){ if(esHora_(r.valor)) r.valor=ftime(r.valor); },   // solo si es Date: un valor de texto se truncaría
+  FESTIVOS: function(r){ r.fecha=fdate(r.fecha); },
+  TURNOS:   function(r){ r.entrada=ftime(r.entrada); r.salida=ftime(r.salida);
+                         r.descanso_ini=ftime(r.descanso_ini); r.descanso_fin=ftime(r.descanso_fin); },
+  PERSONAL: function(r){ r.fecha_ingreso=fdate(r.fecha_ingreso); r.fecha_retiro=fdate(r.fecha_retiro); }
+};
+
+function claveCache_(nombre, i){ return CACHE_PREFIJO+nombre+':'+i; }
+function cacheLeer_(nombre){
+  if(!CACHE_ON || !HOJAS_CACHEABLES[nombre]) return null;
+  try{
+    const c=CacheService.getScriptCache();
+    const n=Number(c.get(claveCache_(nombre,'n')));
+    if(!(n>=1)) return null;
+    const claves=[]; for(let i=0;i<n;i++) claves.push(claveCache_(nombre,i));
+    const partes=c.getAll(claves);
+    let txt='';
+    for(let j=0;j<n;j++){ const p=partes[claveCache_(nombre,j)]; if(p==null) return null; txt+=p; }
+    return JSON.parse(txt);
+  }catch(err){ return null; }   // ante cualquier duda (caché caído, JSON roto), se lee la hoja
+}
+function cacheGuardar_(nombre, filas){
+  if(!CACHE_ON || !HOJAS_CACHEABLES[nombre]) return;
+  try{
+    const txt=JSON.stringify(filas), n=Math.ceil(txt.length/CACHE_TROZO)||1;
+    if(n>CACHE_TROZOS_MAX) return;                        // hoja enorme: mejor leerla que trocearla
+    const mapa={};
+    for(let i=0;i<n;i++) mapa[claveCache_(nombre,i)]=txt.substr(i*CACHE_TROZO, CACHE_TROZO);
+    const c=CacheService.getScriptCache();
+    c.putAll(mapa, CACHE_TTL);
+    c.put(claveCache_(nombre,'n'), String(n), CACHE_TTL);  // el contador va AL FINAL: sin él no se lee nada a medias
+  }catch(err){}
+}
+function cacheBorrar_(nombre){
+  if(!CACHE_ON || !HOJAS_CACHEABLES[nombre]) return;
+  try{
+    const c=CacheService.getScriptCache(), claves=[claveCache_(nombre,'n')];
+    for(let i=0;i<CACHE_TROZOS_MAX;i++) claves.push(claveCache_(nombre,i));
+    c.removeAll(claves);
+  }catch(err){}
+}
+// Borra TODO el caché de catálogos. Lo usan `?action=cache_reset` y `setupHojas`.
+function cacheBorrarTodo_(){ Object.keys(HOJAS_CACHEABLES).forEach(function(n){ invalidarHoja_(n); }); }
+function cacheReset(e){
+  cacheBorrarTodo_();
+  return json({ ok:true, msg:'Catálogos refrescados: la próxima consulta los relee del Sheet.',
+                hojas:Object.keys(HOJAS_CACHEABLES) });
+}
 
 function getSheet(name, headers){
   const ss=ss_(); let sh=ss.getSheetByName(name);
@@ -207,15 +296,27 @@ function getSheet(name, headers){
  * columnas que falten quedan `undefined`, exactamente igual que antes con `getDataRange`).
  */
 function readSheet(name, headers){
-  if(_memoHoja.hasOwnProperty(name)) return _memoHoja[name];
+  if(_memoHoja.hasOwnProperty(name)) return _memoHoja[name];   // memoria de esta ejecución (punto 1b)
+  let filas = cacheLeer_(name);                                 // caché entre peticiones (punto 5)
+  if(filas === null) filas = cacheGuardarYDevolver_(name, headers);
+  _memoHoja[name]=filas;
+  return filas;
+}
+function cacheGuardarYDevolver_(name, headers){
+  const filas = leerHoja_(name, headers);
+  cacheGuardar_(name, filas);
+  return filas;
+}
+// Lectura cruda de la hoja + normalización de fechas/horas (ver NORMALIZA_HOJA).
+function leerHoja_(name, headers){
   const sh=ss_().getSheetByName(name), out=[];
   const last = sh ? sh.getLastRow() : 0;
   if(sh && last>=2){
     const nCols = Math.min(headers ? headers.length : sh.getLastColumn(), sh.getMaxColumns());
     const v=sh.getRange(1,1,last,nCols).getValues(), h=headers||v[0];
-    for(let i=1;i<v.length;i++){ const o={}; h.forEach((k,j)=>o[k]=v[i][j]); o._row=i+1; out.push(o); }
+    const norm=NORMALIZA_HOJA[name];
+    for(let i=1;i<v.length;i++){ const o={}; h.forEach((k,j)=>o[k]=v[i][j]); o._row=i+1; if(norm) norm(o); out.push(o); }
   }
-  _memoHoja[name]=out;
   return out;
 }
 function norm(s){ return String(s==null?'':s).trim().toLowerCase(); }
@@ -375,6 +476,9 @@ function doGet(e){
   if(a==='personal')   return personalCompleto(e);
   if(a==='export')     return exportDia(e);
   if(a==='ausencias')  return ausenciasRango(e);   // D94: seguimiento de ausencias por rango
+  // D99: refresco manual del caché de catálogos, para quien acaba de editar el Sheet a mano
+  // (CAT_CC, CAT_MOTIVOS, CC_USADOS, CONFIG, TURNOS, `estado`/`area` de CUADRILLAS…).
+  if(a==='cache_reset') return cacheReset(e);
   // EXTRAS_ADMIN (D73): registro del día para prefill/edición en mis-extras.html; `extras_admin_dia`
   // es alias (mismo handler) para el indicador del residente en resumen-asistencia.html.
   if(a==='extras_admin' || a==='extras_admin_dia') return extrasAdminDia(e);
@@ -1028,6 +1132,7 @@ function setupHojas(){
     ensureRows_(festSh, festivos.length);   // D93
     festSh.getRange(2,1,festivos.length,1).setValues(festivos.map(f=>[f]));
   }
+  cacheBorrarTodo_();   // D99: siembra hojas nuevas -> el caché de catálogos queda obsoleto
 }
 
 /**

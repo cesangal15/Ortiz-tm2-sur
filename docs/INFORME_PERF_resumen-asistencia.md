@@ -1,4 +1,4 @@
-# INFORME — Lentitud de `resumen-asistencia.html` (Fase 0 · Fase 1 · Fase 2 puntos 1–4)
+# INFORME — Lentitud de `resumen-asistencia.html` (Fase 0 · Fase 1 · Fase 2 completa)
 
 **Fecha:** jul-2026 · **Alcance:** módulo Asistencias (D69, aislado). No toca `Codigo.gs`, BANDEJA, DATA,
 MAQUINARIA ni ninguna pantalla del sistema de obra.
@@ -168,7 +168,7 @@ celda** (45 filas, incluida la del admin) entre la versión vieja y la nueva.
 
 ---
 
-## 4. FASE 2 — Puntos 1–4 EJECUTADOS (requieren redeploy); punto 5 pendiente
+## 4. FASE 2 — EJECUTADA COMPLETA (requiere redeploy)
 
 > Autorizados por el usuario tras reportar esperas reales de **10–30 s**. Exigen redesplegar
 > `CodigoAsistencias.gs`: Administrar implementaciones → editar la existente → **Nueva versión**,
@@ -202,20 +202,68 @@ versión vieja con la nueva. Las **21 respuestas** (15 GET + 6 POST — incluido
 día sin datos, rango invertido, vistas ODT/ODL y las 5 operaciones de gestión de personal) salen
 **idénticas carácter a carácter**, salvo el `_ms` nuevo. Ninguna petición lee más que antes.
 
+### La medición en campo que decidió el punto 5
+
+Tras redesplegar los puntos 1–4, el usuario midió con `DEBUG_PERF` en dos cargas reales:
+
+| | Total | `servidor_ms` | `red_ms` | KB | Pintado |
+|---|---|---|---|---|---|
+| Carga 1 | 7.187 ms | **5.456 ms (76 %)** | 1.729 ms | 53 | 2 ms |
+| Carga 2 | 6.864 ms | **5.200 ms (76 %)** | 1.662 ms | 75,9 | 2 ms |
+
+Veredicto sin ambigüedad: **el cliente ya no pinta nada** (2 ms, la Fase 1 hizo su trabajo) y **tres
+cuartas partes del tiempo son Apps Script**. Con 11 lecturas por petición eso son ~470 ms por lectura:
+es el ida-y-vuelta **fijo** de cada `getValues`, no el volumen (<2.000 filas). El punto 5 quedó
+justificado por datos, no por corazonada.
+
+### Punto 5 — `CacheService`, aplicado
+
+`CacheService.getScriptCache()`, TTL **21600 s (6 h)**, JSON troceado en bloques de 90 KB (el tope de
+CacheService es 100 KB por valor; más de 10 trozos ⇒ no se cachea y se lee la hoja). Cubre las **10 hojas
+casi estáticas**: CONFIG, FESTIVOS, TURNOS, CAT_CC, CAT_TRABAJADORES, CAT_MOTIVOS, MOTIVOS_USADOS,
+CC_USADOS, CUADRILLAS y PERSONAL. **NUNCA** ASISTENCIA, NOTAS_ASISTENCIA ni EXTRAS_ADMIN: cambian durante
+el día y ahí un caché daría datos falsos en el resumen.
+
+| Petición | Lecturas de hoja: original → puntos 1–4 → **caché caliente** |
+|---|---|
+| `asistencia` (cambio de fecha) | 14 → 11 → **3** |
+| `roster` (`asistencia.html`) | 13 → 9 → **1** |
+| `export` | 8 → 7 → **2** |
+| `personal` | 3 → 2 → **0** |
+| `ausencias` (20 días) | 6 → 5 → **1** |
+
+Las 3 que quedan en `asistencia` son exactamente las tres hojas vivas.
+
+**El escollo real: la serialización de fechas y horas.** Sheets devuelve esas celdas como `Date`, y el
+JSON del caché las guardaría en ISO/UTC. Comprobado con la prueba: sin normalizar, un turno de **07:00
+volvía como `"11:56"` ya en Bogotá** (las fechas base 1899 usan LMT, −04:56) y en una zona de desfase
+positivo el festivo `2026-07-20` se corría a `2026-07-19`. Por eso cada hoja con fechas/horas se
+**normaliza a su forma final de string ANTES de cachear** (`NORMALIZA_HOJA`, con los mismos `fdate`/
+`ftime` de siempre, duck-typing D31), y la normalización se aplica **también con caché frío** para que el
+resultado sea idéntico se cachee o no. Es idempotente: es exactamente lo que el código de abajo ya hacía
+con esas columnas.
+
+**Invalidación, por dos caminos.** (a) Lo que escribe el script —alta/retiro/mover/reingreso de personal,
+encabezados, `setupHojas`— borra memoria **y** claves de caché en `invalidarHoja_`; es exacta e inmediata.
+(b) Lo que se edita **a mano en el Sheet** —CAT_CC, CAT_TRABAJADORES, CAT_MOTIVOS, CC_USADOS, CONFIG,
+TURNOS y las columnas `estado`/`area` de CUADRILLAS, que así se mantienen— **no pasa por el script**, así
+que el caché lo ignoraría hasta las 6 h. Para eso se añadió **`?action=cache_reset`** y el botón
+**"↻ Refrescar catálogos"** junto a "Cargar personal" en el resumen: quien pega un catálogo nuevo lo ve al
+instante, sin esperar el TTL ni redesplegar. Además `CACHE_ON=false` lo apaga entero de un tirón, y si
+`CacheService` falla se lee la hoja igual (la pantalla nunca se cae).
+
+**Verificación del punto 5** (arnés con `CacheService` simulado que sobrevive entre peticiones y celdas de
+fecha/hora como `Date` reales): las 7 familias de consulta dan **lo mismo en caché frío, en caliente y sin
+caché**; quedan exactamente 3 lecturas en `asistencia` y las únicas hojas leídas del Sheet son las tres
+vivas; horas, festivos y fechas de PERSONAL intactos **bajo 4 zonas horarias** (Bogotá, UTC, Madrid,
+Auckland); un alta de personal se ve en la consulta siguiente y en los faltantes del día; una edición a
+mano **no** se ve hasta `cache_reset` y **sí** justo después; y con el `CacheService` reventado la
+respuesta sigue siendo la correcta.
+
 ### Lo que sigue pendiente
 
-**Punto 5 — `CacheService.getScriptCache()` (TTL 21600 s, JSON)** para CONFIG, FESTIVOS, TURNOS, CAT_CC,
-CAT_TRABAJADORES, CAT_MOTIVOS, MOTIVOS_USADOS, CC_USADOS, CUADRILLAS y PERSONAL. Llevaría `asistenciaDia`
-de 11 lecturas a **3** (ASISTENCIA, NOTAS_ASISTENCIA y EXTRAS_ADMIN **nunca** se cachean: cambian durante
-el día y darían datos falsos). **No se hizo a propósito:** es el único cambio que introduce un modo de
-fallo nuevo —personal viejo en el resumen si se escapa una invalidación tras un alta o un retiro— y la
-decisión de si hace falta se toma **con el `_ms` medido en campo**, no a ciegas.
-
-> **Ojo con el diagnóstico:** las 14 aperturas explicaban una espera de segundos, no necesariamente de
-> 10–30 s. El `_ms` es justo el instrumento para saberlo. Si tras el redeploy `_ms` sale **alto** (varios
-> segundos), el problema sigue en el script y el punto 5 se justifica. Si sale **bajo** y el total sigue
-> alto, lo que pesa es la red / el arranque del contenedor de Apps Script / el tamaño del payload — y ahí
-> el `CacheService` no ayudaría nada; lo que tocaría es el payload ligero de la sección 5.
+Nada de la Fase 2. El siguiente candidato, si tras este redeploy el `servidor_ms` baja y el total sigue
+alto, es el **payload ligero** de la sección 5 — ahí ya no manda Apps Script sino la red.
 
 ## 4-bis. FASE 2 — Plan original (referencia)
 
