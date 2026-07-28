@@ -376,6 +376,9 @@ function areasDeUsuario(usuario){
   // que residente_dren en este módulo; lo que NO tiene es el panel/reporte de drenajes (eso va por rol
   // en el frontend, no por este helper).
   if(u==='duvan')          return ['odt','odl'];
+  // D101: la residente de UF3 (proyecto 3703). UF3 es un ÁREA MÁS de este mismo módulo, no un sistema
+  // aparte: reporta y revisa solo `uf3`, sin acceso a tierras ni a drenajes.
+  if(u==='residente_uf3')  return ['uf3'];
   if(u==='residente' || u==='jeisson') return ['tierras'];
   return [];   // admin: sin filtro (puede filtrar por &area=)
 }
@@ -383,11 +386,21 @@ function areasDeUsuario(usuario){
 // de filtro. [] = sin filtro (admin sin &area). Los usuarios con área forzada no la pueden burlar.
 function areasEfectivas(e){
   let areas=areasDeUsuario((e.parameter&&e.parameter.usuario)||'');
-  if(!areas.length){ const af=norm(e.parameter&&e.parameter.area); if(af==='tierras'||af==='odt'||af==='odl') areas=[af]; }
+  // D101: `uf3` entra en la lista blanca del "Ver como" del admin (D74b), junto a tierras/odt/odl.
+  if(!areas.length){ const af=norm(e.parameter&&e.parameter.area); if(af==='tierras'||af==='odt'||af==='odl'||af==='uf3') areas=[af]; }
   return areas;
 }
 // ¿La cuadrilla `c` cae dentro de las áreas dadas? [] = sin filtro (todas). Compat con === anterior.
 function cuadrillaEnAreas(c, areas, cuadArea){ return !areas.length || areas.indexOf(cuadArea[c]||'tierras')>=0; }
+// D101 (regla D69h: validar en el BACKEND, no solo en el frontend): al ESCRIBIR asistencia, un usuario
+// con área forzada por su rol solo puede tocar cuadrillas de su área. Quien no tiene área forzada
+// (capataces, chequeadoras, mairy, admin) pasa sin restricción — exactamente como hasta ahora, así que
+// no cambia nada para los canales existentes. Cierra el hueco de "&usuario= correcto + cuadrilla ajena".
+function cuadrillaPermitidaPara(usuario, cuadrilla){
+  const areas=areasDeUsuario(usuario);
+  if(!areas.length) return true;
+  return cuadrillaEnAreas(cuadrilla, areas, areaDeCuadrillaMap());
+}
 // Mapa cuadrilla -> área desde la hoja CUADRILLAS. Vacío o cuadrilla desconocida = 'tierras'.
 function areaDeCuadrillaMap(){
   const m={}; readSheet('CUADRILLAS', CUADRILLAS_HEADERS).forEach(r=>{ m[r.cuadrilla]=norm(r.area)||'tierras'; });
@@ -500,6 +513,8 @@ function jornadaDelDia(fecha, cfg, festivos){
   if(tipo==='domfest') return { tipo, entrada:cfg.entrada_dom||'07:00', salida:cfg.salida_dom||'15:00', tope:parseFloat(cfg.ord_domingo)||0 };
   return { tipo, entrada:cfg.entrada_lv||'07:00', salida:cfg.salida_lv||'15:30', tope:parseFloat(cfg.ord_lun_vie)||7.5 };
 }
+// D101: ya era GENÉRICO (toma los 4 primeros dígitos del CC, no compara contra una pareja fija), así
+// que `3703.02.05| …` devuelve `3703` sin tocar nada. No listar proyectos válidos a mano.
 function proyectoFromCC(cc){
   const s=String(cc||'').trim();
   const m=s.match(/^(\d{4})/);
@@ -552,7 +567,11 @@ function cuadrillasDeUsuario(usuario){
   // D88: `duvan` reporta la asistencia de TODA su área — igual que el admin (elige la cuadrilla en el
   // formulario), pero acotado a ODT+ODL por `areasDeUsuario`. No va por la columna `responsables`:
   // no es responsable de ninguna cuadrilla, reporta por todos los capataces de drenajes.
-  if(u==='duvan'){
+  // D101: `residente_uf3` usa EXACTAMENTE la misma rama (acotada a `uf3` por areasDeUsuario). Hoy
+  // ninguna cuadrilla de UF3 tiene capataz con login, así que ella reporta por todas. El día que los
+  // haya, se agregan a `responsables` y los dos canales coexisten (el envío pisa fecha+cuadrilla, D03)
+  // sin tocar una línea de código.
+  if(u==='duvan' || u==='residente_uf3'){
     const suyas=areasDeUsuario(u);
     return todas.filter(r=> suyas.indexOf(norm(r.area)||'tierras')>=0).map(r=>r.cuadrilla);
   }
@@ -709,9 +728,15 @@ function guardarIndividual(body){
   const usuario=norm(body.usuario);
   // D72/D84: los residentes de área (odt/odl) y el unificado (residente_dren) también completan faltantes.
   // D88: `duvan` (asistencias de drenajes) igual, acotado a ODT+ODL por areasDeUsuario.
-  if(['residente','admin','jeisson','duvan','residente_odt','residente_odl','residente_dren'].indexOf(usuario)<0)
+  // D101: `residente_uf3` completa los faltantes de UF3 (acotado a ['uf3'] por areasDeUsuario).
+  if(['residente','admin','jeisson','duvan','residente_uf3','residente_odt','residente_odl','residente_dren'].indexOf(usuario)<0)
     return json({ok:false, error:'No autorizado para completar faltantes.'});
   const fecha=fdate(body.fecha), ts=new Date();
+  // D101: mismo cerrojo de área que reporte_asistencia — el "completar faltantes" tampoco puede tocar
+  // cuadrillas de otra área (D69h). Se valida cada fila porque este upsert es por persona.
+  const ajena=(body.filas||[]).map(f=>String(f.cuadrilla||'')).filter(function(c,i,a){ return a.indexOf(c)===i; })
+    .filter(function(c){ return !cuadrillaPermitidaPara(usuario, c); });
+  if(ajena.length) return json({ok:false, error:'Esa cuadrilla no es de tu área: '+ajena.join(', ')});
   const sh=getSheet('ASISTENCIA', ASISTENCIA_HEADERS), need=ASISTENCIA_HEADERS.length, last=sh.getLastRow();
   let rows = last>1 ? sh.getRange(2,1,last-1,need).getValues() : [];
   function keyOf(codigo,cedula){
@@ -948,6 +973,9 @@ function borrarExtrasAdmin(body){
  * es el más reciente). upsertNotaDia (D74) sigue la misma regla. */
 function guardarAsistencia(body){
   const fecha=fdate(body.fecha), cuadrilla=body.cuadrilla||'', reporta=body.reporta||'', ts=new Date();
+  // D101: quien tiene área forzada por su rol no puede reportar cuadrillas de otra área (D69h).
+  if(!cuadrillaPermitidaPara(reporta, cuadrilla))
+    return json({ok:false, error:'Esa cuadrilla no es de tu área.'});
   const sh=getSheet('ASISTENCIA', ASISTENCIA_HEADERS);
   const need=ASISTENCIA_HEADERS.length;
   const last=sh.getLastRow();
@@ -1002,7 +1030,9 @@ function gestionPersonal(body){
   // área; residente_dren gestiona ODT+ODL (incluido MOVER una persona de una cuadrilla ODT a una ODL y
   // viceversa — la validación de área acepta el ARRAY de áreas del usuario, no un valor único).
   // D88: `duvan` gestiona el personal de ODT+ODL (mismo alcance que residente_dren en asistencias).
-  if(['residente','admin','jeisson','duvan','residente_odt','residente_odl','residente_dren'].indexOf(usuario)<0)
+  // D101: `residente_uf3` gestiona el personal de UF3 y NADA más — `areasDeUsuario` le devuelve ['uf3'],
+  // así que `okArea` le rechaza cualquier alta/mover hacia (o desde) tierras, ODT u ODL.
+  if(['residente','admin','jeisson','duvan','residente_uf3','residente_odt','residente_odl','residente_dren'].indexOf(usuario)<0)
     return json({ok:false, error:'No autorizado: solo residente o admin.'});
   const areasUsr=areasDeUsuario(usuario);            // [] = todas (residente general/admin)
   const cuadArea=areaDeCuadrillaMap();
@@ -1144,6 +1174,12 @@ function setupHojas(){
       ['proyecto_3701','3701| T2 - UF1 - R4513 PR 09+800 - PR 30+000']
     ]);
     cfgSh.appendRow(['proyecto_3702','PENDIENTE']); // parámetro abierto (§2 del prompt)
+    // D101: proyecto 3703 (UF3). String EXACTO tomado de la hoja `Proyectos` de la plantilla Navision
+    // de UF3 que entregó el usuario (jul-2026) — no se inventó. El generador lo lee por clave
+    // (`proyecto_` + prefijo del CC), así que un proyecto nuevo solo necesita su fila en CONFIG.
+    // En la instalación VIVA hay que agregar esta fila A MANO en la hoja CONFIG (setupHojas solo
+    // siembra con la hoja vacía). Sin ella, el export avisa y usa "3703" pelado.
+    cfgSh.appendRow(['proyecto_3703','3703| T2 - UF3 - R4513 PR 09+800 - PR 90+718']);
     // D73: No. Recurso del admin en Navision ("código| NOMBRE"), string EXACTO tal cual el listado de
     // Trabajadores (Navision lo lee verbatim). Valor del dueño (jul-2026). Si se deja vacío, el generador
     // NO agrega la fila del admin y avisa. OJO: debe coincidir carácter por carácter con Navision.

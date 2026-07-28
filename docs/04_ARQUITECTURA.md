@@ -177,14 +177,21 @@ la ventana nocturna va de `CONFIG.nocturno_desde` (19:00) a `CONFIG.nocturno_has
 extra pase de las 06:00 es extra DIURNA —, en sábado un turno sin variante sabatina usa su horario de
 semana, y domingo/festivo tiene horario típico 07:00–15:00 (7h a col D, tope `domfest_tope`). Códigos sin
 catálogo pasan sin bloqueo (`codigo| NOMBRE`). Retiros = `inactivo` + `fecha_retiro`, nunca se borra una
-fila. **Áreas (D72/D84):** CUADRILLAS lleva col `area` (`tierras`/`odt`/`odl`) y col **`estado`**
+fila. **Áreas (D72/D84/D101):** CUADRILLAS lleva col `area` (`tierras`/`odt`/`odl`/**`uf3`**) y col **`estado`**
 (`activa`/`inactiva`, vacío=activa: inactivar sin borrar; filtra roster/faltantes/export/selectores/
 gestión, no lo ya reportado). El guard de área es `areasDeUsuario()` → **array** (residente/jeisson=
 `['tierras']`, residente_odt/odl=`['odt']`/`['odl']`, **residente_dren=`['odt','odl']`** con export
 Navision combinado, **duvan=`['odt','odl']`** (D88: solo asistencias, sin panel de drenajes),
+**residente_uf3=`['uf3']`** (D101: asistencias de UF3/proyecto 3703 y nada más),
 admin=`[]` sin filtro); los filtros usan `includes`. **Quién reporta qué cuadrilla** lo resuelve
 `cuadrillasDeUsuario`: por la columna `responsables` para capataces/mairy/jeisson, TODAS para `admin` y
-**todas las de sus áreas para `duvan`** (D88, sin mirar `responsables`); siempre solo las **activas**.
+**todas las de sus áreas para `duvan` y `residente_uf3`** (D88/D101, sin mirar `responsables`); siempre solo las **activas**.
+**Proyecto por CC:** `proyectoFromCC` toma los 4 primeros dígitos del CC (genérico, nunca una lista de
+proyectos), y el generador Navision busca su string en **`CONFIG['proyecto_'+prefijo]`** — `proyecto_3701`,
+`proyecto_3702`, **`proyecto_3703`** (D101); si falta o dice `PENDIENTE`, avisa con la causa exacta y no
+inventa el string. Los selectores de UF y los botones de export se derivan de los CC del área, no de una
+lista fija. **Escritura:** `cuadrillaPermitidaPara()` rechaza reportar/completar sobre cuadrillas fuera del
+área forzada por el rol (D101, regla D69h); quien no tiene área forzada pasa sin restricción.
 Los CC "frecuentes" (`ccUsadosParaArea`) aceptan área o **array** de áreas: mandan las forzadas por el
 rol y, si no hay, se derivan de las cuadrillas del reportante (`areaDeReportante`). Columnas H–N (Dom/Fest c/s
 compensación) y el string de `CONFIG.proyecto_3702` son parámetros abiertos (ver 03_BACKLOG). Este módulo
