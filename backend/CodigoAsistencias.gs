@@ -268,6 +268,45 @@ function cacheBorrar_(nombre){
     c.removeAll(claves);
   }catch(err){}
 }
+// Encabezados por hoja, para poder releerlas por nombre desde el calentador.
+const HOJAS_HEADERS = {
+  CONFIG:CONFIG_HEADERS, FESTIVOS:FESTIVOS_HEADERS, TURNOS:TURNOS_HEADERS, CAT_CC:CAT_CC_HEADERS,
+  CAT_TRABAJADORES:CAT_TRABAJADORES_HEADERS, CAT_MOTIVOS:CAT_MOTIVOS_HEADERS,
+  MOTIVOS_USADOS:MOTIVOS_USADOS_HEADERS, CC_USADOS:CC_USADOS_HEADERS,
+  CUADRILLAS:CUADRILLAS_HEADERS, PERSONAL:PERSONAL_HEADERS
+};
+
+/* ---------- Calentador del caché (D99) ----------
+ * El caché arregla la 2ª consulta en adelante, pero la PRIMERA del día seguía pagándolo todo: cachés
+ * vacíos + contenedor de Apps Script frío. Este disparador por tiempo lo precalienta cada 30 min, así
+ * la residente ya encuentra los catálogos listos al abrir la pantalla.
+ * Fuerza la RELECTURA (invalida y vuelve a leer) en vez de conformarse con lo que haya: además de
+ * renovar el TTL, hace que una edición A MANO en el Sheet se vea sola en ≤30 min, en vez de esperar
+ * las 6 h. El botón "↻ Refrescar catálogos" sigue estando para cuando no se quiere esperar nada.
+ * INSTALACIÓN (una vez, desde el editor de Apps Script): ejecutar `instalarCalentador`. Para quitarlo,
+ * `quitarCalentador`. Coste: ~10 lecturas cada 30 min = 48 ejecuciones/día, muy por debajo de la cuota.
+ */
+function calentarCache(){
+  const t0=Date.now(); let n=0;
+  Object.keys(HOJAS_CACHEABLES).forEach(function(nombre){
+    try{ invalidarHoja_(nombre); readSheet(nombre, HOJAS_HEADERS[nombre]); n++; }catch(err){}
+  });
+  Logger.log('calentarCache: '+n+' hoja(s) en '+(Date.now()-t0)+' ms');
+  return n;
+}
+function instalarCalentador(){
+  quitarCalentador();
+  ScriptApp.newTrigger('calentarCache').timeBased().everyMinutes(30).create();
+  return 'Calentador instalado: releerá los catálogos cada 30 minutos.';
+}
+function quitarCalentador(){
+  let n=0;
+  ScriptApp.getProjectTriggers().forEach(function(t){
+    if(t.getHandlerFunction()==='calentarCache'){ ScriptApp.deleteTrigger(t); n++; }
+  });
+  return 'Calentador retirado ('+n+' disparador/es).';
+}
+
 // Borra TODO el caché de catálogos. Lo usan `?action=cache_reset` y `setupHojas`.
 function cacheBorrarTodo_(){ Object.keys(HOJAS_CACHEABLES).forEach(function(n){ invalidarHoja_(n); }); }
 function cacheReset(e){
