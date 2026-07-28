@@ -144,6 +144,13 @@
 │  GET  ?action=extras_admin&fecha=… → registro EXTRAS_ADMIN del día(D73)│
 │  POST {extras_admin, fecha,cc,…}   → upsert por fecha (proyecto del CC) │
 │  POST {extras_admin_delete, fecha} → borra la fila del día             │
+│  GET  ?action=cache_reset          → refresca el caché de catálogos    │
+│                                       (D99; lo que se edita a mano     │
+│                                       en el Sheet no pasa por aquí)    │
+│  D99: 1 sola apertura del Spreadsheet por petición,                    │
+│  getRange acotado, CacheService 6h para las hojas                      │
+│  casi estáticas (NUNCA ASISTENCIA/NOTAS/EXTRAS_ADMIN)                  │
+│  y campo `_ms` (ms de servidor) en toda respuesta.                     │
 │  Capacidad de grilla (D93): ensureRows_ antes                          │
 │  de cada bloque; la grilla crece sola.                                 │
 └────────────────────────┬────────────────────────────────────────────--┘
