@@ -1093,6 +1093,26 @@ function repartir(P, dsProd, jefe){
     }
   }
 
+  /* ---- Horas: repartirlas entre las filas del mismo (máquina · día · proyecto · CC) ----
+     Un CC puede abrirse en VARIAS SUB ACTIVIDAD —02.05 sale como EXCAVACION APROVECHABLE y
+     EXCAVACION NO APROVECHABLE— y cada fila traía las horas COMPLETAS de la máquina ese día.
+     Al sumarlas, el informe veía el doble (EXC001 el 16/06: 12 h reales → 24 h).
+     Las horas del parte se reparten entre esas filas en proporción a su producción, así la
+     suma por máquina y día vuelve a ser la real y el rendimiento de cada fila no cambia. */
+  {
+    const grupos=new Map();
+    filas.forEach(f=>{ const k=[f.maquina,f.fecha,f.proyecto,f.item].join('|');
+      const a=grupos.get(k)||[]; a.push(f); grupos.set(k,a); });
+    for(const fs of grupos.values()){
+      if(fs.length<2) continue;
+      const horas=fs[0].horas||0, idle=fs[0].idle||0;
+      const pesos=fs.map(f=>f.produccion||0);
+      const base=pesos.reduce((a,b)=>a+b,0)>0?pesos:fs.map(()=>1);
+      const ph=repartirRedondeado(base,horas,2), pi=repartirRedondeado(base,idle,2);
+      fs.forEach((f,i)=>{ f.horas=ph[i]; f.idle=pi[i]; });
+    }
+  }
+
   filas.sort((a,b)=> a.fecha.localeCompare(b.fecha) || a.maquina.localeCompare(b.maquina) || a.item.localeCompare(b.item));
 
   /* ---- Cuadre mensual por (proyecto, CC) ---- */
