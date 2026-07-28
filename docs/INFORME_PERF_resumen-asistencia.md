@@ -1,4 +1,4 @@
-# INFORME — Lentitud de `resumen-asistencia.html` (Fase 0 + Fase 1)
+# INFORME — Lentitud de `resumen-asistencia.html` (Fase 0 · Fase 1 · Fase 2 puntos 1–4)
 
 **Fecha:** jul-2026 · **Alcance:** módulo Asistencias (D69, aislado). No toca `Codigo.gs`, BANDEJA, DATA,
 MAQUINARIA ni ninguna pantalla del sistema de obra.
@@ -168,7 +168,56 @@ celda** (45 filas, incluida la del admin) entre la versión vieja y la nueva.
 
 ---
 
-## 4. FASE 2 — Propuesta (NO ejecutada; requiere visto bueno + redeploy)
+## 4. FASE 2 — Puntos 1–4 EJECUTADOS (requieren redeploy); punto 5 pendiente
+
+> Autorizados por el usuario tras reportar esperas reales de **10–30 s**. Exigen redesplegar
+> `CodigoAsistencias.gs`: Administrar implementaciones → editar la existente → **Nueva versión**,
+> **misma URL**. Mientras no se redespliegue, el frontend sigue funcionando igual (el campo `_ms`
+> simplemente no llega y la columna sale vacía).
+
+### Lo aplicado
+
+| Punto | Cambio | Efecto medido |
+|---|---|---|
+| 1 | `ss_()` — referencia perezosa: el Spreadsheet se abre **una vez por ejecución**, no una por hoja | **`openById` 14 → 1** en `asistencia`; 8 → 1 en `export`; 13 → 1 en `roster`; 3 → 1 en `personal` |
+| 1b | `_memoHoja` — memoria de lectura **dentro de la misma ejecución**, con `invalidarHoja_` en los 10 puntos de escritura | Cero hojas releídas: se van CUADRILLAS ×3 y CONFIG ×2 de `asistencia`, y CUADRILLAS ×2 de `personal` y `ausencias` |
+| 2 | `getRange(1,1,lastRow,nCols)` en vez de `getDataRange()`, con `nCols` = columnas del encabezado topado al ancho real de la grilla | Deja de traer columnas que ningún endpoint usa |
+| 3 | `export` deja de leer **`ASISTENCIA` entera dos veces** (la segunda la sirve la memoria) | **178.524 → 89.563 celdas**, la mitad |
+| 4 | Campo **`_ms`** (ms de servidor) en toda respuesta JSON, sembrado en `doGet`/`doPost` | El frontend ya lo separa en `servidor_ms` / `red_ms` en su `console.table` |
+
+Resumen del coste por petición (banco: 6 cuadrillas —una inactiva—, 240 personas con eventuales y un
+retirado, 22 días de ASISTENCIA, CAT_CC de 506 filas):
+
+| Petición | `openById` antes → después | Lecturas antes → después | Celdas antes → después |
+|---|---|---|---|
+| `asistencia` (residente) | **14 → 1** | 14 → 11 | 91.899 → 91.803 |
+| `asistencia` (ODT/duvan) | 13 → 1 | 13 → 10 | 91.885 → 91.789 |
+| `export` | 8 → 1 | 8 → 7 | **178.524 → 89.563** |
+| `personal` | 3 → 1 | 3 → 2 | 2.243 → 2.215 |
+| `ausencias` (20 días) | 6 → 1 | 6 → 5 | 91.213 → 91.185 |
+| `roster` (otra pantalla, se beneficia igual) | 13 → 1 | 13 → 9 | 91.912 → 91.776 |
+
+**Verificación:** un arnés ejecuta `CodigoAsistencias.gs` en Node contra un Sheet simulado y compara la
+versión vieja con la nueva. Las **21 respuestas** (15 GET + 6 POST — incluidos `roster`, domingo/festivo,
+día sin datos, rango invertido, vistas ODT/ODL y las 5 operaciones de gestión de personal) salen
+**idénticas carácter a carácter**, salvo el `_ms` nuevo. Ninguna petición lee más que antes.
+
+### Lo que sigue pendiente
+
+**Punto 5 — `CacheService.getScriptCache()` (TTL 21600 s, JSON)** para CONFIG, FESTIVOS, TURNOS, CAT_CC,
+CAT_TRABAJADORES, CAT_MOTIVOS, MOTIVOS_USADOS, CC_USADOS, CUADRILLAS y PERSONAL. Llevaría `asistenciaDia`
+de 11 lecturas a **3** (ASISTENCIA, NOTAS_ASISTENCIA y EXTRAS_ADMIN **nunca** se cachean: cambian durante
+el día y darían datos falsos). **No se hizo a propósito:** es el único cambio que introduce un modo de
+fallo nuevo —personal viejo en el resumen si se escapa una invalidación tras un alta o un retiro— y la
+decisión de si hace falta se toma **con el `_ms` medido en campo**, no a ciegas.
+
+> **Ojo con el diagnóstico:** las 14 aperturas explicaban una espera de segundos, no necesariamente de
+> 10–30 s. El `_ms` es justo el instrumento para saberlo. Si tras el redeploy `_ms` sale **alto** (varios
+> segundos), el problema sigue en el script y el punto 5 se justifica. Si sale **bajo** y el total sigue
+> alto, lo que pesa es la red / el arranque del contenedor de Apps Script / el tamaño del payload — y ahí
+> el `CacheService` no ayudaría nada; lo que tocaría es el payload ligero de la sección 5.
+
+## 4-bis. FASE 2 — Plan original (referencia)
 
 Ordenada por relación beneficio/riesgo. El punto 5 del planteamiento (endpoint consolidado
 `?action=resumen_dia`) **no aplica**: el veredicto no es A y ya sale **una sola** petición por cambio de
@@ -195,10 +244,14 @@ fecha — agrupar no agruparía nada.
 
 ## 5. Propuestas V2 (anotadas, NO implementadas)
 
-- **`asistencia` con payload "ligero" por fecha.** Los catálogos (`catCC` completo, `catCCUsados`,
-  `catMotivos`, `turnos`, `config`, `festivos`) **no dependen de la fecha** y hoy se reenvían íntegros en
-  cada cambio de día. Un parámetro `&cat=0` que los omita cuando el cliente ya los tiene ahorraría la
-  mayor parte de los KB de cada cambio de fecha. Requiere backend (Fase 2) y caché en el cliente.
+- **`asistencia` con payload "ligero" por fecha — el candidato más fuerte si `_ms` sale bajo.** Los
+  catálogos (`catCC` completo, `catCCUsados`, `catMotivos`, `turnos`, `config`, `festivos`) **no dependen
+  de la fecha** y hoy se reenvían íntegros en cada cambio de día. Medido en el banco, la respuesta de
+  `?action=asistencia` pesa **59,2 KB**, repartidos en `filas` 58,6 % · **`catCC` 20,5 %** · `faltantes`
+  17 % (y el `catCC` del banco son 506 filas: con el catálogo real esa fracción sube). Un parámetro
+  `&cat=0` que los omita cuando el cliente ya los tiene se ahorraría ese 20 %+ en cada cambio de fecha.
+  Requiere backend + caché en el cliente. **El frontend ya muestra los KB de cada petición** en la tabla
+  de `DEBUG_PERF`, así que se puede confirmar en campo antes de tocar nada.
 - **Prefetch del día anterior/siguiente** al quedar el navegador ocioso, para que las flechas de fecha
   sean instantáneas. No se hizo porque añade peticiones al Apps Script, justo lo que se quería evitar.
 - **Partición de `ASISTENCIA` por año** — **fuera de alcance hoy** (backlog 4.10): con <2.000 filas no se
