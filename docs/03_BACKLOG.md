@@ -73,6 +73,7 @@
 |---|---|---|
 | 3.2 | Chequeadora del Diviso digitalizada (hoy reporta por foto, otra persona) | Conversación fuentes |
 | 3.3 | Materiales MSR con columnas propias en el resumen diario (hoy solo en DATA por ítem) | Análisis Excel |
+| 3.6 | **Lectura en DOS PASOS de las hojas grandes (BANDEJA, DATA, MAQUINARIA) — el lever de verdad para cuando el histórico pese.** Hoy los endpoints por fecha leen la hoja ENTERA y filtran en memoria: `bandeja` 6 lecturas, `maquinaria_produccion` 4, `consolidado` 1 sobre DATA completa. D100 quitó las aperturas repetidas del Spreadsheet, pero el volumen leído no cambió y es lo que crece. **Idea:** leer primero SOLO la columna `fecha` (una llamada barata), quedarse con los índices de fila del día y traer únicamente esas filas. Medido en banco: `bandeja` pasaría de **324.120 celdas a 13.962 con un año de histórico (~23×)** y de 648.240 a 27.102 con dos años. **No se hizo en D100** porque no es un cambio mecánico: hay que verificar fila por fila que el filtrado da lo mismo, y conviene decidirlo con el `_ms` real de cada endpoint (que D100 ya expone). Hermano de 4.8 (archivado del histórico): esto evita tener que archivar tan pronto. | ⏸️ Abierto — jul-2026, D100 |
 | 3.4 | Inoperativos estructurados (hoy texto libre) | D28 |
 | 3.5 | **Sistema espejo para UF3** (mismo motor, con Sheet / centros de costo `3703` / personal / cuadrillas / pantallas propios). Solo si hay disponibilidad; fuera de alcance V2. | D84 |
 

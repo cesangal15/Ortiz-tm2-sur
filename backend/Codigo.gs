@@ -163,8 +163,18 @@ const VOLQUETAS_HEADERS = ['id_registro','timestamp','fecha','reporta','origen',
 const CUBICAJE_HEADERS = ['placa','cubicaje','tipo'];
 
 /* ---------- helpers ---------- */
-function json(o){ return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
-let _shTZ; function shTZ(){ if(!_shTZ) _shTZ=SpreadsheetApp.openById(SHEET_ID).getSpreadsheetTimeZone(); return _shTZ; }
+/**
+ * D100 — campo `_ms` = milisegundos de SERVIDOR en toda respuesta JSON (mismo criterio que el módulo
+ * de Asistencias, D99). Sirve para separar lo que tarda Apps Script de la red y del arranque del
+ * contenedor: los frontends con `DEBUG_PERF` lo muestran como `servidor_ms` / `red_ms`.
+ * `_t0` lo siembran doGet/doPost; sin él (ejecución desde el editor) no se agrega el campo.
+ */
+var _t0 = null;
+function json(o){
+  if(_t0 !== null && o && typeof o === 'object' && o._ms === undefined) o._ms = Date.now() - _t0;
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+let _shTZ; function shTZ(){ if(!_shTZ) _shTZ=ss_().getSpreadsheetTimeZone(); return _shTZ; }
 function fdate(v){
   if(v === null || v === undefined || v === '') return '';
   if(typeof v === 'object' && typeof v.getFullYear === 'function')
@@ -201,13 +211,36 @@ function ensureCols_(sheet, nCols) {
   }
 }
 
+/**
+ * D100 (mismo cambio que D99 en el módulo de Asistencias) — UNA sola apertura del Spreadsheet por
+ * ejecución. Antes cada helper hacía su propio `ss_()`: `?action=bandeja`
+ * (el panel del encargado) abría el archivo 6 veces, `maquinaria_produccion` 4 y `estado` 2.
+ * Es una variable de EJECUCIÓN, no un caché entre peticiones: Apps Script arranca un contexto nuevo
+ * en cada llamada, así que nunca sobrevive a la petición.
+ */
+var _ss = null;
+function ss_(){ if(!_ss) _ss = SpreadsheetApp.openById(SHEET_ID); return _ss; }
+
+/**
+ * D100 — Memoria de lectura DENTRO DE UNA MISMA EJECUCIÓN (no es CacheService: no sobrevive a la
+ * petición, así que no puede devolver datos viejos a otra llamada). Hoy los endpoints de lectura no
+ * repiten hoja, así que gana poco; está para que releer una hoja ya leída no cueste nada y para no
+ * reintroducir el problema al agregar endpoints. Toda escritura invalida su hoja.
+ * NO se toca el ancho de la lectura: BANDEJA/MAQUINARIA/DATA ya tienen exactamente el ancho de su
+ * esquema (nada que recortar), y CUBICAJE y VOLQUETAS se leen buscando las columnas POR NOMBRE a
+ * propósito —CUBICAJE lo mantiene el usuario a mano (D53)—, así que acotarlas sería una regresión.
+ */
+var _memoHoja = {};
+function invalidarHoja_(nombre){ delete _memoHoja[nombre]; }
+
 function getSheet(name, headers){
-  const ss=SpreadsheetApp.openById(SHEET_ID); let sh=ss.getSheetByName(name);
+  const ss=ss_(); let sh=ss.getSheetByName(name);
   if(!sh) sh=ss.insertSheet(name);
   const need=headers.length;
   // asegura ancho de grilla suficiente (p. ej. MAQUINARIA pasó de 18 a 38 columnas en D52; BANDEJA
   // de 23 a 28 en D56/D70d). D93: la misma comprobación, ahora en el helper único ensureCols_.
   ensureCols_(sh, need);
+  invalidarHoja_(name);   // D100: getSheet puede reescribir encabezados y precede a toda escritura
   if(sh.getLastRow()===0){ sh.getRange(1,1,1,need).setValues([headers]); return sh; }
   // auto-sana la fila de encabezados si no coincide con el esquema actual del código.
   // (tras el realineado de MAQUINARIA a Captura_Diaria, las filas con layout viejo quedan
@@ -218,10 +251,13 @@ function getSheet(name, headers){
   return sh;
 }
 function readSheet(name){
-  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName(name);
-  if(!sh || sh.getLastRow()<2) return [];
-  const v=sh.getDataRange().getValues(), h=v[0], out=[];
-  for(let i=1;i<v.length;i++){ const o={}; h.forEach((k,j)=>o[k]=v[i][j]); o.fecha=fdate(o.fecha); o._row=i+1; out.push(o); }
+  if(_memoHoja.hasOwnProperty(name)) return _memoHoja[name];   // D100: memoria de esta ejecución
+  const sh=ss_().getSheetByName(name), out=[];
+  if(sh && sh.getLastRow()>=2){
+    const v=sh.getDataRange().getValues(), h=v[0];
+    for(let i=1;i<v.length;i++){ const o={}; h.forEach((k,j)=>o[k]=v[i][j]); o.fecha=fdate(o.fecha); o._row=i+1; out.push(o); }
+  }
+  _memoHoja[name]=out;
   return out;
 }
 function buildDataRow(c, fecha, ts, reporta, rol, idC){
@@ -460,7 +496,7 @@ function getBaseData(){
   if(_baseRows) return;
   _baseRows = []; _baseItems = {}; _baseDrenItems = [];
   const drenSeen = {};
-  const ss = SpreadsheetApp.openById(SHEET_ID), sh = ss.getSheetByName('BASE');
+  const ss = ss_(), sh = ss.getSheetByName('BASE');
   if(!sh || sh.getLastRow() < 2) return;
   const v = sh.getDataRange().getValues();
   let ccCol=-1, dCol=-1, uCol=-1, hRow=-1;                // tabla de ítems: fila de encabezados + CC y DESCRIPCION en A–H
@@ -551,7 +587,7 @@ function drenajesCatalogo(){
  * pisa el día+área que se reenvía), así que la suma sobre todas las fechas = acumulado real. Solo lee. */
 function acumuladoDrenajes(e){
   const areaQ=String((e&&e.parameter&&e.parameter.area)||'').trim().toLowerCase();
-  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('DATA');
+  const ss=ss_(), sh=ss.getSheetByName('DATA');
   const acum={};
   if(sh && sh.getLastRow()>1){
     const v=sh.getDataRange().getValues();
@@ -636,7 +672,7 @@ let _cubMap;
 function getCubicajeMap(){
   if(_cubMap) return _cubMap;
   _cubMap = {};
-  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('CUBICAJE');
+  const ss=ss_(), sh=ss.getSheetByName('CUBICAJE');
   if(!sh || sh.getLastRow()<2) return _cubMap;
   const v=sh.getDataRange().getValues(), h=v[0];
   // ubica columnas por nombre de cabecera (tolerante); por defecto A=placa, B=cubicaje
@@ -663,7 +699,7 @@ function getCubicajeMap(){
  * (no es error). */
 function volquetasDelDia(e){
   const fecha = fdate((e && e.parameter && e.parameter.fecha) || '');
-  const ss = SpreadsheetApp.openById(SHEET_ID), sh = ss.getSheetByName('VOLQUETAS');
+  const ss = ss_(), sh = ss.getSheetByName('VOLQUETAS');
   if(!sh || sh.getLastRow() < 2) return json({ok:true, fecha:fecha, filas:[]});
   const v = sh.getDataRange().getValues(), h = v[0];
   // ubica columnas por nombre de cabecera (tolerante al orden real de la hoja)
@@ -691,6 +727,7 @@ function volquetasDelDia(e){
 
 /* ---------- routing ---------- */
 function doGet(e){
+  _t0 = Date.now();   // D100: siembra el cronómetro de servidor (`_ms` en la respuesta)
   const a=((e.parameter.action)||'').toLowerCase();
   if(a==='bandeja')     return bandeja(e);
   if(a==='consolidado') return consolidado(e);
@@ -704,6 +741,7 @@ function doGet(e){
   return json({ok:true, msg:'API viva', version:'v11'});
 }
 function doPost(e){
+  _t0 = Date.now();   // D100: cronómetro de servidor también en las escrituras
   try{
     const body=JSON.parse(e.postData.contents);
     if(body.action==='enviar_data') return enviarData(body);
@@ -961,7 +999,7 @@ function consolidado(e){
   // intacto (?action=consolidado&fecha=YYYY-MM-DD). Nunca escribe: ni DATA ni maestro.
   if(e.parameter.desde || e.parameter.hasta) return consolidadoRango(e);
   const fecha=fdate(e.parameter.fecha), proy=e.parameter.proyecto||'';
-  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('DATA');
+  const ss=ss_(), sh=ss.getSheetByName('DATA');
   let cantidades=[];
   if(sh && sh.getLastRow()>1){
     const v=sh.getDataRange().getValues();
@@ -987,7 +1025,7 @@ function consolidadoRango(e){
   const proy=e.parameter.proyecto||'';
   const AT=20;                                        // A–T (las 20 columnas espejo del maestro + Columna1)
   const climaCol=DATA_HEADERS.indexOf('clima');       // columna interna (tras A–T); no viaja al maestro
-  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('DATA');
+  const ss=ss_(), sh=ss.getSheetByName('DATA');
   const filas=[], climaPorDia={};                     // D37: clima del día (leído de la col interna)
   if(desde && hasta && sh && sh.getLastRow()>1){
     const v=sh.getDataRange().getValues();
@@ -1152,7 +1190,7 @@ function maquinariaProduccion(e){
     if(a&&b&&b!==a) return a+'–'+b; return a||b||''; }
   // Volúmenes y PK oficiales de DATA por proyecto|bucket (solo LECTURA; jamás se escribe DATA aquí)
   const dataVol={}, dataPk={};
-  const ss=SpreadsheetApp.openById(SHEET_ID), dsh=ss.getSheetByName('DATA');
+  const ss=ss_(), dsh=ss.getSheetByName('DATA');
   if(dsh && dsh.getLastRow()>1){
     const v=dsh.getDataRange().getValues();
     for(let i=1;i<v.length;i++){
@@ -1365,7 +1403,7 @@ function actualizarDescripcionesData(){ _descripcionesDataPass(true); }
  * usadas / columnas totales y cuántas filas libres quedan. NO escribe datos: es solo lectura.
  */
 function diagnosticoCapacidad() {
-  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var ss = ss_();
   ss.getSheets().forEach(function (sh) {
     Logger.log(
       sh.getName() + ' → filas ' + sh.getLastRow() + '/' + sh.getMaxRows() +
@@ -1375,7 +1413,7 @@ function diagnosticoCapacidad() {
   });
 }
 function diagnosticoBase(){
-  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('BASE');
+  const ss=ss_(), sh=ss.getSheetByName('BASE');
   if(!sh){ Logger.log('No existe la hoja BASE.'); return; }
   const v=sh.getDataRange().getValues();
   Logger.log('BASE: '+v.length+' filas × '+v[0].length+' columnas.');
@@ -1402,7 +1440,7 @@ function diagnosticoBase(){
     JSON.stringify(String(lookupDescripcion('3701.02.08','Conformación y disposición de sobrantes'))));
 }
 function _descripcionesDataPass(aplicar){
-  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('DATA');
+  const ss=ss_(), sh=ss.getSheetByName('DATA');
   if(!sh || sh.getLastRow()<2){ Logger.log('DATA vacía: nada que hacer.'); return; }
   const v=sh.getDataRange().getValues();
   const items=getBaseItems();
