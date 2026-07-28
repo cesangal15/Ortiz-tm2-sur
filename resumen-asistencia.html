@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Resumen de Asistencias — Residente</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<!-- SheetJS (generador del Parte Navision): se carga BAJO DEMANDA, no aquí. Etiquetada en la cabecera
+     bloqueaba el primer pintado con ~900 KB que solo hacen falta al pulsar "Excel 3701/3702" (ver
+     ensureXLSX()). Misma librería y misma versión: no es una dependencia nueva. -->
 <style>
   :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--success:#2ecc71;--error:#e74c3c;--input-bg:#12151f;}
   *{box-sizing:border-box;margin:0;padding:0;}
@@ -63,9 +65,18 @@
   .cc-opt:last-child{border-bottom:none;}
   .cc-opt:hover{background:var(--surface2);color:var(--accent);}
   .cc-head{padding:5px 12px;font-size:9.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);background:var(--surface2);border-bottom:1px solid var(--border);position:sticky;top:0;}
+  /* Indicador de carga NO bloqueante (mismo tema oscuro/acento): barrita bajo el header + contenido
+     atenuado. Al cambiar de fecha ya no se borra la pantalla: se sigue viendo el día anterior hasta
+     que llega el nuevo. */
+  .loadbar{position:fixed;top:0;left:0;right:0;height:3px;background:rgba(245,166,35,0.15);overflow:hidden;z-index:30;display:none;}
+  .loadbar.on{display:block;}
+  .loadbar::after{content:'';position:absolute;top:0;left:0;height:100%;width:38%;background:linear-gradient(90deg,transparent,var(--accent),var(--accent2),transparent);animation:loadslide 1.05s linear infinite;}
+  @keyframes loadslide{0%{transform:translateX(-100%);}100%{transform:translateX(365%);}}
+  .cargando{opacity:0.5;transition:opacity .15s ease;pointer-events:none;}
 </style>
 </head>
 <body>
+<div class="loadbar" id="loadBar"></div>
 <div class="header">
   <div class="header-left">
     <div class="label">Asistencias</div>
@@ -83,10 +94,76 @@
 
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbymgvQX03ZqS_YzIz5l6WVesasDUMYwGOFItrggTJCdsFhcjXQvDPVz03E7mNcZQ4Nq/exec";
+
+/* ================= INSTRUMENTACIÓN DE RENDIMIENTO (temporal) =================
+ * Para medir el antes/después con F12 → Console. Apagar poniendo DEBUG_PERF=false (una línea).
+ * Mide cada petición al Apps Script (ida y vuelta + tamaño de la respuesta) y el pintado, y saca un
+ * console.table al final de cada ciclo. Si el backend llega a devolver `_ms` (tiempo de servidor,
+ * Fase 2), la tabla lo muestra en su propia columna para separar Apps Script de red/arranque. */
+const DEBUG_PERF = true;
+const PERF = [];
+function ahora(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
+function perfReset(){ PERF.length=0; }
+// fetch + JSON con cronómetro. Devuelve el objeto ya parseado (mismo contrato que resp.json()).
+async function perfFetch(label, url, opts){
+  const t0=ahora(); let cerrado=false;
+  if(DEBUG_PERF) console.time('⏱ '+label);
+  const cerrar=()=>{ if(DEBUG_PERF && !cerrado){ cerrado=true; console.timeEnd('⏱ '+label); } };
+  try{
+    const resp=await fetch(url, opts);
+    const txt=await resp.text();
+    const ms=Math.round(ahora()-t0);
+    cerrar();
+    let data=null, err=null;
+    try{ data=JSON.parse(txt); }catch(e){ err=e; }
+    if(DEBUG_PERF){
+      const reg={ peticion:label, ms, kb:Math.round(txt.length/102.4)/10 };
+      if(data && data._ms!=null){ reg.servidor_ms=data._ms; reg.red_ms=ms-Number(data._ms); }
+      PERF.push(reg);
+    }
+    if(err) throw new Error('Respuesta no-JSON del Apps Script (¿implementación caída o sesión de Google?).');
+    return data;
+  }catch(e){ cerrar(); throw e; }
+}
+function perfMarca(label, ms){ if(DEBUG_PERF) PERF.push({ peticion:label, ms:Math.round(ms) }); }
+function perfTabla(ctx){
+  if(!DEBUG_PERF || !PERF.length) return;
+  const total=PERF.reduce((a,r)=>a+(r.ms||0),0);
+  console.log('%c⏱ resumen-asistencia · '+ctx+' · '+PERF.filter(r=>r.kb!=null).length+' petición(es) · '+Math.round(total)+' ms',
+    'color:#f5a623;font-weight:700');
+  console.table(PERF.slice());
+}
+
+/* SheetJS bajo demanda: solo hace falta para generar el Excel Navision. Cargarlo en el <head>
+ * bloqueaba el primer pintado del resumen con ~900 KB que la mayoría de las visitas no usa. Se
+ * inyecta al pulsar "Excel 3701/3702" (y, si el navegador queda ocioso, se precarga en segundo plano
+ * para que el primer clic tampoco espere). Misma librería/versión de siempre. */
+const XLSX_SRC='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+let _xlsxProm=null;
+function ensureXLSX(){
+  if(window.XLSX) return Promise.resolve(window.XLSX);
+  if(_xlsxProm) return _xlsxProm;
+  const t0=ahora();
+  _xlsxProm=new Promise(function(res, rej){
+    const s=document.createElement('script');
+    s.src=XLSX_SRC; s.async=true;
+    s.onload=function(){ perfMarca('SheetJS (carga)', ahora()-t0); res(window.XLSX); };
+    s.onerror=function(){ _xlsxProm=null; rej(new Error('No se pudo cargar la librería de Excel (SheetJS). Revisa la conexión.')); };
+    document.head.appendChild(s);
+  });
+  return _xlsxProm;
+}
+// Trabajo diferido a cuando el navegador esté ocioso (con respaldo por si no hay requestIdleCallback).
+function alOcioso(fn, ms){ if(window.requestIdleCallback) requestIdleCallback(fn,{timeout:ms||2000}); else setTimeout(fn, ms||600); }
+
 let STATE = { usuario:'', rol:'', fecha:'', data:null, exportCache:{}, tplBuf:null, tplName:'', tplRecordada:false, tplBundle:false, filaInicio:2, personal:null, completar:{}, persQuery:'', areaFiltro:'',
   // D94 — seguimiento de ausencias por rango (independiente del día del resumen): se conserva entre
   // re-renders (render() reconstruye el contenedor completo) para no perder la consulta ni los filtros.
-  aus:{ abierto:false, desde:'', hasta:'', data:null, cargando:false, error:'', motivo:'', cuadrilla:'', q:'', incluirSinRep:false, vista:'persona' } };
+  aus:{ abierto:false, desde:'', hasta:'', data:null, cargando:false, error:'', motivo:'', cuadrilla:'', q:'', incluirSinRep:false, vista:'persona' },
+  // Render progresivo: los bloques pesados (detalle por cuadrilla D76, lista de sin-reportar y
+  // "Completar faltantes") se arman la PRIMERA vez que se despliegan, no al pintar el resumen.
+  // `_lazy` recuerda cuáles ya se armaron en este render (render() lo reinicia).
+  _lazy:{} };
 
 // Plantilla recordada entre sesiones (localStorage): así solo se sube UNA vez, no cada sesión. Se
 // guarda como base64 del .xlsx. Si es demasiado grande para localStorage, cae a "solo esta sesión".
@@ -138,29 +215,51 @@ window.onload = function(){
   STATE.fecha=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
   restaurarPlantilla();
   cargarResumen();
-  cargarPlantillaBundle();
+  // La plantilla del repo (~90 KB) y SheetJS (~900 KB) solo hacen falta al EXPORTAR: se bajan cuando el
+  // navegador queda ocioso, para no competir con la petición del resumen (que es lo que el usuario mira).
+  alOcioso(function(){ cargarPlantillaBundle(); });
+  alOcioso(function(){ ensureXLSX().catch(function(){}); }, 4000);
 };
 function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); window.location.href='index.html'; }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 // Mostrar/ocultar una lista larga por su id (puro DOM, sin re-render → no borra nada que se esté llenando).
+// Render progresivo: si la lista aún no se ha armado (`LAZY[id]`), se arma en el momento de abrirla —
+// así el resumen pinta primero KPIs y cuadrillas, y el HTML pesado solo se paga si se pide.
+const LAZY={};   // id de contenedor -> función que devuelve su HTML (se llama UNA vez)
 function toggleLista(id, btn){
   const el=document.getElementById(id); if(!el) return;
   const show = el.style.display==='none';
+  if(show && LAZY[id]){ const t0=ahora(); el.innerHTML=LAZY[id](); delete LAZY[id]; perfMarca('armar '+id, ahora()-t0); }
   el.style.display = show ? 'block' : 'none';
   if(btn) btn.textContent = show ? 'Ocultar' : 'Mostrar';
 }
 
 /* ================= RESUMEN DEL DÍA ================= */
+// Indicador de carga NO bloqueante: barrita de progreso bajo el borde del header y contenido atenuado.
+// Al cambiar de fecha ya NO se borra la pantalla — el día anterior sigue a la vista hasta que llega el
+// nuevo, así el cambio se siente instantáneo aunque el Apps Script tarde.
+function loadBar(on){
+  const b=document.getElementById('loadBar'); if(b) b.classList.toggle('on', !!on);
+  const c=document.getElementById('container'); if(c) c.classList.toggle('cargando', !!on && !!STATE.data);
+}
 async function cargarResumen(){
-  document.getElementById('container').innerHTML='<div class="loading">⏳ Consultando…</div>';
+  const cont=document.getElementById('container');
+  if(!STATE.data) cont.innerHTML='<div class="loading">⏳ Consultando…</div>';
+  loadBar(true); perfReset();
   try{
-    const resp=await fetch(`${APPS_SCRIPT_URL}?action=asistencia&fecha=${STATE.fecha}&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`);
-    const data=await resp.json();
+    const data=await perfFetch('asistencia (día)',
+      `${APPS_SCRIPT_URL}?action=asistencia&fecha=${STATE.fecha}&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`);
     if(!data.ok) throw new Error(data.error||'asistencia');
     STATE.data=data;
     render();
+    perfTabla('carga del día '+STATE.fecha);
   }catch(err){
+    // Con error se BORRA el contenido a propósito: dejar a la vista los números del día anterior con un
+    // aviso encima sería peor (se leerían como los del día pedido).
+    STATE.data=null;
     document.getElementById('container').innerHTML='<div class="empty-state">⚠️ No se pudo consultar. Revisa el Apps Script.<br><small>'+esc(err.message||err)+'</small></div>';
+  }finally{
+    loadBar(false);
   }
 }
 // ¿La vista actual es de TIERRAS? (residente de tierras, jeisson, o admin sin filtrar ODT/ODL).
@@ -175,6 +274,10 @@ function onFechaChange(v){ STATE.fecha=v; STATE.exportCache={}; cargarResumen();
 function onAreaFiltro(v){ STATE.areaFiltro=v; STATE.exportCache={}; STATE.personal=null; cargarResumen(); }
 
 function render(){
+  const _t0=ahora();
+  // render() reconstruye el contenedor: los bloques diferidos pendientes del render anterior ya no
+  // existen en el DOM, así que se descartan (si no, quedarían apuntando a ids muertos).
+  Object.keys(LAZY).forEach(k=>delete LAZY[k]);
   const d=STATE.data;
   const filas=d.filas||[], cuadrillas=d.cuadrillas||[], faltantes=d.faltantes||[];
   // Presente cuenta SOLO si tiene CC. Presente sin CC = no reportado (ya viene en faltantes).
@@ -222,10 +325,13 @@ function render(){
   STATE._ccUsados=(d.catCCUsados||[]);
   STATE._ccResto=(d.catCC||[]).filter(cc=>STATE._ccUsados.indexOf(cc)<0);
   STATE._detalle={}; STATE._detIdx=0;
+  // Una sola pasada por `filas` para agrupar por cuadrilla (antes era un filter por cuadrilla = N×M).
+  const porCuadrilla={}; filas.forEach(f=>{ (porCuadrilla[f.cuadrilla]=porCuadrilla[f.cuadrilla]||[]).push(f); });
+  STATE._porCuadrilla=porCuadrilla;
   html+='<div class="section-title">Cuadrillas</div><div class="card">';
   cuadrillas.forEach((c,ci)=>{
     const detId='detCuad'+ci;
-    const filasCuad=filas.filter(f=>f.cuadrilla===c.cuadrilla);
+    const filasCuad=porCuadrilla[c.cuadrilla]||[];
     const tieneDet=filasCuad.length>0;
     html+=`<div class="cuad-row" ${tieneDet?`style="cursor:pointer;" onclick="toggleCuad('${detId}',this)"`:''}>`
       + `<span>${esc(c.cuadrilla)} <small style="color:var(--muted)">(${esc(c.responsables)})</small></span>`
@@ -233,7 +339,12 @@ function render(){
       + (c.reporto ? `<span class="ok">✓ Reportó — ${esc(c.reporta)}</span>` : `<span class="no">✗ No ha reportado</span>`)
       + (tieneDet ? `<button class="mini-btn detToggle" onclick="event.stopPropagation();toggleCuad('${detId}',this.closest('.cuad-row'))">Ver detalle</button>` : '')
       + '</span></div>';
-    if(tieneDet) html+=`<div id="${detId}" style="display:none;">`+detalleCuadrillaHtml(c, filasCuad)+'</div>';
+    // D76 diferido: el contenedor va vacío y el detalle (clasificación de horas + editor por persona)
+    // se arma al desplegar esa cuadrilla, no para todas por adelantado. Resultado visible idéntico.
+    if(tieneDet){
+      html+=`<div id="${detId}" style="display:none;"></div>`;
+      LAZY[detId]=(function(cc, ff){ return function(){ return detalleCuadrillaHtml(cc, ff); }; })(c, filasCuad);
+    }
   });
   html+='</div>';
 
@@ -253,12 +364,14 @@ function render(){
     html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
       +'<p style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1px;">Sin reportar ('+sinReportar.length+')</p>'
       +'<button class="mini-btn" onclick="toggleLista(\'listaSinRep\',this)">Mostrar</button></div>';
-    html+='<div id="listaSinRep" style="display:none;">';
-    sinReportar.forEach(f=>{
-      const badge = f.incompleto ? '<span class="badge sin">Presente sin CC</span>' : '<span class="badge sin">Sin reportar</span>';
-      html+=`<div class="falt-row"><div class="nm"><b>${esc(f.nombre)}</b><small>${esc(f.cargo)} · ${esc(f.cuadrilla)} · resp. ${esc(f.responsable)}</small></div>${badge}</div>`;
-    });
-    html+='</div>';
+    // Diferido: la lista nace oculta, así que su HTML se arma al pulsar "Mostrar".
+    html+='<div id="listaSinRep" style="display:none;"></div>';
+    LAZY['listaSinRep']=function(){
+      return sinReportar.map(f=>{
+        const badge = f.incompleto ? '<span class="badge sin">Presente sin CC</span>' : '<span class="badge sin">Sin reportar</span>';
+        return `<div class="falt-row"><div class="nm"><b>${esc(f.nombre)}</b><small>${esc(f.cargo)} · ${esc(f.cuadrilla)} · resp. ${esc(f.responsable)}</small></div>${badge}</div>`;
+      }).join('');
+    };
   }
   if(ausentesConMotivo.length){
     html+='<p style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin:10px 0 4px;">Reportado ausente (con motivo)</p>';
@@ -286,6 +399,7 @@ function render(){
   document.getElementById('container').innerHTML=html;
   if(STATE.personal) renderPersonal();
   renderAusFiltros(); renderAusResultados();   // D94: repinta lo ya consultado tras un re-render
+  perfMarca('pintado (render)', ahora()-_t0);
 }
 
 /* ================= BUSCADOR DE CC (D78) =================
@@ -335,6 +449,8 @@ function ccPickBlur(id){ setTimeout(function(){ const b=document.getElementById(
 function toggleCuad(id, rowEl){
   const el=document.getElementById(id); if(!el) return;
   const show = el.style.display==='none';
+  // Render progresivo (D76): el detalle de ESTA cuadrilla se arma la primera vez que se despliega.
+  if(show && LAZY[id]){ const t0=ahora(); el.innerHTML=LAZY[id](); delete LAZY[id]; perfMarca('detalle '+id, ahora()-t0); }
   el.style.display = show ? 'block' : 'none';
   const b=rowEl.querySelector('.detToggle'); if(b) b.textContent = show ? 'Ocultar' : 'Ver detalle';
 }
@@ -455,9 +571,11 @@ async function guardarDetalle(idx){
   }
   const msg=document.getElementById('det-msg-'+idx); msg.innerHTML='<div class="aviso">⏳ Guardando…</div>';
   try{
-    const resp=await fetch(APPS_SCRIPT_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    perfReset();
+    const data=await perfFetch('asistencia_individual (detalle)', APPS_SCRIPT_URL, { method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
       body: JSON.stringify({ action:'asistencia_individual', fecha:STATE.fecha, reporta:STATE.usuario, usuario:STATE.usuario, filas:[fila] }) });
-    const data=await resp.json();
+    perfTabla('guardar detalle');
     if(data.ok){ STATE.exportCache={}; cargarResumen(); }
     else msg.innerHTML='<div class="aviso">⚠️ '+esc(data.error||'error')+'</div>';
   }catch(err){ msg.innerHTML='<div class="aviso">⚠️ '+esc(err.message||err)+'</div>'; }
@@ -487,6 +605,16 @@ function seccionCompletar(d){
   });
   if(!comp.length) return '';
   STATE._comp=comp;
+  let h='<div style="display:flex;justify-content:space-between;align-items:center;margin:22px 0 10px;">'
+    + '<span style="font-family:\'Syne\',sans-serif;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Completar faltantes ('+comp.length+')</span>'
+    + '<button class="mini-btn" onclick="toggleLista(\'listaCompletar\',this)">Mostrar</button></div>';
+  // Diferido: este bloque nace oculto y es el más pesado del resumen (una ficha con CC, turno, horario
+  // y motivo por CADA faltante). Su HTML se arma al pulsar "Mostrar"; el resultado es idéntico.
+  h+='<div id="listaCompletar" class="card" style="display:none;"></div>';
+  LAZY['listaCompletar']=function(){ return completarListaHtml(d, comp); };
+  return h;
+}
+function completarListaHtml(d, comp){
   const catMotivos=d.catMotivos||[], j=Object.assign({},d.jornada||{});
   // D77: en domingo/festivo el backend puede mandar la jornada vacía; se pre-llena el horario típico
   // (07:00–15:00; 8h − 1h almuerzo = 7h Dom/Fest) para completar faltantes sin teclear las horas.
@@ -496,11 +624,10 @@ function seccionCompletar(d){
   const turnos=d.turnos||[]; STATE._compTurnos=turnos;
   const turnoOpts = turnoOptsHtml(turnos, '1');
   const esDomFest = tipoJornadaDeFecha(STATE.fecha, d.festivos||[])==='domfest';
+  // Las <option> de motivos son las mismas para todas las personas: se arman UNA vez, no por ficha.
+  const motivoOpts = catMotivos.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('');
   // D78: el CC se elige con el buscador ccPickerHtml (frecuentes del área primero + catálogo completo).
-  let h='<div style="display:flex;justify-content:space-between;align-items:center;margin:22px 0 10px;">'
-    + '<span style="font-family:\'Syne\',sans-serif;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Completar faltantes ('+comp.length+')</span>'
-    + '<button class="mini-btn" onclick="toggleLista(\'listaCompletar\',this)">Mostrar</button></div>';
-  h+='<div id="listaCompletar" class="card" style="display:none;"><p style="font-size:12px;color:var(--muted);margin-bottom:10px;">Agrega o corrige personas que no reportaron (o quedaron presentes sin CC). Marca su estado y guarda; <b>no borra</b> lo que ya reportó el responsable de la cuadrilla.</p>';
+  let h='<p style="font-size:12px;color:var(--muted);margin-bottom:10px;">Agrega o corrige personas que no reportaron (o quedaron presentes sin CC). Marca su estado y guarda; <b>no borra</b> lo que ya reportó el responsable de la cuadrilla.</p>';
   // D81: en domingo/festivo trabaja solo el personal disponible (revuelto de cuadrillas y responsables),
   // así que ESTE es el canal para subir el día (Jeisson/residente): se marca SOLO a quienes trabajaron;
   // los demás se dejan sin tocar (no cuentan como ausentes — el domingo no trabajado es lo normal).
@@ -532,12 +659,11 @@ function seccionCompletar(d){
      + `<div class="field" style="max-width:120px;"><label>Entrada</label><input type="time" id="comp-ent-${i}" value="${esc(j.entrada||'')}"></div>`
      + `<div class="field" style="max-width:120px;"><label>Salida</label><input type="time" id="comp-sal-${i}" value="${esc(j.salida||'')}"></div>`
      + `</div></div>`
-     + `<div id="comp-aus-${i}" style="display:none;margin-top:8px;"><select id="comp-mot-${i}"><option value="">Motivo de ausencia…</option>${catMotivos.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('')}</select></div>`
+     + `<div id="comp-aus-${i}" style="display:none;margin-top:8px;"><select id="comp-mot-${i}"><option value="">Motivo de ausencia…</option>${motivoOpts}</select></div>`
      + `</div>`;
   });
   h+='</div>'; // /#compPendientes
   h+='<button class="btn" style="margin-top:12px;" onclick="guardarCompletar()">Guardar faltantes →</button><div id="compMsg" style="margin-top:8px;"></div>';
-  h+='</div>';
   return h;
 }
 function compToggle(i){
@@ -578,7 +704,8 @@ function compTurnoChange(i){
 async function guardarCompletar(){
   const comp=STATE._comp||[], filas=[];
   comp.forEach((p,i)=>{
-    const est=document.getElementById('comp-est-'+i).value;
+    const sel=document.getElementById('comp-est-'+i);
+    const est=sel?sel.value:'';   // la lista se arma al desplegarla: sin desplegar no hay nada marcado
     if(!est) return;
     if(est==='Si'){
       const cc=document.getElementById('comp-cc-'+i).value.trim();
@@ -595,9 +722,11 @@ async function guardarCompletar(){
   if(filas.some(f=>f.presente==='No' && !f.motivo_ausencia)){ alert('Falta el motivo de alguna persona marcada como ausente.'); return; }
   const msg=document.getElementById('compMsg'); msg.innerHTML='<div class="aviso">⏳ Guardando…</div>';
   try{
-    const resp=await fetch(APPS_SCRIPT_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    perfReset();
+    const data=await perfFetch('asistencia_individual (faltantes)', APPS_SCRIPT_URL, { method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
       body: JSON.stringify({ action:'asistencia_individual', fecha:STATE.fecha, reporta:STATE.usuario, usuario:STATE.usuario, filas }) });
-    const data=await resp.json();
+    perfTabla('guardar faltantes');
     if(data.ok){ STATE.exportCache={}; cargarResumen(); }
     else msg.innerHTML='<div class="aviso">⚠️ '+esc(data.error||'error')+'</div>';
   }catch(err){ msg.innerHTML='<div class="aviso">⚠️ '+esc(err.message||err)+'</div>'; }
@@ -675,8 +804,9 @@ async function ausConsultar(){
   try{
     const url=`${APPS_SCRIPT_URL}?action=ausencias&desde=${a.desde}&hasta=${a.hasta}`
       + `&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`;
-    const resp=await fetch(url);
-    const data=await resp.json();
+    perfReset();
+    const data=await perfFetch('ausencias (rango)', url);
+    perfTabla('ausencias '+a.desde+' → '+a.hasta);
     if(!data.ok) throw new Error(data.error||'ausencias');
     // Backend sin redesplegar: doGet devuelve {ok:true, msg:'API Asistencias viva'} para una acción que
     // aún no conoce. Se detecta por la ausencia de `filas` y se avisa con la causa real.
@@ -988,10 +1118,13 @@ function tipoJornadaDeFecha(fechaStr, festivos){
   return 'lv';
 }
 
+// El crudo del export NO depende del proyecto (3701/3702 se filtran en el cliente): una sola petición
+// por fecha sirve para los dos botones — `exportCache` ya lo reusa; se invalida al cambiar fecha, área
+// o al guardar (detalle / faltantes).
 async function obtenerExport(fecha){
   if(STATE.exportCache[fecha]) return STATE.exportCache[fecha];
-  const resp=await fetch(`${APPS_SCRIPT_URL}?action=export&fecha=${fecha}&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`);
-  const data=await resp.json();
+  const data=await perfFetch('export (crudo del día)',
+    `${APPS_SCRIPT_URL}?action=export&fecha=${fecha}&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`);
   if(!data.ok) throw new Error(data.error||'export');
   STATE.exportCache[fecha]=data;
   return data;
@@ -1089,7 +1222,11 @@ async function generarExcel(proyecto){
   }
   msg.innerHTML='<div class="aviso">⏳ Generando…</div>';
   try{
-    const data=await obtenerExport(STATE.fecha);
+    perfReset();
+    // SheetJS ya no viene en el <head>: se carga aquí (o ya está, si el navegador la precargó ocioso).
+    // Va en PARALELO con el crudo del día, no encadenado, para no sumar las dos esperas.
+    const [ , data ] = await Promise.all([ ensureXLSX(), obtenerExport(STATE.fecha) ]);
+    perfTabla('generar Excel '+proyecto);
     const cfg=data.config||{}, festivos=data.festivos||[], turnos=data.turnos||[];
     const proyectoStr = proyecto==='3701' ? (cfg.proyecto_3701||'3701') : (cfg.proyecto_3702||'3702');
     if(proyecto==='3702' && (!cfg.proyecto_3702 || cfg.proyecto_3702==='PENDIENTE')){
@@ -1183,8 +1320,10 @@ async function cargarPersonal(){
   const body=document.getElementById('gestionBody');
   body.innerHTML='<p style="color:var(--muted);font-size:13px;">⏳ Cargando…</p>';
   try{
-    const resp=await fetch(`${APPS_SCRIPT_URL}?action=personal&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`);
-    const data=await resp.json();
+    perfReset();
+    const data=await perfFetch('personal (gestión)',
+      `${APPS_SCRIPT_URL}?action=personal&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`);
+    perfTabla('gestión de personal');
     if(!data.ok) throw new Error(data.error||'personal');
     STATE.personal=data;
     renderPersonal();
@@ -1240,10 +1379,14 @@ function renderPersonalTabla(){
   h+='</tbody></table></div>';
   wrap.innerHTML=h;
 }
+// (POST de gestión de personal — mismo contrato de siempre, ahora cronometrado con DEBUG_PERF.)
 async function postPersonal(payload){
   payload.action='personal'; payload.usuario=STATE.usuario;
-  const resp=await fetch(APPS_SCRIPT_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(payload) });
-  return resp.json();
+  perfReset();
+  const data=await perfFetch('personal ('+(payload.op||'op')+')', APPS_SCRIPT_URL,
+    { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(payload) });
+  perfTabla('gestión de personal · '+(payload.op||''));
+  return data;
 }
 async function altaPersona(){
   const codigo=document.getElementById('altaCodigo').value.trim();
