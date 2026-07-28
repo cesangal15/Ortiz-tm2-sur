@@ -151,6 +151,11 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
       <div>
         <label class="fld">Terraplén 02.07 — % bulldozer</label>
         <input type="number" id="pctBull" value="80" min="0" max="100" step="1">
+        <label class="fld" style="margin-top:8px">Mínimo por día y máquina (m³)</label>
+        <input type="number" id="minDia" value="50" min="0" step="5">
+        <div class="hint">Las tajadas diarias por debajo de esto se acumulan en el día más fuerte de esa
+          máquina y actividad. Son residuo de partir, no días flojos: en julio, una fila de 36 m³ caía
+          un día en que la obra reportó 3.011 m³. <b>No cambia ningún total del mes.</b> Pon 0 para desactivarlo.</div>
         <div class="hint">El resto (<span id="pctMotoLbl">20</span>%) a las motoniveladoras. Si solo hay un tipo presente, ese recibe el 100%.
           El bulldozer sale como <b>NÚCLEO DE TERRAPLEN</b> y la motoniveladora como <b>CORONA DE TERRAPLEN</b>.</div>
       </div>
@@ -564,6 +569,7 @@ function leerParams(){
     mapa: mapa.length?mapa:MAPA_ACTIVIDAD,
     pctBull: Math.min(100,Math.max(0,parseFloat(document.getElementById('pctBull').value)||0))/100,
     separarUF: document.getElementById('separarUF').checked,
+    minDia: Math.max(0,parseFloat(document.getElementById('minDia').value)||0),
     soloHoras: document.getElementById('soloHoras').checked,
     desde: document.getElementById('desde').value,
     hasta: document.getElementById('hasta').value
@@ -909,7 +915,7 @@ function pesosDe(cands, proyecto, item, cruzarUF){
    producción del día × horas de la máquina ese día en ese CC — así la producción cae en
    días en que la actividad SÍ ocurrió y la máquina SÍ estuvo. Si nunca coinciden, se cae a
    la producción del día (la curva real del `dia suelto`) y luego a las horas. */
-function derramarEnDias(cod, proyecto, item, na, total, jefe, dsProd){
+function derramarEnDias(cod, proyecto, item, na, total, jefe, dsProd, minDia){
   const dias=dsProd.dias;
   if(!dias.length) return {partes:[], base:''};
   const pProd = dias.map(d=>dsProd.prodDia.get(d+'|'+proyecto+'|'+item+'|'+(na?1:0))||0);
@@ -919,7 +925,20 @@ function derramarEnDias(cod, proyecto, item, na, total, jefe, dsProd){
   if(suma(w)<=0){ w=pProd;  base='producción del día'; }
   if(suma(w)<=0){ w=pHoras; base='horas del día'; }
   if(suma(w)<=0){ w=dias.map(()=>1); base='partes iguales entre los días'; }
-  return { partes:repartirRedondeado(w,total,DEC), base:base };
+  const partes=repartirRedondeado(w,total,DEC);
+
+  /* Migajas: un día en que la máquina puso pocas horas se lleva una tajada mínima
+     (30, 20, 6 m³) que no es un día flojo real —ese día la obra produjo miles— sino el
+     residuo de partir. Se acumulan en el día más fuerte de esa misma máquina y actividad.
+     NO cambia el total del mes de nadie: solo deja de ensuciar el día a día del informe. */
+  if(minDia>0){
+    let mayor=0;
+    partes.forEach((v,i)=>{ if(v>partes[mayor]) mayor=i; });
+    let migajas=0;
+    partes.forEach((v,i)=>{ if(i!==mayor && v>0 && v<minDia){ migajas+=v; partes[i]=0; } });
+    if(migajas) partes[mayor]=round(partes[mayor]+migajas,DEC);
+  }
+  return { partes:partes, base:base+(minDia>0?' · migajas al día fuerte':'') };
 }
 
 function repartir(P, dsProd, jefe){
@@ -993,7 +1012,7 @@ function repartir(P, dsProd, jefe){
         porProy.forEach(([pr,monto])=>{
           if(!monto) return;
           // El total de esta máquina en ese proyecto se derrama sobre los días del corte.
-          const d=derramarEnDias(m.cod,pr,item,noAprov,monto,jefe,dsProd);
+          const d=derramarEnDias(m.cod,pr,item,noAprov,monto,jefe,dsProd,P.minDia);
           dsProd.dias.forEach((fecha,di)=>{
             if(!d.partes[di]) return;
             asign.push({ cod:m.cod, tipo:m.tipo, fecha:fecha, proyecto:pr, item:item,
@@ -1071,6 +1090,26 @@ function repartir(P, dsProd, jefe){
       const h=m.cc.get(proyecto+'|'+item)||0;
       const partes=repartirRedondeado(fs.map(f=>f.produccion||0),h,DEC);
       fs.forEach((f,i)=>{ f.horas=partes[i]; });
+    }
+  }
+
+  /* ---- Horas: repartirlas entre las filas del mismo (máquina · día · proyecto · CC) ----
+     Un CC puede abrirse en VARIAS SUB ACTIVIDAD —02.05 sale como EXCAVACION APROVECHABLE y
+     EXCAVACION NO APROVECHABLE— y cada fila traía las horas COMPLETAS de la máquina ese día.
+     Al sumarlas, el informe veía el doble (EXC001 el 16/06: 12 h reales → 24 h).
+     Las horas del parte se reparten entre esas filas en proporción a su producción, así la
+     suma por máquina y día vuelve a ser la real y el rendimiento de cada fila no cambia. */
+  {
+    const grupos=new Map();
+    filas.forEach(f=>{ const k=[f.maquina,f.fecha,f.proyecto,f.item].join('|');
+      const a=grupos.get(k)||[]; a.push(f); grupos.set(k,a); });
+    for(const fs of grupos.values()){
+      if(fs.length<2) continue;
+      const horas=fs[0].horas||0, idle=fs[0].idle||0;
+      const pesos=fs.map(f=>f.produccion||0);
+      const base=pesos.reduce((a,b)=>a+b,0)>0?pesos:fs.map(()=>1);
+      const ph=repartirRedondeado(base,horas,2), pi=repartirRedondeado(base,idle,2);
+      fs.forEach((f,i)=>{ f.horas=ph[i]; f.idle=pi[i]; });
     }
   }
 
