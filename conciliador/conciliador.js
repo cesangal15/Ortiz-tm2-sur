@@ -115,6 +115,31 @@ function fmtNumTSV(v,dec){
   if(typeof v==='number'){ let s=String(v); if(dec===',') s=s.replace('.',','); return s; }
   return String(v);
 }
+
+/* ---- Celda SIN DATO REAL ("hueco"): vacía, cero literal o error de fórmula ----
+   Regla del acta (decisión jul-2026): NINGUNA columna del acta admite 0 — ni cantidad,
+   ni kilometrajes, ni m³·km, ni CC/placa/UF. Un 0 en la base es la digitadora dejando
+   el renglón a medias (típico en el cubicaje), no un dato; y un `#¡VALOR!`/`#N/A` es el
+   XLOOKUP de la hoja sin resolver todavía. Los dos se tratan como HUECO: se rellenan con
+   la proforma y, si la proforma tampoco lo sabe, la celda va VACÍA al acta (nunca 0 ni
+   `#¡VALOR!`) y sale marcada para que César la teclee. */
+
+// #¡VALOR! · #VALUE! · #N/A · #N/D · #REF! · #DIV/0! · #¿NOMBRE? · #NAME? · #NUM! · #SPILL!…
+const RE_ERROR_EXCEL=/^#[¡¿]?[A-ZÑ0-9_\/]+[!?]?$/i;
+function esErrorExcel(v){
+  return typeof v==='string' && RE_ERROR_EXCEL.test(v.trim());
+}
+// Cero literal en cualquier formato: 0 · "0" · "0,00" · "0.00" · "-" (formato contable).
+function esCeroLiteral(v){
+  if(typeof v==='number') return v===0;
+  if(typeof v!=='string') return false;
+  const s=v.trim();
+  if(!s) return false;
+  if(/^-+$/.test(s)) return true;                  // celda "tachada" del formato contable
+  if(!/^[-+]?[\d.,\s]+$/.test(s)) return false;    // no es puramente numérica → es texto real
+  return parseNum(s)===0;
+}
+function esHueco(v){ return v==null||v===''||esErrorExcel(v)||esCeroLiteral(v); }
 function uid(){ return 'r'+(++S.corte.secuencia); }
 function nowISO(){ return new Date().toISOString(); }
 
@@ -1259,15 +1284,24 @@ const Paso4={
 function abrirModal(html){ $('modal').innerHTML=html; $('modal-bg').classList.add('open'); }
 function cerrarModal(){ $('modal-bg').classList.remove('open'); S.ui.detalle=null; }
 
+// Celda de la base tal cual, pero delatando los HUECOS: un 0 o un #¡VALOR! no es un dato
+// (fila a medias), y así César ve de una por qué esa columna se rellenó con la proforma.
+function celdaBase(v){
+  if(v==null||v==='') return '<span class="note">vacío</span>';
+  if(esHueco(v)) return `<span style="color:var(--warn)">${escapeHtml(String(v))} <span class="marca">sin dato</span></span>`;
+  return escapeHtml(String(v));
+}
+
 function cardCandidato(cd,idx,rcId,esSugerencia,src){
   const btn=esSugerencia?'' :`<div style="margin-top:8px"><button class="btn mini ok" onclick="Acciones.usarCandidato('${rcId}',${idx},'${src||'candidatos'}')">Usar este candidato</button></div>`;
   return `<div class="cand-card ${esSugerencia?'sug':''}">
     <div class="row"><span class="k">Base</span><b>${cd.ambito}</b></div>
     ${esSugerencia?`<div class="row"><span class="k">Empresa</span><b>${escapeHtml(cd.empresa)}</b></div>`:''}
     <div class="row"><span class="k">Fecha</span><span>${fmtFecha(cd.fecha)}</span></div>
-    <div class="row"><span class="k">Placa</span><span>${escapeHtml(cd.placa)}</span></div>
-    <div class="row"><span class="k">Cantidad</span><span>${escapeHtml(String(cd.cantidad))}</span></div>
-    <div class="row"><span class="k">Origen→Destino</span><span>${escapeHtml(String(cd.kmIni))} → ${escapeHtml(String(cd.kmFin))}</span></div>
+    <div class="row"><span class="k">Placa</span><span>${celdaBase(cd.placa)}</span></div>
+    <div class="row"><span class="k">Cantidad</span><span>${celdaBase(cd.cantidad)}</span></div>
+    <div class="row"><span class="k">CC</span><span>${celdaBase(cd.cc)}</span></div>
+    <div class="row"><span class="k">Origen→Destino</span><span>${celdaBase(cd.kmIni)} → ${celdaBase(cd.kmFin)}</span></div>
     <div class="row"><span class="k">UF / Área</span><span>${escapeHtml(cd.uf)} / ${escapeHtml(cd.area)||'—'}</span></div>
     <div class="row"><span class="k">Remisión base</span><span class="mono">${escapeHtml(cd.rem)}</span></div>
     ${btn}</div>`;
@@ -1282,6 +1316,13 @@ const Acciones={
     let cuerpo='';
     if(rc.candidato&&['ENCONTRADA','EXCLUIDA_UF3','EXCLUIDA_OTRA_AREA','ACEPTADA_MANUAL','PENDIENTE_DIGITACION'].indexOf(rc.estado)>=0){
       cuerpo+=`<h4 style="font-size:12px;color:var(--muted);margin:10px 0 6px">CANDIDATO ASIGNADO</h4><div class="cand-grid">${cardCandidato(rc.candidato,-1,rc.id,true)}</div>`;
+      // Fila a medias: qué le rellena la proforma al acta y qué queda en blanco para teclear.
+      const comp=completarDesdeProforma(rc), sinDato=huecosSinDato(rc,comp);
+      if(comp) cuerpo+=`<div class="alert info">🩹 Fila a medias en la base: el acta rellena con la proforma
+        <b>${escapeHtml(Object.keys(comp).map(k=>LBL_CAMPO[k]||k).join(', '))}</b>
+        (un <b>0</b> o un <b>#¡VALOR!</b> de la base cuenta como celda sin dato, no se respeta).</div>`;
+      if(sinDato.length) cuerpo+=`<div class="alert warn">✋ Sin dato ni en la base ni en la proforma:
+        <b>${escapeHtml(sinDato.map(k=>LBL_CAMPO[k]||k).join(', '))}</b> — van EN BLANCO al acta (nunca en 0) para que las teclees.</div>`;
     }
     if(rc.candidatos&&rc.candidatos.length){
       cuerpo+=`<h4 style="font-size:12px;color:var(--muted);margin:10px 0 6px">CANDIDATOS (elige o rechaza — el sistema no adivina)</h4>
@@ -2064,6 +2105,8 @@ function obsReclamo(rc,comp){
   if(rc.marcas.indexOf('CELDA_MULTIPLE')>=0) o.push('de celda múltiple');
   if(rc.marcas.indexOf('MATCH_SIN_CEROS')>=0) o.push('match sin ceros confirmado');
   if(comp) o.push('completada con proforma ('+Object.keys(comp).map(k=>LBL_CAMPO[k]||k).join(', ')+')');
+  const sin=huecosSinDato(rc,comp);
+  if(sin.length) o.push('FALTA POR TECLEAR ('+sin.map(k=>LBL_CAMPO[k]||k).join(', ')+')');
   return o.join(' · ');
 }
 
@@ -2248,11 +2291,16 @@ function derivadosProforma(rc){
   let m3km=(kmTot!=null&&cant!=null)?+(kmTot*cant).toFixed(3):'';
   if(m3km===''){ const q=numProforma(s.m3km); if(q!=null) m3km=q; }
   const uf=String(v.cc||'').indexOf('3701')===0?'UF1':String(v.cc||'').indexOf('3702')===0?'UF2':'';
-  return {
+  const d={
     fecha:s.fecha?fmtFecha(s.fecha):'', uf, actividad:materialBasePendiente(rc), cc:v.cc||'',
     placa:s.placa||'', kmIni, kmFin, kmTot:kmTot!=null?kmTot:'',
     cantidad:cant!=null?cant:(s.cantidad||''), m3km, unidad:unidadDominante(tipo), area:v.area
   };
+  // La proforma también trae ceros de relleno (cubicaje en 0, PK en 0, "-"): un 0 no es dato,
+  // así que NO se propaga al acta ni sirve para completar la base. Se vacía aquí, en la fuente
+  // única, para que ningún bloque (pendientes ni completado) pueda escribir un 0.
+  for(const k of Object.keys(d)) if(k!=='area'&&esHueco(d[k])) d[k]='';
+  return d;
 }
 
 function filasActaPendientes(){
@@ -2278,28 +2326,50 @@ const LBL_CAMPO={uf:'UF',actividad:'actividad',cc:'CC',placa:'placa',kmIni:'km i
   kmFin:'km final',kmTot:'km totales',cantidad:'cantidad',m3km:'m³·km',unidad:'unidad'};
 
 // La remisión matcheó la base (remisión + empresa + fecha) pero la fila está A MEDIAS porque
-// la chequeadora apenas la digita: devuelve SOLO los campos vacíos en la base que la proforma
-// sí puede aportar (el PDF ya está probado por el match). No muta la base ni pisa lo tecleado.
+// la chequeadora apenas la digita: devuelve SOLO los campos SIN DATO REAL en la base que la
+// proforma sí puede aportar (el PDF ya está probado por el match). No muta la base ni pisa lo
+// tecleado. "Sin dato real" = vacío, 0 literal (el cubicaje en 0 de la digitadora) o error de
+// fórmula (#¡VALOR! del XLOOKUP en el CC): ninguno de los tres es un valor válido del acta.
 function completarDesdeProforma(rc){
   if(!rc.candidato) return null;
   const c=rc.candidato, d=derivadosProforma(rc), faltan={};
-  const vacio=x=>(x==null||x==='');
   for(const campo of CAMPOS_COMPLETABLES){
     if(campo==='uf'||campo==='m3km') continue;    // dependen de otros: al final
-    if(vacio(c[campo]) && !vacio(d[campo])) faltan[campo]=d[campo];
+    if(esHueco(c[campo]) && !esHueco(d[campo])) faltan[campo]=d[campo];
   }
-  if(vacio(c.uf)){                                 // UF desde el CC efectivo (base o rellenado)
-    const cc=vacio(c.cc)?faltan.cc:c.cc;
+  if(esHueco(c.uf)){                               // UF desde el CC efectivo (base o rellenado)
+    const cc=esHueco(c.cc)?faltan.cc:c.cc;
     const uf=String(cc||'').indexOf('3701')===0?'UF1':String(cc||'').indexOf('3702')===0?'UF2':'';
     if(uf) faltan.uf=uf;
   }
-  if(vacio(c.m3km)){                               // m³·km = km totales × cantidad (efectivos)
-    const kn=numProforma(vacio(c.kmTot)?faltan.kmTot:c.kmTot);
-    const cn=numProforma(vacio(c.cantidad)?faltan.cantidad:c.cantidad);
-    if(kn!=null&&cn!=null) faltan.m3km=+(kn*cn).toFixed(3);
-    else if(!vacio(d.m3km)) faltan.m3km=d.m3km;
+  if(esHueco(c.m3km)){                             // m³·km = km totales × cantidad (efectivos)
+    const kn=numProforma(esHueco(c.kmTot)?faltan.kmTot:c.kmTot);
+    const cn=numProforma(esHueco(c.cantidad)?faltan.cantidad:c.cantidad);
+    if(kn&&cn) faltan.m3km=+(kn*cn).toFixed(3);   // un factor en 0 daría 0: no es dato
+    else if(!esHueco(d.m3km)) faltan.m3km=d.m3km;
   }
   return Object.keys(faltan).length?faltan:null;
+}
+
+// Campos que quedan SIN DATO tras el completado: la base traía 0/#¡VALOR!/vacío y la proforma
+// tampoco los sabe. Van VACÍOS al acta (jamás el 0 ni el error) y se listan para que César los
+// teclee: es la única forma de no pagar un renglón con un cubicaje o un CC inventado.
+function huecosSinDato(rc,comp){
+  if(!rc.candidato) return [];
+  const c=rc.candidato, f=comp||{};
+  return CAMPOS_COMPLETABLES.filter(campo=>esHueco(c[campo])&&esHueco(f[campo]));
+}
+
+// Filas del acta que van con alguna celda en blanco por lo anterior (aviso del Paso 7).
+function reclamosConHuecos(){
+  if(!S.corte) return [];
+  const out=[];
+  for(const rc of S.corte.reclamos){
+    if(ESTADOS_ACTA.indexOf(rc.estado)<0) continue;
+    const campos=huecosSinDato(rc,completarDesdeProforma(rc));
+    if(campos.length) out.push({rc,campos});
+  }
+  return out;
 }
 
 // Filas del acta completadas con proforma (base a medias): para el aviso del Paso 7 y el resumen.
@@ -2331,8 +2401,10 @@ function filasActa(){
       const c=rc.candidato; if(!c) return '';
       if(cd.campo==='fecha') return c.fecha?fmtFecha(c.fecha):'';
       let v=c[cd.campo];
-      if((v==null||v==='') && comp && comp[cd.campo]!=null) v=comp[cd.campo];
-      return v==null?'':v;
+      if(esHueco(v) && comp && comp[cd.campo]!=null) v=comp[cd.campo];
+      // Ninguna columna del acta admite 0 ni un error de fórmula: si sigue siendo hueco,
+      // la celda va VACÍA (queda listada en el aviso del Paso 7 para que César la teclee).
+      return esHueco(v)?'':v;
     });
   });
 }
@@ -2342,6 +2414,7 @@ function vistaPaso7(){
   const cfg=S.config; const c=conteoEstados();
   const acta=filasActa();
   const compl=reclamosCompletados();
+  const huecos=reclamosConHuecos();
   const pend=S.corte.reclamos.filter(r=>r.estado==='PENDIENTE_DIGITACION');
   const cab=cfg.actaLayout.map(cd=>`<th>${escapeHtml(cd.col)}<br><span style="font-weight:400">${escapeHtml(cd.titulo)}</span></th>`).join('');
   const filas=acta.slice(0,200).map(row=>'<tr>'+row.map(v=>`<td>${escapeHtml(fmtNumTSV(v,cfg.decimalTSV))}</td>`).join('')+'</tr>').join('');
@@ -2361,6 +2434,12 @@ function vistaPaso7(){
     ${compl.length?`<div class="alert info" style="margin-bottom:8px">🩹 <b>${compl.length}</b> fila(s) estaban A MEDIAS en la base (la chequeadora aún las digitaba):
       la remisión ya matcheó (empresa + fecha), así que el PDF está probado y se completaron los huecos con la proforma.
       Van marcadas en Observaciones (“completada con proforma …”). Cuando la chequeadora termine y recargues las bases, el dato real gana solo. Verifícalas.</div>`:''}
+    ${huecos.length?`<div class="alert warn" style="margin-bottom:8px">✋ <b>${huecos.length}</b> fila(s) van con celdas <b>EN BLANCO</b>: la base traía <b>0</b> o <b>#¡VALOR!</b> (no es un dato) y la proforma tampoco lo aporta.
+      El acta NUNCA escribe 0 ni el error — la celda queda vacía y marcada “FALTA POR TECLEAR” en Observaciones. Tecléalas tú antes de firmar:
+      <div class="tbl-wrap" style="max-height:180px;overflow-y:auto;margin-top:6px"><table class="tbl">
+        <tr><th>Remisión</th><th>Fecha base</th><th>Celdas sin dato</th></tr>
+        ${huecos.map(h=>`<tr><td class="mono">${escapeHtml(h.rc.remision||'')}</td><td class="note">${h.rc.candidato?fmtFecha(h.rc.candidato.fecha):''}</td><td>${escapeHtml(h.campos.map(k=>LBL_CAMPO[k]||k).join(', '))}</td></tr>`).join('')}
+      </table></div></div>`:''}
     <div class="tbl-wrap" style="max-height:340px;overflow-y:auto"><table class="tbl"><tr>${cab}</tr>${filas}</table></div>
     ${acta.length>200?'<div class="note">(vista previa limitada a 200 filas; el export lleva todas)</div>':''}
   </div>
@@ -2451,6 +2530,9 @@ function resumenCorte(){
   const compl=reclamosCompletados();
   if(compl.length){ lin.push(''); lin.push('COMPLETADAS CON PROFORMA — fila a medias en la base ('+compl.length+'):');
     for(const x of compl) lin.push('  '+x.rc.remision+' ['+x.campos.map(k=>LBL_CAMPO[k]||k).join(', ')+']'); }
+  const hue=reclamosConHuecos();
+  if(hue.length){ lin.push(''); lin.push('CELDAS EN BLANCO POR TECLEAR — la base traía 0/#¡VALOR! y la proforma no lo aporta ('+hue.length+'):');
+    for(const x of hue) lin.push('  '+x.rc.remision+' ['+x.campos.map(k=>LBL_CAMPO[k]||k).join(', ')+']'); }
   const yn=S.corte.yaNoReclamadas||[];
   if(yn.length){ lin.push(''); lin.push('YA NO RECLAMADAS tras reemplazo de proforma ('+yn.length+'): '+yn.join(', ')); }
   // páginas de PDF que el OCR no pudo cruzar (partes sin reconocer)
@@ -2524,7 +2606,8 @@ const Exportes={
     for(const rc of pend){
       const s=rc.secundarios||{};
       const notas=[rc.obs, rc.historial.filter(h=>!h.auto&&h.nota).map(h=>h.nota).join(' · ')].filter(Boolean).join(' · ');
-      aoa.push([rc.remision,rc.ambito,s.fecha?fmtFecha(s.fecha):'',s.placa||'',s.cantidad||'',s.origen||'',s.destino||'',
+      // cantidad en 0 de la proforma → vacía: la digitadora la lee del comprobante, no copia un 0.
+      aoa.push([rc.remision,rc.ambito,s.fecha?fmtFecha(s.fecha):'',s.placa||'',esHueco(s.cantidad)?'':s.cantidad,s.origen||'',s.destino||'',
         rc.evidencia?rc.evidencia.archivo:'',rc.evidencia?rc.evidencia.pagina:'',notas]);
     }
     const ws=XLSX.utils.aoa_to_sheet(aoa);
@@ -2762,6 +2845,7 @@ if(typeof module!=='undefined'&&module.exports){
     normRem,sinCeros,normTexto,normCol,quitarTildes,escapeHtml,dist1,
     serialToISO,parseFechaTexto,parseFechaCell,fmtFecha,fmtRezago,
     colLetter,letterToNum,refRange,cellText,parseNum,fmtNumTSV,
+    esErrorExcel,esCeroLiteral,esHueco,
     configSeed,seedHojas,cargarConfig,getContratista,
     BASES_DEF,leerBase,
     resolverAmbitoHoja,detectarEncabezado,detectarSecundarias,extraerTokens,esParSospechoso,
@@ -2773,7 +2857,7 @@ if(typeof module!=='undefined'&&module.exports){
     ambitoPdfDe,ambitoPdfPorNombre,ambitoCompatible,etiquetaAmbito,sugerirAmbitoPdf,clasificarPaginas,
     pkDeTexto,ccCatalogo,propuestaPendiente,valoresActaPendiente,pendientesConComprobante,filasActaPendientes,CC_AREA_AJENA,
     pkMetros,kmTotalesPendiente,unidadDominante,reglaMaterialPendiente,materialBasePendiente,numProforma,
-    derivadosProforma,completarDesdeProforma,reclamosCompletados,
+    derivadosProforma,completarDesdeProforma,reclamosCompletados,huecosSinDato,reclamosConHuecos,CAMPOS_COMPLETABLES,LBL_CAMPO,
     S,ESTADOS,ESTADOS_ACTA
   };
 }
