@@ -100,7 +100,18 @@ const EXTRAS_ADMIN_HEADERS  = ['fecha','cc','proyecto','horas','tipo','timestamp
 const NOTAS_ASISTENCIA_HEADERS = ['fecha','cuadrilla','reporta','nota','timestamp'];
 
 /* ---------- helpers genéricos (mismo patrón que Codigo.gs) ---------- */
-function json(o){ return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
+/**
+ * D99 (Fase 2, punto 4) — campo `_ms` = milisegundos de SERVIDOR en toda respuesta JSON.
+ * Sirve para separar lo que tarda Apps Script de lo que tarda la red/el arranque del contenedor: el
+ * frontend (`DEBUG_PERF` en `resumen-asistencia.html`) ya lo lee y muestra `servidor_ms` y `red_ms`
+ * en su `console.table`. Si `_ms` sale bajo y el total alto, el problema NO está en este script.
+ * `_t0` lo siembran `doGet`/`doPost`; sin él (llamada desde el editor) no se agrega el campo.
+ */
+var _t0 = null;
+function json(o){
+  if(_t0 !== null && o && typeof o === 'object' && o._ms === undefined) o._ms = Date.now() - _t0;
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
 function fdate(v){
   if(v === null || v === undefined || v === '') return '';
   if(typeof v === 'object' && typeof v.getFullYear === 'function')
@@ -148,22 +159,63 @@ function ensureCols_(sheet, nCols) {
   }
 }
 
+/**
+ * D99 (Fase 2, punto 1) — UNA sola apertura del Spreadsheet por ejecución.
+ * Antes, `getSheet`/`readSheet` hacían `SpreadsheetApp.openById(SHEET_ID)` en CADA llamada: una
+ * petición de `?action=asistencia` abría el archivo 14 veces. La referencia perezosa lo abre la
+ * primera vez que hace falta y la reusa el resto de la ejecución.
+ * OJO: es una variable de ejecución, NO un caché entre peticiones — Apps Script arranca un contexto
+ * nuevo por petición, así que nunca sobrevive a la llamada.
+ */
+var _ss = null;
+function ss_(){ if(!_ss) _ss = SpreadsheetApp.openById(SHEET_ID); return _ss; }
+
+/**
+ * D99 (Fase 2, punto 1) — Memoria de lectura DENTRO DE UNA MISMA EJECUCIÓN.
+ * Los helpers (`areaDeCuadrillaMap`, `cuadrillasInactivasSet`, `getConfigMap`, `ccUsadosParaArea`…)
+ * llaman a `readSheet` cada uno por su cuenta, así que la misma hoja se releía varias veces en la
+ * misma petición: CUADRILLAS ×3 y CONFIG ×2 en `asistenciaDia`, y **ASISTENCIA entera ×2** en
+ * `exportDia` (punto 3). Con esta memoria, la segunda lectura de una hoja sale gratis.
+ *
+ * NO es `CacheService`: vive solo lo que dura la petición, así que **no puede devolver datos viejos
+ * a otra llamada** — el riesgo de invalidación de la Fase 2 punto 5 no aplica aquí. Aun así, todo
+ * punto de escritura invalida su hoja (`invalidarHoja_`) por si en el futuro alguien lee después de
+ * escribir en el mismo `doPost`.
+ * Los llamadores nunca mutan el arreglo devuelto (usan filter/map/find; `roster` ordena la COPIA que
+ * devuelve su `filter`), verificado antes de introducir la memoria.
+ */
+var _memoHoja = {};
+function invalidarHoja_(nombre){ delete _memoHoja[nombre]; }
+
 function getSheet(name, headers){
-  const ss=SpreadsheetApp.openById(SHEET_ID); let sh=ss.getSheetByName(name);
+  const ss=ss_(); let sh=ss.getSheetByName(name);
   if(!sh) sh=ss.insertSheet(name);
   const need=headers.length;
   ensureCols_(sh, need);   // D93: ancho de grilla suficiente para los encabezados de esta hoja
+  invalidarHoja_(name);    // D99: getSheet puede escribir encabezados y precede a toda escritura
   if(sh.getLastRow()===0){ sh.getRange(1,1,1,need).setValues([headers]); return sh; }
   const cur=sh.getRange(1,1,1,need).getValues()[0];
   let diff=false; for(let i=0;i<need;i++){ if(String(cur[i]||'')!==headers[i]){ diff=true; break; } }
   if(diff) sh.getRange(1,1,1,need).setValues([headers]);
   return sh;
 }
+/**
+ * D99 (Fase 2, punto 2) — lectura ACOTADA en vez de `getDataRange()`.
+ * `getDataRange()` traía todas las columnas que tuviera la hoja, aunque el endpoint solo use las del
+ * encabezado. Ahora se lee `getRange(1, 1, lastRow, nCols)` con `nCols` = columnas del encabezado,
+ * topado al ancho real de la grilla para no salirse de rango en una hoja más angosta (ahí las
+ * columnas que falten quedan `undefined`, exactamente igual que antes con `getDataRange`).
+ */
 function readSheet(name, headers){
-  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName(name);
-  if(!sh || sh.getLastRow()<2) return [];
-  const v=sh.getDataRange().getValues(), h=headers||v[0], out=[];
-  for(let i=1;i<v.length;i++){ const o={}; h.forEach((k,j)=>o[k]=v[i][j]); o._row=i+1; out.push(o); }
+  if(_memoHoja.hasOwnProperty(name)) return _memoHoja[name];
+  const sh=ss_().getSheetByName(name), out=[];
+  const last = sh ? sh.getLastRow() : 0;
+  if(sh && last>=2){
+    const nCols = Math.min(headers ? headers.length : sh.getLastColumn(), sh.getMaxColumns());
+    const v=sh.getRange(1,1,last,nCols).getValues(), h=headers||v[0];
+    for(let i=1;i<v.length;i++){ const o={}; h.forEach((k,j)=>o[k]=v[i][j]); o._row=i+1; out.push(o); }
+  }
+  _memoHoja[name]=out;
   return out;
 }
 function norm(s){ return String(s==null?'':s).trim().toLowerCase(); }
@@ -316,6 +368,7 @@ function proyectoFromCC(cc){
 
 /* ---------- routing ---------- */
 function doGet(e){
+  _t0 = Date.now();   // D99: siembra el cronómetro de servidor (`_ms` en la respuesta)
   const a=((e.parameter.action)||'').toLowerCase();
   if(a==='roster')     return roster(e);
   if(a==='asistencia') return asistenciaDia(e);
@@ -328,6 +381,7 @@ function doGet(e){
   return json({ok:true, msg:'API Asistencias viva'});
 }
 function doPost(e){
+  _t0 = Date.now();   // D99: cronómetro de servidor también en las escrituras
   try{
     const body=JSON.parse(e.postData.contents);
     if(body.action==='reporte_asistencia')  return guardarAsistencia(body);
@@ -538,6 +592,7 @@ function guardarIndividual(body){
   // exactamente 1+todas.length filas — las que ocupa la reescritura completa.
   if(todas.length){ ensureRows_(sh, todas.length);
     sh.getRange(2,1,todas.length,need).setValues(todas); }
+  invalidarHoja_('ASISTENCIA');   // D99: la memoria de esta ejecución ya no refleja la hoja
   return json({ok:true, filas:nuevas.length});
 }
 
@@ -718,6 +773,7 @@ function guardarExtrasAdmin(body){
   sh.getRange(1,1,1,need).setValues([EXTRAS_ADMIN_HEADERS]);
   if(rows.length){ ensureRows_(sh, rows.length);   // D93
     sh.getRange(2,1,rows.length,need).setValues(rows); }
+  invalidarHoja_('EXTRAS_ADMIN');   // D99
   return json({ ok:true, msg:'Extra guardada: '+fecha+' · '+horas+'h '+tipo+' · '+cc+' (proyecto '+(proyecto||'?')+').', proyecto });
 }
 // POST {action:'extras_admin_delete', fecha} → elimina la fila del día.
@@ -735,6 +791,7 @@ function borrarExtrasAdmin(body){
   // escribe si hay espacio).
   if(rows.length){ ensureRows_(sh, rows.length);
     sh.getRange(2,1,rows.length,need).setValues(rows); }
+  invalidarHoja_('EXTRAS_ADMIN');   // D99
   const borradas=antes-rows.length;
   return json({ ok:true, msg: borradas ? ('Extra del '+fecha+' eliminada.') : ('No había extra registrada el '+fecha+'.'), borradas });
 }
@@ -768,6 +825,7 @@ function guardarAsistencia(body){
   // clearContents + encabezado, getLastRow()=1, así que se piden 1+todas.length filas).
   if(todas.length){ ensureRows_(sh, todas.length);
     sh.getRange(2,1,todas.length,need).setValues(todas); }
+  invalidarHoja_('ASISTENCIA');   // D99
   // D74: nota libre del día por cuadrilla (pisa fecha+cuadrilla, igual que las filas).
   upsertNotaDia(fecha, cuadrilla, reporta, body.nota, ts);
   return json({ ok:true, filas:nuevas.length });
@@ -785,6 +843,7 @@ function upsertNotaDia(fecha, cuadrilla, reporta, nota, ts){
   sh.getRange(1,1,1,need).setValues([NOTAS_ASISTENCIA_HEADERS]);
   if(rows.length){ ensureRows_(sh, rows.length);   // D93
     sh.getRange(2,1,rows.length,need).setValues(rows); }
+  invalidarHoja_('NOTAS_ASISTENCIA');   // D99
 }
 function notasDelDia(fecha){
   const f=fdate(fecha);
@@ -816,6 +875,7 @@ function gestionPersonal(body){
     // D72: fecha_ingreso (col 9) permite el alta retroactiva ("desde cierto día"); por defecto, hoy.
     const fechaIng=fdate(body.fecha_ingreso)||hoy;
     sh.appendRow([body.cedula||'', body.codigo||'', body.nombre||'', body.cargo||'', cuadrilla, responsable, 'activo', '', fechaIng]);
+    invalidarHoja_('PERSONAL');   // D99
     return json({ok:true, op:'alta'});
   }
   const row=Number(body._row);
@@ -833,11 +893,13 @@ function gestionPersonal(body){
     const fechaRet=fdate(body.fecha_retiro)||hoy;
     sh.getRange(row,7).setValue('inactivo');       // col 7 = estado
     sh.getRange(row,8).setValue(fechaRet);         // col 8 = fecha_retiro
+    invalidarHoja_('PERSONAL');   // D99
     return json({ok:true, op:'retiro'});
   }
   if(op==='reactivar'){
     sh.getRange(row,7).setValue('activo');
     sh.getRange(row,8).setValue('');               // limpia el retiro; conserva fecha_ingreso (col 9)
+    invalidarHoja_('PERSONAL');   // D99
     return json({ok:true, op:'reactivar'});
   }
   if(op==='reingreso'){
@@ -850,6 +912,7 @@ function gestionPersonal(body){
     if(!src) return json({ok:false, error:'No se encontró la persona a reingresar.'});
     const responsable=responsableDeCuadrilla(src.cuadrilla)||src.responsable||'';
     sh.appendRow([src.cedula||'', src.codigo||'', src.nombre||'', src.cargo||'', src.cuadrilla||'', responsable, 'activo', '', fechaIng]);
+    invalidarHoja_('PERSONAL');   // D99
     return json({ok:true, op:'reingreso'});
   }
   if(op==='mover'){
@@ -858,6 +921,7 @@ function gestionPersonal(body){
     const responsable=responsableDeCuadrilla(cuadrilla);
     sh.getRange(row,5).setValue(cuadrilla);        // col 5 = cuadrilla
     sh.getRange(row,6).setValue(responsable);       // col 6 = responsable
+    invalidarHoja_('PERSONAL');   // D99
     return json({ok:true, op:'mover'});
   }
   return json({ok:false, error:'op no reconocida'});

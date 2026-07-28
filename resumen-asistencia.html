@@ -118,7 +118,9 @@ async function perfFetch(label, url, opts){
     try{ data=JSON.parse(txt); }catch(e){ err=e; }
     if(DEBUG_PERF){
       const reg={ peticion:label, ms, kb:Math.round(txt.length/102.4)/10 };
-      if(data && data._ms!=null){ reg.servidor_ms=data._ms; reg.red_ms=ms-Number(data._ms); }
+      // `red_ms` = lo que NO fue Apps Script (arranque del contenedor, redirección de /exec, red y
+      // descarga). Se acota a 0: si los dos relojes discrepan podría salir negativo y confundir.
+      if(data && data._ms!=null){ reg.servidor_ms=Number(data._ms); reg.red_ms=Math.max(0, ms-Number(data._ms)); }
       PERF.push(reg);
     }
     if(err) throw new Error('Respuesta no-JSON del Apps Script (¿implementación caída o sesión de Google?).');
