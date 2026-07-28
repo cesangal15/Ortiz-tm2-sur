@@ -162,6 +162,14 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
       <div>
         <label class="fld">Opciones</label>
         <div class="chk" style="margin-bottom:8px">
+          <input type="checkbox" id="repartoDiario" checked>
+          <label for="repartoDiario"><b>Repartir día por día</b> — <b>encendido por defecto</b>: la producción de
+            cada día se reparte entre las máquinas que <b>ese día</b> reportaron horas en esa actividad. Apagado,
+            se reparte el total del corte por las horas del mes y luego se derrama sobre los días.
+            Encendido importa cuando dos máquinas se turnan: en BTC la motoniveladora solo entra cuando no está
+            el finisher, así que por mes salían las dos con el mismo rendimiento y por día cada una con el suyo.</label>
+        </div>
+        <div class="chk" style="margin-bottom:8px">
           <input type="checkbox" id="separarUF">
           <label for="separarUF"><b>Separar por UF</b> (3701 / 3702) — <b>apagado por defecto</b>: al informe le interesa
             la producción de la actividad, no en qué UF se hizo. Apagado, cada actividad se junta entre las dos UF y se
@@ -569,6 +577,7 @@ function leerParams(){
     mapa: mapa.length?mapa:MAPA_ACTIVIDAD,
     pctBull: Math.min(100,Math.max(0,parseFloat(document.getElementById('pctBull').value)||0))/100,
     separarUF: document.getElementById('separarUF').checked,
+    repartoDiario: document.getElementById('repartoDiario').checked,
     minDia: Math.max(0,parseFloat(document.getElementById('minDia').value)||0),
     soloHoras: document.getElementById('soloHoras').checked,
     desde: document.getElementById('desde').value,
@@ -902,10 +911,18 @@ function leerParteMensual(ws,P){
    que la máquina del CC no reportó horas, su producción se iba a otra UF por el fallback.
    Con el mes: horas en el CC exacto → horas en el ítem en cualquier UF → horas totales →
    partes iguales. Nunca queda producción huérfana si hay al menos una candidata. */
-function pesosDe(cands, proyecto, item, cruzarUF){
+function pesosDe(cands, proyecto, item, cruzarUF, fecha, jefe){
   const niveles=[];
-  if(!cruzarUF) niveles.push(['horas en el CC exacto', cands.map(m=>m.cc.get(proyecto+'|'+item)||0)]);
-  niveles.push(['horas en el ítem (cruce UF)', cands.map(m=>m.porItem.get(item)||0)]);
+  /* Con reparto POR DÍA manda quién estuvo ESE día: en BTC la motoniveladora y el finisher
+     nunca coinciden —se usa la moto cuando no está el finisher— así que repartir por horas
+     del mes les daba a los dos el mismo rendimiento. Por día, cada uno se lleva lo suyo. */
+  if(fecha && jefe && jefe.dias.size){
+    const hd=(m,p)=>{ const d=jefe.dias.get(fecha+'|'+m.cod+'|'+p+'|'+item); return d?d.horas:0; };
+    if(!cruzarUF) niveles.push(['horas de ese día en el CC', cands.map(m=>hd(m,proyecto))]);
+    niveles.push(['horas de ese día en la actividad', cands.map(m=>PROYECTOS.reduce((a,p)=>a+hd(m,p),0)+hd(m,''))]);
+  }
+  if(!cruzarUF) niveles.push(['horas del corte en el CC exacto', cands.map(m=>m.cc.get(proyecto+'|'+item)||0)]);
+  niveles.push(['horas del corte en la actividad', cands.map(m=>m.porItem.get(item)||0)]);
   niveles.push(['horas totales', cands.map(m=>m.horasTotal||0)]);
   for(const [base,pesos] of niveles) if(pesos.reduce((a,b)=>a+b,0)>0) return {pesos:pesos, base:base};
   return {pesos:cands.map(()=>1), base:'partes iguales'};
@@ -953,11 +970,11 @@ function repartir(P, dsProd, jefe){
   /* Unidad de reparto. Por defecto **la UF no cuenta**: al informe le interesa la producción
      de la actividad, no en qué UF se hizo, así que las dos UF se juntan y el peso es el total
      de horas de la máquina en esa actividad. Con `separarUF` se vuelve al reparto por UF. */
-  const prodUnidad=new Map();     // clave -> total del corte
+  const prodUnidad=new Map();     // clave -> total
   const prodPorProy=new Map();    // clave -> Map(proyecto -> total)  (para repartir de vuelta)
   for(const [k,v] of dsProd.prodDia){
-    const p=k.split('|'), proyecto=p[1];
-    const ku=(P.separarUF?proyecto+'|':'')+p[2]+'|'+p[3];
+    const p=k.split('|'), fecha=p[0], proyecto=p[1];
+    const ku=(P.repartoDiario?fecha+'|':'')+(P.separarUF?proyecto+'|':'')+p[2]+'|'+p[3];
     prodUnidad.set(ku,(prodUnidad.get(ku)||0)+v);
     let m=prodPorProy.get(ku); if(!m){ m=new Map(); prodPorProy.set(ku,m); }
     m.set(proyecto,(m.get(proyecto)||0)+v);
@@ -965,9 +982,11 @@ function repartir(P, dsProd, jefe){
 
   for(const [k,total] of prodUnidad){
     const partes_k=k.split('|');
-    const proyecto=P.separarUF?partes_k[0]:null;
-    const item=P.separarUF?partes_k[1]:partes_k[0];
-    const na=P.separarUF?partes_k[2]:partes_k[1];
+    let i=0;
+    const fechaU=P.repartoDiario?partes_k[i++]:null;
+    const proyecto=P.separarUF?partes_k[i++]:null;
+    const item=partes_k[i++];
+    const na=partes_k[i];
     const noAprov=na==='1';
     const coh=COHERENCIA[item];
     if(!coh){ huerfanas.push({proyecto:proyecto,item:item,total:total,motivo:'CC sin regla de coherencia'}); continue; }
@@ -990,12 +1009,13 @@ function repartir(P, dsProd, jefe){
     const proyectosDe=[...(prodPorProy.get(k)||new Map()).entries()];   // [[proyecto, producción], …]
 
     grupos.forEach((g,gi)=>{
-      const {pesos,base}=pesosDe(g.cands,proyecto,item,!P.separarUF);
+      const {pesos,base}=pesosDe(g.cands,proyecto,item,!P.separarUF,fechaU,jefe);
       const partes=repartirRedondeado(pesos,totales[gi],DEC);
-      const bk=k+'|'+g.tipos.join('+');
+      const bk=(P.separarUF?proyecto+'|':'')+item+'|'+g.tipos.join('+');
       const bb=basesUsadas.get(bk)||{proyecto:proyecto,item:item,tipos:g.tipos.join('+'),share:shares[gi],bases:new Map()};
       bb.bases.set(base,1); basesUsadas.set(bk,bb);
-      g.cands.forEach((m,i)=>{
+      g.cands.forEach((mi_,i)=>{
+        const m=mi_;
         if(!partes[i]) return;
         /* Sin separar UF, el total de la máquina se devuelve a los proyectos donde ELLA
            trabajó esa actividad (así `id_proyecto` sigue teniendo sentido en fact_jefe y en
@@ -1004,14 +1024,28 @@ function repartir(P, dsProd, jefe){
         if(P.separarUF){
           porProy=[[proyecto,partes[i]]];
         }else{
-          const hs=proyectosDe.map(([pr])=>m.cc.get(pr+'|'+item)||0);
+          // Sin separar UF: el monto vuelve a los proyectos donde ESA máquina trabajó la
+          // actividad (ese día si el reparto es diario), y si no, siguiendo la producción.
+          const porDia = fechaU && jefe.dias.size;
+          let hs = porDia
+            ? proyectosDe.map(([pr])=>{ const d=jefe.dias.get(fechaU+'|'+m.cod+'|'+pr+'|'+item); return d?d.horas:0; })
+            : proyectosDe.map(([pr])=>m.cc.get(pr+'|'+item)||0);
+          // Si ese día no reportó horas en la actividad, se cae a las horas del corte antes
+          // que a la forma de la producción: si la máquina solo trabajó en una UF, su
+          // producción no debe aparecer en la otra.
+          if(porDia && hs.reduce((a,b)=>a+b,0)<=0) hs=proyectosDe.map(([pr])=>m.cc.get(pr+'|'+item)||0);
           const pesosProy = hs.reduce((a,b)=>a+b,0)>0 ? hs : proyectosDe.map(([,v])=>v);
           const trozos=repartirRedondeado(pesosProy,partes[i],DEC);
           porProy=proyectosDe.map(([pr],j)=>[pr,trozos[j]]);
         }
         porProy.forEach(([pr,monto])=>{
           if(!monto) return;
-          // El total de esta máquina en ese proyecto se derrama sobre los días del corte.
+          if(fechaU){   // reparto diario: la unidad YA es un día, no hay que derramar
+            asign.push({ cod:m.cod, tipo:m.tipo, fecha:fechaU, proyecto:pr, item:item,
+                         noAprov:noAprov, produccion:monto, base:base });
+            return;
+          }
+          // Reparto del corte: el total de esta máquina se derrama sobre los días.
           const d=derramarEnDias(m.cod,pr,item,noAprov,monto,jefe,dsProd,P.minDia);
           dsProd.dias.forEach((fecha,di)=>{
             if(!d.partes[di]) return;
