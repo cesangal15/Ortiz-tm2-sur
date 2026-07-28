@@ -74,7 +74,7 @@ auto-corrige (filosofía: nunca asumir), pero te lo hace evidente por tres vías
 
 Si la remisión matchea la base (remisión + empresa + fecha) pero la fila está
 **incompleta** porque la chequeadora apenas la digita, el match ya prueba que
-el PDF existe. El acta rellena SOLO las celdas vacías de esa fila con los
+el PDF existe. El acta rellena SOLO las celdas **sin dato** de esa fila con los
 valores derivados de la proforma (mismo motor que el bloque de pendientes:
 CC/UF, actividad-material, placa, kilometrajes, cantidad, m³·km, unidad) y lo
 marca en Observaciones ("completada con proforma (CC, km totales…)"). Nunca
@@ -82,6 +82,32 @@ pisa lo que la chequeadora ya tecleó, solo llena huecos. Se calcula en vivo:
 cuando ella termine y recargues las bases (Paso 1), el dato real de la base
 gana solo y la marca desaparece. El Paso 7 avisa cuántas filas se completaron
 y las lista en el resumen del corte.
+
+**Celda "sin dato" = vacía, en 0, o con error de fórmula** (decisión jul-2026).
+**Ninguna columna del acta admite 0**: no existe casilla donde un cero tenga
+sentido (ni cantidad/cubicaje, ni kilometrajes, ni m³·km, ni CC/placa/UF). Así
+que un `0` — el que la digitadora deja de paso en el cubicaje mientras completa
+el renglón — y un `#¡VALOR!` / `#N/A` / `#REF!` (el XLOOKUP de la hoja sin
+resolver, típico en la columna del CC) **no cuentan como valor**: se tratan
+igual que una celda vacía y se rellenan con la proforma. Formatos reconocidos
+como cero: `0`, `"0"`, `"0,00"`, `"0.00"` y el `-` del formato contable.
+
+Consecuencias:
+
+- El CC con `#¡VALOR!` ya **no se copia tal cual al acta**: se reemplaza por el
+  CC propuesto desde la proforma (mismo motor de prefijo por PK + sufijo por
+  material del bloque de pendientes) y de ahí se deriva la UF.
+- Un factor en 0 tampoco genera derivados: `m³·km = km totales × cantidad` solo
+  se calcula si ambos son distintos de 0.
+- La proforma tampoco puede aportar ceros: si su cantidad/PK viene en 0, se
+  descarta igual (no se cambia un 0 de la base por un 0 de la proforma).
+- Si ni la base ni la proforma tienen el dato, la celda va **VACÍA** al acta
+  —nunca 0 ni `#¡VALOR!`— con la marca `FALTA POR TECLEAR (cantidad, CC…)` en
+  Observaciones. El Paso 7 las lista en un aviso naranja (remisión · fecha ·
+  celdas) y el resumen del corte las repite, para teclearlas antes de firmar.
+- En el detalle de la reclamación, las celdas del candidato que son 0 o error
+  salen en naranja con la etiqueta `sin dato`, y un aviso resume qué rellenó la
+  proforma y qué queda por teclear.
 
 ## Bloque acta (contrato de pegado)
 
@@ -194,7 +220,10 @@ comprobables sin navegador: normalización (0348/CH6199), explosión
 `31428-31432-31441` vs par sospechoso `31428-31500`, exclusiones UF3/PUENTE/ODT
 con DIVISO neutro, filtro por empresa y fecha mínima, duplicadas, rezagos,
 MATCH_SIN_CEROS a revisión, re-conciliación preservando decisiones manuales,
-bloque acta (19 columnas, derivadas vacías, orden por fecha), detección de hoja
+bloque acta (19 columnas, derivadas vacías, orden por fecha), **regla "ninguna
+casilla admite 0"** (0/`"0,00"`/`-`/`#¡VALOR!`/`#N/A` de la base tratados como
+hueco y rellenados con la proforma, CC corregido, celda vacía + "FALTA POR
+TECLEAR" cuando nadie tiene el dato, fila completa intacta), detección de hoja
 mal clasificada con cambio de ámbito, y rendimiento (25k filas ≈ 0,6 s de
 indexado; 800 reclamaciones ≈ 6 ms). La pasada roja del OCR se validó offline
 contra partes escaneados reales de PUTANA (misma fórmula de filtro, tesseract
