@@ -42,6 +42,13 @@
   .tot-row .cat{color:var(--muted);min-width:0;}
   .tot-row .val{font-family:'Syne',sans-serif;font-weight:700;white-space:nowrap;}
   .grupo-cat{font-family:'Syne',sans-serif;font-size:12px;color:var(--accent);text-transform:uppercase;letter-spacing:1px;margin:16px 0 8px;}
+  /* D103 — notas generales del día que dejan los capataces de drenajes (hoja OBSERVACIONES) */
+  .obs-box{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:16px;}
+  .obs-item{background:var(--bg);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:8px 12px;margin-bottom:6px;}
+  .obs-item:last-child{margin-bottom:0;}
+  .obs-quien{font-size:10px;font-weight:600;color:var(--accent);text-transform:uppercase;letter-spacing:1px;display:flex;align-items:center;gap:6px;margin-bottom:3px;}
+  .obs-txt{font-size:13px;color:var(--text);line-height:1.5;white-space:pre-wrap;}
+  .obs-vacio{font-size:12px;color:var(--muted);}
   .linea-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;}
   .linea-item.off{opacity:0.5;}
   .tog{background:none;border:1px solid var(--border);border-radius:7px;width:30px;height:30px;font-size:15px;cursor:pointer;flex-shrink:0;line-height:1;}
@@ -287,6 +294,11 @@ function render(){
   html+='<div class="section-title">Totales del día (solo incluidos)</div>';
   vis.forEach(ar=>{ html+=renderTotalesArea(ar); });
 
+  // Notas generales del día (D103): una por envío de capataz, del día completo. No cuelgan de ninguna
+  // línea (las notas POR actividad se ven en cada línea de la bandeja) y ya salían al WhatsApp; aquí se
+  // muestran también en el panel para que el residente las lea antes de enviar a DATA.
+  html+='<div class="section-title">Notas generales del día</div>'+renderObsGenerales(vis);
+
   html+='<div class="section-title">Bandeja del día <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);font-size:11px;">(prende/apaga para incluir en DATA)</span></div>';
   html+='<div id="bandejaBox">'+renderBandeja()+'</div>';
   html+=renderAddCard();
@@ -330,6 +342,30 @@ function renderTotalesArea(ar){
   } else html+='<div class="cat" style="color:var(--muted)">Sin cantidades incluidas</div>';
   html+='</div>';
   return html;
+}
+
+/* D103 — notas GENERALES del día (hoja OBSERVACIONES) de las áreas visibles. Distintas de la nota por
+ * actividad (`nota_libre`, que se pinta dentro de cada línea): estas son del día completo. */
+function renderObsGenerales(vis){
+  // Una nota de un capataz con las DOS áreas (D84) se sella 'odt,odl' y entra a STATE una vez por área;
+  // en el panel se muestra UNA sola vez con las áreas a las que pertenece (en el WhatsApp sí va en las dos).
+  const uniq={}, orden=[];
+  STATE.observaciones.forEach(o=>{
+    const txt=String(o.observacion||'').trim();
+    if(!txt || vis.indexOf(o._area)<0) return;
+    const k=(o.reporta||'?')+'||'+txt;
+    if(!uniq[k]){ uniq[k]={reporta:o.reporta||'?', txt:txt, areas:[]}; orden.push(k); }
+    if(uniq[k].areas.indexOf(o._area)<0) uniq[k].areas.push(o._area);
+  });
+  if(!orden.length) return '<div class="obs-box"><span class="obs-vacio">Sin notas generales del día.</span></div>';
+  let html='<div class="obs-box">';
+  orden.forEach(k=>{
+    const o=uniq[k];
+    const badges = MULTI ? o.areas.map(a=>`<span class="badge ${a}">${a.toUpperCase()}</span>`).join('') : '';
+    html+=`<div class="obs-item"><div class="obs-quien">${esc(o.reporta)}${badges}</div>`
+       +`<div class="obs-txt">${esc(o.txt)}</div></div>`;
+  });
+  return html+'</div>';
 }
 
 function lineaHtml(c, idx){
