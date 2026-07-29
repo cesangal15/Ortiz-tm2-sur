@@ -1,8 +1,317 @@
 string_cc	area
+3703.00.01| Ajuste / Avales	uf3
+3703.00.02| Generales o preliminares	uf3
+3703.00.03| Preparación área de trabajo	uf3
+3703.00.04| Gestiones ambientales	uf3
+3703.00.05| Coste pendiente gestiones y avales	uf3
+3703.00.06| Costo EPC 4% Gestiones	uf3
+3703.01.01| Demolición de edificaciones	uf3
+3703.01.02| Demolición de Estructuras	uf3
+3703.01.03| Remoción de alcantarillas	uf3
+3703.01.04| Remoción de cercas de alambre	uf3
+3703.01.05| Cercas de alambre de púas con postes de concreto	uf3
+3703.01.06| Remoción de señales existentes	uf3
+3703.02.01| Desmonte y limpieza en bosque	uf3
+3703.02.02| Aprovechamiento forestal	uf3
+3703.02.03| Desmonte y limpieza en zonas no boscosas	uf3
+3703.02.04| Excavación en roca de la explanación y canales	uf3
 3703.02.05| Excavaciones en material común de la Explanación y Canales	uf3
+3703.02.06| Excavación en material común de préstamos	uf3
+3703.02.07| Terraplenes (solo conformación)	uf3
+3703.02.08| Conformación y disposición de sobrantes (incluye obras de adecuación)	uf3
+3703.02.09| Transporte materiales provenientes de excavación de explanación, canales y préstamos (100 - 1.000 m)	uf3
+3703.02.10| Transporte materiales provenientes de excavación de explanación, canales y préstamos (>1.000 m)	uf3
+3703.02.11| Acopio Pekin	uf3
+3703.02.12| Caminos y accesos	uf3
+3703.03.01| Mejoramiento	uf3
 3703.03.02| Subbase Granular	uf3
+3703.03.03| Transporte de subbase granular	uf3
+3703.03.04| MGTC clase 4, gradación tipo MGTC-25	uf3
+3703.03.05| Transporte de MGTC clase 4	uf3
 3703.03.06| Base granular	uf3
 3703.03.07| Transporte de base granular	uf3
+3703.03.08| Cemento hidráulico para base tratada con cemento	uf3
+3703.04.01| Fresado de pavimento asfáltico	uf3
+3703.04.02| Microfresado de pavimento asfáltico	uf3
+3703.04.03| Riego de Liga con emulsión asfáltica	uf3
+3703.04.04| Sello de fisuras	uf3
+3703.04.05| Mezcla densa en caliente tipo MDC-19 para Bacheo	uf3
+3703.04.06| Mezcla densa en caliente tipo MDC-25 Base Asfáltica	uf3
+3703.04.07| Mezcla asfáltica modificada con grano de caucho	uf3
+3703.04.08| Mezcla asfáltica tipo MDC-19 modificada con polímero tipo III	uf3
+3703.04.10| Transporte de mezcla asfáltica	uf3
+3703.04.11| Imprimacion con emulsión asfáltica	uf3
+3703.04.12| Transporte de fresado	uf3
+3703.05.01| Fresado de pavimento asfáltico	uf3
+3703.05.02| Riego con emulsión  asfáltica	uf3
+3703.05.03| Mezcla densa en caliente tipo MDC-19 para Bacheo	uf3
+3703.06.01| Excavaciones varias sin clasicar	uf3
 3703.06.02| Rellenos con material seleccionado	uf3
+3703.06.03| Material granular drenante	uf3
+3703.06.04| Geodrén vial h=1 m con tubería de 100 mm	uf3
+3703.06.05| Geodrén planar h=1 m	uf3
 3703.06.06| Concreto clase  28 MPA (encoles, descoles, box, sumideros)	uf3
+3703.06.07| Concreto clase 21 MPA	uf3
+3703.06.08| Concreto clase 14 MPA (solados, estructuras)	uf3
+3703.06.09| Piedra pegada en concreto de 17.5 Mpa para canales de adecuación y protección de descoles (e=10cm)	uf3
 3703.06.10| Acero de refuerzo Fy=420 Mpa.	uf3
+3703.06.11| Tubería de Concreto Reforzado de 900mm de diámetro interior (Tipo III)	uf3
+3703.06.12| Tubería de Concreto Reforzado de 1200 mm de diámetro interior (Tipo III)	uf3
+3703.06.13| Cinta pvc para juntas	uf3
+3703.07.01| Excavaciones varias sin clasicar	uf3
+3703.07.02| Material granular drenante	uf3
+3703.07.03| Rellenos con material seleccionado	uf3
+3703.07.04| Cuneta de concreto vaciado en situ; no incluye la conformación del sitio de apoyo. (21 Mpa)	uf3
+3703.07.05| Concreto clase 28 MPA (Sumideros)	uf3
+3703.07.06| Concreto clase 21 MPA (disipadores de energía)	uf3
+3703.07.07| Concreto clase 14 MPA (Cunetas de terraza y coronación)	uf3
+3703.07.08| Acero de refuerzo Fy=420 Mpa.	uf3
+3703.07.09| Malla electrosoldada de refuerzo fy 490 Mpa (6mm / 15x15)	uf3
+3703.07.10| Tubería de Concreto Reforzado de 600 mm de diámetro interior	uf3
+3703.07.11| Geodrén vial h=1 m con tubería de 100 mm	uf3
+3703.08.01| Suministro y aplicación pintura en frío acrílica pura base agua para líneas demarcación pavimentos	uf3
+3703.08.02| Suministro y aplicación pintura en frío acrílica pura base agua para marca Vial con pintura en frío	uf3
+3703.08.03| Suministro e instalación de tachas reflectiva bidireccionales	uf3
+3703.08.04| Sumin e instal señal vertical de transito sp, sr y si (75x75cm) lámina acero galv retroreflectiva	uf3
+3703.08.05| Suministro e instal señal vertical transito SP,SR y SI (90*90cm)  lámina acero galv retroreflectiva	uf3
+3703.08.06| Suministro e instal señal vertical transito SP,SR y SI (120*120cm) lámina acero galv retroreflectiva	uf3
+3703.08.07| Poste referencia	uf3
+3703.08.08| Defensa metálica	uf3
+3703.08.10| Captafaros	uf3
+3703.08.11| Señal informativa (área promedio: 3,76 m2)	uf3
+3703.08.12| Delineadores de curva (SP-75)	uf3
+3703.11.01| Plan manejo de Tráfico (PMT´S)	uf3
+3703.11.04| Imprevistos (bloqueos - Paros)	uf3
+3703.12.01| Costo EPC (4% del directo)	uf3
+3703.12.02| Indexación 3% CD	uf3
+3703.13.02| EXPLANACIONES Y AMPLIACION	uf3
+3703.13.02.01| Desmonte y limpieza en bosque	uf3
+3703.13.02.02| Aprovechamiento forestal	uf3
+3703.13.02.03| Desmonte y limpieza en zonas no boscosas	uf3
+3703.13.02.04| Excavación en roca de la explanación y canales	uf3
+3703.13.02.05| Excavaciones en material común de la Explanación y Canales	uf3
+3703.13.02.06| Excavación en material común de préstamos	uf3
+3703.13.02.07| Terraplenes (solo conformación)	uf3
+3703.13.02.08| Conformación y disposición de sobrantes (incluye obras de adecuación)	uf3
+3703.13.02.10| Transporte materiales provenientes de excavación de explanación, canales y préstamos (100 - 1.000 m)	uf3
+3703.13.02.11| Transporte materiales provenientes de excavación de explanación, canales y préstamos (>1.000 m)	uf3
+3703.13.03| BASES, SUBBASES Y AFIRMADOS	uf3
+3703.13.03.02| Subbase Granular	uf3
+3703.13.03.03| Transporte de subbase granular	uf3
+3703.13.03.04| MGTC clase 4, gradación tipo MGTC-25 (Base Granular - NO incluye cemento)	uf3
+3703.13.03.07| Transporte de MGTC clase 4	uf3
+3703.13.03.08| Cemento hidráulico para base tratada con cemento	uf3
+3703.13.04| PAVIMENTOS ASFALTICOS	uf3
+3703.13.04.01| Fresado de pavimento asfáltico	uf3
+3703.13.04.02| Microfresado de pavimento asfáltico	uf3
+3703.13.04.03| Riego de Liga con emulsión asfáltica	uf3
+3703.13.04.04| Sello de fisuras	uf3
+3703.13.04.05| Mezcla densa en caliente tipo MDC-19 para Bacheo	uf3
+3703.13.04.06| Mezcla densa en caliente tipo MDC-25 Base Asfáltica	uf3
+3703.13.04.07| Mezcla asfáltica modificada con grano de caucho	uf3
+3703.13.04.08| Mezcla asfáltica tipo MDC-19 modificada con polímero tipo III	uf3
+3703.13.04.09| Limpieza entrega fin de obra	uf3
+3703.13.04.10| Transporte de mezcla asfáltica	uf3
+3703.13.06| DRENAJE TRANSVERSAL	uf3
+3703.13.06.01| Excavaciones varias sin clasicar	uf3
+3703.13.06.02| Rellenos con material seleccionado	uf3
+3703.13.06.03| Material granular drenante	uf3
+3703.13.06.04| Geodrén vial h=1 m con tubería de 100 mm	uf3
+3703.13.06.05| Geodrén planar h=1 m	uf3
+3703.13.06.06| Concreto clase  28 MPA (encoles, descoles, box, sumideros)	uf3
+3703.13.06.07| Concreto clase 21 MPA	uf3
+3703.13.06.08| Concreto clase 14 MPA (solados, estructuras)	uf3
+3703.13.06.09| Piedra pegada en concreto de 17.5 Mpa para canales de adecuación y protección de descoles (e=10cm)	uf3
+3703.13.06.10| Acero de refuerzo Fy=420 Mpa.	uf3
+3703.13.06.11| Tubería de Concreto Reforzado de 900mm de diámetro interior (Tipo III)	uf3
+3703.13.06.12| Tubería de Concreto Reforzado de 1200 mm de diámetro interior (Tipo III)	uf3
+3703.13.06.13| Cinta pvc para juntas	uf3
+3703.13.08| SEÑALIZACIÓN Y SEGURIDAD	uf3
+3703.13.08.01| Suministro y aplicación pintura en frío acrílica pura base agua para líneas demarcación pavimentos	uf3
+3703.13.08.02| Suministro y aplicación pintura en frío acrílica pura base agua para marca Vial con pintura en frío	uf3
+3703.13.08.03| Suministro e instalación de tachas reflectiva bidireccionales	uf3
+3703.13.08.04| Sumin e instal señal vertical de transito sp, sr y si (75x75cm) lámina acero galv retroreflectiva	uf3
+3703.13.08.05| Suministro e instal señal vertical transito SP,SR y SI (90*90cm)  lámina acero galv retroreflectiva	uf3
+3703.13.08.06| Suministro e instal señal vertical transito SP,SR y SI (120*120cm) lámina acero galv retroreflectiva	uf3
+3703.13.08.07| Poste referencia	uf3
+3703.13.08.08| Defensa metálica	uf3
+3703.13.08.10| Captafaros	uf3
+3703.13.08.11| Señal informativa (área promedio: 3,76 m2)	uf3
+3703.13.08.12| Delineadores de curva (SP-75)	uf3
+3703.14.02| EXPLANACIONES Y AMPLIACION	uf3
+3703.14.02.01| Desmonte y limpieza en bosque	uf3
+3703.14.02.02| Aprovechamiento forestal	uf3
+3703.14.02.03| Desmonte y limpieza en zonas no boscosas	uf3
+3703.14.02.04| Excavación en roca de la explanación y canales	uf3
+3703.14.02.05| Excavaciones en material común de la Explanación y Canales	uf3
+3703.14.02.06| Excavación en material común de préstamos	uf3
+3703.14.02.07| Terraplenes (solo conformación)	uf3
+3703.14.02.08| Conformación y disposición de sobrantes (incluye obras de adecuación)	uf3
+3703.14.02.10| Transporte materiales provenientes de excavación de explanación, canales y préstamos (100 - 1.000 m)	uf3
+3703.14.02.11| Transporte materiales provenientes de excavación de explanación, canales y préstamos (>1.000 m)	uf3
+3703.14.03| BASES, SUBBASES Y AFIRMADOS	uf3
+3703.14.03.02| Subbase Granular	uf3
+3703.14.03.03| Transporte de subbase granular	uf3
+3703.14.03.04| MGTC clase 4, gradación tipo MGTC-25 (Base Granular - NO incluye cemento)	uf3
+3703.14.03.05| Transporte de MGTC clase 4	uf3
+3703.14.03.06| Base granular estabilizada con cemento (No incluye cemento)	uf3
+3703.14.03.07| Transporte de base granular	uf3
+3703.14.03.08| Cemento hidráulico para base tratada con cemento	uf3
+3703.14.04| PAVIMENTOS ASFALTICOS	uf3
+3703.14.04.01| Fresado de pavimento asfáltico	uf3
+3703.14.04.02| Microfresado de pavimento asfáltico	uf3
+3703.14.04.03| Riego de Liga con emulsión asfáltica	uf3
+3703.14.04.04| Sello de fisuras	uf3
+3703.14.04.05| Mezcla densa en caliente tipo MDC-19 para Bacheo	uf3
+3703.14.04.06| Mezcla densa en caliente tipo MDC-25 Base Asfáltica	uf3
+3703.14.04.07| Mezcla asfáltica modificada con grano de caucho	uf3
+3703.14.04.08| Mezcla asfáltica tipo MDC-19 modificada con polímero tipo III	uf3
+3703.14.04.10| Transporte de mezcla asfáltica	uf3
+3703.14.06| DRENAJE TRANSVERSAL	uf3
+3703.14.06.01| Excavaciones varias sin clasicar	uf3
+3703.14.06.02| Rellenos con material seleccionado	uf3
+3703.14.06.03| Material granular drenante	uf3
+3703.14.06.04| Geodrén vial h=1 m con tubería de 100 mm	uf3
+3703.14.06.05| Geodrén planar h=1 m	uf3
+3703.14.06.06| Concreto clase  28 MPA (encoles, descoles, box, sumideros)	uf3
+3703.14.06.07| Concreto clase 21 MPA	uf3
+3703.14.06.08| Concreto clase 14 MPA (solados, estructuras)	uf3
+3703.14.06.09| Piedra pegada en concreto de 17.5 Mpa para canales de adecuación y protección de descoles (e=10cm)	uf3
+3703.14.06.10| Acero de refuerzo Fy=420 Mpa.	uf3
+3703.14.06.11| Tubería de Concreto Reforzado de 900mm de diámetro interior (Tipo III)	uf3
+3703.14.06.12| Tubería de Concreto Reforzado de 1200 mm de diámetro interior (Tipo III)	uf3
+3703.14.06.13| Cinta pvc para juntas	uf3
+3703.14.07| DRENAJE LONGITUDINAL	uf3
+3703.14.07.01| Excavaciones varias sin clasicar	uf3
+3703.14.07.02| Material granular drenante	uf3
+3703.14.07.03| Rellenos con material seleccionado	uf3
+3703.14.07.04| Cuneta de concreto vaciado en situ; no incluye la conformación del sitio de apoyo. (21 Mpa)	uf3
+3703.14.07.05| Concreto clase 28 MPA (Sumideros)	uf3
+3703.14.07.06| Concreto clase 21 MPA (disipadores de energía)	uf3
+3703.14.07.07| Concreto clase 14 MPA (Cunetas de terraza y coronación)	uf3
+3703.14.07.08| Acero de refuerzo Fy=420 Mpa.	uf3
+3703.14.07.09| Malla electrosoldada de refuerzo fy 490 Mpa (6mm / 15x15)	uf3
+3703.14.07.10| Tubería de Concreto Reforzado de 600 mm de diámetro interior	uf3
+3703.14.07.11| Geodrén vial h=1 m con tubería de 100 mm	uf3
+3703.14.08| SEÑALIZACIÓN Y SEGURIDAD	uf3
+3703.14.08.01| Suministro y aplicación pintura en frío acrílica pura base agua para líneas demarcación pavimentos	uf3
+3703.14.08.02| Suministro y aplicación pintura en frío acrílica pura base agua para marca Vial con pintura en frío	uf3
+3703.14.08.03| Suministro e instalación de tachas reflectiva bidireccionales	uf3
+3703.14.08.04| Sumin e instal señal vertical de transito sp, sr y si (75x75cm) lámina acero galv retroreflectiva	uf3
+3703.14.08.05| Suministro e instal señal vertical transito SP,SR y SI (90*90cm)  lámina acero galv retroreflectiva	uf3
+3703.14.08.06| Suministro e instal señal vertical transito SP,SR y SI (120*120cm) lámina acero galv retroreflectiva	uf3
+3703.14.08.07| Poste referencia	uf3
+3703.14.08.08| Defensa metálica	uf3
+3703.14.08.10| Captafaros	uf3
+3703.14.08.11| Señal informativa (área promedio: 3,76 m2)	uf3
+3703.14.08.12| Delineadores de curva (SP-75)	uf3
+3703.15.02| EXPLANACIONES Y AMPLIACION	uf3
+3703.15.02.01| Desmonte y limpieza en bosque	uf3
+3703.15.02.02| Aprovechamiento forestal	uf3
+3703.15.02.03| Desmonte y limpieza en zonas no boscosas	uf3
+3703.15.02.04| Excavación en roca de la explanación y canales	uf3
+3703.15.02.05| Excavaciones en material común de la Explanación y Canales	uf3
+3703.15.02.06| Excavación en material común de préstamos	uf3
+3703.15.02.07| Terraplenes (solo conformación)	uf3
+3703.15.02.08| Conformación y disposición de sobrantes (incluye obras de adecuación)	uf3
+3703.15.02.10| Transporte materiales provenientes de excavación de explanación, canales y préstamos (100 - 1.000 m)	uf3
+3703.15.02.11| Transporte materiales provenientes de excavación de explanación, canales y préstamos (>1.000 m)	uf3
+3703.15.03| BASES, SUBBASES Y AFIRMADOS	uf3
+3703.15.03.02| Subbase Granular	uf3
+3703.15.03.03| Transporte de subbase granular	uf3
+3703.15.03.04| MGTC clase 4, gradación tipo MGTC-25 (Base Granular - NO incluye cemento)	uf3
+3703.15.03.05| Transporte de MGTC clase 4	uf3
+3703.15.03.06| Base granular estabilizada con cemento (No incluye cemento)	uf3
+3703.15.03.07| Transporte de base granular	uf3
+3703.15.03.08| Cemento hidráulico para base tratada con cemento	uf3
+3703.15.04| PAVIMENTOS ASFALTICOS	uf3
+3703.15.04.01| Fresado de pavimento asfáltico	uf3
+3703.15.04.02| Microfresado de pavimento asfáltico	uf3
+3703.15.04.03| Riego de Liga con emulsión asfáltica	uf3
+3703.15.04.04| Sello de fisuras	uf3
+3703.15.04.05| Mezcla densa en caliente tipo MDC-19 para Bacheo	uf3
+3703.15.04.06| Mezcla densa en caliente tipo MDC-25 Base Asfáltica	uf3
+3703.15.04.07| Mezcla asfáltica modificada con grano de caucho	uf3
+3703.15.04.08| Mezcla asfáltica tipo MDC-19 modificada con polímero tipo III	uf3
+3703.15.04.09| Limpieza entrega fin de obra	uf3
+3703.15.04.10| Transporte de mezcla asfáltica	uf3
+3703.15.08| SEÑALIZACIÓN Y SEGURIDAD	uf3
+3703.15.08.01| Suministro y aplicación pintura en frío acrílica pura base agua para líneas demarcación pavimentos	uf3
+3703.15.08.02| Suministro y aplicación pintura en frío acrílica pura base agua para marca Vial con pintura en frío	uf3
+3703.15.08.03| Suministro e instalación de tachas reflectiva bidireccionales	uf3
+3703.15.08.04| Sumin e instal señal vertical de transito sp, sr y si (75x75cm) lámina acero galv retroreflectiva	uf3
+3703.15.08.05| Suministro e instal señal vertical transito SP,SR y SI (90*90cm)  lámina acero galv retroreflectiva	uf3
+3703.15.08.06| Suministro e instal señal vertical transito SP,SR y SI (120*120cm) lámina acero galv retroreflectiva	uf3
+3703.15.08.07| Poste referencia	uf3
+3703.15.08.08| Defensa metálica	uf3
+3703.15.08.10| Captafaros	uf3
+3703.15.08.11| Señal informativa (área promedio: 3,76 m2)	uf3
+3703.15.08.12| Delineadores de curva (SP-75)	uf3
+3703.16.02| EXPLANACIONES Y AMPLIACION	uf3
+3703.16.02.01| Desmonte y limpieza en bosque	uf3
+3703.16.02.02| Aprovechamiento forestal	uf3
+3703.16.02.03| Desmonte y limpieza en zonas no boscosas	uf3
+3703.16.02.04| Excavación en roca de la explanación y canales	uf3
+3703.16.02.05| Excavaciones en material común de la Explanación y Canales	uf3
+3703.16.02.06| Excavación en material común de préstamos	uf3
+3703.16.02.07| Terraplenes (solo conformación)	uf3
+3703.16.02.08| Conformación y disposición de sobrantes (incluye obras de adecuación)	uf3
+3703.16.02.10| Transporte materiales provenientes de excavación de explanación, canales y préstamos (100 - 1.000 m)	uf3
+3703.16.02.11| Transporte materiales provenientes de excavación de explanación, canales y préstamos (>1.000 m)	uf3
+3703.16.03| BASES, SUBBASES Y AFIRMADOS	uf3
+3703.16.03.02| Subbase Granular	uf3
+3703.16.03.03| Transporte de subbase granular	uf3
+3703.16.03.04| MGTC clase 4, gradación tipo MGTC-25 (Base Granular - NO incluye cemento)	uf3
+3703.16.03.05| Transporte de MGTC clase 4	uf3
+3703.16.03.06| Base granular estabilizada con cemento (No incluye cemento)	uf3
+3703.16.03.07| Transporte de base granular	uf3
+3703.16.03.08| Cemento hidráulico para base tratada con cemento	uf3
+3703.16.04| PAVIMENTOS ASFALTICOS	uf3
+3703.16.04.01| Fresado de pavimento asfáltico	uf3
+3703.16.04.02| Microfresado de pavimento asfáltico	uf3
+3703.16.04.03| Riego de Liga con emulsión asfáltica	uf3
+3703.16.04.04| Sello de fisuras	uf3
+3703.16.04.05| Mezcla densa en caliente tipo MDC-19 para Bacheo	uf3
+3703.16.04.06| Mezcla densa en caliente tipo MDC-25 Base Asfáltica	uf3
+3703.16.04.07| Mezcla asfáltica modificada con grano de caucho	uf3
+3703.16.04.08| Mezcla asfáltica tipo MDC-19 modificada con polímero tipo III	uf3
+3703.16.04.09| Limpieza entrega fin de obra	uf3
+3703.16.04.10| Transporte de mezcla asfáltica	uf3
+3703.17.01| DEMOLICIONES Y REUBICACIONES	uf3
+3703.17.01.02| Demolición de Estructuras	uf3
+3703.17.02| EXPLANACIONES	uf3
+3703.17.02.05| Excavaciones en material común de la Explanación y Canales	uf3
+3703.17.02.06| Excavación en material común de préstamos	uf3
+3703.17.02.07| Terraplenes (solo conformación)	uf3
+3703.17.02.08| Conformación y disposición de sobrantes (incluye obras de adecuación)	uf3
+3703.17.02.10| Transporte materiales provenientes de excavación de explanación, canales y préstamos (>1.000 m)	uf3
+3703.17.03| BASES, SUBBASES Y AFIRMADOS	uf3
+3703.17.03.02| Subbase Granular	uf3
+3703.17.03.03| Transporte de subbase granular	uf3
+3703.17.03.04| Transporte de base granular	uf3
+3703.17.03.05| Cemento hidráulico para base tratada con cemento	uf3
+3703.17.04| PAVIMENTOS ASFALTICOS	uf3
+3703.17.04.01| Riego de imprimación con emulsión asfáltica	uf3
+3703.17.04.03| Mezcla densa en caliente tipo MDC-25 Base Asfáltica	uf3
+3703.17.04.05| Mezcla asfáltica tipo MDC-19 modificada con polímero tipo III	uf3
+3703.17.04.06| Transporte de mezcla asfáltica	uf3
+3703.17.06| DRENAJE TRANSVERSAL	uf3
+3703.17.06.01| Excavaciones varias sin clasicar	uf3
+3703.17.06.02| Rellenos con material seleccionado	uf3
+3703.17.06.04| Acero de refuerzo Fy=420 Mpa.	uf3
+3703.17.06.05| Tubería de Concreto Reforzado de 900mm de diámetro interior (Tipo III)	uf3
+3703.17.06.07| Concreto clase 14 MPA (solados, estructuras)	uf3
+3703.17.06.09| Concreto clase  28 MPA (encoles, descoles, box, sumideros)	uf3
+3703.17.06.69| Concreto clase 21 MPA (atraques, cabezales)	uf3
+3703.17.11| OTROS	uf3
+3703.17.11.01| Desvíos de tráfico	uf3
+3703.17.11.05| Manejo de aguas durante la intervención	uf3
+3703.99.01| Ajustes de margen	uf3
+3703.99.02| Producciones	uf3
+3703.99.03| Material Subbase granular para firmes	uf3
+3703.99.04| Material Subbase granular para afirmados	uf3
+3703.99.05| Material Base granular para firmes	uf3
+3703.99.06| Materiales plantas	uf3
+3703.99.07| Materiales Almacén	uf3
+3703.99.08| Certificación anticipada	uf3
+3703.99.09| Costo EPC 4% Certificacion anticipada	uf3

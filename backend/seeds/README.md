@@ -118,8 +118,19 @@ Mismo procedimiento de pegado (cada TSV debajo de lo ya existente en su hoja):
    - `cargo=CAPATAZ` en los tres que en el Parte llevan el CC de supervisión `3703.I010305`:
      **76804 ARIEL LISANDRO CORREA**, **76626 CARLOS ERNESTO VILLADA** y **75746 ALBERT ESNAIDER ROJAS**.
      Con eso el formulario los saca de los bloques y les pone su CC propio automáticamente (D72(4)).
-3. **CC_USADOS_uf3.tsv** → hoja `CC_USADOS`. 7 filas con `area=uf3` — los CC que la gente de UF3 usa
-   realmente en el Parte. **NO incluye** `3703.I010305` (supervisión del capataz), igual que en ODT/ODL.
+3. **CC_USADOS_uf3.tsv** → hoja `CC_USADOS`. **316 filas** con `area=uf3`. A diferencia de ODT/ODL
+   —donde `CC_USADOS` es una lista corta de "frecuentes" curada para el capataz— aquí quien reporta es
+   la RESIDENTE, así que lleva **todos los CC imputables de 3703** y no solo los siete que aparecen en el
+   Parte de muestra. El buscador del formulario muestra 60 y filtra al escribir, así que la lista larga
+   no estorba. De las 580 filas de la hoja `Centros de coste` de la plantilla se dejan fuera:
+   - los **17 encabezados de capítulo** (`3703.00`, `3703.01`, … : no se imputa a ese nivel),
+   - los **245 indirectos** (`3703.I*`, `3703.IFIN*`, `3703.DIF01`): staff, oficina, seguros, impuestos
+     — no es trabajo de cuadrilla,
+   - las 2 filas malformadas `37I0101…| CREADO POR PROCESO`,
+   - y **`3703.I010305`** (supervisión del capataz): el sistema se lo pone solo a quien tiene
+     `cargo=CAPATAZ` y lo excluye del selector de bloques por `cc_excluidos_bloque` (D72(3)).
+   Quedan los 118 `3703.NN.NN` de los capítulos de vía más los 198 de cuarto nivel de los capítulos
+   13–17 (EL BARRO, SAN MARTIN, EL MARQUEZ, PEAJES, SITIO CRITICO). Si alguno sobra, se borra su fila.
 4. **CONFIG** (a mano, `setupHojas()` solo siembra con la hoja vacía): agregar la fila
    `proyecto_3703` → `3703| T2 - UF3 - R4513 PR 09+800 - PR 90+718` (string exacto de la hoja
    `Proyectos` de la plantilla). Sin esa fila el export avisa y escribe "3703" pelado, que Navision no
@@ -131,5 +142,6 @@ dan nombre a las cuadrillas ARIEL/ALBERT y que D84 mandó retirar con `fecha_ret
 sus filas de UF3 llevan **`fecha_ingreso = 2026-07-27`**: sin esa fecha aparecerían en el roster de UF3
 también en días anteriores a su salida de tierras, y la residente reporta días pasados. Si el checklist
 de D84 no se ejecutó (siguen `activo` en tierras sin fecha de retiro), **primero retíralos allá** — si no,
-quedan activos en dos áreas a la vez. **`76626 CARLOS ERNESTO VILLADA` queda con `fecha_ingreso` vacío**
-(= siempre activo): si venía de otra cuadrilla del sistema, hay que ponerle su fecha real de ingreso a UF3.
+quedan activos en dos áreas a la vez. El resto de las 34 filas va con
+`fecha_ingreso` **vacío** (= siempre activo), que es la convención de la plantilla base: solo los ingresos
+NUEVOS llevan fecha.
