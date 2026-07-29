@@ -617,7 +617,12 @@ function roster(e){
   const turnos=readSheet('TURNOS', TURNOS_HEADERS).map(t=>({ turno:String(t.turno||''), tipo_dia:norm(t.tipo_dia),
     entrada:ftime(t.entrada), salida:ftime(t.salida), descanso_ini:ftime(t.descanso_ini), descanso_fin:ftime(t.descanso_fin),
     cruza_medianoche: String(t.cruza_medianoche||'').toUpperCase()==='SI' }));
-  return json({ ok:true, cuadrillas, personas, config:cfg, festivos, jornada, catCC, catCCUsados, catMotivos, recientesCC, turnos });
+  // D101: `areas` = las áreas FORZADAS por el rol de quien reporta ([] = sin área forzada: capataces,
+  // chequeadoras, mairy, admin). El formulario la necesita para NO caer al catálogo global `catCC`
+  // —que es de tierras— cuando el área todavía no tiene sus CC cargados en CC_USADOS. Sin esto, la
+  // residente de UF3 veía el selector con UF1/UF2 y a sus capataces les salía el CC con prefijo 3701.
+  return json({ ok:true, cuadrillas, personas, config:cfg, festivos, jornada, catCC, catCCUsados, catMotivos, recientesCC, turnos,
+    areas:areasDeUsuario(usuario) });
 }
 
 /* ---------- GET asistencia: resumen del día para el residente/jeisson ---------- */
@@ -716,7 +721,10 @@ function asistenciaDia(e){
   const notas = notasDelDia(fecha).filter(n=>enArea(n.cuadrilla));   // D74: notas del día del área revisada
   // D76: config + festivos también en el resumen, para que el detalle por cuadrilla clasifique ordinarias/
   // extras EXACTO como el Parte de Navision (mismo clasificarHoras que el export), sin otra llamada.
-  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, eventuales, jornada, catCC, catCCUsados, catMotivos, turnos, extrasAdmin, notas, config:cfg, festivos });
+  // D101: `areas` (las forzadas por el rol; [] = admin sin filtro) para que el resumen no ofrezca los
+  // proyectos ni los CC de otra área cuando CC_USADOS del área revisada aún está vacía.
+  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, eventuales, jornada, catCC, catCCUsados, catMotivos, turnos, extrasAdmin, notas, config:cfg, festivos,
+    areas });
 }
 
 /* ---------- POST asistencia_individual: upsert por PERSONA (residente/jeisson completan faltantes) ----------

@@ -349,7 +349,14 @@ function render(){
   // para poder registrar un CC especial. Reemplaza el <datalist> (no mostraba el listado completo de
   // forma confiable) por un buscador desplegable real.
   STATE._ccUsados=(d.catCCUsados||[]);
-  STATE._ccResto=(d.catCC||[]).filter(cc=>STATE._ccUsados.indexOf(cc)<0);
+  // D101: el "resto" (CAT_CC) es el catálogo GLOBAL y hoy solo tiene CC de tierras. Cuando la vista está
+  // acotada a un área (residente de UF3/drenajes, o el admin con "Ver como"), se filtra a los proyectos
+  // de esa área para no ofrecerle CC de otro frente; si no se sabe cuáles son, no se ofrece ninguno.
+  const proysArea=proyectosDelArea();
+  const acotada=(d.areas&&d.areas.length) || (STATE.rol==='admin' && STATE.areaFiltro);
+  STATE._ccResto=(d.catCC||[])
+    .filter(cc=>STATE._ccUsados.indexOf(cc)<0)
+    .filter(cc=>!acotada || proysArea.indexOf(proyectoDeCC(cc))>=0);
   STATE._detalle={}; STATE._detIdx=0;
   // Una sola pasada por `filas` para agrupar por cuadrilla (antes era un filter por cuadrilla = N×M).
   const porCuadrilla={}; filas.forEach(f=>{ (porCuadrilla[f.cuadrilla]=porCuadrilla[f.cuadrilla]||[]).push(f); });
@@ -1043,7 +1050,10 @@ function exportCardHtml(){
 function proyectosDelArea(){
   const d=STATE.data||{};
   const set={};
-  const pool=(d.catCCUsados&&d.catCCUsados.length ? d.catCCUsados : (d.catCC||[]));
+  // D101: el respaldo al catálogo GLOBAL (tierras) solo vale si la vista NO está acotada a un área —
+  // si no, a la residente de UF3 le salían los botones de 3701/3702 mientras CC_USADOS estaba vacía.
+  const acotada=(d.areas&&d.areas.length) || (STATE.rol==='admin' && STATE.areaFiltro);
+  const pool=(d.catCCUsados&&d.catCCUsados.length) ? d.catCCUsados : (acotada ? [] : (d.catCC||[]));
   pool.forEach(cc=>{ const p=proyectoDeCC(cc); if(p) set[p]=true; });
   // Lo ya reportado ese día manda igual: si hay filas de un proyecto, su botón tiene que estar.
   (d.filas||[]).forEach(f=>{ const p=String(f.proyecto||'').trim(); if(p) set[p]=true; });
