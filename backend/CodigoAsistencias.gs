@@ -158,6 +158,40 @@ function ftime(v){
   if(m) return ('0'+m[1]).slice(-2)+':'+m[2];
   return s.slice(0,5);
 }
+/* ============ D105 — PORTERO DE FECHAS (incidente "reportes sin fecha", jul-2026) ============
+ *
+ * EL PROBLEMA QUE ARREGLA. `fdate` NORMALIZA pero no VALIDA: con `''`/`null` devuelve `''` y con
+ * basura devuelve los 10 primeros caracteres tal cual (`'15/07/2026'`, `'undefined'`). Las dos rutas
+ * que escriben ASISTENCIA (`guardarAsistencia`, `guardarIndividual`) tomaban ese resultado y lo
+ * escribían en la columna `fecha` sin preguntar nada. Resultado observado dos veces en producción:
+ * el bloque completo de una cuadrilla quedaba en la hoja **con todos sus datos y la columna C vacía**.
+ *
+ * POR QUÉ ERA GRAVE Y NO SOLO FEO. Una fila sin fecha:
+ *   1. es INVISIBLE para todo el módulo — resumen, export del Parte y ausencias filtran por fecha,
+ *      así que la cuadrilla aparece como "sin reportar" y su gente no sale en el Parte de Navision;
+ *   2. se BORRA sola en el siguiente envío con fecha vacía de la misma cuadrilla: el upsert de D03
+ *      quita "todo lo que sea fecha+cuadrilla", y con fecha `''` eso son justo las filas huérfanas
+ *      del intento anterior. Ahí es donde el histórico se perdía de verdad;
+ *   3. se REALIMENTA desde el resumen: `?action=asistencia&fecha=` (vacía) devolvía exactamente las
+ *      filas huérfanas, y "Completar faltantes" las volvía a guardar con la fecha vacía.
+ *
+ * LA REGLA. Toda fecha que entra por la API pasa por aquí y solo se acepta `yyyy-MM-dd` con un día
+ * que exista de verdad (rechaza `2026-02-31` y `2026-13-01`). Duck-typing intacto: primero `fdate`,
+ * nunca `instanceof Date` (D31). Escribir mal es peor que no escribir: si la fecha no es válida, la
+ * escritura se RECHAZA con un mensaje que dice qué hacer. Para la cola offline (D82) eso es lo
+ * correcto: sin `ok:true` el ítem NO sale de la cola, así que el reporte no se pierde — se queda en
+ * el teléfono hasta que se reenvíe con una fecha buena.
+ */
+function fdateValida_(v){
+  const s=fdate(v);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
+  const p=s.split('-'), y=Number(p[0]), m=Number(p[1]), d=Number(p[2]);
+  const dt=new Date(y, m-1, d);   // aritmética local (Bogotá no tiene DST), mismo patrón que diasDelRango
+  return (dt.getFullYear()===y && dt.getMonth()===m-1 && dt.getDate()===d) ? s : '';
+}
+const ERROR_FECHA = 'La fecha del reporte llegó vacía o con un formato que no se entiende. '
+  + 'Vuelve a elegir el día en el campo "Fecha" y envía otra vez. '
+  + 'No se guardó nada a propósito: una asistencia sin fecha no aparece en el resumen ni en el Parte.';
 /**
  * D93 — Garantiza que la hoja tenga filas suficientes para escribir n filas a partir de la última
  * fila con datos. Crece en bloques (BLOQUE_FILAS) para no fragmentar la grilla. Idempotente y
@@ -824,7 +858,9 @@ function roster(e){
   const cuadrillas=cuadrillasDeUsuario(usuario);
   const cfg=getConfigMap();
   const festivos=getFestivos();
-  const fecha=e.parameter.fecha || Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy-MM-dd');
+  // D105: el roster es de solo lectura y abre el formulario del capataz, así que aquí NO se corta la
+  // respuesta — una fecha inválida cae al día de hoy (mismo respaldo que ya existía para la ausente).
+  const fecha=fdateValida_(e.parameter.fecha) || Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy-MM-dd');
   const personalTodo=readSheet('PERSONAL', PERSONAL_HEADERS);
   // D72: roster date-aware — solo quien ya había ingresado y no estaba retirado a esa fecha.
   // D85: los eventuales no salen en el formulario del responsable (se marcan desde el resumen).
@@ -867,7 +903,12 @@ function roster(e){
 
 /* ---------- GET asistencia: resumen del día para el residente/jeisson ---------- */
 function asistenciaDia(e){
-  const fecha=fdate(e.parameter.fecha);
+  // D105: sin fecha válida NO se contesta. Antes, `fecha=''` hacía que el lector por rango devolviera
+  // justo las filas con la fecha en blanco (`f>='' && f<=''` solo se cumple con `f===''`): el resumen
+  // mostraba las huérfanas como si fueran el día pedido y "Completar faltantes" las reescribía otra
+  // vez sin fecha. Cortar aquí es lo que rompe ese círculo.
+  const fecha=fdateValida_(e.parameter.fecha);
+  if(!fecha) return json({ok:false, error:'Falta la fecha del resumen (o llegó con un formato que no se entiende). Elige el día en el campo "Fecha".'});
   // D72/D74b/D84: se limita todo (filas, cuadrillas, faltantes) a las áreas del usuario (tierras/odt/odl,
   // o ambas para residente_dren); el admin ve todas o filtra por &area=. Un residente de área/tierras no
   // puede burlar su alcance.
@@ -982,7 +1023,10 @@ function guardarIndividual(body){
   // D101: `residente_uf3` completa los faltantes de UF3 (acotado a ['uf3'] por areasDeUsuario).
   if(['residente','admin','jeisson','duvan','residente_uf3','residente_odt','residente_odl','residente_dren'].indexOf(usuario)<0)
     return json({ok:false, error:'No autorizado para completar faltantes.'});
-  const fecha=fdate(body.fecha), ts=new Date();
+  // D105: portero de fecha ANTES de tocar la hoja. Con la fecha vacía este upsert no solo escribía
+  // filas huérfanas: su filtro de abajo (`fdate(r[2])===fecha`) borraba las huérfanas que ya hubiera.
+  const fecha=fdateValida_(body.fecha), ts=new Date();
+  if(!fecha) return json({ok:false, error:ERROR_FECHA});
   // D101: mismo cerrojo de área que reporte_asistencia — el "completar faltantes" tampoco puede tocar
   // cuadrillas de otra área (D69h). Se valida cada fila porque este upsert es por persona.
   const ajena=(body.filas||[]).map(f=>String(f.cuadrilla||'')).filter(function(c,i,a){ return a.indexOf(c)===i; })
@@ -1031,7 +1075,10 @@ function personalCompleto(e){
 
 /* ---------- GET export: crudo del día completo para el generador Navision (cliente, SheetJS) ---------- */
 function exportDia(e){
-  const fecha=fdate(e.parameter.fecha);
+  // D105: igual que `asistenciaDia` — un Parte de Navision armado sobre las filas sin fecha sería un
+  // archivo con gente de días revueltos. Mejor no entregar nada y decir por qué.
+  const fecha=fdateValida_(e.parameter.fecha);
+  if(!fecha) return json({ok:false, error:'Falta la fecha del día a exportar (o llegó con un formato que no se entiende). Elige el día en el campo "Fecha".'});
   // D72/D74b/D84: residente(tierras)/residente_odt/odl exportan SOLO su área; residente_dren exporta
   // ODT+ODL en un SOLO archivo (el Parte se arma por día×proyecto y los CC ya distinguen el capítulo,
   // así que mezclar áreas no requiere lógica extra); el admin todo o filtra por &area=. Las filas ya
@@ -1106,8 +1153,8 @@ function keyPersona(codigo, cedula){
   return c ? ('COD:'+c) : ('CED:'+String(cedula||'').trim());
 }
 function ausenciasRango(e){
-  const desde=fdate(e.parameter.desde), hasta=fdate(e.parameter.hasta);
-  if(!desde || !hasta) return json({ok:false, error:'Faltan las fechas del rango (desde/hasta).'});
+  const desde=fdateValida_(e.parameter.desde), hasta=fdateValida_(e.parameter.hasta);   // D105
+  if(!desde || !hasta) return json({ok:false, error:'Faltan las fechas del rango (desde/hasta), o llegaron con un formato que no se entiende.'});
   if(hasta < desde)    return json({ok:false, error:'El rango está invertido: "hasta" es anterior a "desde".'});
   const dias=diasDelRango(desde, hasta);
   if(dias.length > MAX_DIAS_RANGO) return json({ok:false, error:'Rango demasiado largo (máximo '+MAX_DIAS_RANGO+' días). Consulta por tramos.'});
@@ -1173,13 +1220,13 @@ function extrasAdminDelDia(fecha){
 }
 // GET ?action=extras_admin&fecha=YYYY-MM-DD → registro del día (o null) para prefill/edición.
 function extrasAdminDia(e){
-  const fecha=fdate(e.parameter.fecha);
+  const fecha=fdateValida_(e.parameter.fecha);   // D105
   const regs=extrasAdminDelDia(fecha);
   return json({ ok:true, fecha, registro: regs.length? regs[0] : null });
 }
 // POST {action:'extras_admin', fecha, cc, horas, tipo} → upsert por `fecha`. Deriva `proyecto` del CC.
 function guardarExtrasAdmin(body){
-  const fecha=fdate(body.fecha);
+  const fecha=fdateValida_(body.fecha);   // D105: ya rechazaba la vacía; ahora también la mal formada
   const cc=String(body.cc||'').trim();
   const horas=Number(body.horas);
   const tipo=norm(body.tipo);
@@ -1204,7 +1251,7 @@ function guardarExtrasAdmin(body){
 }
 // POST {action:'extras_admin_delete', fecha} → elimina la fila del día.
 function borrarExtrasAdmin(body){
-  const fecha=fdate(body.fecha);
+  const fecha=fdateValida_(body.fecha);   // D105
   if(!fecha) return json({ok:false, error:'Falta la fecha.'});
   const sh=getSheet('EXTRAS_ADMIN', EXTRAS_ADMIN_HEADERS), need=EXTRAS_ADMIN_HEADERS.length, last=sh.getLastRow();
   let rows = last>1 ? leerRango_(sh,2,1,last-1,need) : [];
@@ -1230,7 +1277,11 @@ function borrarExtrasAdmin(body){
  * encolados de la misma fecha+cuadrilla, el orden FIFO de la cola hace que gane el último (correcto:
  * es el más reciente). upsertNotaDia (D74) sigue la misma regla. */
 function guardarAsistencia(body){
-  const fecha=fdate(body.fecha), cuadrilla=body.cuadrilla||'', reporta=body.reporta||'', ts=new Date();
+  const fecha=fdateValida_(body.fecha), cuadrilla=body.cuadrilla||'', reporta=body.reporta||'', ts=new Date();
+  // D105: portero de fecha ANTES de tocar la hoja. Es el punto exacto por donde entraron las dos
+  // veces los bloques sin fecha: con `fecha=''` este upsert escribía la cuadrilla entera con la
+  // columna C en blanco y, en el siguiente envío igual, se borraba a sí mismo (ver fdateValida_).
+  if(!fecha) return json({ok:false, error:ERROR_FECHA});
   // D101: quien tiene área forzada por su rol no puede reportar cuadrillas de otra área (D69h).
   if(!cuadrillaPermitidaPara(reporta, cuadrilla))
     return json({ok:false, error:'Esa cuadrilla no es de tu área.'});
@@ -1263,7 +1314,8 @@ function guardarAsistencia(body){
 /* ---------- NOTAS_ASISTENCIA (D74): nota libre del día por cuadrilla ---------- */
 // Upsert por fecha+cuadrilla. Nota vacía = borra la del día (re-envío sin nota la limpia).
 function upsertNotaDia(fecha, cuadrilla, reporta, nota, ts){
-  const f=fdate(fecha), c=cuadrilla||'', txt=String(nota==null?'':nota).trim();
+  const f=fdateValida_(fecha), c=cuadrilla||'', txt=String(nota==null?'':nota).trim();
+  if(!f) return;   // D105: su único llamador ya valida; la nota nunca se queda sin fecha por su cuenta
   const sh=getSheet('NOTAS_ASISTENCIA', NOTAS_ASISTENCIA_HEADERS), need=NOTAS_ASISTENCIA_HEADERS.length, last=sh.getLastRow();
   let rows = last>1 ? leerRango_(sh,2,1,last-1,need) : [];
   rows = rows.filter(r=> !(fdate(r[0])===f && String(r[1])===c));   // quita la del día+cuadrilla
@@ -1483,3 +1535,58 @@ function diagnosticoCapacidad() {
     );
   });
 }
+
+/* ---------- D105 — FILAS SIN FECHA: diagnóstico y reparación puntual ----------
+ * Herramientas de MANTENIMIENTO, no endpoints: se corren A MANO desde el editor de Apps Script
+ * (basta guardar el archivo, no exigen redesplegar). Mismo patrón previsualizar/aplicar que
+ * `previsualizarDescripcionesData` / `actualizarDescripcionesData` de Codigo.gs.
+ *
+ *   1) diagnosticoFechasAsistencia()      -> SOLO LEE. Lista en el Log las filas de ASISTENCIA cuya
+ *      columna `fecha` está vacía o mal formada, con su fila real, cuadrilla, quién reportó y su
+ *      `timestamp`. Sirve para saber si el problema volvió sin tener que revisar la hoja a ojo.
+ *   2) repararFechasAsistencia(false)     -> PREVISUALIZA la reparación (no escribe nada).
+ *      repararFechasAsistencia(true)      -> aplica: escribe SOLO la celda de la columna `fecha` de
+ *      esas filas, tomando el DÍA DEL `timestamp` (hora de Bogotá). No toca ninguna otra columna,
+ *      ninguna otra hoja ni los .xlsx maestros (D24).
+ *
+ * ⚠️ DOS LÍMITES QUE HAY QUE LEER ANTES DE APLICAR:
+ *   · El `timestamp` es CUÁNDO SE SUBIÓ, no el día trabajado. Coinciden en el envío normal del mismo
+ *     día, pero NO en un reporte que salió de la cola offline al día siguiente (D82) ni en un
+ *     "completar faltantes" hecho días después. Por eso la previsualización imprime fila por fila lo
+ *     que pondría: hay que mirarla contra lo que se sabe del día antes de aplicar.
+ *   · Esto NO resucita filas borradas. Si un segundo envío con la fecha vacía pisó al primero (el
+ *     upsert de D03 quita "fecha+cuadrilla", y con fecha vacía eso son las huérfanas anteriores), esas
+ *     filas ya no están en la hoja: para eso está el historial de versiones del Sheet.
+ */
+function _fechasAsistenciaPass(aplicar, soloListar){
+  const sh=ss_().getSheetByName('ASISTENCIA');
+  if(!sh || sh.getLastRow()<2){ Logger.log('ASISTENCIA vacía: nada que revisar.'); return 0; }
+  const need=ASISTENCIA_HEADERS.length, nFilas=sh.getLastRow()-1;
+  const colFecha=ASISTENCIA_HEADERS.indexOf('fecha')+1;       // por NOMBRE, nunca un 3 cableado
+  const v=leerRango_(sh, 2, 1, nFilas, need);
+  const tz='America/Bogota';
+  let malas=0, reparables=0;
+  for(let i=0;i<nFilas;i++){
+    const fila=i+2, cruda=v[i][colFecha-1];
+    if(fdateValida_(cruda)) continue;                          // fecha buena: no se toca
+    malas++;
+    const ts=v[i][1];                                          // col B timestamp
+    const propuesta=(ts && typeof ts==='object' && typeof ts.getFullYear==='function')
+      ? Utilities.formatDate(ts, tz, 'yyyy-MM-dd') : fdateValida_(ts);
+    Logger.log('fila '+fila+' · cuadrilla '+JSON.stringify(String(v[i][4]||''))
+      +' · reportó '+JSON.stringify(String(v[i][3]||''))+' · '+JSON.stringify(String(v[i][7]||''))
+      +' · fecha actual '+JSON.stringify(String(cruda==null?'':cruda))
+      +' · timestamp '+String(ts)+' -> propuesta '+(propuesta||'(no se puede deducir)'));
+    if(soloListar || !propuesta) continue;
+    reparables++;
+    if(aplicar) sh.getRange(fila, colFecha).setValue(propuesta);   // SOLO la celda de fecha
+  }
+  if(aplicar && reparables) invalidarHoja_('ASISTENCIA');
+  Logger.log((soloListar ? 'DIAGNÓSTICO (solo lectura).'
+              : (aplicar ? 'APLICADO.' : 'PREVISUALIZACIÓN (no se escribió nada).'))
+    +' Filas revisadas: '+nFilas+' · sin fecha válida: '+malas
+    +(soloListar ? '' : ' · reparables desde el timestamp: '+reparables));
+  return malas;
+}
+function diagnosticoFechasAsistencia(){ return _fechasAsistenciaPass(false, true); }
+function repararFechasAsistencia(aplicar){ return _fechasAsistenciaPass(aplicar===true, false); }

@@ -297,7 +297,23 @@ function vistaAcotada(d){
   try{ const a=JSON.parse(localStorage.getItem('areas')||'[]'); if(Array.isArray(a) && a.length) return true; }catch(e){}
   return false;
 }
-function onFechaChange(v){ STATE.fecha=v; STATE.exportCache={}; cargarResumen(); }
+/* D105 — misma barrera que en asistencia.html. Aquí importa igual o más: desde esta pantalla se
+ * ESCRIBE con `asistencia_individual` (detalle por cuadrilla y "Completar faltantes"), así que una
+ * fecha vacía en STATE guardaba filas sin fecha en ASISTENCIA. Y era un círculo: con la fecha vacía
+ * el backend devolvía justo las filas huérfanas, que se veían como si fueran el día pedido. */
+function fechaValida(v){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(v||''))) return false;
+  const p=String(v).split('-'), dt=new Date(Number(p[0]), Number(p[1])-1, Number(p[2]));
+  return dt.getFullYear()===Number(p[0]) && dt.getMonth()===Number(p[1])-1 && dt.getDate()===Number(p[2]);
+}
+function onFechaChange(v){
+  if(!fechaValida(v)){
+    alert('⚠️ La fecha quedó vacía o incompleta.\n\nSe mantiene el ' + STATE.fecha + '. Elige el día en el calendario.');
+    render();   // el campo vuelve solo al día que estaba puesto
+    return;
+  }
+  STATE.fecha=v; STATE.exportCache={}; cargarResumen();
+}
 // D74b: admin cambia la vista de área (Todas/Tierras/ODT/ODL); recarga resumen y limpia caché de export.
 function onAreaFiltro(v){
   STATE.areaFiltro=v; STATE.exportCache={}; STATE.personal=null;
@@ -618,6 +634,8 @@ async function guardarDetalle(idx){
     fila={ codigo:f.codigo, cedula:f.cedula, nombre:f.nombre, cargo:f.cargo, cuadrilla:f.cuadrilla,
       cc:'', proyecto:'', hora_entrada:'', hora_salida:'', presente:'No', motivo_ausencia:mot, turno:'' };
   }
+  // D105: no se escribe una fila sin fecha (el backend también lo rechaza; aquí se avisa mejor).
+  if(!fechaValida(STATE.fecha)){ alert('⚠️ No se puede guardar sin fecha. Elige el día en el campo "Fecha".'); return; }
   const msg=document.getElementById('det-msg-'+idx); msg.innerHTML='<div class="aviso">⏳ Guardando…</div>';
   try{
     perfReset();
@@ -769,6 +787,8 @@ async function guardarCompletar(){
   });
   if(!filas.length){ alert('No marcaste el estado de ninguna persona.'); return; }
   if(filas.some(f=>f.presente==='No' && !f.motivo_ausencia)){ alert('Falta el motivo de alguna persona marcada como ausente.'); return; }
+  // D105: ídem — "Completar faltantes" escribe por persona y también quedaba sin fecha.
+  if(!fechaValida(STATE.fecha)){ alert('⚠️ No se puede guardar sin fecha. Elige el día en el campo "Fecha".'); return; }
   const msg=document.getElementById('compMsg'); msg.innerHTML='<div class="aviso">⏳ Guardando…</div>';
   try{
     perfReset();

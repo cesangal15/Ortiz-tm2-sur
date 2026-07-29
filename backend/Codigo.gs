@@ -185,6 +185,24 @@ function fdate(v){
   return String(v).slice(0,10);
 }
 function toDate(s){ const p=String(s||'').slice(0,10).split('-'); if(p.length<3) return ''; return new Date(Number(p[0]),Number(p[1])-1,Number(p[2])); }
+/* D105 — portero de fechas, gemelo del de CodigoAsistencias.gs (son dos proyectos separados, D69).
+ * `fdate` normaliza pero no valida: con vacío devuelve '' y con basura devuelve los 10 primeros
+ * caracteres. Aquí eso terminaba en `toDate('')` = '' escrito en la col A de DATA, que es la columna
+ * FECHA del maestro TM2 — una fila que se pega en el Excel sin fecha. Las capturas de obra ya validan
+ * la fecha en el cliente (capataz/chequeadora/drenajes marcan el campo en rojo y no envían), así que
+ * esto es la red de abajo: ningún payload legítimo de hoy la necesita, y ninguno se rompe por ella.
+ * No afecta la retrocompatibilidad de la cola offline (D82): sin `ok:true` el ítem se queda encolado
+ * en el teléfono en vez de escribirse mal, que es justo lo que se quiere. */
+function fdateValida_(v){
+  const s=fdate(v);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
+  const p=s.split('-'), y=Number(p[0]), m=Number(p[1]), d=Number(p[2]);
+  const dt=new Date(y, m-1, d);
+  return (dt.getFullYear()===y && dt.getMonth()===m-1 && dt.getDate()===d) ? s : '';
+}
+const ERROR_FECHA = 'La fecha del reporte llegó vacía o con un formato que no se entiende. '
+  + 'Vuelve a elegir el día en el campo "Fecha" y envía otra vez. '
+  + 'No se guardó nada a propósito: una fila sin fecha no aparece en la bandeja ni en el maestro.';
 /**
  * D93 — Garantiza que la hoja tenga filas suficientes para escribir n filas a partir de la última
  * fila con datos. Crece en bloques (BLOQUE_FILAS) para no fragmentar la grilla. Idempotente y
@@ -891,7 +909,10 @@ function idsExistentes(sh, headers, idHeader, fecha){
   return out;
 }
 function guardarReporte(body){
-  const fecha=fdate(body.fecha), reporta=body.capataz||'', rol=body.rol||'capataz', ts=new Date();
+  // D105: sin fecha válida no se escribe nada. Una fila de BANDEJA sin fecha no la ve el encargado en
+  // ningún día, y el capataz creería que su reporte quedó subido.
+  const fecha=fdateValida_(body.fecha), reporta=body.capataz||'', rol=body.rol||'capataz', ts=new Date();
+  if(!fecha) return json({ok:false, error:ERROR_FECHA});
   const banSh=getSheet('BANDEJA', BANDEJA_HEADERS), maqSh=getSheet('MAQUINARIA', MAQ_HEADERS);
   const banRows=[], maqRows=[];
   // D82 — identidad de envíos: cada fila del payload puede traer su id_registro UUID GENERADO EN EL
@@ -1383,7 +1404,9 @@ function maquinariaProduccion(e){
 // original del capataz en produccion_capataz_orig la PRIMERA vez; (2) crea filas nuevas (nuevas[])
 // para redirigir producción huérfana a una máquina (D60). ESCRIBE SOLO MAQUINARIA: nunca DATA/BANDEJA.
 function maquinariaProduccionGuardar(body){
-  const fecha=fdate(body.fecha), ajustes=body.ajustes||[], nuevas=body.nuevas||[];
+  // D105: las filas NUEVAS de este panel llevan la fecha del payload a MAQUINARIA.
+  const fecha=fdateValida_(body.fecha), ajustes=body.ajustes||[], nuevas=body.nuevas||[];
+  if(!fecha) return json({ok:false, error:ERROR_FECHA});
   const sh=getSheet('MAQUINARIA', MAQ_HEADERS);
   const v=sh.getDataRange().getValues(), h=v[0];
   const idCol=h.indexOf('app_id_registro'), fCol=h.indexOf('fecha');
@@ -1457,7 +1480,11 @@ function maquinariaProduccionGuardar(body){
 // borra lo de tierras ni lo de ODL (y viceversa). body.area viene del rol que envía; si falta
 // (frontend viejo en caché) se asume 'tierras', el único emisor que existía antes de drenajes.
 function enviarData(body){
-  const fecha=fdate(body.fecha), incluidas=body.cantidades||[], ts=new Date();
+  // D105: la más delicada de las tres — la col A de DATA es la FECHA del maestro TM2 (paste A:S), y
+  // además el borrado de abajo se hace POR FECHA: con la fecha vacía se borrarían las filas huérfanas
+  // de otro envío fallido en vez del día que se quiere pisar.
+  const fecha=fdateValida_(body.fecha), incluidas=body.cantidades||[], ts=new Date();
+  if(!fecha) return json({ok:false, error:ERROR_FECHA});
   const aB=String(body.area||'').trim().toLowerCase();
   const area=(aB==='odt'||aB==='odl'||aB==='tierras') ? aB : 'tierras';
   // 1) DATA: borrar el día SOLO en el área que envía, y reescribir. El área de una fila de DATA la
