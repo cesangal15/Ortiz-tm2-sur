@@ -151,6 +151,21 @@
 │  getRange acotado, CacheService 6h para las hojas                      │
 │  casi estáticas (NUNCA ASISTENCIA/NOTAS/EXTRAS_ADMIN)                  │
 │  y campo `_ms` (ms de servidor) en toda respuesta.                     │
+│  D102 — LECTURA ACOTADA de ASISTENCIA (la hoja que crece):             │
+│    · por FECHA, en 2 pasos (leerFilasPorFecha_): se escanea SOLO la    │
+│      columna `fecha` y se traen únicamente los bloques contiguos de    │
+│      filas de ese día/rango, con re-filtro fila a fila. Usan esto      │
+│      asistencia · export · ausencias. Fallback a lectura completa si   │
+│      la hoja es chica (<2.000 filas), el rango pasa de 12 días, hay    │
+│      >12 bloques o habría que traer >40% de la hoja.                   │
+│    · por COLUMNAS (leerColumnasDeHoja_) los 2 cruces que necesitan     │
+│      TODO el histórico y no se pueden acotar por fecha:                │
+│      proyectoDefecto del export (cols 5–14) y los CC recientes de      │
+│      roster (cols 2–10).                                              │
+│    · memo de lo acotado SEPARADO del de la hoja completa (_memoRango); │
+│      invalidarHoja_ limpia los dos. Campo `_celdas` en toda respuesta. │
+│    Escrituras SIN tocar: hacen clearContents + rewrite total y         │
+│    necesitan todas las filas (ver D102 y backlog 4.11).                │
 │  Capacidad de grilla (D93): ensureRows_ antes                          │
 │  de cada bloque; la grilla crece sola.                                 │
 └────────────────────────┬────────────────────────────────────────────--┘
