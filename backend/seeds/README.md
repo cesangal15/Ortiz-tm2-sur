@@ -96,3 +96,40 @@ a lo ya reportado).
   Cada capataz reporta su propia asistencia eligiendo ese CC (ya está en sus frecuentes).
 - ODL (capataz `jairo`) quedó cargado con el Parte del 10-jul (ver sección ODL arriba).
 - Si querés ofrecer también el capítulo 07 a ODT, agregá esas filas a `CC_USADOS` con `area=odt`.
+
+## UF3 — cuadrilla UF3, proyecto 3703 (D101)
+
+Origen: hoja **`Parte`** de la plantilla Navision de UF3 que entregó el usuario (jul-2026), incluida en
+el repo como **`plantilla_parte_uf3.xlsx`** (también es la plantilla que la app usa para exportar 3703:
+misma estructura que la de 3701 —7 hojas, Parte A–R, mismo listado de Trabajadores— pero con la hoja
+`Proyectos` de 3703 y sus 580 `Centros de coste`). El generador solo llena la hoja `Parte` y borra las
+filas de ejemplo, así que el libro se puede usar tal cual viene.
+
+Mismo procedimiento de pegado (cada TSV debajo de lo ya existente en su hoja):
+
+1. **CUADRILLAS_uf3.tsv** → hoja `CUADRILLAS`. **Una sola cuadrilla** (decisión del usuario):
+   - `UF3` · `responsables` **vacío** · `area=uf3` · `estado` vacío (= activa).
+     Nadie de UF3 tiene login de capataz todavía: la reporta `residente_uf3` por la rama de ÁREA de
+     `cuadrillasDeUsuario` (la misma de `duvan`). El día que haya capataces con login se agregan a
+     `responsables` y los dos canales coexisten — cero código.
+2. **PERSONAL_uf3.tsv** → hoja `PERSONAL`. 35 personas, todas en la cuadrilla `UF3`.
+   - `codigo` = número Navision (empata con la hoja Trabajadores de la plantilla al exportar).
+   - `cedula` va vacía (no venía en el Parte); el nombre va **verbatim** como lo escribe Navision.
+   - `cargo=CAPATAZ` en los tres que en el Parte llevan el CC de supervisión `3703.I010305`:
+     **76804 ARIEL LISANDRO CORREA**, **76626 CARLOS ERNESTO VILLADA** y **75746 ALBERT ESNAIDER ROJAS**.
+     Con eso el formulario los saca de los bloques y les pone su CC propio automáticamente (D72(4)).
+3. **CC_USADOS_uf3.tsv** → hoja `CC_USADOS`. 7 filas con `area=uf3` — los CC que la gente de UF3 usa
+   realmente en el Parte. **NO incluye** `3703.I010305` (supervisión del capataz), igual que en ODT/ODL.
+4. **CONFIG** (a mano, `setupHojas()` solo siembra con la hoja vacía): agregar la fila
+   `proyecto_3703` → `3703| T2 - UF3 - R4513 PR 09+800 - PR 90+718` (string exacto de la hoja
+   `Proyectos` de la plantilla). Sin esa fila el export avisa y escribe "3703" pelado, que Navision no
+   reconoce.
+
+**Cruces con personal existente — revisar ANTES de pegar.** Contra los seeds de ODT/ODL no hay ninguno.
+Contra **tierras hay que mirar el Sheet vivo**: `76804 ARIEL` y `75746 ALBERT` son los dos capataces que
+dan nombre a las cuadrillas ARIEL/ALBERT y que D84 mandó retirar con `fecha_retiro = 2026-07-27`. Por eso
+sus filas de UF3 llevan **`fecha_ingreso = 2026-07-27`**: sin esa fecha aparecerían en el roster de UF3
+también en días anteriores a su salida de tierras, y la residente reporta días pasados. Si el checklist
+de D84 no se ejecutó (siguen `activo` en tierras sin fecha de retiro), **primero retíralos allá** — si no,
+quedan activos en dos áreas a la vez. **`76626 CARLOS ERNESTO VILLADA` queda con `fecha_ingreso` vacío**
+(= siempre activo): si venía de otra cuadrilla del sistema, hay que ponerle su fecha real de ingreso a UF3.

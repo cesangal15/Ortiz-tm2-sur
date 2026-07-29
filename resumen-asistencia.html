@@ -186,15 +186,24 @@ function olvidarPlantilla(){
 }
 // Plantilla incluida en el repo: la app busca `plantilla_parte.xlsx` junto al HTML. Si existe, la usa
 // sola (sin que el usuario suba nada). Si no está (404) o no es un .xlsx válido, cae al modo subir.
+// D101: la plantilla incluida depende del ÁREA que se revisa. Las de 3701 y 3703 tienen la misma
+// estructura (7 hojas, Parte de 18 columnas A–R, mismo listado de Trabajadores) pero NO el mismo
+// catálogo de `Centros de coste` ni la misma hoja `Proyectos`, así que exportar UF3 con la plantilla de
+// tierras metería el Parte en un libro con los CC del 3701. El generador solo llena la hoja `Parte` y
+// conserva las demás intactas: por eso el libro de partida tiene que ser el del proyecto correcto.
+function plantillaBundleUrl(){
+  const esUF3 = STATE.rol==='asistencia_plus_uf3' || (STATE.rol==='admin' && STATE.areaFiltro==='uf3');
+  return esUF3 ? 'plantilla_parte_uf3.xlsx' : 'plantilla_parte.xlsx';
+}
 async function cargarPlantillaBundle(){
   if(STATE.tplBuf) return; // ya hay una (recordada o subida esta sesión)
   try{
-    const resp=await fetch('plantilla_parte.xlsx', {cache:'no-store'});
+    const resp=await fetch(plantillaBundleUrl(), {cache:'no-store'});
     if(!resp.ok) return;
     const buf=await resp.arrayBuffer();
     const sig=new Uint8Array(buf.slice(0,2));            // un .xlsx es un ZIP: empieza con 'PK' (0x50 0x4B)
     if(sig[0]!==0x50 || sig[1]!==0x4B) return;           // 404 servido como HTML u otro archivo -> ignora
-    STATE.tplBuf=buf; STATE.tplName='plantilla incluida en la app'; STATE.tplBundle=true; STATE.tplRecordada=false;
+    STATE.tplBuf=buf; STATE.tplName=plantillaBundleUrl(); STATE.tplBundle=true; STATE.tplRecordada=false;
     if(STATE.data) render();
   }catch(e){}
 }
@@ -205,7 +214,9 @@ window.onload = function(){
   // o residente de drenajes unificado (residente_dren → ODT+ODL en un solo archivo, D84).
   // D74b: jeisson entraba con rol 'asistencia_plus' (NO 'jeisson'), por eso lo devolvía al login.
   // D88: `asistencia_plus_dren` (duvan) = jeisson pero de drenajes (ODT+ODL, solo asistencias).
-  const rolesOk=['residente','admin','asistencia_plus','asistencia_plus_dren','residente_odt','residente_odl','residente_dren'];
+  // D101: `asistencia_plus_uf3` (residente_uf3) = lo mismo para UF3 (área `uf3`, proyecto 3703). El
+  // backend le fuerza el área e ignora `&area=`, así que desde aquí no puede ampliar su alcance.
+  const rolesOk=['residente','admin','asistencia_plus','asistencia_plus_dren','asistencia_plus_uf3','residente_odt','residente_odl','residente_dren'];
   if(!rol || rolesOk.indexOf(rol)<0){ window.location.href='index.html'; return; }
   STATE.usuario=usuario; STATE.rol=rol;
   document.getElementById('userDisplay').textContent=usuario;
@@ -267,13 +278,25 @@ async function cargarResumen(){
 // ¿La vista actual es de TIERRAS? (residente de tierras, jeisson, o admin sin filtrar ODT/ODL).
 // El flujo especial de dom/fest (D81c: subir solo a quienes trabajaron, sin aviso de sin-reportar)
 // aplica SOLO a tierras — drenajes ODT/ODL siguen reportando por cuadrilla también esos días.
+// D101 (P3, decisión del usuario jul-2026): UF3 sigue la regla CONSERVADORA de drenajes — el aviso de
+// "gente sin reportar" se conserva TODOS los días, también domingos y festivos. Por eso
+// `asistencia_plus_uf3` NO entra aquí. Si más adelante se confirma que UF3 va con la regla de tierras
+// (D81), es una línea: agregar el rol a esta condición y `uf3` a las áreas de abajo.
+// El caso del admin se escribe ahora en POSITIVO (antes era "todo lo que no sea odt/odl"): con la
+// lista negra, elegir "Ver como UF3" habría caído por descarte en el flujo de tierras.
 function esVistaTierras(){
   return STATE.rol==='residente' || STATE.rol==='asistencia_plus'
-    || (STATE.rol==='admin' && STATE.areaFiltro!=='odt' && STATE.areaFiltro!=='odl');
+    || (STATE.rol==='admin' && (STATE.areaFiltro==='' || STATE.areaFiltro==='tierras'));
 }
 function onFechaChange(v){ STATE.fecha=v; STATE.exportCache={}; cargarResumen(); }
 // D74b: admin cambia la vista de área (Todas/Tierras/ODT/ODL); recarga resumen y limpia caché de export.
-function onAreaFiltro(v){ STATE.areaFiltro=v; STATE.exportCache={}; STATE.personal=null; cargarResumen(); }
+function onAreaFiltro(v){
+  STATE.areaFiltro=v; STATE.exportCache={}; STATE.personal=null;
+  // D101: si la plantilla a la vista es la INCLUIDA en la app, se recarga la del área elegida (tierras
+  // ↔ UF3). Una plantilla subida o recordada por el usuario NO se toca: manda la suya.
+  if(STATE.tplBundle){ STATE.tplBuf=null; STATE.tplBundle=false; cargarPlantillaBundle(); }
+  cargarResumen();
+}
 
 function render(){
   const _t0=ahora();
@@ -295,7 +318,8 @@ function render(){
     // D74b: solo el admin puede ver TODO o filtrar por área ("ver como" tierras/ODT/ODL). Los residentes
     // ya vienen acotados por el backend a su área, así que no necesitan el selector.
     + (STATE.rol==='admin' ? `<div class="field" style="max-width:200px;"><label>Ver como</label><select onchange="onAreaFiltro(this.value)">`
-        + ['','tierras','odt','odl'].map(a=>`<option value="${a}" ${STATE.areaFiltro===a?'selected':''}>${a===''?'Todas las áreas':(a==='tierras'?'Tierras':a.toUpperCase())}</option>`).join('')
+        // D101: `uf3` entra en la lista (el backend la acepta en areasEfectivas).
+        + ['','tierras','odt','odl','uf3'].map(a=>`<option value="${a}" ${STATE.areaFiltro===a?'selected':''}>${a===''?'Todas las áreas':(a==='tierras'?'Tierras':a.toUpperCase())}</option>`).join('')
         + '</select></div>' : '')
     + '</div></div>';
 
@@ -393,7 +417,7 @@ function render(){
   // D72/D74b: gestión de personal para residente(tierras), admin, jeisson y residentes de área; el backend
   // la limita a su área (jeisson = tierras, mismos permisos que el residente de tierras).
   // D88: duvan (asistencia_plus_dren) igual pero acotado por el backend a ODT+ODL.
-  if(['residente','admin','asistencia_plus','asistencia_plus_dren','residente_odt','residente_odl','residente_dren'].indexOf(STATE.rol)>=0){
+  if(['residente','admin','asistencia_plus','asistencia_plus_dren','asistencia_plus_uf3','residente_odt','residente_odl','residente_dren'].indexOf(STATE.rol)>=0){
     html+='<div class="section-title">Gestión de personal</div>';
     html+='<div class="card" id="gestionCard"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">'
       + '<button class="btn-ghost" onclick="cargarPersonal()">Cargar personal ↻</button>'
@@ -596,7 +620,7 @@ async function guardarDetalle(idx){
  * responsable de la cuadrilla. */
 function proyectoFromCC(cc){ const m=String(cc||'').match(/^(\d{4})/); return m?m[1]:''; }
 function seccionCompletar(d){
-  if(['residente','admin','asistencia_plus','asistencia_plus_dren','residente_odt','residente_odl','residente_dren'].indexOf(STATE.rol)<0) return '';
+  if(['residente','admin','asistencia_plus','asistencia_plus_dren','asistencia_plus_uf3','residente_odt','residente_odl','residente_dren'].indexOf(STATE.rol)<0) return '';
   const faltantes=d.faltantes||[];
   const comp=[];
   // Los "presente sin CC" ya vienen en faltantes como sin_reportar (incompleto=true), así que basta
@@ -1006,11 +1030,38 @@ function exportCardHtml(){
       + `<div class="field" style="max-width:160px;"><label>Fila inicial de datos</label><input type="number" id="filaInicio" value="${STATE.filaInicio}" min="2" onchange="STATE.filaInicio=parseInt(this.value)||2"></div>`
       + '</div>';
   }
+  // D101: un botón por PROYECTO del área que se está revisando, derivado de los datos (no cableado):
+  // los CC del área (CC_USADOS → catálogo completo como respaldo) más los proyectos que ya aparecen en
+  // las filas del día. En tierras siguen saliendo los mismos dos (3701/3702); la residente de UF3 ve
+  // uno solo (3703) y el admin sin filtro los ve todos.
   h+='<div class="export-btns">'
-    + `<button class="btn" onclick="generarExcel('3701')">Excel 3701 →</button>`
-    + `<button class="btn" onclick="generarExcel('3702')">Excel 3702 →</button>`
+    + proyectosDelAreaHtml()
     + '</div><div id="exportMsg"></div></div>';
   return h;
+}
+// Prefijos de proyecto presentes en el área revisada. Orden estable (numérico ascendente).
+function proyectosDelArea(){
+  const d=STATE.data||{};
+  const set={};
+  const pool=(d.catCCUsados&&d.catCCUsados.length ? d.catCCUsados : (d.catCC||[]));
+  pool.forEach(cc=>{ const p=proyectoDeCC(cc); if(p) set[p]=true; });
+  // Lo ya reportado ese día manda igual: si hay filas de un proyecto, su botón tiene que estar.
+  (d.filas||[]).forEach(f=>{ const p=String(f.proyecto||'').trim(); if(p) set[p]=true; });
+  return Object.keys(set).sort();
+}
+function proyectoDeCC(cc){ const m=String(cc||'').match(/^(\d{4})/); return m?m[1]:''; }
+// Proyecto más frecuente entre las filas PRESENTES de una lista (respaldo para ausentes sin histórico).
+function proyectoMayoritario(filas){
+  const c={};
+  filas.forEach(f=>{ if(f.presente!=='Si') return; const p=String(f.proyecto||'').trim(); if(p) c[p]=(c[p]||0)+1; });
+  let best='', bestN=0;
+  Object.keys(c).forEach(p=>{ if(c[p]>bestN){ bestN=c[p]; best=p; } });
+  return best;
+}
+function proyectosDelAreaHtml(){
+  const ps=proyectosDelArea();
+  if(!ps.length) return '<p style="font-size:12.5px;color:var(--muted);margin:0;">No hay centros de costo cargados para esta área, así que no se puede saber qué proyecto exportar. Revisa la hoja <b>CC_USADOS</b>.</p>';
+  return ps.map(p=>`<button class="btn" onclick="generarExcel('${p}')">Excel ${p} →</button>`).join('');
 }
 function onTplFile(ev){
   const file=ev.target.files[0]; if(!file) return;
@@ -1237,9 +1288,16 @@ async function generarExcel(proyecto){
     const [ , data ] = await Promise.all([ ensureXLSX(), obtenerExport(STATE.fecha) ]);
     perfTabla('generar Excel '+proyecto);
     const cfg=data.config||{}, festivos=data.festivos||[], turnos=data.turnos||[];
-    const proyectoStr = proyecto==='3701' ? (cfg.proyecto_3701||'3701') : (cfg.proyecto_3702||'3702');
-    if(proyecto==='3702' && (!cfg.proyecto_3702 || cfg.proyecto_3702==='PENDIENTE')){
-      msg.innerHTML='<div class="aviso">⚠️ El string de CONFIG.proyecto_3702 sigue como "PENDIENTE" (parámetro abierto). Se usará "3702" tal cual; ajusta CONFIG cuando llegue la plantilla del 3702.</div>';
+    // D101: el string de proyecto se busca por CLAVE (`proyecto_` + prefijo), no con un ternario de dos
+    // valores: un proyecto nuevo solo necesita su fila en CONFIG, sin tocar código. Si falta o quedó en
+    // "PENDIENTE", se avisa con la causa EXACTA y se usa el número pelado (nunca se inventa el string).
+    const claveProy='proyecto_'+proyecto;
+    const proyectoCfg=String(cfg[claveProy]||'').trim();
+    const proyectoStr = (proyectoCfg && proyectoCfg!=='PENDIENTE') ? proyectoCfg : proyecto;
+    if(!proyectoCfg){
+      msg.innerHTML='<div class="aviso">⚠️ Falta <b>CONFIG.'+esc(claveProy)+'</b> en la hoja CONFIG: no hay string Navision para el proyecto '+esc(proyecto)+'. Se usará "'+esc(proyecto)+'" tal cual, que Navision NO reconoce. Agrega esa fila y vuelve a descargar.</div>';
+    } else if(proyectoCfg==='PENDIENTE'){
+      msg.innerHTML='<div class="aviso">⚠️ El string de <b>CONFIG.'+esc(claveProy)+'</b> sigue como "PENDIENTE" (parámetro abierto). Se usará "'+esc(proyecto)+'" tal cual; ajusta CONFIG cuando llegue la plantilla de ese proyecto.</div>';
     }
     // Lee la plantilla y saca el catálogo de Trabajadores de SU PROPIA hoja "Trabajadores" (string exacto
     // de Navision, columna A). El mapa de la plantilla manda sobre lo que traiga el backend (que en la
@@ -1248,9 +1306,14 @@ async function generarExcel(proyecto){
     const catTrabajadores=Object.assign({}, data.catTrabajadores||{}, mapTrabajadoresDeWb(wb));
     const tipoJornada=tipoJornadaDeFecha(STATE.fecha, festivos);
     const avisosProyDefecto=[];
+    // D101: los AUSENTES no llevan CC, así que su proyecto sale del histórico de su cuadrilla
+    // (proyectoDefecto). El respaldo cuando esa cuadrilla no tiene histórico ya NO es "3701" fijo —eso
+    // mandaba a los ausentes de UF3 (o de cualquier área futura) al Parte de tierras—: se usa el
+    // proyecto mayoritario de las filas del propio día y, si tampoco hay, el que se está generando.
+    const proyRespaldo=proyectoMayoritario(data.filas||[]) || proyecto;
     const filasProyecto=(data.filas||[]).filter(f=>{
       if(f.presente==='Si') return String(f.proyecto||'')===proyecto;
-      const def=data.proyectoDefecto[f.cuadrilla] || '3701';
+      const def=data.proyectoDefecto[f.cuadrilla] || proyRespaldo;
       if(!data.proyectoDefecto[f.cuadrilla]) avisosProyDefecto.push(f.nombre);
       return def===proyecto;
     });

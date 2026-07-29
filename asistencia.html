@@ -139,8 +139,22 @@ function esCapataz(p){ return /capataz|capataces/.test(ncargo(p&&p.cargo)); }
 // Sufijo del CC del capataz: configurable por CONFIG.cc_capataz (por si el string Navision cambia);
 // si no está, el valor por defecto de arriba (no exige redeploy del Apps Script).
 function ccCapatazSufijo(){ const c=STATE.config&&STATE.config.cc_capataz; return c?String(c).trim():CC_CAPATAZ_SUFIJO_DEFAULT; }
-// Prefijo (3701/3702) por MAYORÍA de UF de los presentes asignados a bloques de la cuadrilla (D72f).
-// Sin bloques con UF, cae al proyecto del CC más reciente de la cuadrilla; si tampoco, a 3701.
+// D101: prefijos de proyecto DISPONIBLES para quien reporta, derivados de sus propios centros de costo
+// (CC_USADOS del área; si no hay, el catálogo completo). Nada cableado: un área nueva con CC `37xx.`
+// aparece sola. Devuelve algo como ['3701','3702'] en tierras y ['3703'] en UF3, ordenado.
+function proyectosDisponibles(){
+  const pool=(STATE.catCCUsados&&STATE.catCCUsados.length ? STATE.catCCUsados : (STATE.catCC||[]));
+  const set={};
+  pool.forEach(cc=>{ const p=proyectoFromCC(cc); if(p) set[p]=true; });
+  return Object.keys(set).sort();
+}
+// Etiqueta legible de una UF: 3701→UF1, 3702→UF2, 3703→UF3. Es SOLO cosmética; un prefijo desconocido
+// se muestra tal cual (no filtra ni bloquea nada).
+function etiquetaUF(p){ const n=String(p).slice(-2); return /^0\d$/.test(n) ? 'UF'+Number(n) : ''; }
+// Prefijo (37xx) por MAYORÍA de UF de los presentes asignados a bloques de la cuadrilla (D72f).
+// Sin bloques con UF, cae al proyecto del CC más reciente de la cuadrilla; si tampoco, al PRIMER
+// proyecto de los CC del área de quien reporta (D101: ya no cae a 3701, que dejaría al capataz de UF3
+// —o de cualquier área futura— con el proyecto de tierras).
 function prefijoCapataz(){
   const conteo={};
   personasCuadrilla().forEach(p=>{
@@ -154,9 +168,12 @@ function prefijoCapataz(){
   if(best) return best;
   const rec=(STATE.recientesCC&&STATE.recientesCC[STATE.cuadrillaActual])||[];
   for(let i=0;i<rec.length;i++){ const pr=proyectoFromCC(rec[i]); if(pr) return pr; }
-  return '3701';
+  return proyectosDisponibles()[0] || '';
 }
-function ccCapataz(){ return prefijoCapataz()+'.'+ccCapatazSufijo(); }
+// D101: sin prefijo determinable (área sin CC cargados) devuelve '' en vez de un CC roto tipo
+// ".I010305| …". Un capataz presente sin CC cae en "sin reportar" del resumen, que es justo lo que
+// debe pasar: se ve el hueco y se corrige, en vez de mandar a Navision un proyecto inventado.
+function ccCapataz(){ const pr=prefijoCapataz(); return pr ? (pr+'.'+ccCapatazSufijo()) : ''; }
 
 async function cargarRoster(){
   document.getElementById('container').innerHTML='<div class="loading">⏳ Cargando roster…</div>';
@@ -225,7 +242,12 @@ function agregarBloque(){
   // D72: turno por defecto = 1 (diurno). Sus horas coinciden con la jornada estándar; si TURNOS no
   // está cargada, cae a la jornada del día.
   const t1=turnoHoras('1', STATE.fecha);
-  STATE.bloques.push({ id:STATE.nextBloqueId++, cc:'', proyecto:'', uf:'', cuadrilla:STATE.cuadrillaActual, turno:'1',
+  // D101: si el área de quien reporta tiene UN SOLO proyecto (UF3 → 3703), el bloque nace con esa UF
+  // elegida y la lista de CC aparece de una: nadie debería elegir "UF3" en un desplegable de una opción.
+  // Con varias (tierras: 3701/3702) se mantiene el "Elegir UF…" de siempre.
+  const ufs=proyectosDisponibles();
+  const ufIni = ufs.length===1 ? ufs[0] : '';
+  STATE.bloques.push({ id:STATE.nextBloqueId++, cc:'', proyecto:'', uf:ufIni, cuadrilla:STATE.cuadrillaActual, turno:'1',
     hora_entrada:(t1?t1.entrada:STATE.jornada.entrada)||'', hora_salida:(t1?t1.salida:STATE.jornada.salida)||'', ccQuery:'', ccAbierto:false });
   render();
 }
@@ -478,7 +500,9 @@ function render(){
       // que a un trabajador, columnas E/F del Parte) o su jornada de domingo/festivo.
       const cc=ccCapataz();
       const tieneOv=p.hora_entrada_ov!=null;
-      html+=`<span class="badge asig" title="Centro de costo propio de supervisión del capataz (no es la actividad de la cuadrilla)">👷 ${esc(cc.split('|')[0].trim())}</span>`;
+      html+= cc
+        ? `<span class="badge asig" title="Centro de costo propio de supervisión del capataz (no es la actividad de la cuadrilla)">👷 ${esc(cc.split('|')[0].trim())}</span>`
+        : `<span class="badge" title="No se pudo determinar el proyecto: asigna primero un centro de costo a algún bloque de la cuadrilla">👷 sin CC aún</span>`;
       html+=` <button class="link-ov" onclick="toggleOverrideCapataz(${p._pid})">${tieneOv?'usar jornada estándar':'ajustar horario'}</button>`;
       if(tieneOv){
         capatazOv=`<div class="miembro-ov"><input type="time" value="${esc(p.hora_entrada_ov)}" onchange="setOverride(${p._pid},'hora_entrada_ov',this.value)">`
@@ -526,12 +550,15 @@ function bloqueHtml(b, personas){
   let h='<div class="bloque"><div class="bloque-head">'
     + `<span class="tag">Bloque #${b.id}</span>`
     + `<button class="btn-x" onclick="quitarBloque(${b.id})">✕ Quitar</button></div>`;
-  // Selector de UF (3701/3702): define los primeros dígitos del CC. Siempre visible para poder cambiarlo.
+  // Selector de UF: define los primeros dígitos del CC. Siempre visible para poder cambiarlo.
+  // D101: las opciones salen de los CC del área de quien reporta (proyectosDisponibles), no de una
+  // lista cableada — en tierras siguen siendo 3701/3702 y en UF3 sale solo 3703. Con un solo proyecto
+  // el selector no estorba: viene preseleccionado (b.uf ya se sembró en nuevoBloque).
+  const ufs=proyectosDisponibles();
   h+='<div class="row" style="margin-bottom:8px;"><div class="field" style="max-width:220px;"><label>Unidad Funcional</label>'
     + `<select onchange="bloqueUfChange(${b.id},this.value)">`
     + `<option value="" ${!b.uf?'selected':''}>Elegir UF…</option>`
-    + `<option value="3701" ${b.uf==='3701'?'selected':''}>3701 · UF1</option>`
-    + `<option value="3702" ${b.uf==='3702'?'selected':''}>3702 · UF2</option>`
+    + ufs.map(p=>{ const et=etiquetaUF(p); return `<option value="${p}" ${b.uf===p?'selected':''}>${p}${et?' · '+et:''}</option>`; }).join('')
     + '</select></div></div>';
   if(b.cc){
     h+=`<div class="cc-chosen"><span><b>${esc(b.proyecto)}</b> · ${esc(b.cc)}</span><button class="btn-x" onclick="cambiarCC(${b.id})">Cambiar</button></div>`;
