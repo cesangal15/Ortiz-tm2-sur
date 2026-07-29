@@ -89,6 +89,28 @@ a lo ya reportado).
    (editar la celda `responsables` de ALBERT y dejar solo `maleja`). Renombrar la cuadrilla dejaría el
    histórico apuntando a una cuadrilla inexistente. `maleja` ya tiene doble deber (D75) → cero código.
 
+## Cuadrilla propia de `duvan` — asistencias de drenajes (D105)
+
+`duvan` (rol `asistencia_plus_dren`, D88) ya podía reportar CUALQUIER cuadrilla de ODT/ODL, pero no
+tenía **cuadrilla propia** donde meter su gente — el equivalente de `OPERADORES` para `jeisson`.
+
+1. **CUADRILLAS_dren_duvan.tsv** → hoja `CUADRILLAS`, una sola fila debajo de lo ya existente:
+   - `DUVAN` · responsable `duvan` · `area=odt` · `estado` vacío (= activa).
+   - Es **cero código**: el módulo es data-driven, así que la cuadrilla aparece sola en el selector
+     del formulario, en el resumen, en los faltantes, en el export y en la gestión de personal en
+     cuanto la fila exista (`cuadrillasDeUsuario('duvan')` devuelve todas las activas de sus áreas).
+2. **Personal: no hay TSV a propósito.** La gente la asigna `duvan` desde
+   `resumen-asistencia.html` → **Gestión de personal**: "Mover" a quien ya esté en otra cuadrilla de
+   drenajes, o "Agregar" a quien no exista todavía. Mientras esté vacía, la cuadrilla sale en el
+   resumen como "no reportó" y no genera faltantes ni avisos al descargar el Excel (mismo caso que
+   `ENRIQUE` cuando se sembró sin gente).
+3. **Renombrar o cambiar de área es una celda.** El nombre `DUVAN` sigue la convención de drenajes
+   (cuadrilla = nombre del responsable) y `area=odt` es solo una **etiqueta de visibilidad**: `duvan`
+   y `residente_dren` ven ODT+ODL, y en el Parte de Navision el capítulo lo decide el **CC de cada
+   persona** (06.\* ODT / 07.\* ODL), no el área de la cuadrilla. Si se prefiere otro nombre, se
+   cambia ANTES de reportar el primer día (renombrar después dejaría el histórico de `ASISTENCIA`
+   apuntando a una cuadrilla inexistente — misma advertencia que en D84 con ALBERT).
+
 ## Notas
 
 - El **CC del capataz** es `37xx.I010305| ENCARGADOS, INSPECTORES Y CAPATACES`; el prefijo (3701/3702)

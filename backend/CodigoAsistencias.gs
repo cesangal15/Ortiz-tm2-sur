@@ -802,7 +802,11 @@ function cuadrillasDeUsuario(usuario){
   if(u==='admin') return todas.map(r=>r.cuadrilla); // admin elige cuadrilla (§3)
   // D88: `duvan` reporta la asistencia de TODA su área — igual que el admin (elige la cuadrilla en el
   // formulario), pero acotado a ODT+ODL por `areasDeUsuario`. No va por la columna `responsables`:
-  // no es responsable de ninguna cuadrilla, reporta por todos los capataces de drenajes.
+  // reporta por todos los capataces de drenajes, sea o no responsable de la cuadrilla.
+  // D105: además tiene su PROPIA cuadrilla `DUVAN` (`area=odt`, responsable `duvan`) para la gente que
+  // no cuelga de un capataz — el equivalente de `OPERADORES` para `jeisson`. Es solo una fila más en la
+  // hoja CUADRILLAS: esta rama ya la devuelve por área (y la de `responsables` también la encontraría),
+  // así que no hay nada que codificar. La gente la asigna él desde la gestión de personal del resumen.
   // D101: `residente_uf3` usa EXACTAMENTE la misma rama (acotada a `uf3` por areasDeUsuario). Hoy
   // ninguna cuadrilla de UF3 tiene capataz con login, así que ella reporta por todas. El día que los
   // haya, se agregan a `responsables` y los dos canales coexisten (el envío pisa fecha+cuadrilla, D03)
