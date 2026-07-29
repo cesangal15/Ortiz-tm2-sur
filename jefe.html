@@ -47,6 +47,9 @@
   .tot-row:last-child{border-bottom:none;}
   .tot-row .cat{color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;}
   .tot-row .cat small{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:0.5px;margin-top:1px;}
+  /* D88: subtramo (ELEMENTO) al lado del PK — solo lectura, para detectar incoherencias */
+  .tot-row .cat .elem{display:inline-block;margin-left:8px;font-size:10.5px;color:var(--muted);}
+  .tot-row .cat .elem.revisar{color:var(--accent);font-weight:600;}
   .tot-row .val{font-family:'Syne',sans-serif;font-weight:700;white-space:nowrap;}
   .tot-row .val .u{font-family:'DM Sans',sans-serif;font-size:11px;color:var(--muted);font-weight:400;margin-left:4px;}
   .badge{font-size:10px;font-weight:600;padding:1px 7px;border-radius:12px;border:1px solid var(--border);}
@@ -115,7 +118,9 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IV
 // layout A–T conocido) para no acoplar el frontend a posiciones fijas. Es SOLO LECTURA: aquí no se
 // escribe nada a DATA ni al maestro; el copiado va al portapapeles y lo pega el usuario a mano.
 let STATE = { filas:[], cols:{}, desde:'', hasta:'', clima:{} };
-const COLS_DEFAULT = { FECHA:0, GRUPO:2, CC:3, DESCRIPCION:5, UF:6, ABS_INI:9, ABS_FIN:10, UNIDAD:13, LARGO:14, COPY_END:15 };
+// ELEMENTO (col I / índice 8) = el SUBTRAMO al que quedó cargada la fila (D88): se muestra junto al
+// PK en el resumen para que el jefe detecte incoherencias. Solo lectura (D65): el jefe no corrige.
+const COLS_DEFAULT = { FECHA:0, GRUPO:2, CC:3, DESCRIPCION:5, UF:6, ELEMENTO:8, ABS_INI:9, ABS_FIN:10, UNIDAD:13, LARGO:14, COPY_END:15 };
 
 // Área derivada del CC en CLIENTE (espejo de deriveArea del backend, D70) — el esquema A–T de
 // consolidado no cambia: capítulo 06 → ODT, 07 → ODL, resto → tierras.
@@ -219,7 +224,8 @@ function pkCrudo(ini, fin){
 // actividad (DESCRIPCION) y, dentro, por ubicación (PK crudo inicial–final desde ABS + UF). Suma LARGO
 // separado por unidad de medida (nunca mezcla m³ con m²). Cada actividad trae su subtotal por unidad.
 function resumenActividades(rows){
-  const cA=col('DESCRIPCION'), cAi=col('ABS_INI'), cAf=col('ABS_FIN'), cU=col('UF'), cUn=col('UNIDAD'), cL=col('LARGO');
+  const cA=col('DESCRIPCION'), cAi=col('ABS_INI'), cAf=col('ABS_FIN'), cU=col('UF'), cUn=col('UNIDAD'), cL=col('LARGO'),
+        cE=col('ELEMENTO');
   const acts={};
   rows.forEach(r=>{
     const a=String(r[cA]||'').trim()||'—';
@@ -228,11 +234,14 @@ function resumenActividades(rows){
     const ini=parseFloat(r[cAi]);
     const u=String(r[cUn]||'').trim()||'—';
     const val=num(r[cL]);
+    // D88: el SUBTRAMO (ELEMENTO) al que la fila quedó cargada. Entra en la llave de agrupación para
+    // que dos subtramos distintos no se colapsen en una sola ubicación aunque compartan PK/UF.
+    const elem=String((cE!=null?r[cE]:'')||'').trim();
     if(!acts[a]) acts[a]={n:0, unidades:{}, ubic:{}};
     acts[a].n++;
     acts[a].unidades[u]=(acts[a].unidades[u]||0)+val;
-    const k=uf+'||'+pk;
-    if(!acts[a].ubic[k]) acts[a].ubic[k]={uf, pk, unidad:u, total:0, n:0, _ini:isNaN(ini)?Infinity:ini};
+    const k=uf+'||'+pk+'||'+elem;
+    if(!acts[a].ubic[k]) acts[a].ubic[k]={uf, pk, elem, unidad:u, total:0, n:0, _ini:isNaN(ini)?Infinity:ini};
     acts[a].ubic[k].total+=val; acts[a].ubic[k].n++;
   });
   // Ordena actividades alfabéticamente; las ubicaciones por UF y luego por PK ascendente (por metros).
@@ -298,8 +307,12 @@ function bloqueActividad(a){
     + `<span class="act-name">${esc(a.actividad)}</span>`
     + `<span class="act-sub">${fmtUnidades(a.unidades)}</span></div>`;
   a.ubicaciones.forEach(ub=>{
+    // D88: subtramo (ELEMENTO) junto al PK. Un "REVISAR ·" delante señala que el PK quedó fuera de
+    // todo subtramo del eje; se resalta para que salte a la vista en la revisión del jefe.
+    const revisar=/^\s*REVISAR/i.test(ub.elem||'');
+    const elemTag = ub.elem ? `<span class="elem${revisar?' revisar':''}">${esc(ub.elem)}</span>` : '';
     h+='<div class="tot-row"><div class="cat">'
-     + `PK ${esc(ub.pk)} ${badgeUf(ub.uf)}`
+     + `PK ${esc(ub.pk)} ${badgeUf(ub.uf)}${elemTag}`
      + `<small>${ub.n} línea${ub.n!==1?'s':''}</small></div>`
      + `<div class="val">${fmt(ub.total)}<span class="u">${esc(ub.unidad)}</span></div></div>`;
   });

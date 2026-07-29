@@ -14,6 +14,9 @@
  *   GET  ?action=cubicaje                -> {cubicaje:{PLACA:cubicaje,...}}  (catálogo placa→m³/viaje, D53)
  *   GET  ?action=volquetas&fecha=YYYY-MM-DD -> {fecha, filas:[{id_registro,reporta,origen,destino,tipo_destino,uf,placa,viajes,cubicaje,cubicaje_origen}]} (SOLO LECTURA de VOLQUETAS para digitadora.html, D83)
  *   GET  ?action=drenajes                -> {marcadores:[ODT*],items:[ítems .06/.07]} (catálogo drenajes, D69)
+ *   GET  ?action=tramos                  -> {tramos:[{elemento,abs_inicio,abs_fin,pk_inicio,pk_fin,pk}]}
+ *                                           (subtramos del eje ordenados por abscisa, solo conjunto TRAMO;
+ *                                           alimenta el selector de subtramo del encargado, D88)
  *   GET  ?action=acumulado_drenajes[&area=] -> {acumulado:{"ELEMENTO||CCcorto":cantidad}} (acumulado oficial por ODT, D70)
  *   GET  ?action=maquinaria_produccion&fecha=...  -> cruce MAQUINARIA(CC 02.05-08) × volumen oficial DATA (2.4/D55)
  *   POST {action:'maquinaria_produccion', fecha, ajustes:[{id_registro,produccion}]} -> parcha SOLO col T de MAQUINARIA
@@ -223,19 +226,53 @@ function buildDataRow(c, fecha, ts, reporta, rol, idC){
   // byte-idéntico, D68). Si no hay elemento para esa actividad/PK, se arma desde el PK con el helper
   // único (sin "Pk Pk") — buildElemento/pkNorm/pkMeters quedan SOLO para ese fallback. REVISAR queda
   // SÓLO para el caso legítimo (el PK no pertenece a ningún tramo del eje / falta el marcador).
-  const lk = lookupElemento(cc, c.descripcion, mi, confDest || null);
+  // D88: el cruce por abscisa recibe también el PK FINAL para anclarse en el PUNTO MEDIO del rango
+  // (ver anclaCruce). Antes solo viajaba `mi`, así que el subtramo se decidía con el extremo inicial.
+  const lk = lookupElemento(cc, c.descripcion, mi, confDest || null, mf);
   const pkElem = buildElemento(c.pk_inicial, c.pk_final);
-  const elem = lk.elem ? lk.elem
-             : lk.revisar ? ('REVISAR · ' + (pkElem || c.elemento || ('pk ' + (c.pk_inicial||''))))
-             : (pkElem || c.elemento || '');
+  let elem = lk.elem ? lk.elem
+           : lk.revisar ? ('REVISAR · ' + (pkElem || c.elemento || ('pk ' + (c.pk_inicial||''))))
+           : (pkElem || c.elemento || '');
   // ABS INICIAL/FINAL (D68, enmienda D63b): con match, copian K/L del elemento emparejado VERBATIM
   // — el ABS refleja el subtramo completo, no el tramo puntual del día (pedido del jefe). Fallback
   // (sin match / PK fuera de tramo / REVISAR / celda K o L vacía en la BASE): ABS derivado del PK
   // como antes (D04). El PK reportado sigue intacto en las internas U–AA (pk_inicial/pk_final).
-  const absIni = (lk.elem && lk.absIni!=null && lk.absIni!=='') ? lk.absIni
-               : (mi != null ? mi : (c.abs_inicial!=null ? c.abs_inicial : ''));
-  const absFin = (lk.elem && lk.absFin!=null && lk.absFin!=='') ? lk.absFin
-               : (mf != null ? mf : (c.abs_final!=null ? c.abs_final : ''));
+  let absIni = (lk.elem && lk.absIni!=null && lk.absIni!=='') ? lk.absIni
+             : (mi != null ? mi : (c.abs_inicial!=null ? c.abs_inicial : ''));
+  let absFin = (lk.elem && lk.absFin!=null && lk.absFin!=='') ? lk.absFin
+             : (mf != null ? mf : (c.abs_final!=null ? c.abs_final : ''));
+  /* D88 — OVERRIDE MANUAL DEL SUBTRAMO (`c.elemento_forzado`), mismo patrón que `destino_conf` (D79).
+   * Lo manda el panel del encargado SOLO en las líneas donde el residente cambió el subtramo que
+   * resolvió el automático. Existe porque hay un caso que el sistema NO puede resolver solo: que el
+   * reporte de campo sea coherente en PK pero el subtramo lógico sea otro (por liberaciones); eso lo
+   * tiene que ver un humano antes de escribir DATA.
+   *   · Ausente o vacío -> automático de arriba (RETROCOMPATIBLE: payloads viejos no se rompen).
+   *   · Con valor -> ELEMENTO y ABS INICIAL/FINAL VERBATIM de J/K/L de esa fila de la BASE (D68 intacta).
+   *   · UF/proyecto/CC se re-derivan desde el ABS INICIO del subtramo forzado (D04/D63b), igual que en
+   *     D79 el destino manda sobre el PK del origen. EN LA PRÁCTICA SOLO CAMBIA ALGO SI LA CORRECCIÓN
+   *     CRUZA EL LÍMITE 30+000: dentro de la misma UF, UF/proyecto/CC quedan idénticos.
+   *   · Si el elemento no existe en la BASE se IGNORA y la fila cae al automático — nunca se inventa
+   *     un elemento. Queda el log para rastrearlo.
+   *   · No se aplica a la conformación 02.08 (`confDest`): ese destino lo manda D79, y `lookupTramoPorNombre`
+   *     además solo resuelve filas del conjunto TRAMO.
+   *   · NO se persiste en BANDEJA (decisión explícita, opción B, mismo criterio que D79): la elección se
+   *     hace al momento de enviar y un reenvío del día vuelve al automático. */
+  const forz = (!confDest && c.elemento_forzado) ? lookupTramoPorNombre(c.elemento_forzado) : null;
+  if(c.elemento_forzado && !confDest && !forz){
+    Logger.log('D88: elemento_forzado sin match en la BASE, se ignora y la fila cae al automático — "'
+      + c.elemento_forzado + '" (CC ' + cc + ', PK ' + (c.pk_inicial||'') + ')');
+  }
+  if(forz){
+    elem   = forz.elem;                                                   // celda J verbatim
+    absIni = (forz.rawIni!=null && forz.rawIni!=='') ? forz.rawIni : (forz.ini!=null ? forz.ini : '');
+    absFin = (forz.rawFin!=null && forz.rawFin!=='') ? forz.rawFin : (forz.fin!=null ? forz.fin : '');
+    if(forz.ini != null){                            // D04 sobre el ABS INICIO del subtramo forzado
+      uf   = forz.ini <= 30000 ? 'UF1' : 'UF2';
+      proy = uf === 'UF1' ? '3701' : '3702';
+      const codF = ccCorto(cc);                      // D63b: reancla el proyecto al CC
+      cc = codF ? (proy + '.' + codF) : cc;
+    }
+  }
   // DESCRIPCION verbatim de la tabla de ítems de la BASE, cruce por Centro de Coste (D68): la que
   // venía del catálogo interno del frontend llegaba a veces recortada respecto a la BASE y rompía
   // las dinámicas del maestro. Si el CC no está en la BASE, se conserva la descripción reportada.
@@ -288,7 +325,10 @@ function buildDataRowDrenajes(c, fecha, ts, reporta, rol, idC, area, mi, mf){
     }
   } else {
     // ODL por tramo: mismo flujo que tierras (cruce por abscisa contra los tramos "tm2 pk X - Y")
-    const lk=lookupElemento(cc, c.descripcion, mi);
+    // D88: hereda el semiabierto [ini,fin) y el ancla por PUNTO MEDIO del rango (se pasa `mf`), por
+    // ser el MISMO conjunto TRAMO. El override `elemento_forzado` NO aplica aquí: el selector de
+    // subtramo vive en el panel del encargado de tierras; `residente-drenajes.html` no lo tiene.
+    const lk=lookupElemento(cc, c.descripcion, mi, null, mf);
     const pkElem=buildElemento(c.pk_inicial, c.pk_final);
     elem = lk.elem ? lk.elem
          : lk.revisar ? ('REVISAR · '+(pkElem || c.elemento || ('pk '+(c.pk_inicial||''))))
@@ -552,12 +592,35 @@ function lookupDescripcion(cc, descripcion){
   pool.forEach(it=>{ if(n && it.norm.indexOf(n)===0 && (!best || it.norm.length>best.norm.length)) best=it; });
   return best ? best.desc : pool[0].desc;
 }
+// Número o null (tolera '', null, undefined y no-numéricos). Usado por el ancla del cruce (D88).
+function numOrNull(v){
+  if(v===''||v==null||isNaN(Number(v))) return null;
+  return Number(v);
+}
+/* Ancla del cruce por abscisa (D88, enmienda D63a).
+ * Cuando la fila trae PK inicial Y final válidos y DISTINTOS (frentes del capataz), el cruce se hace
+ * con el PUNTO MEDIO del rango — nunca con un extremo. Motivo (mismo criterio ya fijado en backlog
+ * 2.1): los rangos vienen sucios (invertidos, con typos) y anclar en un extremo manda la línea al
+ * subtramo vecino. Se ordena antes de promediar, así un rango invertido (38+500–35+800) da el mismo
+ * centro que el correcto. Con un solo PK se usa ese.
+ * SOLO aplica al conjunto TRAMO: los marcadores MSR son PUNTUALES y se emparejan por cercanía al PK
+ * reportado (promediar un rango los correría fuera de la tolerancia), así que ahí se conserva el
+ * ancla de siempre = PK inicial. Antes de D88 TODO el cruce usaba el PK inicial: `pk_final` llegaba a
+ * `buildDataRow` pero no participaba del emparejamiento. */
+function anclaCruce(mIni, mFin, set){
+  const a=numOrNull(mIni), b=numOrNull(mFin);
+  if(set!=='TRAMO') return (a!=null) ? a : b;
+  if(a!=null && b!=null && a!==b) return (Math.min(a,b)+Math.max(a,b))/2;
+  return (a!=null) ? a : b;
+}
 // -> { elem:'<ELEMENTO>'|'' , revisar:true|false , absIni , absFin }
 // elem = celda J verbatim; absIni/absFin = celdas K/L verbatim del elemento emparejado (D68).
 // En los retornos sin match, absIni/absFin quedan undefined y buildDataRow deriva ABS del PK.
 // setForzado (D79): fuerza el conjunto de la BASE ('RCD'|'ZODME') sin mirar el CC — lo usa la
 // conformación 02.08, cuyo destino elige el residente en el panel del encargado.
-function lookupElemento(cc, descripcion, pkMetersIn, setForzado){
+// pkMetersFin (D88): PK final del rango reportado, para anclar el cruce en el PUNTO MEDIO (ver
+// anclaCruce). Opcional — sin él el comportamiento es el de antes (ancla = PK inicial).
+function lookupElemento(cc, descripcion, pkMetersIn, setForzado, pkMetersFin){
   const all=getBaseRows();
   if(!all.length) return { elem:'', revisar:false };
   const set=setForzado || baseSetFor(ccCorto(cc));
@@ -569,10 +632,32 @@ function lookupElemento(cc, descripcion, pkMetersIn, setForzado){
   }
   // TRAMO / MSR: por abscisa dentro del conjunto.
   if(!rows.length) return { elem:'', revisar:false };     // sin filas de ese tipo -> respaldo PK
-  const pk=(pkMetersIn===''||pkMetersIn==null||isNaN(Number(pkMetersIn)))?null:Number(pkMetersIn);
+  const pk=anclaCruce(pkMetersIn, pkMetersFin, set);      // D88: punto medio del rango en TRAMO
   if(pk==null) return { elem:'', revisar:false };
   // 1) PK dentro de un tramo (sin solape → uno solo; si lo hubiera, gana el de rango más angosto).
-  const hits=rows.filter(r=>r.ini!=null && r.fin!=null && pk>=r.ini && pk<=r.fin);
+  // D88 — INTERVALO SEMIABIERTO [ABS_INICIO, ABS_FIN) para el conjunto TRAMO: un PK que cae EXACTO en
+  // la frontera entre dos subtramos pertenece al que EMPIEZA ahí, no al que termina (14+200 es del
+  // "14+200 – 14+800", no del "12+800 – 14+200"). Mismo criterio que la ventana [fecha_ingreso,
+  // fecha_retiro) de D72(c). Antes ambos extremos eran cerrados: el PK de frontera empataba con DOS
+  // subtramos y el desempate quedaba en manos del ancho del rango y, a igual ancho, del ORDEN FÍSICO
+  // de las filas en la hoja BASE — es decir, por accidente. Dos excepciones al semiabierto:
+  //   · el ÚLTIMO tramo del eje se compara CERRADO en el extremo final (<=), para que 39+560 no
+  //     quede fuera de todo tramo;
+  //   · una fila TRAMO degenerada (ini===fin) se compara cerrada, o no emparejaría nunca.
+  // MSR conserva el cerrado-cerrado de siempre: sus marcadores son puntuales (ini===fin) y con
+  // semiabierto dejarían de emparejar (por eso el cambio va gateado por `set`).
+  let hits;
+  if(set==='TRAMO'){
+    let finMax=null;
+    rows.forEach(function(r){ if(r.fin!=null && (finMax==null || r.fin>finMax)) finMax=r.fin; });
+    hits=rows.filter(function(r){
+      if(r.ini==null || r.fin==null || pk<r.ini) return false;
+      const cerrado = (r.fin===finMax) || (r.fin===r.ini);   // último tramo del eje / fila degenerada
+      return cerrado ? (pk<=r.fin) : (pk<r.fin);
+    });
+  } else {
+    hits=rows.filter(function(r){ return r.ini!=null && r.fin!=null && pk>=r.ini && pk<=r.fin; });
+  }
   if(hits.length){
     hits.sort((a,b)=>(a.fin-a.ini)-(b.fin-b.ini));
     return { elem:hits[0].elem, revisar:false, absIni:hits[0].rawIni, absFin:hits[0].rawFin };
@@ -585,6 +670,43 @@ function lookupElemento(cc, descripcion, pkMetersIn, setForzado){
   if(best && bestD<=BASE_TOL_M) return { elem:best.elem, revisar:false, absIni:best.rawIni, absFin:best.rawFin };
   // 3) el PK no pertenece a ningún tramo/zona del conjunto -> revisión humana
   return { elem:'', revisar:true };
+}
+
+/* ---------- override manual del SUBTRAMO (D88) ----------
+ * Busca una fila del conjunto TRAMO en la tabla de elementos de la BASE por su texto. Cruce tolerante
+ * con normTexto (que NUNCA altera lo que se escribe: se devuelve la fila con J/K/L crudas, D68).
+ * SOLO TRAMO, a propósito: el override del residente corrige SUBTRAMOS liberados, no marcadores — así
+ * un payload no puede saltarse el destino de conformación que elige el residente (D79: RCD/ZODME) ni
+ * el marcador ODT de drenajes (D70) mandando un `elemento_forzado` de ese tipo. null si no calza. */
+function lookupTramoPorNombre(nombre){
+  const n=normTexto(nombre);
+  if(!n) return null;
+  const rows=getBaseRows();
+  for(let i=0;i<rows.length;i++){
+    if(rows[i].tipo==='TRAMO' && normTexto(rows[i].elem)===n) return rows[i];
+  }
+  return null;
+}
+
+/* ---------- catálogo de SUBTRAMOS para los frontends (D88) ----------
+ * GET ?action=tramos -> { ok, tramos:[{elemento, abs_inicio, abs_fin, pk_inicio, pk_fin, pk}] }
+ * Mismo patrón que ?action=drenajes (D70f): las pantallas son estáticas (GitHub Pages) y no pueden
+ * leer el Sheet, así que esta es la única vía por la que conocen los subtramos del eje.
+ * Devuelve SOLO el conjunto TRAMO ("tm2 pk X - Y"), ordenado por abscisa. NO devuelve puntuales
+ * (EL DIVISO, MSR…, RCD 15+800, ZODME PK30) ni los marcadores ODT de drenajes.
+ *   - elemento    : celda J VERBATIM (es la llave que el panel reenvía como `elemento_forzado`; el
+ *                   backend la vuelve a buscar en la BASE, así que debe viajar tal cual).
+ *   - abs_inicio/abs_fin : K/L normalizadas a METROS (para que el frontend calcule fronteras/avisos).
+ *   - pk_inicio/pk_fin/pk: PK formateado para mostrar ("14+200", "12+800 – 14+200").
+ * Solo lectura. */
+function tramosCatalogo(){
+  const tramos=getBaseRows()
+    .filter(function(r){ return r.tipo==='TRAMO' && r.ini!=null && r.fin!=null; })
+    .map(function(r){ return { elemento:r.elem, abs_inicio:r.ini, abs_fin:r.fin,
+                               pk_inicio:pkFmt(r.ini), pk_fin:pkFmt(r.fin),
+                               pk:pkFmt(r.ini)+' – '+pkFmt(r.fin) }; })
+    .sort(function(a,b){ return (a.abs_inicio-b.abs_inicio) || (a.abs_fin-b.abs_fin); });
+  return json({ ok:true, tramos:tramos });
 }
 
 /* ---------- CUBICAJE: cubicaje real por placa (D53 / 2.10) ----------
@@ -661,6 +783,7 @@ function doGet(e){
   if(a==='cubicaje')    return json({ok:true, cubicaje:getCubicajeMap()});
   if(a==='volquetas')   return volquetasDelDia(e);
   if(a==='drenajes')    return drenajesCatalogo();
+  if(a==='tramos')      return tramosCatalogo();   // D88: subtramos del eje para el selector del residente
   if(a==='acumulado_drenajes') return acumuladoDrenajes(e);
   if(a==='maquinaria_produccion') return maquinariaProduccion(e);
   if(a==='debug')       return debug(e);
