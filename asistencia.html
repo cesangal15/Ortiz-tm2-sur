@@ -154,6 +154,11 @@ function proyectosDisponibles(){
 // le ponía al capataz un CC con prefijo 3701. Ahora el respaldo global aplica SOLO a quien no tiene
 // área forzada (capataces de tierras, mairy, admin), que es para quien se escribió.
 function tieneAreaForzada(){ return !!(STATE.areasUsuario && STATE.areasUsuario.length); }
+// Respaldo de `areas` cuando la respuesta del Apps Script no lo trae (backend sin redesplegar): el
+// login guarda el campo `areas` del usuario en localStorage (D84).
+function areasDelLogin(){
+  try{ const a=JSON.parse(localStorage.getItem('areas')||'[]'); return Array.isArray(a)?a:[]; }catch(e){ return []; }
+}
 function poolCCdelArea(){
   const usados=(STATE.catCCUsados||[]);
   if(usados.length) return usados;
@@ -211,7 +216,11 @@ async function cargarRoster(){
       STATE.jornada.salida=STATE.config.salida_dom||'15:00';
     }
     STATE.catCC=data.catCC||[]; STATE.catCCUsados=data.catCCUsados||[]; STATE.catMotivos=data.catMotivos||[]; STATE.recientesCC=data.recientesCC||{};
-    STATE.areasUsuario=data.areas||[];   // D101: [] = sin área forzada (capataces/mairy/admin)
+    // D101: [] = sin área forzada (capataces/mairy/admin). Si el Apps Script AÚN NO se redesplegó,
+    // `data.areas` no existe: se cae a las `areas` que el login guardó en localStorage (index.html ya
+    // las escribe para residente_uf3 y los capataces de drenajes). Así, subir el frontend antes que el
+    // backend no revive el bug de ofrecerle los CC de tierras a la residente de UF3.
+    STATE.areasUsuario=data.areas||areasDelLogin();
     // D72: catálogo de turnos para pre-llenar horas. Normaliza a HH:MM con cero (una hora "7:00" sin
     // cero deja en blanco el <input type=time>, por eso la hora AM no se pre-llenaba).
     STATE.turnos=(data.turnos||[]).map(t=>({ ...t, entrada:padHM(t.entrada), salida:padHM(t.salida) }));
