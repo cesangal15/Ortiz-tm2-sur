@@ -32,6 +32,17 @@
  * Reglas técnicas heredadas (obligatorias, ver /docs/02_REGISTRO_DECISIONES.md):
  *   - Fechas SIEMPRE por duck-typing (typeof v.getFullYear==='function'), nunca instanceof Date (D31).
  *   - POST con Content-Type text/plain y confirmación real del servidor (D30).
+ *   - Capacidad de grilla: toda escritura en bloque pasa por ensureRows_ (D93). No pre-crear filas.
+ *
+ * Rendimiento (D99 → D102):
+ *   - D99: una sola apertura del Spreadsheet por ejecución (`ss_`), memoria de lectura por petición
+ *     (`_memoHoja`), CacheService 6 h para las 10 hojas casi estáticas (NUNCA ASISTENCIA /
+ *     NOTAS_ASISTENCIA / EXTRAS_ADMIN) y campo `_ms` en toda respuesta.
+ *   - D102: LECTURA EN DOS PASOS de `ASISTENCIA` — los endpoints acotados a una fecha o a un rango
+ *     escanean solo la columna `fecha` y traen únicamente los bloques de filas de ese día
+ *     (`leerFilasPorFecha_`); los dos cruces que necesitan todo el histórico se acotan por COLUMNAS
+ *     (`leerColumnasDeHoja_`). Campo `_celdas` en toda respuesta. Ver el bloque grande de comentarios
+ *     sobre `leerFilasPorFecha_` antes de tocar nada de esto.
  */
 
 // El usuario reemplaza este placeholder si crea un Sheet nuevo; ya viene fijado al Sheet entregado.
@@ -108,9 +119,27 @@ const NOTAS_ASISTENCIA_HEADERS = ['fecha','cuadrilla','reporta','nota','timestam
  * `_t0` lo siembran `doGet`/`doPost`; sin él (llamada desde el editor) no se agrega el campo.
  */
 var _t0 = null;
+/**
+ * D102 — campo `_celdas` = celdas de Sheet LEÍDAS en esta ejecución (escaneo de columna + bloques,
+ * o la lectura completa si se cayó al fallback). Es el `_ms` del volumen: permite ver en campo si la
+ * lectura acotada está entrando o no, sin adivinar, y es lo que disparará el umbral del backlog 4.11
+ * cuando llegue. Lo suma `leerRango_`, único punto por el que pasa TODO `getValues` del archivo.
+ * Una lectura servida por `CacheService` o por la memoria de ejecución suma 0: eso es lo correcto,
+ * porque no tocó el Sheet.
+ */
+var _celdas = 0;
 function json(o){
   if(_t0 !== null && o && typeof o === 'object' && o._ms === undefined) o._ms = Date.now() - _t0;
+  if(_t0 !== null && o && typeof o === 'object' && o._celdas === undefined) o._celdas = _celdas;
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+/**
+ * D102 — ÚNICO punto de lectura del Sheet en todo el archivo. Todo `getValues` pasa por aquí para que
+ * el contador de `_celdas` no se pueda quedar desfasado al agregar una lectura nueva.
+ */
+function leerRango_(sh, fila, col, nFilas, nCols){
+  _celdas += nFilas * nCols;
+  return sh.getRange(fila, col, nFilas, nCols).getValues();
 }
 function fdate(v){
   if(v === null || v === undefined || v === '') return '';
@@ -185,7 +214,27 @@ function ss_(){ if(!_ss) _ss = SpreadsheetApp.openById(SHEET_ID); return _ss; }
  * devuelve su `filter`), verificado antes de introducir la memoria.
  */
 var _memoHoja = {};
-function invalidarHoja_(nombre){ delete _memoHoja[nombre]; cacheBorrar_(nombre); }
+
+/**
+ * D102 — memoria de las lecturas ACOTADAS, SEPARADA de `_memoHoja`.
+ *
+ * ⚠️ TODO / ADVERTENCIA PARA QUIEN VENGA DESPUÉS ⚠️
+ * Una lectura acotada (por fecha o por columnas) NO puede poblar `_memoHoja[hoja]`: ahí vive la hoja
+ * COMPLETA. Si se guardaran las filas de un solo día bajo la clave 'ASISTENCIA', cualquier función
+ * que después pidiera la hoja entera en el mismo `doPost`/`doGet` recibiría un subconjunto creyendo
+ * que es todo — y no fallaría: devolvería datos incompletos en silencio (un export sin la mitad de la
+ * gente, un `proyectoDefecto` calculado sobre un día). Por eso van en un diccionario aparte, con clave
+ * `hoja + '|' + tipo + '|' + …`, y `invalidarHoja_` limpia LOS DOS.
+ * Si algún día añades otra variante de lectura parcial, dale su propia clave con el mismo prefijo de
+ * hoja; NO la metas en `_memoHoja`.
+ */
+var _memoRango = {};
+function invalidarHoja_(nombre){
+  delete _memoHoja[nombre];
+  const pref = nombre + '|';                                   // todas las variantes acotadas de esta hoja
+  Object.keys(_memoRango).forEach(function(k){ if(k.indexOf(pref) === 0) delete _memoRango[k]; });
+  cacheBorrar_(nombre);
+}
 
 /* ================= D99 (Fase 2, punto 5) — CacheService para lo casi estático =================
  * Medido en campo tras el redeploy de los puntos 1–4: `_ms` de servidor **5.200–5.456 ms** de un
@@ -268,12 +317,16 @@ function cacheBorrar_(nombre){
     c.removeAll(claves);
   }catch(err){}
 }
-// Encabezados por hoja, para poder releerlas por nombre desde el calentador.
-const HOJAS_HEADERS = {
+// Encabezados por hoja, para poder releerlas por nombre (el calentador del caché y, desde D102, los
+// lectores acotados, que necesitan saber dónde cae la columna `fecha` sin cablear un número).
+// Incluye TAMBIÉN las tres hojas vivas (ASISTENCIA/NOTAS_ASISTENCIA/EXTRAS_ADMIN): estar en este mapa
+// no tiene nada que ver con ser cacheable — eso lo decide HOJAS_CACHEABLES, y ahí no están ni deben estar.
+const HEADERS_DE_HOJA = {
   CONFIG:CONFIG_HEADERS, FESTIVOS:FESTIVOS_HEADERS, TURNOS:TURNOS_HEADERS, CAT_CC:CAT_CC_HEADERS,
   CAT_TRABAJADORES:CAT_TRABAJADORES_HEADERS, CAT_MOTIVOS:CAT_MOTIVOS_HEADERS,
   MOTIVOS_USADOS:MOTIVOS_USADOS_HEADERS, CC_USADOS:CC_USADOS_HEADERS,
-  CUADRILLAS:CUADRILLAS_HEADERS, PERSONAL:PERSONAL_HEADERS
+  CUADRILLAS:CUADRILLAS_HEADERS, PERSONAL:PERSONAL_HEADERS,
+  ASISTENCIA:ASISTENCIA_HEADERS, NOTAS_ASISTENCIA:NOTAS_ASISTENCIA_HEADERS, EXTRAS_ADMIN:EXTRAS_ADMIN_HEADERS
 };
 
 /* ---------- Calentador del caché (D99) ----------
@@ -289,7 +342,7 @@ const HOJAS_HEADERS = {
 function calentarCache(){
   const t0=Date.now(); let n=0;
   Object.keys(HOJAS_CACHEABLES).forEach(function(nombre){
-    try{ invalidarHoja_(nombre); readSheet(nombre, HOJAS_HEADERS[nombre]); n++; }catch(err){}
+    try{ invalidarHoja_(nombre); readSheet(nombre, HEADERS_DE_HOJA[nombre]); n++; }catch(err){}
   });
   Logger.log('calentarCache: '+n+' hoja(s) en '+(Date.now()-t0)+' ms');
   return n;
@@ -322,7 +375,7 @@ function getSheet(name, headers){
   ensureCols_(sh, need);   // D93: ancho de grilla suficiente para los encabezados de esta hoja
   invalidarHoja_(name);    // D99: getSheet puede escribir encabezados y precede a toda escritura
   if(sh.getLastRow()===0){ sh.getRange(1,1,1,need).setValues([headers]); return sh; }
-  const cur=sh.getRange(1,1,1,need).getValues()[0];
+  const cur=leerRango_(sh,1,1,1,need)[0];
   let diff=false; for(let i=0;i<need;i++){ if(String(cur[i]||'')!==headers[i]){ diff=true; break; } }
   if(diff) sh.getRange(1,1,1,need).setValues([headers]);
   return sh;
@@ -352,13 +405,196 @@ function leerHoja_(name, headers){
   const last = sh ? sh.getLastRow() : 0;
   if(sh && last>=2){
     const nCols = Math.min(headers ? headers.length : sh.getLastColumn(), sh.getMaxColumns());
-    const v=sh.getRange(1,1,last,nCols).getValues(), h=headers||v[0];
+    const v=leerRango_(sh,1,1,last,nCols), h=headers||v[0];
     const norm=NORMALIZA_HOJA[name];
     for(let i=1;i<v.length;i++){ const o={}; h.forEach((k,j)=>o[k]=v[i][j]); o._row=i+1; if(norm) norm(o); out.push(o); }
   }
   return out;
 }
 function norm(s){ return String(s==null?'':s).trim().toLowerCase(); }
+
+/* ============ D102 — LECTURA EN DOS PASOS DE LAS HOJAS GRANDES (backlog 3.6 / 4.11) ============
+ *
+ * EL PROBLEMA. `ASISTENCIA` crece 1 fila por persona y por día: con 300 personas y ~26 días hábiles
+ * son 5.200–7.800 filas/mes, 62.000–94.000 al año. Los endpoints acotados a una fecha leían la hoja
+ * ENTERA y filtraban en memoria. Medido en banco con 300 personas × 60 días (17.760 filas), una sola
+ * petición de `?action=asistencia` leía **301.937 celdas**; con un año de histórico, **1.308.320**.
+ * Eso no se pone lento: revienta el tope de 6 minutos de Apps Script. D99 y D100 quitaron el coste
+ * FIJO (una apertura del Spreadsheet, caché de catálogos) pero no bajaron una sola celda de las hojas
+ * grandes, y es lo único que crece.
+ *
+ * EL DISEÑO. Dos pasos:
+ *   1) Escaneo barato: se lee SOLO la columna `fecha` (1 de 17 columnas) y se anotan los NÚMEROS DE
+ *      FILA cuya fecha cae en [desde, hasta], inclusive en ambos extremos (mismo criterio que el
+ *      `consolidado` de D65). La normalización es `fdate` — el mismo helper de siempre, duck-typing,
+ *      nunca `instanceof Date` ni `Utilities.formatDate` (D31). No se reimplementa nada.
+ *   2) Traída acotada: esas filas se agrupan en BLOQUES CONTIGUOS (tolerando huecos de hasta
+ *      GAP_TOLERANCIA filas: traer 5 filas de más sale mucho más barato que otra ida y vuelta al
+ *      servicio de Sheets) y se trae un `getRange` por bloque. Después del `getValues` se vuelve a
+ *      filtrar por fecha FILA A FILA, porque los huecos tolerados cuelan filas de otro día: el
+ *      resultado NO puede depender del agrupamiento.
+ *
+ * EL FALLBACK es lo que garantiza que esto no pueda salir peor. Si la hoja es chica, si el rango es
+ * largo, si el día quedó demasiado fragmentado o si habría que traer casi toda la hoja igual, se hace
+ * la lectura completa de siempre (`readSheet`, con su caché y su memoria). El helper lo decide solo;
+ * los endpoints no se enteran.
+ *
+ * LO ÚNICO QUE PUEDE LEER MÁS QUE ANTES, dicho sin adornos: si el fallback se dispara DESPUÉS del
+ * escaneo (bloques o cobertura), esa petición paga la columna `fecha` de más = **+1/nCols ≈ +5,9 %**
+ * sobre lo de hoy. Por eso las tres guardas baratas (hoja chica, rango largo, columna inexistente) van
+ * ANTES de escanear: cubren el caso que de verdad ocurre — `?action=ausencias` con rangos largos, que
+ * es donde el fallback está previsto que salte siempre. Con un rango ≤ MAX_BLOQUES días, que el
+ * fallback salte post-escaneo exige una fragmentación que la simulación no produjo ni con un 60 % de
+ * correcciones diarias (máximo medido: 7 bloques/día).
+ */
+
+// Huecos de hasta N filas se absorben dentro del mismo bloque en vez de abrir uno nuevo. Medido: con la
+// hoja fragmentada por re-envíos, los bloques de un día quedan a miles de filas unos de otros, así que
+// este número casi nunca decide nada; está por los huecos DE UNA O DOS FILAS (una persona quitada y
+// vuelta a agregar). Coste máximo observado: 15 filas de más.
+const GAP_TOLERANCIA = 5;
+// Más bloques que esto ⇒ lectura completa. Cada bloque es una ida y vuelta a Sheets, y la lección de
+// D99 es que el ida-y-vuelta FIJO es caro. Justificación del 12: simulando un año de operación con 8
+// cuadrillas y el patrón real de reescritura (cada upsert reapila su bloque `fecha+cuadrilla` al final
+// de la hoja), un día ocupa 1 bloque sin correcciones, 1,9 de media con un 10 % de correcciones
+// diarias y **7 en el peor caso con un 60 %**. 12 deja 1,7× de margen sobre ese peor caso.
+const MAX_BLOQUES = 12;
+// Si habría que traer más de este porcentaje de la hoja, no compensa: se lee entera de una vez.
+const UMBRAL_COBERTURA = 0.40;
+// Por debajo de esta cantidad de filas de datos, el escaneo extra no se paga solo. Con 300 personas la
+// hoja cruza este umbral en una semana de operación; por debajo, el comportamiento es EXACTAMENTE el
+// de hoy (misma lectura, mismas celdas).
+const MIN_FILAS_PARA_DOS_PASOS = 2000;
+
+// Fallback: la lectura completa de siempre, con su caché y su memoria de ejecución, filtrada por fecha
+// igual que lo hacían los endpoints antes de D102.
+function leerCompletaPorFecha_(nombreHoja, headers, desde, hasta){
+  return readSheet(nombreHoja, headers).filter(function(r){
+    const f=fdate(r.fecha); return f>=desde && f<=hasta;
+  });
+}
+
+/**
+ * Lector acotado por fecha. `hasta` = `desde` para un solo día. Devuelve EXACTAMENTE los mismos
+ * objetos que `readSheet(...).filter(por fecha)`: mismas claves, mismo `_row`, mismo orden de hoja.
+ */
+function leerFilasPorFecha_(nombreHoja, desdeISO, hastaISO){
+  const headers = HEADERS_DE_HOJA[nombreHoja];
+  const desde = fdate(desdeISO), hasta = fdate(hastaISO);
+  const clave = nombreHoja+'|fecha|'+desde+'|'+hasta;
+  if(_memoRango.hasOwnProperty(clave)) return _memoRango[clave];
+
+  // Si la hoja completa YA está en la memoria de esta ejecución, filtrar de ahí no cuesta una celda.
+  if(_memoHoja.hasOwnProperty(nombreHoja))
+    return (_memoRango[clave] = leerCompletaPorFecha_(nombreHoja, headers, desde, hasta));
+
+  // Una hoja cacheable nunca se escanea: servirla del CacheService es más barato que cualquier lectura.
+  // (Hoy no aplica —solo se llama sobre ASISTENCIA, que jamás se cachea—; es una guarda de futuro.)
+  if(!headers || HOJAS_CACHEABLES[nombreHoja])
+    return (_memoRango[clave] = leerCompletaPorFecha_(nombreHoja, headers||HEADERS_DE_HOJA[nombreHoja], desde, hasta));
+
+  const sh = ss_().getSheetByName(nombreHoja);
+  if(!sh) return (_memoRango[clave] = []);
+  const last = sh.getLastRow();
+  if(last <= 1) return (_memoRango[clave] = []);        // hoja vacía: ni un getRange (guarda del §4.1)
+  const nFilas = last - 1;
+  const nCols  = Math.min(headers.length, sh.getMaxColumns());   // hoja más angosta ⇒ columnas `undefined`, igual que hoy
+  const colFecha = headers.indexOf('fecha') + 1;                 // por NOMBRE, nunca un 3 cableado
+
+  // --- Guardas de coste CERO (antes del escaneo, para no pagar la columna de más) ---
+  if(colFecha < 1 || colFecha > nCols || nFilas < MIN_FILAS_PARA_DOS_PASOS)
+    return (_memoRango[clave] = leerCompletaPorFecha_(nombreHoja, headers, desde, hasta));
+  // Un rango de D días ocupa al menos D bloques salvo que haya días sin datos, así que con
+  // D > MAX_BLOQUES el fallback es prácticamente seguro: mejor no escanear. Esto es lo que hace que
+  // `?action=ausencias` con rangos largos lea exactamente lo mismo que antes, ni una celda más.
+  if(diasEntre_(desde, hasta) > MAX_BLOQUES)
+    return (_memoRango[clave] = leerCompletaPorFecha_(nombreHoja, headers, desde, hasta));
+
+  // --- Paso 1: escaneo de UNA sola columna ---
+  const col = leerRango_(sh, 2, colFecha, nFilas, 1);
+  const filasOk = [];
+  for(let i=0;i<nFilas;i++){
+    const f = fdate(col[i][0]);
+    if(f>=desde && f<=hasta) filasOk.push(i+2);        // número de fila REAL de la hoja
+  }
+  if(!filasOk.length) return (_memoRango[clave] = []);  // día sin datos: cero bloques, cero lecturas más
+
+  // --- Agrupación en bloques contiguos, tolerando huecos de hasta GAP_TOLERANCIA ---
+  const bloques=[]; let ini=filasOk[0], prev=filasOk[0], traidas=0;
+  for(let i=1;i<filasOk.length;i++){
+    if(filasOk[i]-prev-1 > GAP_TOLERANCIA){ bloques.push([ini,prev]); traidas+=prev-ini+1; ini=filasOk[i]; }
+    prev=filasOk[i];
+  }
+  bloques.push([ini,prev]); traidas+=prev-ini+1;
+
+  // --- Fallback por fragmentación o por cobertura ---
+  if(bloques.length > MAX_BLOQUES || traidas > nFilas*UMBRAL_COBERTURA)
+    return (_memoRango[clave] = leerCompletaPorFecha_(nombreHoja, headers, desde, hasta));
+
+  // --- Paso 2: un getValues por bloque, y RE-FILTRO por fecha fila a fila ---
+  const out=[], norma=NORMALIZA_HOJA[nombreHoja];
+  for(let b=0;b<bloques.length;b++){
+    const desdeFila=bloques[b][0], n=bloques[b][1]-desdeFila+1;
+    const v=leerRango_(sh, desdeFila, 1, n, nCols);
+    for(let i=0;i<n;i++){
+      const o={}; headers.forEach((k,j)=>o[k]=v[i][j]); o._row=desdeFila+i; if(norma) norma(o);
+      const f=fdate(o.fecha);
+      if(f>=desde && f<=hasta) out.push(o);            // los huecos tolerados cuelan filas de otro día
+    }
+  }
+  return (_memoRango[clave] = out);
+}
+
+// Días de calendario que abarca [desde, hasta] (ambos inclusive), sin construir la lista. Aritmética
+// con Date local (Bogotá no tiene DST), mismo patrón que `diasDelRango`. Rango vacío o inválido ⇒ 0.
+function diasEntre_(desde, hasta){
+  if(!desde || !hasta || hasta < desde) return 0;
+  const a=String(desde).split('-'), b=String(hasta).split('-');
+  const d1=new Date(Number(a[0]), Number(a[1])-1, Number(a[2]));
+  const d2=new Date(Number(b[0]), Number(b[1])-1, Number(b[2]));
+  return Math.round((d2-d1)/86400000)+1;
+}
+
+/**
+ * D102 — lector acotado POR COLUMNAS (no por fecha), para los dos cruces que necesitan TODO el
+ * histórico y por tanto no se pueden acotar por fecha sin cambiar el resultado:
+ *   · `proyectoDefecto` del export (D94 / backlog 4.11) — cuadrilla(5), proyecto(11), presente(14)
+ *   · los CC recientes por cuadrilla de `roster`          — timestamp(2), cuadrilla(5), cc(10)
+ * Se lee el bloque contiguo mínimo que las cubre. Mismas FILAS y mismos CAMPOS que antes ⇒ mismo
+ * resultado por construcción; lo único que cambia es que no se traen las columnas que nadie mira.
+ * Memoria propia (`_memoRango`), NUNCA `_memoHoja`: esto tampoco es la hoja completa.
+ */
+function leerColumnasDeHoja_(nombreHoja, colIni, colFin){
+  const headers = HEADERS_DE_HOJA[nombreHoja];
+  const clave = nombreHoja+'|cols|'+colIni+'|'+colFin;
+  if(_memoRango.hasOwnProperty(clave)) return _memoRango[clave];
+  // Si la hoja completa ya está en memoria (o es cacheable), sale gratis de ahí.
+  if(_memoHoja.hasOwnProperty(nombreHoja) || !headers || HOJAS_CACHEABLES[nombreHoja])
+    return (_memoRango[clave] = readSheet(nombreHoja, headers||HEADERS_DE_HOJA[nombreHoja]));
+
+  const sh = ss_().getSheetByName(nombreHoja);
+  if(!sh) return (_memoRango[clave] = []);
+  const last = sh.getLastRow();
+  if(last <= 1) return (_memoRango[clave] = []);
+  const maxCols = sh.getMaxColumns();
+  if(colIni > maxCols) return (_memoRango[clave] = []);   // hoja más angosta que el bloque: nada que leer
+  const fin = Math.min(colFin, headers.length, maxCols);
+  const n = fin - colIni + 1;
+  if(n < 1) return (_memoRango[clave] = []);
+  const v = leerRango_(sh, 2, colIni, last-1, n);
+  // Sin NORMALIZA_HOJA a propósito: un normalizador escribe claves por nombre y, sobre una REBANADA de
+  // columnas, inventaría las que no vinieron (`o.fecha_ingreso=''`). Las únicas hojas que llegan aquí
+  // son las tres vivas (no cacheables) y ninguna tiene normalizador; las cacheables salen antes por
+  // `readSheet`, que sí lo aplica. Si algún día una hoja con normalizador necesita este lector, hay
+  // que normalizar SOLO las columnas de la rebanada.
+  const out=[];
+  for(let i=0;i<v.length;i++){
+    const o={};
+    for(let j=0;j<n;j++) o[headers[colIni-1+j]] = v[i][j];
+    o._row=i+2; out.push(o);
+  }
+  return (_memoRango[clave] = out);
+}
 
 /* ---------- área (D72 / D84) ---------- */
 // Helper único de áreas por usuario (mismo criterio que el frontend, D84): devuelve el ARRAY de áreas
@@ -606,7 +842,11 @@ function roster(e){
   // CC usados recientemente por cada cuadrilla (últimos 60 días de ASISTENCIA), más reciente primero.
   const recientesCC={};
   cuadrillas.forEach(c=>{ recientesCC[c]=[]; });
-  const asis=readSheet('ASISTENCIA', ASISTENCIA_HEADERS)
+  // D102: este cruce mira TODO el histórico a propósito (el CC más reciente de una cuadrilla puede ser
+  // de hace meses), así que NO se acota por fecha: acotarlo cambiaría el resultado. Sí se acota por
+  // COLUMNAS — solo usa timestamp(2), cuadrilla(5) y cc(10), que caben en el bloque contiguo 2–10 =
+  // 9 de 17 columnas. Mismas filas, mismo orden, mismos campos ⇒ mismo resultado, ~47 % menos celdas.
+  const asis=leerColumnasDeHoja_('ASISTENCIA', 2, 10)
     .filter(r=> r.cc && cuadrillas.indexOf(r.cuadrilla)>=0)
     .sort((a,b)=> String(b.timestamp)<String(a.timestamp) ? -1 : 1);
   asis.forEach(r=>{
@@ -637,7 +877,10 @@ function asistenciaDia(e){
   // Las filas YA reportadas NO se filtran por estado de la cuadrilla (D84): una cuadrilla inactivada
   // hoy debe seguir mostrando sus filas de fechas anteriores. El filtro de inactivas aplica solo al
   // ROSTER ESPERADO (cuadrillasCat / personalActivo → estado y faltantes).
-  const filas=readSheet('ASISTENCIA', ASISTENCIA_HEADERS).filter(r=> fdate(r.fecha)===fecha && enArea(r.cuadrilla))
+  // D102: lectura ACOTADA al día (escaneo de la columna `fecha` + solo los bloques de filas de ese día).
+  // El helper cae solo a la lectura completa de siempre si la hoja es chica o el día quedó demasiado
+  // fragmentado, así que el filtro por fecha ya viene aplicado y este `filter` solo mira el área.
+  const filas=leerFilasPorFecha_('ASISTENCIA', fecha, fecha).filter(r=> enArea(r.cuadrilla))
     .map(r=>({ id_registro:r.id_registro, timestamp:r.timestamp, fecha:fdate(r.fecha), reporta:r.reporta,
       cuadrilla:r.cuadrilla, codigo:r.codigo, cedula:r.cedula, nombre:r.nombre, cargo:r.cargo, cc:r.cc,
       proyecto:r.proyecto, hora_entrada:ftime(r.hora_entrada), hora_salida:ftime(r.hora_salida),
@@ -746,7 +989,7 @@ function guardarIndividual(body){
     .filter(function(c){ return !cuadrillaPermitidaPara(usuario, c); });
   if(ajena.length) return json({ok:false, error:'Esa cuadrilla no es de tu área: '+ajena.join(', ')});
   const sh=getSheet('ASISTENCIA', ASISTENCIA_HEADERS), need=ASISTENCIA_HEADERS.length, last=sh.getLastRow();
-  let rows = last>1 ? sh.getRange(2,1,last-1,need).getValues() : [];
+  let rows = last>1 ? leerRango_(sh,2,1,last-1,need) : [];
   function keyOf(codigo,cedula){
     const c=String(codigo||'').trim();
     return c ? ('COD:'+c) : ('CED:'+String(cedula||'').trim());
@@ -797,13 +1040,17 @@ function exportDia(e){
   const areas=areasEfectivas(e);
   const cuadArea=areaDeCuadrillaMap();
   const enArea=function(cuadrilla){ return cuadrillaEnAreas(cuadrilla, areas, cuadArea); };
-  const filas=readSheet('ASISTENCIA', ASISTENCIA_HEADERS).filter(r=> fdate(r.fecha)===fecha && enArea(r.cuadrilla))
+  const filas=leerFilasPorFecha_('ASISTENCIA', fecha, fecha).filter(r=> enArea(r.cuadrilla))   // D102
     .map(r=>({ codigo:r.codigo||'', cedula:r.cedula||'', nombre:r.nombre||'', cargo:r.cargo||'',
       cuadrilla:r.cuadrilla||'', cc:r.cc||'', proyecto:String(r.proyecto||''),
       hora_entrada:ftime(r.hora_entrada), hora_salida:ftime(r.hora_salida),
       presente:r.presente||'Si', motivo_ausencia:r.motivo_ausencia||'', turno:String(r.turno||''), fecha:fdate(r.fecha) }));
   // proyecto_defecto por cuadrilla: proyecto MÁS FRECUENTE históricamente (para ausentes, que no llevan CC).
-  const historico=readSheet('ASISTENCIA', ASISTENCIA_HEADERS).filter(r=> r.presente==='Si' && r.proyecto);
+  // D102 / backlog 4.11: este cruce lee TODO el histórico y así se queda — es un agregado global, no se
+  // puede acotar por fecha sin cambiar lo que devuelve, y D94/4.11 lo marcan como intocable. Lo que sí
+  // se acota es el ANCHO: solo usa cuadrilla(5), proyecto(11) y presente(14), que caben en el bloque
+  // contiguo 5–14 = 10 de 17 columnas. Mismas filas, mismos campos ⇒ mismo `proyectoDefecto`, ~41 % menos celdas.
+  const historico=leerColumnasDeHoja_('ASISTENCIA', 5, 14).filter(r=> r.presente==='Si' && r.proyecto);
   const conteo={}; // cuadrilla -> {proyecto:n}
   historico.forEach(r=>{ const c=r.cuadrilla||''; conteo[c]=conteo[c]||{}; conteo[c][r.proyecto]=(conteo[c][r.proyecto]||0)+1; });
   const proyectoDefecto={};
@@ -871,8 +1118,11 @@ function ausenciasRango(e){
 
   // Filas del rango (todas las áreas del usuario). Las YA reportadas no se filtran por estado de
   // cuadrilla (D84): una cuadrilla inactivada hoy conserva su histórico.
-  const enRango=readSheet('ASISTENCIA', ASISTENCIA_HEADERS).filter(function(r){
-    const f=fdate(r.fecha); return f>=desde && f<=hasta && enArea(r.cuadrilla);
+  // D102: lectura acotada al RANGO. Con rangos de más de MAX_BLOQUES días el helper ni escanea: se va
+  // derecho a la lectura completa de siempre (un rango largo cubre casi toda la hoja, no hay nada que
+  // ganar). Es correcto que el fallback salte aquí seguido; el endpoint no se entera.
+  const enRango=leerFilasPorFecha_('ASISTENCIA', desde, hasta).filter(function(r){
+    return enArea(r.cuadrilla);
   });
 
   const filas=enRango.filter(r=> String(r.presente||'')==='No').map(r=>({
@@ -942,7 +1192,7 @@ function guardarExtrasAdmin(body){
   if(isNaN(horas) || !(horas>0 && horas<=maxH)) return json({ok:false, error:'Las horas deben ser un número mayor que 0 y máximo '+maxH+' ('+(tipo==='domfest'?'domingo/festivo':'día normal')+').'});
   const proyecto=proyectoFromCC(cc);
   const sh=getSheet('EXTRAS_ADMIN', EXTRAS_ADMIN_HEADERS), need=EXTRAS_ADMIN_HEADERS.length, last=sh.getLastRow();
-  let rows = last>1 ? sh.getRange(2,1,last-1,need).getValues() : [];
+  let rows = last>1 ? leerRango_(sh,2,1,last-1,need) : [];
   rows = rows.filter(r=> fdate(r[0])!==fecha);         // clave lógica = fecha: re-guardar pisa el día
   rows.push([fecha, cc, proyecto, horas, tipo, new Date(), body.reporta||'admin']);
   sh.clearContents();
@@ -957,7 +1207,7 @@ function borrarExtrasAdmin(body){
   const fecha=fdate(body.fecha);
   if(!fecha) return json({ok:false, error:'Falta la fecha.'});
   const sh=getSheet('EXTRAS_ADMIN', EXTRAS_ADMIN_HEADERS), need=EXTRAS_ADMIN_HEADERS.length, last=sh.getLastRow();
-  let rows = last>1 ? sh.getRange(2,1,last-1,need).getValues() : [];
+  let rows = last>1 ? leerRango_(sh,2,1,last-1,need) : [];
   const antes=rows.length;
   rows = rows.filter(r=> fdate(r[0])!==fecha);
   sh.clearContents();
@@ -989,7 +1239,7 @@ function guardarAsistencia(body){
   const last=sh.getLastRow();
   let keep=[];
   if(last>1){
-    const v=sh.getRange(2,1,last-1,need).getValues();
+    const v=leerRango_(sh,2,1,last-1,need);
     keep=v.filter(row=> !(fdate(row[2])===fecha && String(row[4])===cuadrilla)); // col C fecha, col E cuadrilla
   }
   const nuevas=(body.filas||[]).map(f=>[
@@ -1015,7 +1265,7 @@ function guardarAsistencia(body){
 function upsertNotaDia(fecha, cuadrilla, reporta, nota, ts){
   const f=fdate(fecha), c=cuadrilla||'', txt=String(nota==null?'':nota).trim();
   const sh=getSheet('NOTAS_ASISTENCIA', NOTAS_ASISTENCIA_HEADERS), need=NOTAS_ASISTENCIA_HEADERS.length, last=sh.getLastRow();
-  let rows = last>1 ? sh.getRange(2,1,last-1,need).getValues() : [];
+  let rows = last>1 ? leerRango_(sh,2,1,last-1,need) : [];
   rows = rows.filter(r=> !(fdate(r[0])===f && String(r[1])===c));   // quita la del día+cuadrilla
   if(txt) rows.push([f, c, reporta||'', txt, ts||new Date()]);       // si hay texto, la reescribe
   sh.clearContents();
