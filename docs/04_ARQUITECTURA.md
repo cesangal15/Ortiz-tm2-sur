@@ -40,6 +40,8 @@
 │         (tierras/odt/odl derivada del CC con deriveArea; sin area = tierras — D70)       │
 │  POST {action:maquinaria_produccion}         → parcha col T + crea filas (redir/horas/compl, D60-62)│
 │  Regla técnica: fechas por duck-typing (getFullYear), nunca instanceof Date.            │
+│  Capacidad de grilla (D93): TODA escritura en bloque pasa por ensureRows_(sheet,n) —    │
+│  la hoja crece sola (bloques de 1.000) al agotarse sus filas; diagnosticoCapacidad().   │
 │  Redespliegue: Administrar implementaciones → editar → Nueva versión (misma URL).       │
 └────────────────────────────────────┬─────────────────────────────────────────────────--┘
                                      ▼
@@ -51,6 +53,8 @@
 │              `personal_ayudantes` · `turno_noche` · `nota_libre` (cols 25–28, D70)       │
 │  MAQUINARIA  equipos con producción individual (directo, sin aprobación); interno `area` │
 │              tras produccion_capataz_orig — drenajes = captura libre, a_captura=NO (D70) │
+│  OBSERVACIONES nota GENERAL del día, 1 fila por envío (tierras y drenajes, D103); col   │
+│              `area` sellada con las áreas de las líneas del reporte (D86); no a DATA    │
 │  VOLQUETAS   desglose por placa de la chequeadora (1 fila/placa, informativo; no a DATA) │
 │  CUBICAJE    catálogo placa→cubicaje (lo lee el backend; lo mantiene el usuario; D53/2.10)│
 │  DATA        oficial; A–T = espejo del maestro TM2; internas U+ (…area, clima D37)      │
@@ -69,7 +73,7 @@
 
 ## Flujo de captura (diario)
 
-1. **Capataz** entra → agrega N actividades. Por actividad: actividad específica → (sistema muestra ítem contractual, unidad, UF, CC) → PK → producción (campo adaptativo) → equipos (máquina, operador, horas; motivo si faltan horas) → observación.
+1. **Capataz** entra → agrega N actividades. Por actividad: actividad específica → (sistema muestra ítem contractual, unidad, UF, CC) → PK → producción (campo adaptativo) → equipos (máquina, operador, horas; motivo si faltan horas) → **nota de la actividad** (col `observacion`; va a DATA col S y, D103, sale como `📝` bajo su actividad en el WhatsApp del día) + **una nota general del día** por envío (`observacion_general` → hoja OBSERVACIONES).
 2. **Chequeadora** entra → fecha, origen → N líneas {PK destino, tipo destino (Terraplén·Puente·ODL·ODT·Botadero), bloque de placas} + maquinaria (excavadoras del origen). Pega el desglose por placa estilo WhatsApp; el sistema parsea placa+viajes, calcula el **volumen real de la línea = Σ(viajes×cubicaje)** leyendo la hoja CUBICAJE (D53 sobre D06). Placa no registrada → fallback **14 fijo** (D54) + flag (naranja + `cubicaje_origen`=default). Cada placa se guarda en VOLQUETAS con su cubicaje y m3_placa. **Excavación = por ORIGEN, acumulada (D63):** la excavación se registra DONDE SE HIZO EL CORTE = el origen, así que el reporte genera **UNA sola fila de excavación = Σ(volúmenes de todas las líneas)** al PK del origen (Masivo 2→19+800, Masivo 1→14+400, Diviso→21+500, todos ≤30→UF1/3701; Complementario/Otro→el PK que teclea la chequeadora), del que derivan PK/ELEMENTO/ABS/UF/PROYECTO/CC. El **terraplén NO cambia**: 1 fila por línea con destino=Terraplén, al PK de DESTINO. No aprovechable acumulada sigue disparando ZODME (D17). Las excavadoras reportadas van a MAQUINARIA con producción = total excavado del día **repartido en partes iguales** entre ellas (D54; el encargado reconcilia duplicados con el capataz, D51).
 3. Ambos envían → BANDEJA (+ MAQUINARIA). Confirmación real del servidor (cuenta de filas guardadas).
 
@@ -82,7 +86,9 @@
    **marcador de obra**, 147 puntuales `ODT*` de `?action=drenajes`; 07→ODL pide **PK** inicial/final
    o un marcador ODT si es descole). Por línea: **cantidad directa** en la unidad contractual +
    opcional {oficiales, ayudantes, turno de noche, nota libre} + opcional máquinas (texto libre). El
-   resumen en vivo agrupa por área.
+   resumen en vivo agrupa por área. **D103: además, UNA nota general del día para todo el envío**
+   (`observacion_general` → hoja OBSERVACIONES, sellada con las áreas de las líneas, D86; no a DATA),
+   igual que la del capataz de tierras — la nota libre POR línea se conserva tal cual.
 2. Envía a BANDEJA (+ MAQUINARIA con `a_captura=NO`) con confirmación real (D30). El área queda en
    la col `area` de BANDEJA (derivada del CC, por línea). Dos flujos válidos sin código extra (D84):
    mezclar ODT+ODL en un envío, o dos envíos el mismo día (BANDEJA acumula, D02).
@@ -117,9 +123,9 @@
 
 ```
 ┌── GITHUB PAGES (mismo repo, mismo login index.html) ──────────────────┐
-│  seleccion-reporte.html (capataces/mairy/jeisson: tiles según usuario) │
-│  asistencia.html         (responsable de cuadrilla + admin)           │
-│  resumen-asistencia.html (residente, admin, jeisson)                  │
+│  seleccion-reporte.html (capataces/mairy/jeisson/duvan: tiles x usuario)│
+│  asistencia.html         (responsable de cuadrilla + admin + duvan)   │
+│  resumen-asistencia.html (residente, admin, jeisson, duvan=ODT+ODL)   │
 │  mis-extras.html         (SOLO admin: canal "solo extras", D73)       │
 └────────────────────────┬────────────────────────────────────────────--┘
                           │ fetch GET/POST (text/plain), URL PROPIA
@@ -133,12 +139,39 @@
 │  GET  ?action=personal             → PERSONAL + CUADRILLAS (gestión)  │
 │  GET  ?action=export&fecha=…       → crudo del día + catálogos        │
 │                                       (el cliente arma el Excel)       │
+│  GET  ?action=ausencias&desde=&hasta=→ ausencias del RANGO con motivo   │
+│                                       + días no reportados (D94,       │
+│                                       solo lectura, máx 186 días)      │
 │  POST {reporte_asistencia,…}       → pisa fecha+cuadrilla, escritura   │
 │                                       DIRECTA (sin bandeja, D03)       │
 │  POST {personal, op, usuario,…}    → valida usuario ∈{residente,admin}│
 │  GET  ?action=extras_admin&fecha=… → registro EXTRAS_ADMIN del día(D73)│
 │  POST {extras_admin, fecha,cc,…}   → upsert por fecha (proyecto del CC) │
 │  POST {extras_admin_delete, fecha} → borra la fila del día             │
+│  GET  ?action=cache_reset          → refresca el caché de catálogos    │
+│                                       (D99; lo que se edita a mano     │
+│                                       en el Sheet no pasa por aquí)    │
+│  D99: 1 sola apertura del Spreadsheet por petición,                    │
+│  getRange acotado, CacheService 6h para las hojas                      │
+│  casi estáticas (NUNCA ASISTENCIA/NOTAS/EXTRAS_ADMIN)                  │
+│  y campo `_ms` (ms de servidor) en toda respuesta.                     │
+│  D102 — LECTURA ACOTADA de ASISTENCIA (la hoja que crece):             │
+│    · por FECHA, en 2 pasos (leerFilasPorFecha_): se escanea SOLO la    │
+│      columna `fecha` y se traen únicamente los bloques contiguos de    │
+│      filas de ese día/rango, con re-filtro fila a fila. Usan esto      │
+│      asistencia · export · ausencias. Fallback a lectura completa si   │
+│      la hoja es chica (<2.000 filas), el rango pasa de 12 días, hay    │
+│      >12 bloques o habría que traer >40% de la hoja.                   │
+│    · por COLUMNAS (leerColumnasDeHoja_) los 2 cruces que necesitan     │
+│      TODO el histórico y no se pueden acotar por fecha:                │
+│      proyectoDefecto del export (cols 5–14) y los CC recientes de      │
+│      roster (cols 2–10).                                              │
+│    · memo de lo acotado SEPARADO del de la hoja completa (_memoRango); │
+│      invalidarHoja_ limpia los dos. Campo `_celdas` en toda respuesta. │
+│    Escrituras SIN tocar: hacen clearContents + rewrite total y         │
+│    necesitan todas las filas (ver D102 y backlog 4.11).                │
+│  Capacidad de grilla (D93): ensureRows_ antes                          │
+│  de cada bloque; la grilla crece sola.                                 │
 └────────────────────────┬────────────────────────────────────────────--┘
                           ▼
 ┌── GOOGLE SHEET NUEVO (1KrhzaIg3BSspyi0oH0gHkAJnSRXaOIdel_pKaMVHX9w) ───┐
@@ -163,11 +196,23 @@ la ventana nocturna va de `CONFIG.nocturno_desde` (19:00) a `CONFIG.nocturno_has
 extra pase de las 06:00 es extra DIURNA —, en sábado un turno sin variante sabatina usa su horario de
 semana, y domingo/festivo tiene horario típico 07:00–15:00 (7h a col D, tope `domfest_tope`). Códigos sin
 catálogo pasan sin bloqueo (`codigo| NOMBRE`). Retiros = `inactivo` + `fecha_retiro`, nunca se borra una
-fila. **Áreas (D72/D84):** CUADRILLAS lleva col `area` (`tierras`/`odt`/`odl`) y col **`estado`**
+fila. **Áreas (D72/D84/D101):** CUADRILLAS lleva col `area` (`tierras`/`odt`/`odl`/**`uf3`**) y col **`estado`**
 (`activa`/`inactiva`, vacío=activa: inactivar sin borrar; filtra roster/faltantes/export/selectores/
 gestión, no lo ya reportado). El guard de área es `areasDeUsuario()` → **array** (residente/jeisson=
 `['tierras']`, residente_odt/odl=`['odt']`/`['odl']`, **residente_dren=`['odt','odl']`** con export
-Navision combinado, admin=`[]` sin filtro); los filtros usan `includes`. Columnas H–N (Dom/Fest c/s
+Navision combinado, **duvan=`['odt','odl']`** (D88: solo asistencias, sin panel de drenajes),
+**residente_uf3=`['uf3']`** (D101: asistencias de UF3/proyecto 3703 y nada más),
+admin=`[]` sin filtro); los filtros usan `includes`. **Quién reporta qué cuadrilla** lo resuelve
+`cuadrillasDeUsuario`: por la columna `responsables` para capataces/mairy/jeisson, TODAS para `admin` y
+**todas las de sus áreas para `duvan` y `residente_uf3`** (D88/D101, sin mirar `responsables`); siempre solo las **activas**.
+**Proyecto por CC:** `proyectoFromCC` toma los 4 primeros dígitos del CC (genérico, nunca una lista de
+proyectos), y el generador Navision busca su string en **`CONFIG['proyecto_'+prefijo]`** — `proyecto_3701`,
+`proyecto_3702`, **`proyecto_3703`** (D101); si falta o dice `PENDIENTE`, avisa con la causa exacta y no
+inventa el string. Los selectores de UF y los botones de export se derivan de los CC del área, no de una
+lista fija. **Escritura:** `cuadrillaPermitidaPara()` rechaza reportar/completar sobre cuadrillas fuera del
+área forzada por el rol (D101, regla D69h); quien no tiene área forzada pasa sin restricción.
+Los CC "frecuentes" (`ccUsadosParaArea`) aceptan área o **array** de áreas: mandan las forzadas por el
+rol y, si no hay, se derivan de las cuadrillas del reportante (`areaDeReportante`). Columnas H–N (Dom/Fest c/s
 compensación) y el string de `CONFIG.proyecto_3702` son parámetros abiertos (ver 03_BACKLOG). Este módulo
 **nunca** lee ni escribe BANDEJA/DATA/MAQUINARIA ni comparte Sheet/Script con `Codigo.gs`.
 

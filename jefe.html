@@ -47,7 +47,7 @@
   .tot-row:last-child{border-bottom:none;}
   .tot-row .cat{color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;}
   .tot-row .cat small{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:0.5px;margin-top:1px;}
-  /* D88: subtramo (ELEMENTO) al lado del PK — solo lectura, para detectar incoherencias */
+  /* D104: subtramo (ELEMENTO) al lado del PK — solo lectura, para detectar incoherencias */
   .tot-row .cat .elem{display:inline-block;margin-left:8px;font-size:10.5px;color:var(--muted);}
   .tot-row .cat .elem.revisar{color:var(--accent);font-weight:600;}
   .tot-row .val{font-family:'Syne',sans-serif;font-weight:700;white-space:nowrap;}
@@ -118,7 +118,7 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IV
 // layout A–T conocido) para no acoplar el frontend a posiciones fijas. Es SOLO LECTURA: aquí no se
 // escribe nada a DATA ni al maestro; el copiado va al portapapeles y lo pega el usuario a mano.
 let STATE = { filas:[], cols:{}, desde:'', hasta:'', clima:{} };
-// ELEMENTO (col I / índice 8) = el SUBTRAMO al que quedó cargada la fila (D88): se muestra junto al
+// ELEMENTO (col I / índice 8) = el SUBTRAMO al que quedó cargada la fila (D104): se muestra junto al
 // PK en el resumen para que el jefe detecte incoherencias. Solo lectura (D65): el jefe no corrige.
 const COLS_DEFAULT = { FECHA:0, GRUPO:2, CC:3, DESCRIPCION:5, UF:6, ELEMENTO:8, ABS_INI:9, ABS_FIN:10, UNIDAD:13, LARGO:14, COPY_END:15 };
 
@@ -234,7 +234,7 @@ function resumenActividades(rows){
     const ini=parseFloat(r[cAi]);
     const u=String(r[cUn]||'').trim()||'—';
     const val=num(r[cL]);
-    // D88: el SUBTRAMO (ELEMENTO) al que la fila quedó cargada. Entra en la llave de agrupación para
+    // D104: el SUBTRAMO (ELEMENTO) al que la fila quedó cargada. Entra en la llave de agrupación para
     // que dos subtramos distintos no se colapsen en una sola ubicación aunque compartan PK/UF.
     const elem=String((cE!=null?r[cE]:'')||'').trim();
     if(!acts[a]) acts[a]={n:0, unidades:{}, ubic:{}};
@@ -307,7 +307,7 @@ function bloqueActividad(a){
     + `<span class="act-name">${esc(a.actividad)}</span>`
     + `<span class="act-sub">${fmtUnidades(a.unidades)}</span></div>`;
   a.ubicaciones.forEach(ub=>{
-    // D88: subtramo (ELEMENTO) junto al PK. Un "REVISAR ·" delante señala que el PK quedó fuera de
+    // D104: subtramo (ELEMENTO) junto al PK. Un "REVISAR ·" delante señala que el PK quedó fuera de
     // todo subtramo del eje; se resalta para que salte a la vista en la revisión del jefe.
     const revisar=/^\s*REVISAR/i.test(ub.elem||'');
     const elemTag = ub.elem ? `<span class="elem${revisar?' revisar':''}">${esc(ub.elem)}</span>` : '';

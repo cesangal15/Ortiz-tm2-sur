@@ -16,7 +16,7 @@
  *   GET  ?action=drenajes                -> {marcadores:[ODT*],items:[ítems .06/.07]} (catálogo drenajes, D69)
  *   GET  ?action=tramos                  -> {tramos:[{elemento,abs_inicio,abs_fin,pk_inicio,pk_fin,pk}]}
  *                                           (subtramos del eje ordenados por abscisa, solo conjunto TRAMO;
- *                                           alimenta el selector de subtramo del encargado, D88)
+ *                                           alimenta el selector de subtramo del encargado, D104)
  *   GET  ?action=acumulado_drenajes[&area=] -> {acumulado:{"ELEMENTO||CCcorto":cantidad}} (acumulado oficial por ODT, D70)
  *   GET  ?action=maquinaria_produccion&fecha=...  -> cruce MAQUINARIA(CC 02.05-08) × volumen oficial DATA (2.4/D55)
  *   POST {action:'maquinaria_produccion', fecha, ajustes:[{id_registro,produccion}]} -> parcha SOLO col T de MAQUINARIA
@@ -32,6 +32,13 @@
  */
 
 const SHEET_ID = '1OEAZCcj_kgVS6jWXxOSgyvm57sOsJ7fA1mRTJPU-icM';
+
+// D93 — tamaño mínimo de expansión de la grilla (filas). Una hoja de Sheets nace con 1.000 filas;
+// cuando se agotan, un setValues en bloque falla entero ("The coordinates of the range are outside
+// the dimensions of the sheet") y el usuario tenía que añadir filas a mano para que la información
+// volviera a cargar. Se crece en bloques de este tamaño para no fragmentar la grilla. Es el ÚNICO
+// número a cambiar si se quiere otro tamaño de bloque.
+const BLOQUE_FILAS = 1000;
 
 // DATA: A–T orden del maestro ; U–AA internas
 const DATA_HEADERS = ['FECHA','ORDEN','GRUPO','CENTRO DE COSTO','CAPITULO','DESCRIPCION',
@@ -159,8 +166,18 @@ const VOLQUETAS_HEADERS = ['id_registro','timestamp','fecha','reporta','origen',
 const CUBICAJE_HEADERS = ['placa','cubicaje','tipo'];
 
 /* ---------- helpers ---------- */
-function json(o){ return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
-let _shTZ; function shTZ(){ if(!_shTZ) _shTZ=SpreadsheetApp.openById(SHEET_ID).getSpreadsheetTimeZone(); return _shTZ; }
+/**
+ * D100 — campo `_ms` = milisegundos de SERVIDOR en toda respuesta JSON (mismo criterio que el módulo
+ * de Asistencias, D99). Sirve para separar lo que tarda Apps Script de la red y del arranque del
+ * contenedor: los frontends con `DEBUG_PERF` lo muestran como `servidor_ms` / `red_ms`.
+ * `_t0` lo siembran doGet/doPost; sin él (ejecución desde el editor) no se agrega el campo.
+ */
+var _t0 = null;
+function json(o){
+  if(_t0 !== null && o && typeof o === 'object' && o._ms === undefined) o._ms = Date.now() - _t0;
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+let _shTZ; function shTZ(){ if(!_shTZ) _shTZ=ss_().getSpreadsheetTimeZone(); return _shTZ; }
 function fdate(v){
   if(v === null || v === undefined || v === '') return '';
   if(typeof v === 'object' && typeof v.getFullYear === 'function')
@@ -168,12 +185,65 @@ function fdate(v){
   return String(v).slice(0,10);
 }
 function toDate(s){ const p=String(s||'').slice(0,10).split('-'); if(p.length<3) return ''; return new Date(Number(p[0]),Number(p[1])-1,Number(p[2])); }
+/**
+ * D93 — Garantiza que la hoja tenga filas suficientes para escribir n filas a partir de la última
+ * fila con datos. Crece en bloques (BLOQUE_FILAS) para no fragmentar la grilla. Idempotente y
+ * barata: si hay espacio, no hace NADA (una sola lectura de getLastRow/getMaxRows, cero escrituras).
+ * La inserción es SIEMPRE después de la última fila de la GRILLA (insertRowsAfter(getMaxRows())),
+ * así que jamás desplaza ni pisa filas existentes.
+ * NO pre-crea filas vacías "por si acaso": el techo del archivo es de 10 millones de celdas sumando
+ * todas las hojas y las filas vacías consumen cupo y degradan el rendimiento.
+ */
+function ensureRows_(sheet, n) {
+  var necesarias = sheet.getLastRow() + (n || 1);
+  var faltan = necesarias - sheet.getMaxRows();
+  if (faltan > 0) {
+    sheet.insertRowsAfter(sheet.getMaxRows(), Math.max(faltan, BLOQUE_FILAS));
+  }
+}
+
+/**
+ * D93 — Garantiza que la hoja tenga al menos nCols columnas (el mismo problema, en el otro eje).
+ * Solo garantiza CAPACIDAD para los encabezados que el código ya define: no cambia el orden ni el
+ * número de columnas de ninguna hoja.
+ */
+function ensureCols_(sheet, nCols) {
+  var faltan = nCols - sheet.getMaxColumns();
+  if (faltan > 0) {
+    sheet.insertColumnsAfter(sheet.getMaxColumns(), faltan);
+  }
+}
+
+/**
+ * D100 (mismo cambio que D99 en el módulo de Asistencias) — UNA sola apertura del Spreadsheet por
+ * ejecución. Antes cada helper hacía su propio `ss_()`: `?action=bandeja`
+ * (el panel del encargado) abría el archivo 6 veces, `maquinaria_produccion` 4 y `estado` 2.
+ * Es una variable de EJECUCIÓN, no un caché entre peticiones: Apps Script arranca un contexto nuevo
+ * en cada llamada, así que nunca sobrevive a la petición.
+ */
+var _ss = null;
+function ss_(){ if(!_ss) _ss = SpreadsheetApp.openById(SHEET_ID); return _ss; }
+
+/**
+ * D100 — Memoria de lectura DENTRO DE UNA MISMA EJECUCIÓN (no es CacheService: no sobrevive a la
+ * petición, así que no puede devolver datos viejos a otra llamada). Hoy los endpoints de lectura no
+ * repiten hoja, así que gana poco; está para que releer una hoja ya leída no cueste nada y para no
+ * reintroducir el problema al agregar endpoints. Toda escritura invalida su hoja.
+ * NO se toca el ancho de la lectura: BANDEJA/MAQUINARIA/DATA ya tienen exactamente el ancho de su
+ * esquema (nada que recortar), y CUBICAJE y VOLQUETAS se leen buscando las columnas POR NOMBRE a
+ * propósito —CUBICAJE lo mantiene el usuario a mano (D53)—, así que acotarlas sería una regresión.
+ */
+var _memoHoja = {};
+function invalidarHoja_(nombre){ delete _memoHoja[nombre]; }
+
 function getSheet(name, headers){
-  const ss=SpreadsheetApp.openById(SHEET_ID); let sh=ss.getSheetByName(name);
+  const ss=ss_(); let sh=ss.getSheetByName(name);
   if(!sh) sh=ss.insertSheet(name);
   const need=headers.length;
-  // asegura ancho de grilla suficiente (p. ej. MAQUINARIA pasó de 18 a 38 columnas en D52)
-  if(sh.getMaxColumns()<need) sh.insertColumnsAfter(sh.getMaxColumns(), need-sh.getMaxColumns());
+  // asegura ancho de grilla suficiente (p. ej. MAQUINARIA pasó de 18 a 38 columnas en D52; BANDEJA
+  // de 23 a 28 en D56/D70d). D93: la misma comprobación, ahora en el helper único ensureCols_.
+  ensureCols_(sh, need);
+  invalidarHoja_(name);   // D100: getSheet puede reescribir encabezados y precede a toda escritura
   if(sh.getLastRow()===0){ sh.getRange(1,1,1,need).setValues([headers]); return sh; }
   // auto-sana la fila de encabezados si no coincide con el esquema actual del código.
   // (tras el realineado de MAQUINARIA a Captura_Diaria, las filas con layout viejo quedan
@@ -184,10 +254,13 @@ function getSheet(name, headers){
   return sh;
 }
 function readSheet(name){
-  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName(name);
-  if(!sh || sh.getLastRow()<2) return [];
-  const v=sh.getDataRange().getValues(), h=v[0], out=[];
-  for(let i=1;i<v.length;i++){ const o={}; h.forEach((k,j)=>o[k]=v[i][j]); o.fecha=fdate(o.fecha); o._row=i+1; out.push(o); }
+  if(_memoHoja.hasOwnProperty(name)) return _memoHoja[name];   // D100: memoria de esta ejecución
+  const sh=ss_().getSheetByName(name), out=[];
+  if(sh && sh.getLastRow()>=2){
+    const v=sh.getDataRange().getValues(), h=v[0];
+    for(let i=1;i<v.length;i++){ const o={}; h.forEach((k,j)=>o[k]=v[i][j]); o.fecha=fdate(o.fecha); o._row=i+1; out.push(o); }
+  }
+  _memoHoja[name]=out;
   return out;
 }
 function buildDataRow(c, fecha, ts, reporta, rol, idC){
@@ -226,7 +299,7 @@ function buildDataRow(c, fecha, ts, reporta, rol, idC){
   // byte-idéntico, D68). Si no hay elemento para esa actividad/PK, se arma desde el PK con el helper
   // único (sin "Pk Pk") — buildElemento/pkNorm/pkMeters quedan SOLO para ese fallback. REVISAR queda
   // SÓLO para el caso legítimo (el PK no pertenece a ningún tramo del eje / falta el marcador).
-  // D88: el cruce por abscisa recibe también el PK FINAL para anclarse en el PUNTO MEDIO del rango
+  // D104: el cruce por abscisa recibe también el PK FINAL para anclarse en el PUNTO MEDIO del rango
   // (ver anclaCruce). Antes solo viajaba `mi`, así que el subtramo se decidía con el extremo inicial.
   const lk = lookupElemento(cc, c.descripcion, mi, confDest || null, mf);
   const pkElem = buildElemento(c.pk_inicial, c.pk_final);
@@ -241,7 +314,7 @@ function buildDataRow(c, fecha, ts, reporta, rol, idC){
              : (mi != null ? mi : (c.abs_inicial!=null ? c.abs_inicial : ''));
   let absFin = (lk.elem && lk.absFin!=null && lk.absFin!=='') ? lk.absFin
              : (mf != null ? mf : (c.abs_final!=null ? c.abs_final : ''));
-  /* D88 — OVERRIDE MANUAL DEL SUBTRAMO (`c.elemento_forzado`), mismo patrón que `destino_conf` (D79).
+  /* D104 — OVERRIDE MANUAL DEL SUBTRAMO (`c.elemento_forzado`), mismo patrón que `destino_conf` (D79).
    * Lo manda el panel del encargado SOLO en las líneas donde el residente cambió el subtramo que
    * resolvió el automático. Existe porque hay un caso que el sistema NO puede resolver solo: que el
    * reporte de campo sea coherente en PK pero el subtramo lógico sea otro (por liberaciones); eso lo
@@ -259,7 +332,7 @@ function buildDataRow(c, fecha, ts, reporta, rol, idC){
    *     hace al momento de enviar y un reenvío del día vuelve al automático. */
   const forz = (!confDest && c.elemento_forzado) ? lookupTramoPorNombre(c.elemento_forzado) : null;
   if(c.elemento_forzado && !confDest && !forz){
-    Logger.log('D88: elemento_forzado sin match en la BASE, se ignora y la fila cae al automático — "'
+    Logger.log('D104: elemento_forzado sin match en la BASE, se ignora y la fila cae al automático — "'
       + c.elemento_forzado + '" (CC ' + cc + ', PK ' + (c.pk_inicial||'') + ')');
   }
   if(forz){
@@ -325,7 +398,7 @@ function buildDataRowDrenajes(c, fecha, ts, reporta, rol, idC, area, mi, mf){
     }
   } else {
     // ODL por tramo: mismo flujo que tierras (cruce por abscisa contra los tramos "tm2 pk X - Y")
-    // D88: hereda el semiabierto [ini,fin) y el ancla por PUNTO MEDIO del rango (se pasa `mf`), por
+    // D104: hereda el semiabierto [ini,fin) y el ancla por PUNTO MEDIO del rango (se pasa `mf`), por
     // ser el MISMO conjunto TRAMO. El override `elemento_forzado` NO aplica aquí: el selector de
     // subtramo vive en el panel del encargado de tierras; `residente-drenajes.html` no lo tiene.
     const lk=lookupElemento(cc, c.descripcion, mi, null, mf);
@@ -463,7 +536,7 @@ function getBaseData(){
   if(_baseRows) return;
   _baseRows = []; _baseItems = {}; _baseDrenItems = [];
   const drenSeen = {};
-  const ss = SpreadsheetApp.openById(SHEET_ID), sh = ss.getSheetByName('BASE');
+  const ss = ss_(), sh = ss.getSheetByName('BASE');
   if(!sh || sh.getLastRow() < 2) return;
   const v = sh.getDataRange().getValues();
   let ccCol=-1, dCol=-1, uCol=-1, hRow=-1;                // tabla de ítems: fila de encabezados + CC y DESCRIPCION en A–H
@@ -554,7 +627,7 @@ function drenajesCatalogo(){
  * pisa el día+área que se reenvía), así que la suma sobre todas las fechas = acumulado real. Solo lee. */
 function acumuladoDrenajes(e){
   const areaQ=String((e&&e.parameter&&e.parameter.area)||'').trim().toLowerCase();
-  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('DATA');
+  const ss=ss_(), sh=ss.getSheetByName('DATA');
   const acum={};
   if(sh && sh.getLastRow()>1){
     const v=sh.getDataRange().getValues();
@@ -592,12 +665,12 @@ function lookupDescripcion(cc, descripcion){
   pool.forEach(it=>{ if(n && it.norm.indexOf(n)===0 && (!best || it.norm.length>best.norm.length)) best=it; });
   return best ? best.desc : pool[0].desc;
 }
-// Número o null (tolera '', null, undefined y no-numéricos). Usado por el ancla del cruce (D88).
+// Número o null (tolera '', null, undefined y no-numéricos). Usado por el ancla del cruce (D104).
 function numOrNull(v){
   if(v===''||v==null||isNaN(Number(v))) return null;
   return Number(v);
 }
-/* Ancla del cruce por abscisa (D88, enmienda D63a).
+/* Ancla del cruce por abscisa (D104, enmienda D63a).
  * Cuando la fila trae PK inicial Y final válidos y DISTINTOS (frentes del capataz), el cruce se hace
  * con el PUNTO MEDIO del rango — nunca con un extremo. Motivo (mismo criterio ya fijado en backlog
  * 2.1): los rangos vienen sucios (invertidos, con typos) y anclar en un extremo manda la línea al
@@ -605,7 +678,7 @@ function numOrNull(v){
  * centro que el correcto. Con un solo PK se usa ese.
  * SOLO aplica al conjunto TRAMO: los marcadores MSR son PUNTUALES y se emparejan por cercanía al PK
  * reportado (promediar un rango los correría fuera de la tolerancia), así que ahí se conserva el
- * ancla de siempre = PK inicial. Antes de D88 TODO el cruce usaba el PK inicial: `pk_final` llegaba a
+ * ancla de siempre = PK inicial. Antes de D104 TODO el cruce usaba el PK inicial: `pk_final` llegaba a
  * `buildDataRow` pero no participaba del emparejamiento. */
 function anclaCruce(mIni, mFin, set){
   const a=numOrNull(mIni), b=numOrNull(mFin);
@@ -618,7 +691,7 @@ function anclaCruce(mIni, mFin, set){
 // En los retornos sin match, absIni/absFin quedan undefined y buildDataRow deriva ABS del PK.
 // setForzado (D79): fuerza el conjunto de la BASE ('RCD'|'ZODME') sin mirar el CC — lo usa la
 // conformación 02.08, cuyo destino elige el residente en el panel del encargado.
-// pkMetersFin (D88): PK final del rango reportado, para anclar el cruce en el PUNTO MEDIO (ver
+// pkMetersFin (D104): PK final del rango reportado, para anclar el cruce en el PUNTO MEDIO (ver
 // anclaCruce). Opcional — sin él el comportamiento es el de antes (ancla = PK inicial).
 function lookupElemento(cc, descripcion, pkMetersIn, setForzado, pkMetersFin){
   const all=getBaseRows();
@@ -632,10 +705,10 @@ function lookupElemento(cc, descripcion, pkMetersIn, setForzado, pkMetersFin){
   }
   // TRAMO / MSR: por abscisa dentro del conjunto.
   if(!rows.length) return { elem:'', revisar:false };     // sin filas de ese tipo -> respaldo PK
-  const pk=anclaCruce(pkMetersIn, pkMetersFin, set);      // D88: punto medio del rango en TRAMO
+  const pk=anclaCruce(pkMetersIn, pkMetersFin, set);      // D104: punto medio del rango en TRAMO
   if(pk==null) return { elem:'', revisar:false };
   // 1) PK dentro de un tramo (sin solape → uno solo; si lo hubiera, gana el de rango más angosto).
-  // D88 — INTERVALO SEMIABIERTO [ABS_INICIO, ABS_FIN) para el conjunto TRAMO: un PK que cae EXACTO en
+  // D104 — INTERVALO SEMIABIERTO [ABS_INICIO, ABS_FIN) para el conjunto TRAMO: un PK que cae EXACTO en
   // la frontera entre dos subtramos pertenece al que EMPIEZA ahí, no al que termina (14+200 es del
   // "14+200 – 14+800", no del "12+800 – 14+200"). Mismo criterio que la ventana [fecha_ingreso,
   // fecha_retiro) de D72(c). Antes ambos extremos eran cerrados: el PK de frontera empataba con DOS
@@ -672,7 +745,7 @@ function lookupElemento(cc, descripcion, pkMetersIn, setForzado, pkMetersFin){
   return { elem:'', revisar:true };
 }
 
-/* ---------- override manual del SUBTRAMO (D88) ----------
+/* ---------- override manual del SUBTRAMO (D104) ----------
  * Busca una fila del conjunto TRAMO en la tabla de elementos de la BASE por su texto. Cruce tolerante
  * con normTexto (que NUNCA altera lo que se escribe: se devuelve la fila con J/K/L crudas, D68).
  * SOLO TRAMO, a propósito: el override del residente corrige SUBTRAMOS liberados, no marcadores — así
@@ -688,7 +761,7 @@ function lookupTramoPorNombre(nombre){
   return null;
 }
 
-/* ---------- catálogo de SUBTRAMOS para los frontends (D88) ----------
+/* ---------- catálogo de SUBTRAMOS para los frontends (D104) ----------
  * GET ?action=tramos -> { ok, tramos:[{elemento, abs_inicio, abs_fin, pk_inicio, pk_fin, pk}] }
  * Mismo patrón que ?action=drenajes (D70f): las pantallas son estáticas (GitHub Pages) y no pueden
  * leer el Sheet, así que esta es la única vía por la que conocen los subtramos del eje.
@@ -721,7 +794,7 @@ let _cubMap;
 function getCubicajeMap(){
   if(_cubMap) return _cubMap;
   _cubMap = {};
-  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('CUBICAJE');
+  const ss=ss_(), sh=ss.getSheetByName('CUBICAJE');
   if(!sh || sh.getLastRow()<2) return _cubMap;
   const v=sh.getDataRange().getValues(), h=v[0];
   // ubica columnas por nombre de cabecera (tolerante); por defecto A=placa, B=cubicaje
@@ -748,7 +821,7 @@ function getCubicajeMap(){
  * (no es error). */
 function volquetasDelDia(e){
   const fecha = fdate((e && e.parameter && e.parameter.fecha) || '');
-  const ss = SpreadsheetApp.openById(SHEET_ID), sh = ss.getSheetByName('VOLQUETAS');
+  const ss = ss_(), sh = ss.getSheetByName('VOLQUETAS');
   if(!sh || sh.getLastRow() < 2) return json({ok:true, fecha:fecha, filas:[]});
   const v = sh.getDataRange().getValues(), h = v[0];
   // ubica columnas por nombre de cabecera (tolerante al orden real de la hoja)
@@ -776,6 +849,7 @@ function volquetasDelDia(e){
 
 /* ---------- routing ---------- */
 function doGet(e){
+  _t0 = Date.now();   // D100: siembra el cronómetro de servidor (`_ms` en la respuesta)
   const a=((e.parameter.action)||'').toLowerCase();
   if(a==='bandeja')     return bandeja(e);
   if(a==='consolidado') return consolidado(e);
@@ -783,13 +857,14 @@ function doGet(e){
   if(a==='cubicaje')    return json({ok:true, cubicaje:getCubicajeMap()});
   if(a==='volquetas')   return volquetasDelDia(e);
   if(a==='drenajes')    return drenajesCatalogo();
-  if(a==='tramos')      return tramosCatalogo();   // D88: subtramos del eje para el selector del residente
+  if(a==='tramos')      return tramosCatalogo();   // D104: subtramos del eje para el selector del residente
   if(a==='acumulado_drenajes') return acumuladoDrenajes(e);
   if(a==='maquinaria_produccion') return maquinariaProduccion(e);
   if(a==='debug')       return debug(e);
   return json({ok:true, msg:'API viva', version:'v11'});
 }
 function doPost(e){
+  _t0 = Date.now();   // D100: cronómetro de servidor también en las escrituras
   try{
     const body=JSON.parse(e.postData.contents);
     if(body.action==='enviar_data') return enviarData(body);
@@ -985,12 +1060,17 @@ function guardarReporte(body){
         m.motivo, uProd, actMaq, der.aCaptura, '', '']);
     });
   })();
-  if(banRows.length) banSh.getRange(banSh.getLastRow()+1,1,banRows.length,BANDEJA_HEADERS.length).setValues(banRows);
-  if(maqRows.length) maqSh.getRange(maqSh.getLastRow()+1,1,maqRows.length,MAQ_HEADERS.length).setValues(maqRows);
+  // D93: se valida la capacidad de la grilla ANTES de cada escritura en bloque (la hoja crece sola
+  // cuando se agotan sus filas; sin esto el setValues fallaba entero al llenarse la hoja).
+  if(banRows.length){ ensureRows_(banSh, banRows.length);
+    banSh.getRange(banSh.getLastRow()+1,1,banRows.length,BANDEJA_HEADERS.length).setValues(banRows); }
+  if(maqRows.length){ ensureRows_(maqSh, maqRows.length);
+    maqSh.getRange(maqSh.getLastRow()+1,1,maqRows.length,MAQ_HEADERS.length).setValues(maqRows); }
   // chequeadora: desglose por placa -> VOLQUETAS (una fila por placa). No toca DATA ni MAQUINARIA.
   // Un id_registro por línea de PK destino (placas de la misma línea comparten id).
   // Las filas (con cubicaje·m3_placa·cubicaje_origen) se construyeron arriba junto al cálculo del volumen.
   if(volRows.length){ const volSh=getSheet('VOLQUETAS', VOLQUETAS_HEADERS);
+    ensureRows_(volSh, volRows.length);   // D93
     volSh.getRange(volSh.getLastRow()+1,1,volRows.length,VOLQUETAS_HEADERS.length).setValues(volRows); }
   const obs=(body.observacion_general||'').trim();
   if(obs){
@@ -1042,7 +1122,7 @@ function consolidado(e){
   // intacto (?action=consolidado&fecha=YYYY-MM-DD). Nunca escribe: ni DATA ni maestro.
   if(e.parameter.desde || e.parameter.hasta) return consolidadoRango(e);
   const fecha=fdate(e.parameter.fecha), proy=e.parameter.proyecto||'';
-  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('DATA');
+  const ss=ss_(), sh=ss.getSheetByName('DATA');
   let cantidades=[];
   if(sh && sh.getLastRow()>1){
     const v=sh.getDataRange().getValues();
@@ -1068,7 +1148,7 @@ function consolidadoRango(e){
   const proy=e.parameter.proyecto||'';
   const AT=20;                                        // A–T (las 20 columnas espejo del maestro + Columna1)
   const climaCol=DATA_HEADERS.indexOf('clima');       // columna interna (tras A–T); no viaja al maestro
-  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('DATA');
+  const ss=ss_(), sh=ss.getSheetByName('DATA');
   const filas=[], climaPorDia={};                     // D37: clima del día (leído de la col interna)
   if(desde && hasta && sh && sh.getLastRow()>1){
     const v=sh.getDataRange().getValues();
@@ -1233,7 +1313,7 @@ function maquinariaProduccion(e){
     if(a&&b&&b!==a) return a+'–'+b; return a||b||''; }
   // Volúmenes y PK oficiales de DATA por proyecto|bucket (solo LECTURA; jamás se escribe DATA aquí)
   const dataVol={}, dataPk={};
-  const ss=SpreadsheetApp.openById(SHEET_ID), dsh=ss.getSheetByName('DATA');
+  const ss=ss_(), dsh=ss.getSheetByName('DATA');
   if(dsh && dsh.getLastRow()>1){
     const v=dsh.getDataRange().getValues();
     for(let i=1;i<v.length;i++){
@@ -1365,7 +1445,8 @@ function maquinariaProduccionGuardar(body){
       // motivo · unidad_prod · cap_actividad · a_captura · produccion_capataz_orig · area (panel=tierras)
       motivo, (prod===''?'':'m3'), capLabel, aCap, '', '']);
   });
-  if(maqRows.length) sh.getRange(sh.getLastRow()+1,1,maqRows.length,MAQ_HEADERS.length).setValues(maqRows);
+  if(maqRows.length){ ensureRows_(sh, maqRows.length);   // D93: capacidad antes de escribir
+    sh.getRange(sh.getLastRow()+1,1,maqRows.length,MAQ_HEADERS.length).setValues(maqRows); }
   return json({ok:true, actualizadas:upd, creadas:maqRows.length});
 }
 
@@ -1396,7 +1477,10 @@ function enviarData(body){
   const clima=String(body.clima||'').trim();
   const rows=incluidas.filter(c=>c.estado!=='no_data' && areaDeFila(c.area, c.centro_costo)===area)
     .map(c=> buildDataRow(Object.assign(c,{clima:clima}), fecha, ts, c.reporta||'(encargado)', c.rol||'encargado', Utilities.getUuid()));
-  if(rows.length) sh.getRange(sh.getLastRow()+1,1,rows.length,DATA_HEADERS.length).setValues(rows);
+  // D93: el borrado de arriba usa deleteRow, que además REDUCE getMaxRows(); validar la capacidad
+  // antes de reescribir el día es justo lo que evitaba que DATA dejara de recibir al llenarse.
+  if(rows.length){ ensureRows_(sh, rows.length);
+    sh.getRange(sh.getLastRow()+1,1,rows.length,DATA_HEADERS.length).setValues(rows); }
   // 2) BANDEJA: marcar incluido / descartado SOLO las filas de esa área
   const banSh=getSheet('BANDEJA', BANDEJA_HEADERS);
   const bv=banSh.getDataRange().getValues(), bh=bv[0];
@@ -1436,8 +1520,23 @@ function actualizarDescripcionesData(){ _descripcionesDataPass(true); }
 // DESCRIPCION no tome la celda esperada. Registra qué columnas detectó (encabezados A–H), las
 // llaves CC encontradas y TODOS los candidatos de las llaves que contengan '02.08' (o cámbiese el
 // filtro abajo). No escribe nada en ninguna hoja.
+/**
+ * D93 — Diagnóstico de CAPACIDAD de la grilla. Ejecutar desde el editor de Apps Script y revisar el
+ * log (Ver > Registro de ejecución). Muestra, por hoja: filas usadas / filas totales / columnas
+ * usadas / columnas totales y cuántas filas libres quedan. NO escribe datos: es solo lectura.
+ */
+function diagnosticoCapacidad() {
+  var ss = ss_();
+  ss.getSheets().forEach(function (sh) {
+    Logger.log(
+      sh.getName() + ' → filas ' + sh.getLastRow() + '/' + sh.getMaxRows() +
+      ' (libres ' + (sh.getMaxRows() - sh.getLastRow()) + ')' +
+      ' · cols ' + sh.getLastColumn() + '/' + sh.getMaxColumns()
+    );
+  });
+}
 function diagnosticoBase(){
-  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('BASE');
+  const ss=ss_(), sh=ss.getSheetByName('BASE');
   if(!sh){ Logger.log('No existe la hoja BASE.'); return; }
   const v=sh.getDataRange().getValues();
   Logger.log('BASE: '+v.length+' filas × '+v[0].length+' columnas.');
@@ -1464,7 +1563,7 @@ function diagnosticoBase(){
     JSON.stringify(String(lookupDescripcion('3701.02.08','Conformación y disposición de sobrantes'))));
 }
 function _descripcionesDataPass(aplicar){
-  const ss=SpreadsheetApp.openById(SHEET_ID), sh=ss.getSheetByName('DATA');
+  const ss=ss_(), sh=ss.getSheetByName('DATA');
   if(!sh || sh.getLastRow()<2){ Logger.log('DATA vacía: nada que hacer.'); return; }
   const v=sh.getDataRange().getValues();
   const items=getBaseItems();

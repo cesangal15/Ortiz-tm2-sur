@@ -287,8 +287,10 @@ function addLinea(){
     +'<div class="equipos-block"><span class="eqlabel">Equipos que ejecutaron esta actividad</span>'
     +'<div id="eqs_'+i+'"></div>'
     +'<button class="btn-add mini" onclick="addEquipo('+i+')">+ Equipo</button></div>'
-    +'<div class="field" style="margin-top:14px;"><label>Observación <span class="opt">(opcional)</span></label>'
-    +'<input type="text" class="l-obs" placeholder="opcional"></div>';
+    // D103: esta nota por actividad ya salía en DATA (col S) y ahora también en el WhatsApp del día,
+    // bajo su actividad; el placeholder lo dice para que se use como nota y no quede en blanco.
+    +'<div class="field" style="margin-top:14px;"><label>Nota de esta actividad <span class="opt">(opcional · sale en el WhatsApp)</span></label>'
+    +'<input type="text" class="l-obs" placeholder="ej. se paró 2h por lluvia en este frente"></div>';
   document.getElementById('cantidadesContainer').appendChild(div);
   refreshCounts();
 }

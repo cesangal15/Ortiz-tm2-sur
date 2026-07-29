@@ -90,7 +90,7 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
 <div class="topbar">
   <div>
     <h1>🚜 Reparto de producción de maquinaria</h1>
-    <p>Mensual, de un solo paso · TM2 Sur</p>
+    <p>Genera <code>fact_jefe</code> para el informe mensual · TM2 Sur</p>
   </div>
   <!-- Solo cuando la página se sirve desde el sitio (no al abrirla desde el disco) -->
   <a class="btn sec" id="btnMenu" href="menu.html" style="display:none">← Menú</a>
@@ -100,9 +100,11 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
 
   <div class="alert info">
     Cruza el <b>reporte diario de obra</b> (hoja <code>dia suelto</code> — producción por actividad y día)
-    con los <b>partes de maquinaria del jefe</b> (hoja del mes — horas por máquina y centro de coste) y
-    reparte la producción del período entre las máquinas propias del <b>tipo coherente</b>, proporcional a horas.
-    Todo ocurre en el navegador: <b>no escribe</b> ninguno de los dos archivos; la salida es un <code>.xlsx</code> nuevo.
+    con los <b>partes de maquinaria del jefe</b> y reparte la producción entre las máquinas propias del
+    <b>tipo coherente</b>, proporcional a horas. La salida principal es la tabla <b><code>fact_jefe</code></b>
+    (una fila por máquina · día · actividad, 29 columnas): se pega sobre la tabla del maestro y
+    <b>Informe_Mensual</b> y <b>Maquinas Junio</b> se llenan solos, porque son fórmulas
+    <code>SUMIFS</code> sobre ella. Todo ocurre en el navegador: <b>no escribe</b> ninguno de los archivos que cargas.
   </div>
 
   <!-- ---- 1 · Archivos ---- -->
@@ -126,8 +128,10 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
           <div class="fb-sub" id="sJefe">Fuente de HORAS · CC por máquina (hoja del mes)</div>
         </label>
         <label class="fld" style="margin-top:10px">Hoja del mes</label>
-        <input type="text" id="hojaJefe" value="JULIO UF1 UF2 Y UF3 ">
-        <div class="hint">Cambia cada mes (JULIO, AGOSTO…). Ojo con el espacio final del nombre; si no la encuentro, te dejo elegirla.</div>
+        <input type="text" id="hojaJefe" value="BASE MAQUINARIA">
+        <div class="hint">Por defecto <code>BASE MAQUINARIA</code>, que trae el <b>día a día</b> de cada máquina. Reconozco los
+          <b>dos formatos</b>: el diario (una fila por máquina/fecha/CC) y el de <b>bloques con el total del mes</b>
+          (<code>JULIO UF1 UF2 Y UF3 </code>). El corte lo busco en <b>todas</b> las hojas del libro.</div>
       </div>
     </div>
     <div id="hojaPick" style="margin-top:10px"></div>
@@ -142,23 +146,40 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
         <input type="date" id="desde">
         <label class="fld" style="margin-top:8px">Corte — final</label>
         <input type="date" id="hasta">
-        <div class="hint">Se leen de <b>FECHAS DE CORTE</b> del archivo del jefe al cargarlo. Puedes corregirlas a mano.</div>
+        <div class="hint">Del parte del jefe (<b>FECHAS DE CORTE</b> o el rango de fechas de sus filas). Puedes corregirlas.</div>
       </div>
       <div>
         <label class="fld">Terraplén 02.07 — % bulldozer</label>
         <input type="number" id="pctBull" value="80" min="0" max="100" step="1">
-        <div class="hint">El resto (<span id="pctMotoLbl">20</span>%) va a las motoniveladoras. Si solo hay un tipo presente, ese recibe el 100%.</div>
+        <label class="fld" style="margin-top:8px">Mínimo por día y máquina (m³)</label>
+        <input type="number" id="minDia" value="50" min="0" step="5">
+        <div class="hint">Las tajadas diarias por debajo de esto se acumulan en el día más fuerte de esa
+          máquina y actividad. Son residuo de partir, no días flojos: en julio, una fila de 36 m³ caía
+          un día en que la obra reportó 3.011 m³. <b>No cambia ningún total del mes.</b> Pon 0 para desactivarlo.</div>
+        <div class="hint">El resto (<span id="pctMotoLbl">20</span>%) a las motoniveladoras. Si solo hay un tipo presente, ese recibe el 100%.
+          El bulldozer sale como <b>NÚCLEO DE TERRAPLEN</b> y la motoniveladora como <b>CORONA DE TERRAPLEN</b>.</div>
       </div>
       <div>
         <label class="fld">Opciones</label>
         <div class="chk" style="margin-bottom:8px">
-          <input type="checkbox" id="zodmeCruce">
-          <label for="zodmeCruce">ZODME 02.08: <b>cruzar UF</b> — pesar por las horas de 02.08 en cualquier UF
-            (junta la no-aprovechable de las dos UF; cada máquina conserva su proyecto en la tabla).</label>
+          <input type="checkbox" id="repartoDiario" checked>
+          <label for="repartoDiario"><b>Repartir día por día</b> — <b>encendido por defecto</b>: la producción de
+            cada día se reparte entre las máquinas que <b>ese día</b> reportaron horas en esa actividad. Apagado,
+            se reparte el total del corte por las horas del mes y luego se derrama sobre los días.
+            Encendido importa cuando dos máquinas se turnan: en BTC la motoniveladora solo entra cuando no está
+            el finisher, así que por mes salían las dos con el mismo rendimiento y por día cada una con el suyo.</label>
+        </div>
+        <div class="chk" style="margin-bottom:8px">
+          <input type="checkbox" id="separarUF">
+          <label for="separarUF"><b>Separar por UF</b> (3701 / 3702) — <b>apagado por defecto</b>: al informe le interesa
+            la producción de la actividad, no en qué UF se hizo. Apagado, cada actividad se junta entre las dos UF y se
+            reparte por las horas totales de la máquina en esa actividad. Encendido, cada UF se reparte aparte
+            (una máquina sin horas en esa UF no recibe su producción).</label>
         </div>
         <div class="chk">
           <input type="checkbox" id="soloHoras" checked>
-          <label for="soloHoras">Incluir las filas de <b>solo horas</b> (CC del jefe sin producción: desmonte, cereo…).</label>
+          <label for="soloHoras">Incluir las filas de <b>solo horas</b> (CC sin producción: desmonte, bloqueos, ODT…).
+            <b>Déjalo marcado</b>: «Maquinas Junio» las necesita.</label>
         </div>
       </div>
     </div>
@@ -167,16 +188,28 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
       <summary>Máquinas propias y mapa actividad → CC (editable)</summary>
       <div class="grid2" style="margin-top:10px">
         <div>
-          <label class="fld">Máquinas propias (códigos, separados por coma)</label>
+          <label class="fld">Máquinas que entran al reparto (aquí se agregan y se quitan)</label>
           <textarea id="propias" rows="3"></textarea>
-          <div class="hint">Se normaliza el código: se quita el prefijo <code>40BUP</code> y las motoniveladoras de 3 dígitos
-            pierden un cero (<code>MO003→MO03</code>). Se excluyen siempre vibros/compactadoras (tipo con
-            <code>COMPACTADOR</code>/<code>VIBRO</code>, o código <code>CR*</code>/<code>CN*</code>).</div>
+          <div class="hint"><b>Esta es la lista que manda:</b> una máquina que no esté aquí no reparte ni sale en
+            <code>fact_jefe</code>, aunque el parte le reporte horas. Para agregar una, escribe su código y, si no es de la
+            flota conocida, su <b>tipo</b> detrás de dos puntos: <code>EXC026:EXC</code> · <code>D150B:BULL</code> ·
+            <code>MO001:MOTO</code> · <code>FNG003:FIN</code> (o el nombre completo: <code>EXC026:EXCAVADORA</code>).
+            El tipo importa porque decide qué actividades puede recibir.
+            <b>CAT320 está fuera</b> por decisión de obra (retirada desde jun-2026, D61).
+            Se normaliza el código: se quita el prefijo <code>40BUP</code> y las motoniveladoras de 3 dígitos pierden un cero
+            (<code>MO003→MO03</code>). Siempre quedan fuera vibros/compactadoras y todo lo que no sea proyecto
+            <b>3701/3702</b> (el parte trae también UF6, UF9, UF10…).</div>
         </div>
         <div>
-          <label class="fld">Mapa actividad → CC (una regla por línea: <code>texto = cc[,cc]</code>)</label>
+          <label class="fld">Solo horas — no reciben producción</label>
+          <input type="text" id="soloHorasMaq" placeholder="p. ej. CAT320, NH69 (vacío = todas reparten)">
+          <div class="hint">Máquinas que aparecen en el parte con horas pero cuya producción prefieres que repartan las demás
+            (una retirada de la obra que el jefe sigue reportando, una alquilada que no quieres que cargue producción…).
+            Sus <b>horas siguen saliendo</b> en <code>fact_jefe</code> —«Maquinas Junio» las necesita—, pero no entran al reparto.
+            <b>Vacío por defecto:</b> si el jefe le reporta horas a una máquina, se asume que trabajó.</div>
+          <label class="fld" style="margin-top:12px">Mapa actividad → CC (una regla por línea: <code>texto = cc[,cc]</code>)</label>
           <textarea id="mapaAct" rows="8"></textarea>
-          <div class="hint">La primera regla que <b>aparezca</b> en el nombre de la columna gana (por eso SUBBASE va antes que
+          <div class="hint">Gana la primera regla que <b>aparezca</b> en el nombre de la columna (por eso SUBBASE va antes que
             BASE GRANULAR, y NO APROVECHABLE antes que APROVECHABLE). La no aprovechable acredita
             <b>02.05</b> (la excavan) <b>y 02.08</b> (la conforman en el ZODME).</div>
         </div>
@@ -192,9 +225,15 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
   <!-- ---- Avisos ---- -->
   <div id="avisos"></div>
 
+  <!-- ---- Bloques del informe ---- -->
+  <div class="card" id="cardBloques" style="display:none">
+    <h3>3 · Bloques del informe — <span class="note">¿hay que agregar filas a mano en <code>Informe_Mensual</code>?</span></h3>
+    <div id="bloquesBox"></div>
+  </div>
+
   <!-- ---- Cuadre ---- -->
   <div class="card" id="cardCuadre" style="display:none">
-    <h3>3 · Cuadre por actividad — <span class="note">producción leída vs. repartida</span></h3>
+    <h3>4 · Cuadre por actividad — <span class="note">producción leída vs. repartida</span></h3>
     <div id="cuadreBox"></div>
   </div>
 
@@ -210,14 +249,17 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
     <div id="colsBox"></div>
   </div>
 
-  <!-- ---- Reparto ---- -->
+  <!-- ---- Salida ---- -->
   <div class="card" id="cardRep" style="display:none">
-    <h3>4 · Reparto</h3>
+    <h3>5 · <code>fact_jefe</code></h3>
     <div class="statline" id="repStat"></div>
     <div class="flexrow" style="margin-bottom:10px">
       <button class="btn" id="btnXlsx">⬇ Descargar .xlsx</button>
-      <button class="btn sec" id="btnCopy">📋 Copiar tabla</button>
+      <button class="btn sec" id="btnCopy">📋 Copiar fact_jefe (A:AC)</button>
     </div>
+    <div class="hint" style="margin-bottom:10px">Pega el bloque <b>sobre las filas de la tabla <code>fact_jefe</code></b> del maestro
+      (sin la fila de encabezado) y conserva el nombre de la tabla: las fórmulas de <code>Informe_Mensual</code> y
+      <code>Maquinas Junio</code> apuntan a ella. El .xlsx trae además las hojas <code>reparto</code> (resumen mensual) y <code>cuadre</code>.</div>
     <div class="tbl-wrap" id="repBox"></div>
   </div>
 
@@ -226,14 +268,44 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
 
 <script>
 /* =====================================================================
-   Reparto de producción de maquinaria (mensual) — TM2 Sur
+   Reparto de producción de maquinaria — TM2 Sur
    Un solo archivo, cliente puro. Lee dos .xlsx y NO escribe ninguno.
+
+   Salida principal: filas de la tabla `fact_jefe` del maestro
+   Modelo_Produccion_Maquinaria (29 columnas A:AC, una fila por
+   máquina · día · actividad). Informe_Mensual y «Maquinas Junio» son
+   fórmulas SUMIFS/COUNTIFS sobre esa tabla, filtrando por id_fecha,
+   id_maquina, id_proyecto, actividad y SUB ACTIVIDAD — por eso las filas
+   tienen que salir POR DÍA y con el vocabulario exacto de SUB ACTIVIDAD.
    ===================================================================== */
 
 /* ============================ PARÁMETROS ============================ */
 
-// Máquinas propias (códigos ya normalizados). Editable también desde la pantalla.
-const MAQUINAS_PROPIAS = ['EXC001','EXC013','EXC014','EXC015','BL005','BL009','MO03','MO04','MO09','NH69','MC705','CAT320'];
+/* Catálogo de la flota (mismo que `dim_maquinaria` del maestro y el TIPO_EQUIPO del app).
+   MANDA sobre el «TIPO DE EQUIPO»/«Flota» del parte del jefe, que no es de fiar: en junio-2026
+   EXC014 viene como "RETROCARGADORA" y se caería del reparto. Si un código no está aquí, se
+   usa el texto del parte. */
+const TIPO_MAQUINA = {
+  EXC001:'EXC',  EXC013:'EXC',  EXC014:'EXC',  EXC015:'EXC',  CAT320:'EXC',
+  BL005:'BULL',  BL009:'BULL',  NH69:'BULL',
+  MO03:'MOTO',   MO04:'MOTO',   MO09:'MOTO',   MC705:'MOTO',
+  FNG002:'FIN'   // finisher/extendedora: hace BTC junto con la motoniveladora
+};
+/* El mismo equipo aparece con códigos distintos según el papel: el parte del jefe lo
+   llama `NG002`, el informe `FNG002` y el app `FNG02`. Se unifica al del informe. */
+const ALIAS_COD = { NG002:'FNG002', FNG02:'FNG002', FNG002:'FNG002' };
+/* Máquinas que entran al reparto. Editable desde la pantalla, con tipo opcional
+   (`EXC026:EXC`) para las que no estén en el catálogo de arriba.
+   **CAT320 queda FUERA a propósito** (decisión del usuario, jul-2026): está retirada de la
+   obra desde jun-2026 (D61) y aun así el parte le sigue reportando horas. */
+const MAQUINAS_PROPIAS = ['EXC001','EXC013','EXC014','EXC015','BL005','BL009','MO03','MO04','MO09','NH69','MC705','FNG002'];
+
+// Proyectos de esta obra. El parte del jefe trae todos los frentes de la empresa (3703, 3706, 3709…).
+const PROYECTOS = ['3701','3702'];
+
+// Horas programadas (col. K de fact_jefe): 6.4 propias, 5 alquiladas (D10).
+const HORAS_PROG_DEFAULT = 6.4;
+const HORAS_PROG = { NH69:5, CAT320:5, MC705:5 };
 
 // Mapa actividad (nombre de la columna de `dia suelto`) → CC. ORDEN SIGNIFICATIVO:
 // gana la primera regla cuyo texto aparezca en el nombre de la columna.
@@ -244,56 +316,86 @@ const MAPA_ACTIVIDAD = [
   { txt:'PRESTAMO',       ccs:['02.06'] },
   { txt:'NO APROVECHABLE',ccs:['02.05','02.08'] },   // doble crédito: excavación + ZODME
   { txt:'APROVECHABLE',   ccs:['02.05'] },
-  { txt:'MSR',            ccs:['05.04'] },
   { txt:'TERRAPLENES',    ccs:['02.07'] },
   { txt:'TERRAPLEN',      ccs:['02.07'] }
 ];
+/* Actividades que se dejan FUERA del informe a propósito (decisión del usuario, jul-2026:
+   el informe va solo sobre excavación, terraplén, subbase, BTC y ZODME — «entre más
+   información, más contraproducente»). Se leen y se muestran, pero no se reparten ni
+   se avisan como error. Para volver a incluir MSR basta agregar `MSR = 05.04` al mapa. */
+const ACTIVIDADES_FUERA = ['MSR'];
 
 // Coherencia: qué tipo de máquina recibe la producción de cada CC.
-// `split` reparte el total del CC entre los grupos (terraplén 80/20); sin `split`,
-// todos los tipos entran a un mismo pool ponderado por horas.
 const COHERENCIA = {
   '02.05':{ grupos:[{tipos:['EXC'],  share:1}] },
   '02.06':{ grupos:[{tipos:['EXC'],  share:1}] },
   '02.07':{ grupos:[{tipos:['BULL'], share:0.8},{tipos:['MOTO'], share:0.2}], split:true },
   '02.08':{ grupos:[{tipos:['BULL'], share:1}] },
   '03.01':{ grupos:[{tipos:['MOTO'], share:1}] },
-  '03.03':{ grupos:[{tipos:['MOTO'], share:1}] },
+  '03.03':{ grupos:[{tipos:['MOTO','FIN'], share:1}] },   // BTC: motoniveladora + finisher
   '05.04':{ grupos:[{tipos:['BULL','MOTO'], share:1}] }
 };
 
-// Nombre de la actividad por CC (para la columna ACTIVIDAD de la salida).
-const NOMBRE_CC = {
-  '02.05':'EXCAVACIÓN', '02.06':'PRÉSTAMO', '02.07':'TERRAPLÉN', '02.08':'ZODME',
-  '03.01':'SUBBASE', '03.03':'BASE GRANULAR (BTC)', '05.04':'MSR'
+/* Vocabulario EXACTO de las columnas `actividad` / `SUB ACTIVIDAD` de fact_jefe.
+   Los SUMIFS del informe filtran por estos textos literales: si cambian, el informe da 0. */
+const ACTIVIDAD_CC = {
+  '02.01':{ act:'DESMONTE',            sub:'DESMONTE',                unidad:'m2' },
+  '02.03':{ act:'DESMONTE',            sub:'DESCAPOTE',               unidad:'m2' },
+  '02.05':{ act:'EXCAVACION COMUN',    sub:'EXCAVACION APROVECHABLE', unidad:'m3' },
+  '02.06':{ act:'EXCAVACION PRESTAMO', sub:'EXCAVACION APROVECHABLE', unidad:'m3' },
+  '02.07':{ act:'TERRAPLEN',           sub:'NUCLEO DE TERRAPLEN',     unidad:'m3' },
+  '02.08':{ act:'CONFORMACION',        sub:'ZODME',                   unidad:'m3' },
+  '03.01':{ act:'SUBBASE',             sub:'CONFORMACION SUBBASE',    unidad:'m3' },
+  '03.03':{ act:'BASE',                sub:'BTC',                     unidad:'m3' },
+  '05.04':{ act:'MSR',                 sub:'MSR',                     unidad:'m3' }
 };
+// SUB ACTIVIDAD que depende del material (02.05) o del tipo de máquina (02.07).
+const SUB_NO_APROV = 'EXCAVACION NO APROVECHABLE';
+const SUB_TERRAPLEN_MOTO = 'CORONA DE TERRAPLEN';
 
-// TIPO DE EQUIPO del parte del jefe → tipo interno. Orden significativo.
+/* Bloques que HOY tiene Informe_Mensual (una fila fija por máquina). Si el reparto mete una
+   máquina que no está en su bloque, hay que agregarle la fila a mano en el Excel: la pantalla
+   lo avisa en el paso 3 en vez de que te enteres al ver el informe en blanco. */
+const BLOQUES_INFORME = {
+  'EXCAVACION':['EXC013','EXC001','EXC015','CAT320','EXC014'],
+  'TERRAPLEN' :['NH69','BL005','MO03','BL009','MC705','MO09','MO04','CAT320','EXC014'],
+  'SUBBASE'   :['MO09','MC705','MO04','MO03'],
+  'BTC'       :['FNG002','MO04'],
+  'ZODME'     :['BL009','BL005']
+};
+const BLOQUE_DE_CC = { '02.05':'EXCAVACION','02.06':'EXCAVACION','02.07':'TERRAPLEN','03.01':'SUBBASE','03.03':'BTC','02.08':'ZODME' };
+
+// TIPO DE EQUIPO del parte → tipo interno. Orden significativo.
 const TIPOS = [
   { txt:'MOTONIVELADORA', tipo:'MOTO' },
+  { txt:'EXTENDEDORA',    tipo:'FIN'  },
+  { txt:'FINISHER',       tipo:'FIN'  },
   { txt:'BULLDOZER',      tipo:'BULL' },
   { txt:'BULDOZER',       tipo:'BULL' },
   { txt:'EXCAVADORA',     tipo:'EXC'  }
 ];
-// Tipos que nunca reciben producción (vibros/compactadoras/minis).
 const TIPOS_EXCLUIDOS = ['COMPACTADOR','VIBRO','MINI'];
 const CODIGOS_EXCLUIDOS = /^(CR|CN)/;
+const NOMBRE_TIPO={ EXC:'EXCAVADORA', BULL:'BULLDOZER', MOTO:'MOTONIVELADORA', FIN:'FINISHER' };
 
 const UF_PROYECTO = { 'UF1':'3701', 'UF2':'3702' };
+const DIAS_ES = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
 
 // Layout de la hoja de producción (`dia suelto`), en base 0.
 const P_FILA_UF = 3, P_FILA_ACT = 4, P_FILA_DATOS = 5, P_COL_FECHA = 0;
-// Layout de la hoja del jefe, en base 0.
+// Layout del parte MENSUAL por bloques (el que se describió en el encargo), en base 0.
 const J_COL_COD = 2, J_COL_TIPO_CC = 4, J_COL_HORAS = 18, J_FILA_DATOS = 5;
 const J_FILA_CORTE_INI = 1, J_FILA_CORTE_FIN = 2, J_COL_CORTE = 18;
 
 const DEC = 2;              // decimales de la producción repartida
 const TOL = 0.011;          // tolerancia del cuadre
+const ESTADO_DEFAULT = 'OPERANDO';
 
 /* ============================ HELPERS ============================ */
 
 function quitarTildes(s){ return String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
 function norm(s){ return quitarTildes(s).toUpperCase().replace(/[\r\n]+/g,' ').replace(/\s+/g,' ').trim(); }
+function normHdr(s){ return norm(s).replace(/[.:]/g,'').replace(/\s+/g,' ').trim(); }
 function escapeHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 function isoLocal(d){ return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0'); }
@@ -320,14 +422,15 @@ function parseFechaCell(c){
   return parseFechaTexto(c.w!==undefined?c.w:c.v);
 }
 function fmtFecha(iso){ if(!iso) return ''; const p=String(iso).split('-'); return p.length===3?(p[2]+'/'+p[1]+'/'+p[0]):String(iso); }
+function fechaUTC(iso){ const p=String(iso).split('-').map(Number); return new Date(Date.UTC(p[0],p[1]-1,p[2])); }
+function diaSemana(iso){ return DIAS_ES[fechaUTC(iso).getUTCDay()]; }
 
 function parseNum(v){
   if(v==null||v==='') return null;
   if(typeof v==='number') return isFinite(v)?v:null;
   let t=String(v).trim(); if(!t) return null;
-  t=t.replace(/[^\d.,\-]/g,'');                       // quita m³, espacios duros, etc.
+  t=t.replace(/[^\d.,\-]/g,'');
   if(!t || t==='-') return null;
-  // formato es-CO "1.234,5"; sin coma, el punto es separador de miles
   if(t.indexOf(',')>=0) t=t.replace(/\./g,'').replace(',','.');
   else if(/^-?\d{1,3}(\.\d{3})+$/.test(t)) t=t.replace(/\./g,'');
   const n=parseFloat(t); return isFinite(n)?n:null;
@@ -360,7 +463,11 @@ function n0(v){ return v==null?'':nf0.format(v); }
 function n1(v){ return v==null?'':nf1.format(v); }
 function n2(v){ return v==null?'':nf2.format(v); }
 function round(v,d){ const f=Math.pow(10,d); return Math.round(v*f)/f; }
-function fmtTSV(v){ return (v==null||v==='')?'':(typeof v==='number'?String(v).replace('.',','):String(v)); }
+function fmtTSV(v){
+  if(v==null||v==='') return '';
+  if(v instanceof Date) return fmtFecha(isoLocal(v));
+  return (typeof v==='number')?String(v).replace('.',','):String(v);
+}
 
 function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; clearTimeout(toast._t); toast._t=setTimeout(()=>t.style.display='none',4200); }
 
@@ -386,7 +493,7 @@ function normCod(s){
   let t=norm(s).replace(/\s+/g,'').replace(/[^A-Z0-9]/g,'');
   t=t.replace(/^40BUP0*/,'');
   if(/^MO\d{3}$/.test(t) && t.charAt(2)==='0') t='MO'+t.slice(3);
-  return t;
+  return ALIAS_COD[t]||t;
 }
 
 /* Centro de coste "3701.02.05 …" → {proyecto:'3701', item:'02.05'}. */
@@ -406,8 +513,18 @@ function tipoDeEquipo(txt){
   for(const r of TIPOS) if(t.indexOf(r.txt)>=0) return r.tipo;
   return null;
 }
-const NOMBRE_TIPO={ EXC:'EXCAVADORA', BULL:'BULLDOZER', MOTO:'MOTONIVELADORA' };
 function ufDeProyecto(p){ return p==='3701'?'UF1':(p==='3702'?'UF2':''); }
+function horasProg(cod){ return HORAS_PROG[cod]!==undefined?HORAS_PROG[cod]:HORAS_PROG_DEFAULT; }
+
+/* actividad / SUB ACTIVIDAD / unidad de una fila de fact_jefe. */
+function vocabulario(item, noAprov, tipo){
+  const base=ACTIVIDAD_CC[item];
+  if(!base) return { act:'', sub:'', unidad:(/^(06|07|11)\./.test(item)?'m2':'m3') };
+  let sub=base.sub;
+  if(item==='02.05' && noAprov) sub=SUB_NO_APROV;
+  if(item==='02.07' && tipo==='MOTO') sub=SUB_TERRAPLEN_MOTO;
+  return { act:base.act, sub:sub, unidad:base.unidad };
+}
 
 /* ============================ ESTADO ============================ */
 
@@ -415,14 +532,9 @@ const S={ prod:{wb:null,nombre:''}, jefe:{wb:null,nombre:''}, out:null };
 
 /* ============================ CARGA ============================ */
 
-// El "← Menú" solo tiene sentido servida desde el sitio: al abrir el archivo desde el
-// disco (file://) no hay menu.html al lado y el enlace quedaría roto.
-if(location.protocol==='http:' || location.protocol==='https:') document.getElementById('btnMenu').style.display='';
-
 function initParams(){
   document.getElementById('propias').value = MAQUINAS_PROPIAS.join(', ');
   document.getElementById('mapaAct').value = MAPA_ACTIVIDAD.map(r=>r.txt+' = '+r.ccs.join(',')).join('\n');
-  // Default del corte: 16 del mes anterior → 15 del actual (se pisa al leer el parte del jefe).
   const hoy=new Date(), y=hoy.getFullYear(), m=hoy.getMonth();
   const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   document.getElementById('desde').value=iso(new Date(y,m-1,16));
@@ -430,13 +542,27 @@ function initParams(){
 }
 initParams();
 
+// El "← Menú" solo tiene sentido servida desde el sitio: al abrir el archivo desde el
+// disco (file://) no hay menu.html al lado y el enlace quedaría roto.
+if(location.protocol==='http:' || location.protocol==='https:') document.getElementById('btnMenu').style.display='';
+
 document.getElementById('pctBull').addEventListener('input',e=>{
   const v=Math.min(100,Math.max(0,parseFloat(e.target.value)||0));
   document.getElementById('pctMotoLbl').textContent=String(round(100-v,2));
 });
 
+/* «EXC026» o «EXC026:EXC» / «EXC026 = EXCAVADORA»: el tipo opcional sirve para máquinas
+   que no están en el catálogo de la flota, sin tener que fiarse del texto del parte. */
+const ALIAS_TIPO={ EXCAVADORA:'EXC', BULLDOZER:'BULL', BULDOZER:'BULL', MOTONIVELADORA:'MOTO',
+                   FINISHER:'FIN', EXTENDEDORA:'FIN', EXC:'EXC', BULL:'BULL', MOTO:'MOTO', FIN:'FIN' };
 function leerParams(){
-  const propias=new Set(document.getElementById('propias').value.split(/[,\n;]+/).map(s=>normCod(s)).filter(Boolean));
+  const propias=new Set(), tiposManual={};
+  document.getElementById('propias').value.split(/[,\n;]+/).forEach(tok=>{
+    const p=tok.split(/[:=]/);
+    const cod=normCod(p[0]); if(!cod) return;
+    propias.add(cod);
+    if(p.length>1){ const t=ALIAS_TIPO[norm(p[1]).replace(/\s+/g,'')]; if(t) tiposManual[cod]=t; }
+  });
   const mapa=[];
   document.getElementById('mapaAct').value.split(/\n+/).forEach(l=>{
     const m=l.split('=');
@@ -444,12 +570,15 @@ function leerParams(){
     const txt=norm(m[0]); const ccs=m[1].split(/[,;]+/).map(s=>s.trim()).filter(Boolean);
     if(txt && ccs.length) mapa.push({txt:txt, ccs:ccs});
   });
-  const pctBull=Math.min(100,Math.max(0,parseFloat(document.getElementById('pctBull').value)||0))/100;
   return {
     propias: propias,
+    tiposManual: tiposManual,
+    soloHorasMaq: new Set(document.getElementById('soloHorasMaq').value.split(/[,\n;]+/).map(s=>normCod(s)).filter(Boolean)),
     mapa: mapa.length?mapa:MAPA_ACTIVIDAD,
-    pctBull: pctBull,
-    zodmeCruce: document.getElementById('zodmeCruce').checked,
+    pctBull: Math.min(100,Math.max(0,parseFloat(document.getElementById('pctBull').value)||0))/100,
+    separarUF: document.getElementById('separarUF').checked,
+    repartoDiario: document.getElementById('repartoDiario').checked,
+    minDia: Math.max(0,parseFloat(document.getElementById('minDia').value)||0),
     soloHoras: document.getElementById('soloHoras').checked,
     desde: document.getElementById('desde').value,
     hasta: document.getElementById('hasta').value
@@ -473,13 +602,13 @@ function armarCarga(inputId, boxId, titId, subId, slot, despues){
       document.getElementById(subId).textContent='⚠️ No se pudo leer el archivo.';
       toast('⚠️ Error leyendo el Excel: '+err.message);
     }
-    refrescarBotón();
+    refrescarBoton();
   });
 }
 armarCarga('fileProd','boxProd','tProd','sProd',S.prod,null);
 armarCarga('fileJefe','boxJefe','tJefe','sJefe',S.jefe,detectarCorte);
 
-function refrescarBotón(){
+function refrescarBoton(){
   const listo=!!(S.prod.wb && S.jefe.wb);
   document.getElementById('btnProc').disabled=!listo;
   document.getElementById('procNote').textContent = listo
@@ -487,7 +616,6 @@ function refrescarBotón(){
     : (S.prod.wb ? 'Falta el parte del jefe.' : (S.jefe.wb ? 'Falta el reporte diario de obra.' : 'Carga los dos archivos.'));
 }
 
-/* Busca la hoja por nombre exacto → sin espacios/tildes → por prefijo. */
 function buscarHoja(wb,nombre){
   const n=norm(nombre).replace(/\s+/g,'');
   let h=wb.SheetNames.find(s=>s===nombre);
@@ -498,22 +626,104 @@ function buscarHoja(wb,nombre){
   return h||null;
 }
 
-/* FECHAS DE CORTE del parte del jefe: celdas fijas y, si fallan, las dos fechas de la cabecera. */
+/* Encabezados del parte DIARIO, resueltos por texto (los índices cambian entre meses). */
+const HDR_PARTE = {
+  fecha:['FECHA'],
+  cod:['CODIGO EQUIPO','COD EQUIPO','CODIGO DE EQUIPO','EQUIPO'],
+  tipo:['FLOTA','TIPO DE EQUIPO','TIPO EQUIPO'],
+  horas:['HORAS T','HORAS TRABAJADAS','HORAS OPERACION'],
+  idle:['HORAS IDLE','IDLE','HORAS MUERTAS'],
+  standby:['STAND BY','STANDBY'],
+  cc:['CENTRO DE COSTE','CENTRO DE COSTO'],
+  desc:['DESCRIPCION TRABAJO','DESCRIPCION DEL TRABAJO','DESCRIPCION'],
+  operador:['OPERADOR']
+};
+function detectarCabeceraParte(ws){
+  const r=rangoHoja(ws);
+  for(let f=r.r0; f<=Math.min(r.r1, r.r0+12); f++){
+    const cols={}, vistos={}, texto={};
+    for(let c=r.c0;c<=r.c1;c++){
+      const h=normHdr(txtAt(ws,f,c));
+      if(!h) continue;
+      texto[c]=h;
+      for(const k in HDR_PARTE){
+        if(vistos[k]) continue;
+        if(HDR_PARTE[k].indexOf(h)>=0){ cols[k]=c; vistos[k]=1; break; }
+      }
+    }
+    // `BASE MAQUINARIA` no tiene columna «HORAS TRABAJADAS»: las horas son el TOTAL del
+    // horómetro (INICIAL · FINAL · TOTAL). Se acepta solo ese TOTAL, no los otros
+    // (TOTAL2, TOTAL HORAS, TOTAL HORAS A FACTURAR…).
+    if(cols.horas===undefined){
+      for(const c in texto){
+        if(texto[c]!=='FINAL') continue;
+        const sig=Number(c)+1;
+        if(texto[sig]==='TOTAL' && texto[Number(c)-1]==='INICIAL'){ cols.horas=sig; break; }
+      }
+    }
+    if(cols.fecha!==undefined && cols.cod!==undefined && cols.cc!==undefined && cols.horas!==undefined)
+      return { fila:f, cols:cols };
+  }
+  return null;
+}
+
+/* FECHAS DE CORTE en cualquier hoja del libro: el día a día vive en `BASE MAQUINARIA`
+   pero el corte está en la hoja del mes (`JULIO UF1 UF2 Y UF3 `). */
+function buscarCorteEnLibro(wb){
+  for(const n of wb.SheetNames){
+    const ws=wb.Sheets[n]; if(!ws||!ws['!ref']) continue;
+    let a=fechaAt(ws,J_FILA_CORTE_INI,J_COL_CORTE), b=fechaAt(ws,J_FILA_CORTE_FIN,J_COL_CORTE);
+    if(a&&b) return {ini:a,fin:b,hoja:n};
+    const r=rangoHoja(ws);
+    for(let f=r.r0; f<=Math.min(r.r1,r.r0+5); f++){
+      for(let c=r.c0; c<=r.c1; c++){
+        if(normHdr(txtAt(ws,f,c)).indexOf('FECHAS DE CORTE')<0) continue;
+        const vistas=[];
+        for(let ff=f; ff<=Math.min(r.r1,f+3); ff++)
+          for(let cc=c; cc<=Math.min(r.c1,c+4); cc++){ const d=fechaAt(ws,ff,cc); if(d) vistas.push(d); }
+        vistas.sort();
+        if(vistas.length>=2) return {ini:vistas[0], fin:vistas[vistas.length-1], hoja:n};
+      }
+    }
+  }
+  return null;
+}
+
+/* Un parte diario puede arrastrar meses de historia: en ese caso el corte NO es su min/max,
+   sino el período 16→15 que termina en su última fecha. */
+function corteDeUltimoMes(maxISO){
+  const d=fechaUTC(maxISO), y=d.getUTCFullYear(), m=d.getUTCMonth(), dia=d.getUTCDate();
+  const fin  = dia>=16 ? new Date(Date.UTC(y,m+1,15)) : new Date(Date.UTC(y,m,15));
+  const ini  = new Date(Date.UTC(fin.getUTCFullYear(),fin.getUTCMonth()-1,16));
+  return { ini:isoLocal(ini), fin:isoLocal(fin) };
+}
+
+/* FECHAS DE CORTE: celdas fijas del parte por bloques, o el rango de fechas del parte diario. */
 function detectarCorte(){
-  const hoja=buscarHoja(S.jefe.wb, document.getElementById('hojaJefe').value);
-  if(!hoja) return;
-  const ws=S.jefe.wb.Sheets[hoja];
-  let ini=fechaAt(ws,J_FILA_CORTE_INI,J_COL_CORTE), fin=fechaAt(ws,J_FILA_CORTE_FIN,J_COL_CORTE);
+  let ini=null, fin=null, origen='';
+  const enLibro=buscarCorteEnLibro(S.jefe.wb);
+  if(enLibro){ ini=enLibro.ini; fin=enLibro.fin; origen='FECHAS DE CORTE de «'+enLibro.hoja+'»'; }
+
   if(!ini || !fin){
-    const r=rangoHoja(ws), vistas=[];
-    for(let f=r.r0; f<=Math.min(r.r1,J_FILA_DATOS-1); f++)
-      for(let c=r.c0; c<=r.c1; c++){ const d=fechaAt(ws,f,c); if(d) vistas.push(d); }
-    vistas.sort();
-    if(vistas.length>=2){ ini=ini||vistas[0]; fin=fin||vistas[vistas.length-1]; }
+    const hoja=buscarHoja(S.jefe.wb, document.getElementById('hojaJefe').value);
+    const ws=hoja?S.jefe.wb.Sheets[hoja]:null;
+    const cab=ws?detectarCabeceraParte(ws):null;
+    if(cab){
+      const r=rangoHoja(ws); let a=null,b=null;
+      for(let f=cab.fila+1; f<=r.r1; f++){
+        const d=fechaAt(ws,f,cab.cols.fecha); if(!d) continue;
+        if(!a||d<a) a=d; if(!b||d>b) b=d;
+      }
+      if(a&&b){
+        const dias=Math.round((fechaUTC(b)-fechaUTC(a))/86400000);
+        if(dias>45){ const c=corteDeUltimoMes(b); ini=c.ini; fin=c.fin; origen='último período 16→15 del parte ('+dias+' días de historia)'; }
+        else { ini=a; fin=b; origen='rango de fechas del parte'; }
+      }
+    }
   }
   if(ini) document.getElementById('desde').value=ini;
   if(fin) document.getElementById('hasta').value=fin;
-  if(ini&&fin) toast('📅 Corte detectado: '+fmtFecha(ini)+' → '+fmtFecha(fin));
+  if(ini&&fin) toast('📅 Corte detectado ('+origen+'): '+fmtFecha(ini)+' → '+fmtFecha(fin));
 }
 document.getElementById('hojaJefe').addEventListener('change',()=>{ if(S.jefe.wb) detectarCorte(); });
 
@@ -542,192 +752,437 @@ function leerProduccion(P){
     if(!act) continue;
     if(/^(TOTAL|SUMA|GRAN TOTAL)/.test(norm(act))) continue;   // subtotales de la dinámica
     const ufKey=norm(ufActual).replace(/\s+/g,'');
-    const proyecto=UF_PROYECTO[ufKey]||null;
-    cols.push({ c:c, uf:ufActual, proyecto:proyecto, actividad:act, ccs:mapearActividad(act,P.mapa)||[], total:0 });
+    cols.push({ c:c, uf:ufActual, proyecto:UF_PROYECTO[ufKey]||null, actividad:act,
+                ccs:mapearActividad(act,P.mapa)||[], noAprov:/NO APROVECHABLE/.test(norm(act)), total:0 });
   }
 
-  // Suma dentro del corte.
-  let filasEnCorte=0, filasFuera=0, ultima=null, primera=null;
+  // Producción por (fecha, proyecto, item, noAprov) dentro del corte.
+  const prodDia=new Map();      // "fecha|proyecto|item|0/1" -> valor
+  const prodMes=new Map();      // "proyecto|item"           -> valor (para el cuadre)
+  const dias=new Set();
+  let filasFuera=0, primera=null, ultima=null;
+
   for(let f=P_FILA_DATOS;f<=r.r1;f++){
     const fecha=fechaAt(ws,f,P_COL_FECHA);
     if(!fecha) continue;                                  // "Total general" y demás
     if(fecha<P.desde || fecha>P.hasta){ filasFuera++; continue; }
-    filasEnCorte++;
+    dias.add(fecha);
     if(!primera||fecha<primera) primera=fecha;
     if(!ultima||fecha>ultima) ultima=fecha;
     for(const col of cols){
       const v=numAt(ws,f,col.c);
-      if(v) col.total+=v;
+      if(!v) continue;
+      col.total+=v;
+      if(!col.proyecto || !col.ccs.length) continue;
+      for(const item of col.ccs){
+        prodDia.set(fecha+'|'+col.proyecto+'|'+item+'|'+(col.noAprov?1:0),
+                    (prodDia.get(fecha+'|'+col.proyecto+'|'+item+'|'+(col.noAprov?1:0))||0)+v);
+        prodMes.set(col.proyecto+'|'+item,(prodMes.get(col.proyecto+'|'+item)||0)+v);
+      }
     }
   }
-
-  // Producción por (proyecto, item). La NO APROVECHABLE acredita 02.05 y 02.08.
-  const prod=new Map();
-  for(const col of cols){
-    if(!col.total || !col.ccs.length || !col.proyecto) continue;
-    for(const item of col.ccs){
-      const k=col.proyecto+'|'+item;
-      prod.set(k,(prod.get(k)||0)+col.total);
-    }
-  }
-  return { hoja:hoja, cols:cols, prod:prod, filasEnCorte:filasEnCorte, filasFuera:filasFuera, primera:primera, ultima:ultima };
+  return { hoja:hoja, cols:cols, prodDia:prodDia, prodMes:prodMes,
+           dias:[...dias].sort(), filasFuera:filasFuera, primera:primera, ultima:ultima };
 }
 
 /* ============================ LECTURA · PARTES DEL JEFE ============================ */
 
+/* Estructura común a los dos formatos:
+     maquinas: cod -> {cod,tipo,propia,excluida,horasTotal,cc:Map("proy|item"->h),porItem,operador,ccTxt}
+     dias:     "fecha|cod|proy|item" -> {horas,idle,desc,operador}   (vacío en el parte mensual) */
 function leerJefe(P){
   const nombreHoja=document.getElementById('hojaJefe').value;
-  const hoja=buscarHoja(S.jefe.wb, nombreHoja);
-  if(!hoja) throw new Error('No encontré la hoja «'+nombreHoja+'» en '+S.jefe.nombre+'. Corrige el nombre de la hoja del mes.');
+  let hoja=buscarHoja(S.jefe.wb, nombreHoja), auto=false;
+  // El nombre de la hoja cambia cada mes: si el que hay escrito no está, se busca sola
+  // la primera hoja que tenga pinta de parte diario en vez de plantarse.
+  if(!hoja){
+    for(const n of S.jefe.wb.SheetNames){
+      const w=S.jefe.wb.Sheets[n];
+      if(w && w['!ref'] && detectarCabeceraParte(w)){ hoja=n; auto=true; break; }
+    }
+  }
+  if(!hoja) throw new Error('No encontré la hoja «'+nombreHoja+'» en '+S.jefe.nombre+
+    ', ni ninguna con formato de parte diario. Hojas del archivo: '+S.jefe.wb.SheetNames.join(' · '));
   const ws=S.jefe.wb.Sheets[hoja];
-  const r=rangoHoja(ws);
+  const cab=detectarCabeceraParte(ws);
+  const out = cab ? leerParteDiario(ws,cab,P) : leerParteMensual(ws,P);
+  out.hoja=hoja; out.hojaAuto=auto; out.hojaPedida=nombreHoja;
+  return out;
+}
 
-  const maquinas=new Map();      // cod → máquina
-  const sinCC=[];                // sub-filas cuyo texto no es un CC reconocible
-  let actual=null;
+function maquinaDe(maquinas,cod,tipoRaw,P){
+  let m=maquinas.get(cod);
+  if(!m){
+    const delCatalogo=P.tiposManual[cod]||TIPO_MAQUINA[cod]||null;   // el tipo escrito a mano manda
+    const tipo=tipoDeEquipo(tipoRaw);
+    m={ cod:cod, tipoRaw:tipoRaw||'', tipo:delCatalogo||(tipo==='EXCLUIDO'?null:tipo),
+        deCatalogo:!!delCatalogo,
+        // el catálogo manda: una máquina de la flota no se excluye por lo que diga el parte
+        excluida: delCatalogo ? CODIGOS_EXCLUIDOS.test(cod) : (tipo==='EXCLUIDO'||CODIGOS_EXCLUIDOS.test(cod)),
+        propia:P.propias.has(cod), horasTotal:0, cc:new Map(), porItem:new Map(), ccTxt:new Map(), operador:'' };
+    maquinas.set(cod,m);
+  }else if(!m.tipoRaw && tipoRaw){
+    m.tipoRaw=tipoRaw;
+    if(!m.deCatalogo){
+      const tipo=tipoDeEquipo(tipoRaw);
+      if(tipo==='EXCLUIDO') m.excluida=true; else if(tipo) m.tipo=tipo;
+    }
+  }
+  return m;
+}
+
+/* Formato DÍA A DÍA: una fila por máquina/fecha/CC (hoja `Junio` del maestro y equivalentes). */
+function leerParteDiario(ws,cab,P){
+  const r=rangoHoja(ws), C=cab.cols;
+  const maquinas=new Map(), dias=new Map();
+  let fuera=0, otrosProyectos=0, sinCC=[];
+
+  for(let f=cab.fila+1; f<=r.r1; f++){
+    const fecha=fechaAt(ws,f,C.fecha);
+    const codRaw=txtAt(ws,f,C.cod);
+    if(!fecha || !codRaw) continue;
+    if(fecha<P.desde || fecha>P.hasta){ fuera++; continue; }
+
+    const cod=normCod(codRaw);
+    const ccTxt=txtAt(ws,f,C.cc);
+    const cc=parseCC(ccTxt);
+    if(!cc){ if(ccTxt) sinCC.push({maquina:cod,texto:ccTxt}); continue; }
+    if(cc.proyecto && PROYECTOS.indexOf(cc.proyecto)<0){ otrosProyectos++; continue; }
+
+    const m=maquinaDe(maquinas,cod,C.tipo!==undefined?txtAt(ws,f,C.tipo):'',P);
+    const h=(C.horas!==undefined?numAt(ws,f,C.horas):0)||0;
+    const idle=(C.idle!==undefined?numAt(ws,f,C.idle):0)||0;
+    const oper=C.operador!==undefined?txtAt(ws,f,C.operador):'';
+    if(oper && !m.operador) m.operador=oper;
+
+    const k=(cc.proyecto||'')+'|'+cc.item;
+    m.horasTotal+=h;
+    m.cc.set(k,(m.cc.get(k)||0)+h);
+    m.porItem.set(cc.item,(m.porItem.get(cc.item)||0)+h);
+    if(!m.ccTxt.has(k)) m.ccTxt.set(k,ccTxt);
+
+    const kd=fecha+'|'+cod+'|'+(cc.proyecto||'')+'|'+cc.item;
+    const d=dias.get(kd)||{horas:0,idle:0,desc:'',operador:''};
+    d.horas+=h; d.idle+=idle;
+    if(!d.desc && C.desc!==undefined) d.desc=txtAt(ws,f,C.desc);
+    if(!d.operador) d.operador=oper;
+    dias.set(kd,d);
+  }
+  return { formato:'diario', maquinas:maquinas, dias:dias, sinCC:sinCC,
+           filasFuera:fuera, otrosProyectos:otrosProyectos };
+}
+
+/* Formato por BLOQUES con el total del mes (encabezado de máquina + sub-filas de CC). */
+function leerParteMensual(ws,P){
+  const r=rangoHoja(ws);
+  const maquinas=new Map(), sinCC=[];
+  let actual=null, otrosProyectos=0;
 
   for(let f=J_FILA_DATOS;f<=r.r1;f++){
     const codTxt=txtAt(ws,f,J_COL_COD);
     if(codTxt){
-      // Encabezado de máquina
-      const c=normCod(codTxt);
-      if(!c){ actual=null; continue; }
-      const tipoRaw=txtAt(ws,f,J_COL_TIPO_CC);
-      const tipo=tipoDeEquipo(tipoRaw);
-      let m=maquinas.get(c);
-      if(!m){
-        m={ cod:c, codRaw:codTxt, tipoRaw:tipoRaw, tipo:(tipo==='EXCLUIDO'?null:tipo),
-            excluida:(tipo==='EXCLUIDO'||CODIGOS_EXCLUIDOS.test(c)),
-            propia:P.propias.has(c), horasTotal:0, cc:new Map(), porItem:new Map(), ccTxt:new Map() };
-        maquinas.set(c,m);
-      }else if(!m.tipoRaw && tipoRaw){
-        m.tipoRaw=tipoRaw; if(tipo && tipo!=='EXCLUIDO') m.tipo=tipo;
-        if(tipo==='EXCLUIDO') m.excluida=true;
-      }
-      m.horasTotal += (numAt(ws,f,J_COL_HORAS)||0);
+      const cod=normCod(codTxt);
+      if(!cod){ actual=null; continue; }
+      const m=maquinaDe(maquinas,cod,txtAt(ws,f,J_COL_TIPO_CC),P);
       actual=m;
       continue;
     }
-    // Sub-fila de CC (col. del código vacía)
     const ccTxt=txtAt(ws,f,J_COL_TIPO_CC);
     if(!ccTxt || !actual) continue;
     if(/^TOTAL/.test(norm(ccTxt))) continue;
     const h=numAt(ws,f,J_COL_HORAS)||0;
     const cc=parseCC(ccTxt);
-    if(!cc){ sinCC.push({maquina:actual.cod, texto:ccTxt, horas:h}); continue; }
+    if(!cc){ sinCC.push({maquina:actual.cod, texto:ccTxt}); continue; }
+    if(cc.proyecto && PROYECTOS.indexOf(cc.proyecto)<0){ otrosProyectos++; continue; }
     const k=(cc.proyecto||'')+'|'+cc.item;
+    actual.horasTotal+=h;
     actual.cc.set(k,(actual.cc.get(k)||0)+h);
     actual.porItem.set(cc.item,(actual.porItem.get(cc.item)||0)+h);
     if(!actual.ccTxt.has(k)) actual.ccTxt.set(k,ccTxt);
   }
-  return { hoja:hoja, maquinas:maquinas, sinCC:sinCC };
+  return { formato:'mensual', maquinas:maquinas, dias:new Map(), sinCC:sinCC,
+           filasFuera:0, otrosProyectos:otrosProyectos };
 }
 
-/* ============================ REPARTO ============================ */
+/* ============================ REPARTO (por día) ============================ */
 
-/* Peso de cada candidata, con la cascada del algoritmo:
-   1) horas en el CC exacto → 2) horas en el ítem en cualquier UF → 3) horas totales
-   → 4) partes iguales (nunca queda producción huérfana si hay candidatas). */
-function pesosDe(cands, proyecto, item, cruzarUF){
-  if(!cruzarUF){
-    const p1=cands.map(m=>m.cc.get(proyecto+'|'+item)||0);
-    if(p1.reduce((a,b)=>a+b,0)>0) return {pesos:p1, base:'CC exacto'};
+/* QUIÉN recibe y CUÁNTO se decide con el TOTAL DEL MES (la cascada de D86); el día solo
+   decide CUÁNDO. Repartir día por día parecía más fino, pero desvía los pesos: un día en
+   que la máquina del CC no reportó horas, su producción se iba a otra UF por el fallback.
+   Con el mes: horas en el CC exacto → horas en el ítem en cualquier UF → horas totales →
+   partes iguales. Nunca queda producción huérfana si hay al menos una candidata. */
+function pesosDe(cands, proyecto, item, cruzarUF, fecha, jefe){
+  const niveles=[];
+  /* Con reparto POR DÍA manda quién estuvo ESE día: en BTC la motoniveladora y el finisher
+     nunca coinciden —se usa la moto cuando no está el finisher— así que repartir por horas
+     del mes les daba a los dos el mismo rendimiento. Por día, cada uno se lleva lo suyo. */
+  if(fecha && jefe && jefe.dias.size){
+    const hd=(m,p)=>{ const d=jefe.dias.get(fecha+'|'+m.cod+'|'+p+'|'+item); return d?d.horas:0; };
+    if(!cruzarUF) niveles.push(['horas de ese día en el CC', cands.map(m=>hd(m,proyecto))]);
+    niveles.push(['horas de ese día en la actividad', cands.map(m=>PROYECTOS.reduce((a,p)=>a+hd(m,p),0)+hd(m,''))]);
   }
-  const p2=cands.map(m=>m.porItem.get(item)||0);
-  if(p2.reduce((a,b)=>a+b,0)>0) return {pesos:p2, base: cruzarUF?'ítem (cruce UF)':'ítem en cualquier UF'};
-  const p3=cands.map(m=>m.horasTotal||0);
-  if(p3.reduce((a,b)=>a+b,0)>0) return {pesos:p3, base:'horas totales'};
+  if(!cruzarUF) niveles.push(['horas del corte en el CC exacto', cands.map(m=>m.cc.get(proyecto+'|'+item)||0)]);
+  niveles.push(['horas del corte en la actividad', cands.map(m=>m.porItem.get(item)||0)]);
+  niveles.push(['horas totales', cands.map(m=>m.horasTotal||0)]);
+  for(const [base,pesos] of niveles) if(pesos.reduce((a,b)=>a+b,0)>0) return {pesos:pesos, base:base};
   return {pesos:cands.map(()=>1), base:'partes iguales'};
 }
 
-function repartir(P, dsProd, jefe){
-  // Candidatas: propias, no excluidas, con tipo reconocido.
-  const flota=[...jefe.maquinas.values()].filter(m=>m.propia && !m.excluida && m.tipo);
-  const asign=[];        // {cod, tipo, proyecto, item, produccion, base}
-  const huerfanas=[];    // producción sin máquina coherente
-  const detalleGrupos=[];
+/* Y el total mensual de una máquina se derrama sobre los días. Peso preferido:
+   producción del día × horas de la máquina ese día en ese CC — así la producción cae en
+   días en que la actividad SÍ ocurrió y la máquina SÍ estuvo. Si nunca coinciden, se cae a
+   la producción del día (la curva real del `dia suelto`) y luego a las horas. */
+function derramarEnDias(cod, proyecto, item, na, total, jefe, dsProd, minDia){
+  const dias=dsProd.dias;
+  if(!dias.length) return {partes:[], base:''};
+  const pProd = dias.map(d=>dsProd.prodDia.get(d+'|'+proyecto+'|'+item+'|'+(na?1:0))||0);
+  const pHoras= dias.map(d=>{ const x=jefe.dias.get(d+'|'+cod+'|'+proyecto+'|'+item); return x?x.horas:0; });
+  const suma=a=>a.reduce((x,y)=>x+y,0);
+  let w=dias.map((_,i)=>pProd[i]*pHoras[i]), base='producción × horas del día';
+  if(suma(w)<=0){ w=pProd;  base='producción del día'; }
+  if(suma(w)<=0){ w=pHoras; base='horas del día'; }
+  if(suma(w)<=0){ w=dias.map(()=>1); base='partes iguales entre los días'; }
+  const partes=repartirRedondeado(w,total,DEC);
 
-  for(const [k,total] of dsProd.prod){
-    const [proyecto,item]=k.split('|');
+  /* Migajas: un día en que la máquina puso pocas horas se lleva una tajada mínima
+     (30, 20, 6 m³) que no es un día flojo real —ese día la obra produjo miles— sino el
+     residuo de partir. Se acumulan en el día más fuerte de esa misma máquina y actividad.
+     NO cambia el total del mes de nadie: solo deja de ensuciar el día a día del informe. */
+  if(minDia>0){
+    let mayor=0;
+    partes.forEach((v,i)=>{ if(v>partes[mayor]) mayor=i; });
+    let migajas=0;
+    partes.forEach((v,i)=>{ if(i!==mayor && v>0 && v<minDia){ migajas+=v; partes[i]=0; } });
+    if(migajas) partes[mayor]=round(partes[mayor]+migajas,DEC);
+  }
+  return { partes:partes, base:base+(minDia>0?' · migajas al día fuerte':'') };
+}
+
+function repartir(P, dsProd, jefe){
+  // `flotaTodas` emite filas (sus horas van a fact_jefe); `flota` son las que además
+  // reciben producción — las marcadas «solo horas» quedan fuera del reparto.
+  const flotaTodas=[...jefe.maquinas.values()].filter(m=>m.propia && !m.excluida && m.tipo);
+  const flota=flotaTodas.filter(m=>!P.soloHorasMaq.has(m.cod));
+  const asign=[];        // {cod,tipo,fecha,proyecto,item,noAprov,produccion,base}
+  const huerfanas=[];
+  const basesUsadas=new Map();
+
+  /* Unidad de reparto. Por defecto **la UF no cuenta**: al informe le interesa la producción
+     de la actividad, no en qué UF se hizo, así que las dos UF se juntan y el peso es el total
+     de horas de la máquina en esa actividad. Con `separarUF` se vuelve al reparto por UF. */
+  const prodUnidad=new Map();     // clave -> total
+  const prodPorProy=new Map();    // clave -> Map(proyecto -> total)  (para repartir de vuelta)
+  for(const [k,v] of dsProd.prodDia){
+    const p=k.split('|'), fecha=p[0], proyecto=p[1];
+    const ku=(P.repartoDiario?fecha+'|':'')+(P.separarUF?proyecto+'|':'')+p[2]+'|'+p[3];
+    prodUnidad.set(ku,(prodUnidad.get(ku)||0)+v);
+    let m=prodPorProy.get(ku); if(!m){ m=new Map(); prodPorProy.set(ku,m); }
+    m.set(proyecto,(m.get(proyecto)||0)+v);
+  }
+
+  for(const [k,total] of prodUnidad){
+    const partes_k=k.split('|');
+    let i=0;
+    const fechaU=P.repartoDiario?partes_k[i++]:null;
+    const proyecto=P.separarUF?partes_k[i++]:null;
+    const item=partes_k[i++];
+    const na=partes_k[i];
+    const noAprov=na==='1';
     const coh=COHERENCIA[item];
     if(!coh){ huerfanas.push({proyecto:proyecto,item:item,total:total,motivo:'CC sin regla de coherencia'}); continue; }
 
-    // Grupos con candidatas reales; los vacíos ceden su porcentaje a los demás.
     const grupos=coh.grupos.map(g=>{
       let share=g.share;
-      if(coh.split && item==='02.07'){ share = (g.tipos.indexOf('BULL')>=0) ? P.pctBull : (1-P.pctBull); }
+      if(coh.split && item==='02.07') share=(g.tipos.indexOf('BULL')>=0)?P.pctBull:(1-P.pctBull);
       return { tipos:g.tipos, share:share, cands:flota.filter(m=>g.tipos.indexOf(m.tipo)>=0) };
     }).filter(g=>g.cands.length>0);
 
     if(!grupos.length){
-      huerfanas.push({proyecto:proyecto,item:item,total:total,motivo:'sin máquinas propias del tipo coherente ('+coh.grupos.map(g=>g.tipos.map(t=>NOMBRE_TIPO[t]).join('/')).join(' + ')+')'});
+      huerfanas.push({proyecto:proyecto,item:item,total:total,
+        motivo:'sin máquinas propias del tipo coherente ('+coh.grupos.map(g=>g.tipos.map(t=>NOMBRE_TIPO[t]).join('/')).join(' + ')+')'});
       continue;
     }
     const sumShare=grupos.reduce((a,g)=>a+g.share,0);
     const shares=grupos.map(g=>sumShare>0?g.share/sumShare:1/grupos.length);
     const totales=repartirRedondeado(shares,total,DEC);
 
+    const proyectosDe=[...(prodPorProy.get(k)||new Map()).entries()];   // [[proyecto, producción], …]
+
     grupos.forEach((g,gi)=>{
-      const cruzar = P.zodmeCruce && item==='02.08';
-      const {pesos,base}=pesosDe(g.cands,proyecto,item,cruzar);
+      const {pesos,base}=pesosDe(g.cands,proyecto,item,!P.separarUF,fechaU,jefe);
       const partes=repartirRedondeado(pesos,totales[gi],DEC);
-      detalleGrupos.push({ proyecto:proyecto, item:item, tipos:g.tipos.join('+'), share:shares[gi], total:totales[gi], base:base });
-      g.cands.forEach((m,i)=>{
+      const bk=(P.separarUF?proyecto+'|':'')+item+'|'+g.tipos.join('+');
+      const bb=basesUsadas.get(bk)||{proyecto:proyecto,item:item,tipos:g.tipos.join('+'),share:shares[gi],bases:new Map()};
+      bb.bases.set(base,1); basesUsadas.set(bk,bb);
+      g.cands.forEach((mi_,i)=>{
+        const m=mi_;
         if(!partes[i]) return;
-        asign.push({ cod:m.cod, tipo:m.tipo, proyecto:proyecto, item:item, produccion:partes[i], base:base });
+        /* Sin separar UF, el total de la máquina se devuelve a los proyectos donde ELLA
+           trabajó esa actividad (así `id_proyecto` sigue teniendo sentido en fact_jefe y en
+           «Maquinas Junio»); si no tiene horas en ninguno, se sigue la forma de la producción. */
+        let porProy;
+        if(P.separarUF){
+          porProy=[[proyecto,partes[i]]];
+        }else{
+          // Sin separar UF: el monto vuelve a los proyectos donde ESA máquina trabajó la
+          // actividad (ese día si el reparto es diario), y si no, siguiendo la producción.
+          const porDia = fechaU && jefe.dias.size;
+          let hs = porDia
+            ? proyectosDe.map(([pr])=>{ const d=jefe.dias.get(fechaU+'|'+m.cod+'|'+pr+'|'+item); return d?d.horas:0; })
+            : proyectosDe.map(([pr])=>m.cc.get(pr+'|'+item)||0);
+          // Si ese día no reportó horas en la actividad, se cae a las horas del corte antes
+          // que a la forma de la producción: si la máquina solo trabajó en una UF, su
+          // producción no debe aparecer en la otra.
+          if(porDia && hs.reduce((a,b)=>a+b,0)<=0) hs=proyectosDe.map(([pr])=>m.cc.get(pr+'|'+item)||0);
+          const pesosProy = hs.reduce((a,b)=>a+b,0)>0 ? hs : proyectosDe.map(([,v])=>v);
+          const trozos=repartirRedondeado(pesosProy,partes[i],DEC);
+          porProy=proyectosDe.map(([pr],j)=>[pr,trozos[j]]);
+        }
+        porProy.forEach(([pr,monto])=>{
+          if(!monto) return;
+          if(fechaU){   // reparto diario: la unidad YA es un día, no hay que derramar
+            asign.push({ cod:m.cod, tipo:m.tipo, fecha:fechaU, proyecto:pr, item:item,
+                         noAprov:noAprov, produccion:monto, base:base });
+            return;
+          }
+          // Reparto del corte: el total de esta máquina se derrama sobre los días.
+          const d=derramarEnDias(m.cod,pr,item,noAprov,monto,jefe,dsProd,P.minDia);
+          dsProd.dias.forEach((fecha,di)=>{
+            if(!d.partes[di]) return;
+            asign.push({ cod:m.cod, tipo:m.tipo, fecha:fecha, proyecto:pr, item:item,
+                         noAprov:noAprov, produccion:d.partes[di], base:base+' · '+d.base });
+          });
+        });
       });
     });
   }
 
-  // Filas de salida: una por máquina · proyecto · CC.
-  const idx=new Map();
-  const filas=[];
-  function fila(cod,tipo,proyecto,item,ccTxt){
-    const k=cod+'|'+proyecto+'|'+item;
+  /* ---- Filas de fact_jefe: una por máquina · día · proyecto · item · SUB ACTIVIDAD ---- */
+  const idx=new Map(), filas=[];
+  const flotaMap=new Map(flotaTodas.map(m=>[m.cod,m]));
+  function fila(cod,tipo,fecha,proyecto,item,sub){
+    const k=[cod,fecha,proyecto,item,sub].join('|');
     let f=idx.get(k);
     if(!f){
-      f={ maquina:cod, tipo:NOMBRE_TIPO[tipo]||tipo||'', proyecto:proyecto, uf:ufDeProyecto(proyecto),
-          cc:(proyecto?proyecto+'.':'')+item, item:item, actividad:NOMBRE_CC[item]||ccTxt||'',
-          horas:0, produccion:null, base:'' };
+      const m=flotaMap.get(cod)||jefe.maquinas.get(cod);
+      const d=jefe.dias.get(fecha+'|'+cod+'|'+proyecto+'|'+item);
+      const voc=vocabulario(item, sub===SUB_NO_APROV, tipo);
+      f={ maquina:cod, tipo:NOMBRE_TIPO[tipo]||'', fecha:fecha, proyecto:proyecto, uf:ufDeProyecto(proyecto),
+          item:item, cc:(proyecto?proyecto+'.':'')+item, actividad:voc.act, sub:sub||voc.sub, unidad:voc.unidad,
+          horas:d?d.horas:0, idle:d?d.idle:0, produccion:null, base:'',
+          operador:(d&&d.operador)||(m&&m.operador)||'', obs:(d&&d.desc)||'' };
       idx.set(k,f); filas.push(f);
     }
     return f;
   }
-  const flotaMap=new Map(flota.map(m=>[m.cod,m]));
   for(const a of asign){
-    const m=flotaMap.get(a.cod);
-    const f=fila(a.cod,a.tipo,a.proyecto,a.item, m?m.ccTxt.get(a.proyecto+'|'+a.item):'');
+    const voc=vocabulario(a.item, a.noAprov, a.tipo);
+    const f=fila(a.cod,a.tipo,a.fecha,a.proyecto,a.item,voc.sub);
     f.produccion=(f.produccion||0)+a.produccion;
-    f.horas=(m && m.cc.get(a.proyecto+'|'+a.item))||0;
     f.base=a.base;
   }
-  // Horas del jefe que no recibieron producción (desmonte, cereo, CC sin producción del mes…).
+
+  /* Horas del parte que no recibieron producción (desmonte, bloqueos, ODT, días sin producción). */
   if(P.soloHoras){
-    for(const m of jefe.maquinas.values()){
-      if(!m.propia || m.excluida || !m.tipo) continue;
-      for(const [k,h] of m.cc){
-        const p=k.split('|')[0], it=k.split('|')[1];
-        const key=m.cod+'|'+p+'|'+it;
-        if(idx.has(key)){ idx.get(key).horas=h; continue; }
-        const f=fila(m.cod,m.tipo,p,it,m.ccTxt.get(k));
-        f.horas=h; f.base='solo horas';
+    if(jefe.dias.size){
+      for(const [k,d] of jefe.dias){
+        const [fecha,cod,proyecto,item]=k.split('|');
+        const m=flotaMap.get(cod);
+        if(!m) continue;
+        const voc=vocabulario(item,false,m.tipo);
+        const ya=[...idx.keys()].some(x=>{ const p=x.split('|'); return p[0]===cod&&p[1]===fecha&&p[2]===proyecto&&p[3]===item; });
+        if(ya) continue;
+        const f=fila(cod,m.tipo,fecha,proyecto,item,voc.sub);
+        f.horas=d.horas; f.idle=d.idle; f.base='solo horas';
+      }
+    }else{
+      // Parte mensual: no hay día. Se prorratean las horas entre los días con producción del ítem.
+      for(const m of flotaMap.values()){
+        for(const [k,h] of m.cc){
+          const [proyecto,item]=k.split('|');
+          const propios=filas.filter(f=>f.maquina===m.cod&&f.proyecto===proyecto&&f.item===item);
+          if(propios.length) continue;
+          const dias=dsProd.dias;
+          if(!dias.length) continue;
+          const partes=repartirRedondeado(dias.map(()=>1),h,DEC);
+          const voc=vocabulario(item,false,m.tipo);
+          dias.forEach((fecha,i)=>{ if(!partes[i]) return;
+            const f=fila(m.cod,m.tipo,fecha,proyecto,item,voc.sub); f.horas=partes[i]; f.base='solo horas (prorrateo)'; });
+        }
       }
     }
   }
-  filas.sort((a,b)=> a.maquina.localeCompare(b.maquina) || a.proyecto.localeCompare(b.proyecto) || a.item.localeCompare(b.item));
 
-  // Cuadre por (proyecto, CC).
-  const repartido=new Map();
-  for(const a of asign){ const k=a.proyecto+'|'+a.item; repartido.set(k,(repartido.get(k)||0)+a.produccion); }
-  const cuadre=[];
-  const claves=new Set([...dsProd.prod.keys(), ...repartido.keys()]);
-  for(const k of [...claves].sort()){
-    const [proyecto,item]=k.split('|');
-    const leida=dsProd.prod.get(k)||0, rep=repartido.get(k)||0;
-    cuadre.push({ proyecto:proyecto, uf:ufDeProyecto(proyecto), item:item, actividad:NOMBRE_CC[item]||'',
-                  leida:leida, repartida:rep, dif:round(rep-leida,4) });
+  /* Parte mensual: las horas de las filas CON producción se prorratean proporcional a la producción. */
+  if(!jefe.dias.size){
+    const porCC=new Map();
+    filas.forEach(f=>{ if(f.produccion==null) return; const k=f.maquina+'|'+f.proyecto+'|'+f.item;
+      const a=porCC.get(k)||[]; a.push(f); porCC.set(k,a); });
+    for(const [k,fs] of porCC){
+      const [cod,proyecto,item]=k.split('|');
+      const m=flotaMap.get(cod); if(!m) continue;
+      const h=m.cc.get(proyecto+'|'+item)||0;
+      const partes=repartirRedondeado(fs.map(f=>f.produccion||0),h,DEC);
+      fs.forEach((f,i)=>{ f.horas=partes[i]; });
+    }
   }
-  return { filas:filas, cuadre:cuadre, huerfanas:huerfanas, flota:flota, grupos:detalleGrupos };
+
+  /* ---- Horas: repartirlas entre las filas del mismo (máquina · día · proyecto · CC) ----
+     Un CC puede abrirse en VARIAS SUB ACTIVIDAD —02.05 sale como EXCAVACION APROVECHABLE y
+     EXCAVACION NO APROVECHABLE— y cada fila traía las horas COMPLETAS de la máquina ese día.
+     Al sumarlas, el informe veía el doble (EXC001 el 16/06: 12 h reales → 24 h).
+     Las horas del parte se reparten entre esas filas en proporción a su producción, así la
+     suma por máquina y día vuelve a ser la real y el rendimiento de cada fila no cambia. */
+  {
+    const grupos=new Map();
+    filas.forEach(f=>{ const k=[f.maquina,f.fecha,f.proyecto,f.item].join('|');
+      const a=grupos.get(k)||[]; a.push(f); grupos.set(k,a); });
+    for(const fs of grupos.values()){
+      if(fs.length<2) continue;
+      const horas=fs[0].horas||0, idle=fs[0].idle||0;
+      const pesos=fs.map(f=>f.produccion||0);
+      const base=pesos.reduce((a,b)=>a+b,0)>0?pesos:fs.map(()=>1);
+      const ph=repartirRedondeado(base,horas,2), pi=repartirRedondeado(base,idle,2);
+      fs.forEach((f,i)=>{ f.horas=ph[i]; f.idle=pi[i]; });
+    }
+  }
+
+  filas.sort((a,b)=> a.fecha.localeCompare(b.fecha) || a.maquina.localeCompare(b.maquina) || a.item.localeCompare(b.item));
+
+  /* ---- Cuadre mensual por (proyecto, CC) ---- */
+  /* El cuadre se agrupa como se repartió: por CC cuando la UF no cuenta, por (UF, CC) cuando sí.
+     Si no, sin separar UF saldrían «descuadres» que no lo son (la producción de una UF la puede
+     haber hecho una máquina de la otra). */
+  const clave=(proyecto,item)=>P.separarUF?(proyecto+'|'+item):item;
+  const repartido=new Map(), leidaMap=new Map();
+  for(const a of asign){ const c=clave(a.proyecto,a.item); repartido.set(c,(repartido.get(c)||0)+a.produccion); }
+  for(const [k,v] of dsProd.prodMes){ const p=k.split('|'); const c=clave(p[0],p[1]); leidaMap.set(c,(leidaMap.get(c)||0)+v); }
+  const cuadre=[];
+  for(const c of [...new Set([...leidaMap.keys(), ...repartido.keys()])].sort()){
+    const p=c.split('|');
+    const proyecto=P.separarUF?p[0]:'', item=P.separarUF?p[1]:p[0];
+    const leida=leidaMap.get(c)||0, rep=repartido.get(c)||0;
+    cuadre.push({ proyecto:proyecto, uf:P.separarUF?ufDeProyecto(proyecto):'UF1+UF2', item:item,
+                  actividad:(ACTIVIDAD_CC[item]?ACTIVIDAD_CC[item].act:''),
+                  leida:round(leida,DEC), repartida:round(rep,DEC), dif:round(rep-leida,4) });
+  }
+
+  /* ---- Máquinas que el informe no tiene en su bloque ---- */
+  const bloques=[];
+  const porBloque=new Map();
+  filas.forEach(f=>{
+    if(f.produccion==null) return;
+    const b=BLOQUE_DE_CC[f.item]; if(!b) return;
+    const s=porBloque.get(b)||new Set(); s.add(f.maquina); porBloque.set(b,s);
+  });
+  for(const [b,s] of porBloque){
+    const tiene=BLOQUES_INFORME[b]||[];
+    bloques.push({ bloque:b, maquinas:[...s].sort(), faltan:[...s].filter(c=>tiene.indexOf(c)<0).sort(), tiene:tiene });
+  }
+  const sinBloque=[...new Set(filas.filter(f=>f.produccion!=null && !BLOQUE_DE_CC[f.item]).map(f=>f.item))].sort();
+
+  return { filas:filas, cuadre:cuadre, huerfanas:huerfanas, flota:flota,
+           bases:[...basesUsadas.values()], bloques:bloques, sinBloque:sinBloque };
 }
 
 /* ============================ PROCESO ============================ */
@@ -745,10 +1200,7 @@ document.getElementById('btnProc').addEventListener('click',()=>{
     render();
   }catch(err){
     S.out=null;
-    document.getElementById('cardCuadre').style.display='none';
-    document.getElementById('cardMaq').style.display='none';
-    document.getElementById('cardCols').style.display='none';
-    document.getElementById('cardRep').style.display='none';
+    ['cardBloques','cardCuadre','cardMaq','cardCols','cardRep'].forEach(id=>document.getElementById(id).style.display='none');
     av.innerHTML='<div class="alert err">⚠️ '+escapeHtml(err.message)+'</div>';
   }
 });
@@ -757,50 +1209,96 @@ document.getElementById('btnProc').addEventListener('click',()=>{
 
 function render(){
   const {P,dsProd,jefe,rep}=S.out;
-  const av=document.getElementById('avisos');
   const avisos=[];
 
-  // --- Avisos ---
   const desc=rep.cuadre.filter(c=>Math.abs(c.dif)>TOL);
-  if(desc.length){
-    avisos.push('<div class="alert err">⚠️ <b>No cuadra</b> en '+desc.length+' centro(s) de coste: '+
-      desc.map(c=>escapeHtml(c.item+' ('+c.uf+') '+(c.dif>0?'+':'')+n2(c.dif))).join(' · ')+'</div>');
-  }
+  if(desc.length) avisos.push('<div class="alert err">⚠️ <b>No cuadra</b> en '+desc.length+' centro(s) de coste: '+
+    desc.map(c=>escapeHtml(c.item+' ('+c.uf+') '+(c.dif>0?'+':'')+n2(c.dif))).join(' · ')+'</div>');
   if(rep.huerfanas.length){
+    const porCC=new Map();
+    rep.huerfanas.forEach(h=>{ const k=h.item+'|'+(h.proyecto||''); const o=porCC.get(k)||{item:h.item,proyecto:h.proyecto,total:0,motivo:h.motivo}; o.total+=h.total; porCC.set(k,o); });
     avisos.push('<div class="alert err">⚠️ <b>Producción huérfana</b> (no se repartió): '+
-      rep.huerfanas.map(h=>escapeHtml(h.item+' '+ufDeProyecto(h.proyecto)+' = '+n0(h.total)+' — '+h.motivo)).join(' · ')+'</div>');
+      [...porCC.values()].map(h=>escapeHtml(h.item+' '+(h.proyecto?ufDeProyecto(h.proyecto):'')+' = '+n0(h.total)+' — '+h.motivo)).join(' · ')+'</div>');
   }
-  if(!desc.length && !rep.huerfanas.length){
+  if(!desc.length && !rep.huerfanas.length)
     avisos.push('<div class="alert ok">✅ Cuadre exacto: toda la producción de <code>dia suelto</code> del período quedó repartida entre las máquinas propias.</div>');
-  }
-  const sinMapear=dsProd.cols.filter(c=>c.total && !c.ccs.length);
+
+  avisos.push('<div class="alert '+(jefe.formato==='diario'?'ok':'warn')+'">'+
+    (jefe.formato==='diario'
+      ? '📄 Parte del jefe leído en formato <b>día a día</b>: las horas de cada fila son las reales de ese día.'
+      : '📄 Parte del jefe leído en formato <b>bloques con el total del mes</b>: no trae detalle diario, así que las horas '+
+        'se reparten entre los días proporcional a la producción de cada día. El total mensual de horas por máquina y CC '+
+        'cuadra con el parte, pero el rendimiento diario del informe queda parejo.')+'</div>');
+
+  if(jefe.hojaAuto) avisos.push('<div class="alert warn">No existe la hoja «<b>'+escapeHtml(jefe.hojaPedida)+
+    '</b>» en el archivo de partes: usé «<b>'+escapeHtml(jefe.hoja)+'</b>», que sí tiene formato de parte diario. '+
+    'Si no es la que querías, corrige el nombre arriba.</div>');
+  const esFuera=c=>ACTIVIDADES_FUERA.some(x=>norm(c.actividad).indexOf(x)>=0);
+  const fuera=dsProd.cols.filter(c=>c.total && !c.ccs.length && esFuera(c));
+  if(fuera.length) avisos.push('<div class="alert info">Actividades <b>fuera del informe</b> a propósito (no se reparten): '+
+    fuera.map(c=>escapeHtml(c.actividad+' ['+c.uf+'] = '+n0(c.total))).join(' · ')+
+    '. Para incluir alguna, agrégale su regla en el mapa actividad → CC.</div>');
+  const sinMapear=dsProd.cols.filter(c=>c.total && !c.ccs.length && !esFuera(c));
   if(sinMapear.length) avisos.push('<div class="alert warn">Columnas con producción <b>sin CC en el mapa</b> (ignoradas): '+
     sinMapear.map(c=>escapeHtml(c.actividad+' ['+c.uf+'] = '+n0(c.total))).join(' · ')+'</div>');
   const sinUF=dsProd.cols.filter(c=>c.total && c.ccs.length && !c.proyecto);
   if(sinUF.length) avisos.push('<div class="alert warn">Columnas con producción cuyo grupo <b>no es UF1/UF2</b> (ignoradas): '+
     sinUF.map(c=>escapeHtml(c.actividad+' ['+c.uf+'] = '+n0(c.total))).join(' · ')+'</div>');
-  if(jefe.sinCC.length) avisos.push('<div class="alert warn">Sub-filas del parte sin centro de coste reconocible (ignoradas): '+
-    jefe.sinCC.slice(0,12).map(x=>escapeHtml(x.maquina+' · '+x.texto)).join(' · ')+(jefe.sinCC.length>12?' …':'')+'</div>');
-  const propiasFaltantes=[...P.propias].filter(c=>!jefe.maquinas.has(c));
-  if(propiasFaltantes.length) avisos.push('<div class="alert info">Máquinas propias sin parte este mes: '+escapeHtml(propiasFaltantes.join(', '))+'</div>');
-  if(!dsProd.filasEnCorte) avisos.push('<div class="alert err">⚠️ Ningún día de <code>dia suelto</code> cae dentro del corte. Revisa las fechas.</div>');
-  av.innerHTML=avisos.join('');
+  if(jefe.sinCC.length){
+    const unicos=[...new Set(jefe.sinCC.map(x=>x.maquina+' · '+x.texto))];
+    avisos.push('<div class="alert warn">'+jefe.sinCC.length+' fila(s) del parte <b>sin centro de coste reconocible</b> (ignoradas): '+
+      unicos.slice(0,10).map(escapeHtml).join(' | ')+(unicos.length>10?' …':'')+'</div>');
+  }
+  if(jefe.otrosProyectos) avisos.push('<div class="alert info">'+jefe.otrosProyectos+' fila(s) del parte de <b>otros frentes</b> (proyecto ≠ 3701/3702) descartadas.</div>');
+  const faltantes=[...P.propias].filter(c=>!jefe.maquinas.has(c));
+  if(faltantes.length) avisos.push('<div class="alert info">Máquinas propias sin parte este mes: '+escapeHtml(faltantes.join(', '))+'</div>');
+  if(!dsProd.dias.length) avisos.push('<div class="alert err">⚠️ Ningún día de <code>dia suelto</code> cae dentro del corte. Revisa las fechas.</div>');
+  document.getElementById('avisos').innerHTML=avisos.join('');
 
-  // --- Cuadre ---
+  /* --- Bloques del informe --- */
+  let h='';
+  const conFaltantes=rep.bloques.filter(b=>b.faltan.length);
+  if(conFaltantes.length){
+    h+='<div class="alert warn">⚠️ Estas máquinas reciben producción pero <b>no tienen fila</b> en su bloque de '+
+       '<code>Informe_Mensual</code>: hay que agregársela a mano (copiando el bloque de 6 filas de otra máquina y '+
+       'cambiando el código en la columna <b>AJ</b>). Si no, su producción no aparece en el informe.</div>';
+  }else{
+    h+='<div class="alert ok">✅ Todas las máquinas con producción ya tienen su fila en los bloques de <code>Informe_Mensual</code>: no hay que agregar nada a mano.</div>';
+  }
+  h+='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Bloque del informe</th><th>Máquinas con producción este mes</th>'+
+     '<th>Faltan en el informe</th></tr></thead><tbody>';
+  for(const b of rep.bloques){
+    h+='<tr><td><b>'+escapeHtml(b.bloque)+'</b></td><td class="mono">'+escapeHtml(b.maquinas.join(', '))+'</td>'+
+       '<td>'+(b.faltan.length?('<span class="chip wa">'+escapeHtml(b.faltan.join(', '))+'</span>'):'<span class="chip ok">ninguna</span>')+'</td></tr>';
+  }
+  h+='</tbody></table></div>';
+  if(rep.filas.some(f=>f.maquina==='FNG002' && f.produccion!=null))
+    h+='<div class="alert warn" style="margin-top:10px">⚠️ El <b>finisher FNG002</b> recibe producción de BTC, pero hoy su fila en '+
+       '<code>Informe_Mensual</code> (la de «FINISHER FNG002») <b>no lee <code>fact_jefe</code></b>: tiene la celda <b>AJ</b> vacía y su '+
+       'fórmula apunta a la hoja <code>16 May-15 Jun</code>, que se llena a mano. Para que se alimente sola hay que escribir '+
+       '<code>FNG002</code> en su celda AJ y copiarle la fórmula de la fila de <b>MOTONIVELADORA MO04</b> (que sí usa <code>fact_jefe</code>). '+
+       'Mientras tanto, la producción del finisher sale en <code>fact_jefe</code> pero el informe no la muestra.</div>';
+  if(rep.sinBloque.length) h+='<div class="hint">CC con producción que <b>no tienen bloque</b> en <code>Informe_Mensual</code>: '+
+     '<b>'+escapeHtml(rep.sinBloque.join(', '))+'</b>. Las filas igual salen en <code>fact_jefe</code> (y en «Maquinas Junio», que lista todos los CC), '+
+     'pero el informe mensual no las muestra porque no tiene un bloque para ese ítem.</div>';
+  document.getElementById('bloquesBox').innerHTML=h;
+  document.getElementById('cardBloques').style.display='';
+
+  /* --- Cuadre --- */
   let totL=0,totR=0;
-  let h='<div class="statline">'+
+  h='<div class="statline">'+
     '<span>Corte <b>'+fmtFecha(P.desde)+' → '+fmtFecha(P.hasta)+'</b></span>'+
-    '<span>Días leídos <b>'+dsProd.filasEnCorte+'</b> ('+(dsProd.primera?fmtFecha(dsProd.primera)+' → '+fmtFecha(dsProd.ultima):'—')+')</span>'+
+    '<span>Días con producción <b>'+dsProd.dias.length+'</b> ('+(dsProd.primera?fmtFecha(dsProd.primera)+' → '+fmtFecha(dsProd.ultima):'—')+')</span>'+
     '<span>Días fuera del corte <b>'+dsProd.filasFuera+'</b></span>'+
     '<span>Hoja producción <b>'+escapeHtml(dsProd.hoja)+'</b></span>'+
     '<span>Hoja partes <b>'+escapeHtml(jefe.hoja)+'</b></span></div>';
   h+='<div class="tbl-wrap"><table class="tbl"><thead><tr>'+
-     '<th>CC</th><th>Actividad</th><th>UF · proyecto</th><th class="num">Producción (dia suelto)</th>'+
-     '<th class="num">Repartida</th><th class="num">Δ</th><th>Reparto</th></tr></thead><tbody>';
+     '<th>CC</th><th>Actividad (fact_jefe)</th><th>UF · proyecto</th><th class="num">Producción (dia suelto)</th>'+
+     '<th class="num">Repartida</th><th class="num">Δ</th><th>Base del reparto</th></tr></thead><tbody>';
   for(const c of rep.cuadre){
     totL+=c.leida; totR+=c.repartida;
-    const g=rep.grupos.filter(x=>x.proyecto===c.proyecto&&x.item===c.item);
-    const detalle=g.map(x=>escapeHtml(x.tipos)+' '+n0(x.share*100)+'% · '+escapeHtml(x.base)).join(' | ');
+    const g=rep.bases.filter(x=>x.item===c.item && (!P.separarUF || x.proyecto===c.proyecto));
+    const detalle=g.map(x=>escapeHtml(x.tipos)+' '+n0(x.share*100)+'% · '+escapeHtml([...x.bases.keys()].join(' / '))).join(' | ');
     h+='<tr><td class="mono">'+escapeHtml(c.item)+'</td><td>'+escapeHtml(c.actividad)+'</td>'+
        '<td>'+escapeHtml(c.uf||'—')+' · '+escapeHtml(c.proyecto)+'</td>'+
        '<td class="num">'+n0(c.leida)+'</td><td class="num">'+n0(c.repartida)+'</td>'+
@@ -810,112 +1308,139 @@ function render(){
   h+='<tr class="tot"><td colspan="3">TOTAL</td><td class="num">'+n0(totL)+'</td><td class="num">'+n0(totR)+'</td>'+
      '<td class="num">'+(Math.abs(totR-totL)>TOL?'<span class="chip no">'+n2(totR-totL)+'</span>':'<span class="chip ok">0</span>')+'</td><td></td></tr>';
   h+='</tbody></table></div>';
-  h+='<div class="hint">La <b>no aprovechable</b> se cuenta dos veces a propósito: en <b>02.05</b> (las excavadoras la excavan) '+
-     'y en <b>02.08</b> (los bulldozers la conforman en el ZODME). No es doble conteo de material: es doble crédito de trabajo de máquina.</div>';
+  h+='<div class="hint">La <b>no aprovechable</b> se cuenta dos veces a propósito: en <b>02.05</b> (las excavadoras la excavan, '+
+     'sale como <code>EXCAVACION NO APROVECHABLE</code>) y en <b>02.08</b> (los bulldozers la conforman, sale como <code>ZODME</code>). '+
+     'No es doble conteo de material: es doble crédito de trabajo de máquina.</div>';
   document.getElementById('cuadreBox').innerHTML=h;
   document.getElementById('cardCuadre').style.display='';
 
-  // --- Máquinas ---
+  /* --- Máquinas --- */
   const maqs=[...jefe.maquinas.values()].sort((a,b)=>a.cod.localeCompare(b.cod));
+  const prodMaq=new Map();
+  rep.filas.forEach(f=>{ if(f.produccion!=null) prodMaq.set(f.maquina,(prodMaq.get(f.maquina)||0)+f.produccion); });
   h='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Código</th><th>Tipo (parte)</th><th>Tipo</th>'+
-    '<th>Estado</th><th class="num">Horas totales</th><th class="num">Σ horas por CC</th><th>Centros de coste</th></tr></thead><tbody>';
+    '<th>Estado</th><th class="num">Horas del corte</th><th class="num">Producción</th><th>Centros de coste</th></tr></thead><tbody>';
   for(const m of maqs){
-    const sumCC=[...m.cc.values()].reduce((a,b)=>a+b,0);
     let chip;
     if(m.excluida) chip='<span class="chip mu">excluida (vibro/compactadora)</span>';
     else if(!m.propia) chip='<span class="chip in">alquilada / no propia</span>';
     else if(!m.tipo) chip='<span class="chip wa">tipo no reconocido</span>';
+    else if(P.soloHorasMaq.has(m.cod)) chip='<span class="chip in">solo horas (parámetro)</span>';
     else chip='<span class="chip ok">propia · reparte</span>';
-    const ccs=[...m.cc.entries()].sort().map(([k,v])=>{
-      const p=k.split('|'); return (p[0]?p[0]+'.':'')+p[1]+' ('+n1(v)+' h)';
-    }).join(' · ');
-    const desc=Math.abs(sumCC-m.horasTotal)>0.5;
-    h+='<tr><td class="mono">'+escapeHtml(m.cod)+(m.codRaw&&normCod(m.codRaw)!==m.codRaw?' <span class="note">← '+escapeHtml(m.codRaw)+'</span>':'')+'</td>'+
-       '<td class="note">'+escapeHtml(m.tipoRaw||'')+'</td><td>'+escapeHtml(NOMBRE_TIPO[m.tipo]||'—')+'</td><td>'+chip+'</td>'+
-       '<td class="num">'+n1(m.horasTotal)+'</td>'+
-       '<td class="num">'+(desc?'<span class="chip wa">'+n1(sumCC)+'</span>':n1(sumCC))+'</td>'+
+    const ccs=[...m.cc.entries()].sort().map(([k,v])=>{ const p=k.split('|'); return (p[0]?p[0]+'.':'')+p[1]+' ('+n1(v)+' h)'; }).join(' · ');
+    h+='<tr><td class="mono">'+escapeHtml(m.cod)+'</td><td class="note">'+escapeHtml(m.tipoRaw)+'</td>'+
+       '<td>'+escapeHtml(NOMBRE_TIPO[m.tipo]||'—')+'</td><td>'+chip+'</td>'+
+       '<td class="num">'+n1(m.horasTotal)+'</td><td class="num">'+(prodMaq.has(m.cod)?n0(prodMaq.get(m.cod)):'—')+'</td>'+
        '<td class="note">'+escapeHtml(ccs)+'</td></tr>';
   }
-  h+='</tbody></table></div><div class="hint">«Σ horas por CC» distinto de «Horas totales» solo avisa: el reparto se pondera con las horas por CC.</div>';
+  h+='</tbody></table></div>';
   document.getElementById('maqBox').innerHTML=h;
   document.getElementById('cardMaq').style.display='';
 
-  // --- Columnas leídas ---
+  /* --- Columnas leídas --- */
   h='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>UF</th><th>Actividad (columna)</th><th>CC</th>'+
     '<th class="num">Producción en el corte</th></tr></thead><tbody>';
   for(const c of dsProd.cols){
     if(!c.total) continue;
-    const cc=c.ccs.length?c.ccs.join(' + '):'<span class="chip wa">sin mapa</span>';
     h+='<tr><td>'+escapeHtml(c.uf||'—')+(c.proyecto?' <span class="note">'+c.proyecto+'</span>':' <span class="chip wa">sin proyecto</span>')+'</td>'+
-       '<td>'+escapeHtml(c.actividad)+'</td><td class="mono">'+cc+'</td><td class="num">'+n0(c.total)+'</td></tr>';
+       '<td>'+escapeHtml(c.actividad)+'</td><td class="mono">'+(c.ccs.length?escapeHtml(c.ccs.join(' + ')):'<span class="chip wa">sin mapa</span>')+'</td>'+
+       '<td class="num">'+n0(c.total)+'</td></tr>';
   }
   h+='</tbody></table></div>';
   document.getElementById('colsBox').innerHTML=h;
   document.getElementById('cardCols').style.display='';
 
-  // --- Reparto ---
+  /* --- fact_jefe --- */
   const filas=rep.filas;
   const totProd=filas.reduce((a,f)=>a+(f.produccion||0),0);
   const totHoras=filas.reduce((a,f)=>a+(f.horas||0),0);
   document.getElementById('repStat').innerHTML=
     '<span>Filas <b>'+filas.length+'</b></span>'+
     '<span>Máquinas <b>'+new Set(filas.map(f=>f.maquina)).size+'</b></span>'+
-    '<span>Producción repartida <b>'+n0(totProd)+'</b></span>'+
+    '<span>Días <b>'+new Set(filas.map(f=>f.fecha)).size+'</b></span>'+
+    '<span>Producción <b>'+n0(totProd)+'</b></span>'+
     '<span>Horas <b>'+n1(totHoras)+'</b></span>';
-  h='<table class="tbl"><thead><tr><th>Máquina</th><th>Tipo</th><th>Proyecto</th><th>UF</th><th>CC</th>'+
-    '<th>Actividad</th><th class="num">Horas</th><th class="num">Producción</th><th>Base del reparto</th></tr></thead><tbody>';
-  for(const f of filas){
-    h+='<tr><td class="mono">'+escapeHtml(f.maquina)+'</td><td>'+escapeHtml(f.tipo)+'</td>'+
-       '<td class="mono">'+escapeHtml(f.proyecto)+'</td><td>'+escapeHtml(f.uf)+'</td>'+
-       '<td class="mono">'+escapeHtml(f.cc)+'</td><td>'+escapeHtml(f.actividad)+'</td>'+
-       '<td class="num">'+n1(f.horas)+'</td><td class="num">'+(f.produccion==null?'':n0(f.produccion))+'</td>'+
-       '<td class="note">'+escapeHtml(f.base)+'</td></tr>';
+  h='<table class="tbl"><thead><tr><th>Fecha</th><th>Proy.</th><th>Máquina</th><th>Tipo</th>'+
+    '<th>Actividad</th><th>SUB ACTIVIDAD</th><th class="num">Horas</th><th class="num">Idle</th>'+
+    '<th class="num">Producción</th><th>CC</th><th>Base</th></tr></thead><tbody>';
+  for(const f of filas.slice(0,400)){
+    h+='<tr><td class="mono">'+fmtFecha(f.fecha)+'</td><td class="mono">'+escapeHtml(f.proyecto)+'</td>'+
+       '<td class="mono">'+escapeHtml(f.maquina)+'</td><td class="note">'+escapeHtml(f.tipo)+'</td>'+
+       '<td>'+escapeHtml(f.actividad)+'</td><td>'+escapeHtml(f.sub)+'</td>'+
+       '<td class="num">'+n1(f.horas)+'</td><td class="num">'+n1(f.idle)+'</td>'+
+       '<td class="num">'+(f.produccion==null?'':n0(f.produccion))+'</td>'+
+       '<td class="mono">'+escapeHtml(f.cc)+'</td><td class="note">'+escapeHtml(f.base)+'</td></tr>';
   }
-  h+='<tr class="tot"><td colspan="6">TOTAL</td><td class="num">'+n1(totHoras)+'</td><td class="num">'+n0(totProd)+'</td><td></td></tr>';
   h+='</tbody></table>';
+  if(filas.length>400) h+='<div class="hint">Se muestran las primeras 400 filas de '+filas.length+'. El .xlsx las trae todas.</div>';
   document.getElementById('repBox').innerHTML=h;
   document.getElementById('cardRep').style.display='';
-  toast('✅ Reparto listo: '+filas.length+' filas · '+n0(totProd)+' m³.');
+  toast('✅ fact_jefe listo: '+filas.length+' filas · '+n0(totProd)+' m³.');
 }
 
 /* ============================ SALIDA ============================ */
 
-const CAB_REP=['MAQUINA','TIPO','PROYECTO','UF','CC','ITEM','ACTIVIDAD','HORAS','PRODUCCION','BASE_REPARTO'];
+/* Las 29 columnas de la tabla fact_jefe del maestro, en orden A→AC.
+   Las que son de cálculo del modelo (M, O, P, Q, S, U, V, W, X, Y, Z) van vacías. */
+const CAB_FACT = ['id_registro','id_fecha','dia','id_proyecto','id_maquina','Tipo Equipo','operador','actividad',
+  'SUB ACTIVIDAD','Unidad','Horas Programadas','Horas Operación','% utilizacion','Horas Muertas','Horas Mantenimiento',
+  '% tiempo muerto','HORAS FACTURADAS','ESTADO','CLIMA','Producción','Meta Producción','% eficiencia',
+  'Rendimiento prod/hr','unitario','Viajes','Costo Operación','Observaciones','centro_costo','item'];
+
+function aoaFactJefe(conCabecera){
+  const rows=conCabecera?[CAB_FACT.slice()]:[];
+  S.out.rep.filas.forEach((f,i)=>{
+    rows.push([
+      i+1, fechaUTC(f.fecha), diaSemana(f.fecha), Number(f.proyecto)||f.proyecto, f.maquina, f.tipo,
+      f.operador||'', f.actividad, f.sub, f.unidad,
+      horasProg(f.maquina), round(f.horas||0,2), '', round(f.idle||0,2), '',
+      '', '', ESTADO_DEFAULT, '', (f.produccion==null?'':round(f.produccion,DEC)), '', '',
+      '', '', '', '', f.obs||'', f.cc, f.item
+    ]);
+  });
+  return rows;
+}
 function aoaReparto(){
-  const rows=[CAB_REP.slice()];
-  for(const f of S.out.rep.filas){
-    rows.push([f.maquina,f.tipo,f.proyecto,f.uf,f.cc,f.item,f.actividad,
-               round(f.horas||0,2), (f.produccion==null?null:round(f.produccion,DEC)), f.base]);
-  }
+  const rows=[['MAQUINA','TIPO','PROYECTO','UF','CC','ITEM','ACTIVIDAD','SUB ACTIVIDAD','HORAS','PRODUCCION']];
+  const m=new Map();
+  S.out.rep.filas.forEach(f=>{
+    const k=[f.maquina,f.proyecto,f.item,f.sub].join('|');
+    const o=m.get(k)||{f:f,horas:0,prod:0,hay:false};
+    o.horas+=f.horas||0; if(f.produccion!=null){ o.prod+=f.produccion; o.hay=true; }
+    m.set(k,o);
+  });
+  [...m.values()].sort((a,b)=>a.f.maquina.localeCompare(b.f.maquina)||a.f.proyecto.localeCompare(b.f.proyecto)||a.f.item.localeCompare(b.f.item))
+    .forEach(o=>rows.push([o.f.maquina,o.f.tipo,o.f.proyecto,o.f.uf,o.f.cc,o.f.item,o.f.actividad,o.f.sub,
+                           round(o.horas,2), o.hay?round(o.prod,DEC):'']));
   return rows;
 }
 function aoaCuadre(){
   const rows=[['CC','ACTIVIDAD','PROYECTO','UF','PRODUCCION_DIA_SUELTO','REPARTIDA','DIFERENCIA']];
-  for(const c of S.out.rep.cuadre){
-    rows.push([c.item,c.actividad,c.proyecto,c.uf,round(c.leida,DEC),round(c.repartida,DEC),round(c.dif,DEC)]);
-  }
+  S.out.rep.cuadre.forEach(c=>rows.push([c.item,c.actividad,c.proyecto,c.uf,round(c.leida,DEC),round(c.repartida,DEC),round(c.dif,DEC)]));
   return rows;
 }
-function nombreSalida(){
-  const p=S.out.P;
-  return 'reparto_produccion_'+p.desde+'_'+p.hasta+'.xlsx';
-}
+function nombreSalida(){ return 'fact_jefe_'+S.out.P.desde+'_'+S.out.P.hasta+'.xlsx'; }
+
 document.getElementById('btnXlsx').addEventListener('click',()=>{
   if(!S.out) return;
   const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet(aoaFactJefe(true),{cellDates:true});
+  // Col. B = fecha con el formato del maestro
+  S.out.rep.filas.forEach((f,i)=>{ const c=ws['B'+(i+2)]; if(c) c.z='dd/mm/yyyy'; });
+  XLSX.utils.book_append_sheet(wb,ws,'fact_jefe');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoaReparto()),'reparto');
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoaCuadre()),'cuadre');
-  XLSX.writeFile(wb,nombreSalida());
+  XLSX.writeFile(wb,nombreSalida(),{cellDates:true});
   toast('⬇ '+nombreSalida()+' descargado.');
 });
 document.getElementById('btnCopy').addEventListener('click',async ()=>{
   if(!S.out) return;
-  const tsv=aoaReparto().map(r=>r.map(fmtTSV).join('\t')).join('\n');
-  try{ await navigator.clipboard.writeText(tsv); toast('📋 Tabla copiada ('+S.out.rep.filas.length+' filas). Decimal con coma.'); }
+  const tsv=aoaFactJefe(false).map(r=>r.map(fmtTSV).join('\t')).join('\n');
+  try{ await navigator.clipboard.writeText(tsv); toast('📋 '+S.out.rep.filas.length+' filas copiadas (sin encabezado). Pega sobre la tabla fact_jefe.'); }
   catch(e){ toast('⚠️ No se pudo copiar al portapapeles.'); }
 });
 
-refrescarBotón();
+refrescarBoton();
 </script>
 </body>
 </html>

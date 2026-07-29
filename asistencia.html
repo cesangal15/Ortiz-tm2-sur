@@ -139,8 +139,38 @@ function esCapataz(p){ return /capataz|capataces/.test(ncargo(p&&p.cargo)); }
 // Sufijo del CC del capataz: configurable por CONFIG.cc_capataz (por si el string Navision cambia);
 // si no está, el valor por defecto de arriba (no exige redeploy del Apps Script).
 function ccCapatazSufijo(){ const c=STATE.config&&STATE.config.cc_capataz; return c?String(c).trim():CC_CAPATAZ_SUFIJO_DEFAULT; }
-// Prefijo (3701/3702) por MAYORÍA de UF de los presentes asignados a bloques de la cuadrilla (D72f).
-// Sin bloques con UF, cae al proyecto del CC más reciente de la cuadrilla; si tampoco, a 3701.
+// D101: prefijos de proyecto DISPONIBLES para quien reporta, derivados de sus propios centros de costo
+// (CC_USADOS del área; si no hay, el catálogo completo). Nada cableado: un área nueva con CC `37xx.`
+// aparece sola. Devuelve algo como ['3701','3702'] en tierras y ['3703'] en UF3, ordenado.
+function proyectosDisponibles(){
+  const set={};
+  poolCCdelArea().forEach(cc=>{ const p=proyectoFromCC(cc); if(p) set[p]=true; });
+  return Object.keys(set).sort();
+}
+// D101 — CORRECCIÓN: de dónde salen los CC de quien reporta. Primero los frecuentes de SU área
+// (`CC_USADOS`, ya filtrados por el backend). Si esa lista viene vacía, el respaldo histórico era el
+// catálogo global `CAT_CC`… que solo tiene CC de TIERRAS (3701/3702). Para un usuario con área forzada
+// (residente de UF3, de drenajes, jeisson) ese respaldo es sencillamente ERRÓNEO: le ofrecía UF1/UF2 y
+// le ponía al capataz un CC con prefijo 3701. Ahora el respaldo global aplica SOLO a quien no tiene
+// área forzada (capataces de tierras, mairy, admin), que es para quien se escribió.
+function tieneAreaForzada(){ return !!(STATE.areasUsuario && STATE.areasUsuario.length); }
+// Respaldo de `areas` cuando la respuesta del Apps Script no lo trae (backend sin redesplegar): el
+// login guarda el campo `areas` del usuario en localStorage (D84).
+function areasDelLogin(){
+  try{ const a=JSON.parse(localStorage.getItem('areas')||'[]'); return Array.isArray(a)?a:[]; }catch(e){ return []; }
+}
+function poolCCdelArea(){
+  const usados=(STATE.catCCUsados||[]);
+  if(usados.length) return usados;
+  return tieneAreaForzada() ? [] : (STATE.catCC||[]);
+}
+// Etiqueta legible de una UF: 3701→UF1, 3702→UF2, 3703→UF3. Es SOLO cosmética; un prefijo desconocido
+// se muestra tal cual (no filtra ni bloquea nada).
+function etiquetaUF(p){ const n=String(p).slice(-2); return /^0\d$/.test(n) ? 'UF'+Number(n) : ''; }
+// Prefijo (37xx) por MAYORÍA de UF de los presentes asignados a bloques de la cuadrilla (D72f).
+// Sin bloques con UF, cae al proyecto del CC más reciente de la cuadrilla; si tampoco, al PRIMER
+// proyecto de los CC del área de quien reporta (D101: ya no cae a 3701, que dejaría al capataz de UF3
+// —o de cualquier área futura— con el proyecto de tierras).
 function prefijoCapataz(){
   const conteo={};
   personasCuadrilla().forEach(p=>{
@@ -154,9 +184,12 @@ function prefijoCapataz(){
   if(best) return best;
   const rec=(STATE.recientesCC&&STATE.recientesCC[STATE.cuadrillaActual])||[];
   for(let i=0;i<rec.length;i++){ const pr=proyectoFromCC(rec[i]); if(pr) return pr; }
-  return '3701';
+  return proyectosDisponibles()[0] || '';
 }
-function ccCapataz(){ return prefijoCapataz()+'.'+ccCapatazSufijo(); }
+// D101: sin prefijo determinable (área sin CC cargados) devuelve '' en vez de un CC roto tipo
+// ".I010305| …". Un capataz presente sin CC cae en "sin reportar" del resumen, que es justo lo que
+// debe pasar: se ve el hueco y se corrige, en vez de mandar a Navision un proyecto inventado.
+function ccCapataz(){ const pr=prefijoCapataz(); return pr ? (pr+'.'+ccCapatazSufijo()) : ''; }
 
 async function cargarRoster(){
   document.getElementById('container').innerHTML='<div class="loading">⏳ Cargando roster…</div>';
@@ -183,6 +216,11 @@ async function cargarRoster(){
       STATE.jornada.salida=STATE.config.salida_dom||'15:00';
     }
     STATE.catCC=data.catCC||[]; STATE.catCCUsados=data.catCCUsados||[]; STATE.catMotivos=data.catMotivos||[]; STATE.recientesCC=data.recientesCC||{};
+    // D101: [] = sin área forzada (capataces/mairy/admin). Si el Apps Script AÚN NO se redesplegó,
+    // `data.areas` no existe: se cae a las `areas` que el login guardó en localStorage (index.html ya
+    // las escribe para residente_uf3 y los capataces de drenajes). Así, subir el frontend antes que el
+    // backend no revive el bug de ofrecerle los CC de tierras a la residente de UF3.
+    STATE.areasUsuario=data.areas||areasDelLogin();
     // D72: catálogo de turnos para pre-llenar horas. Normaliza a HH:MM con cero (una hora "7:00" sin
     // cero deja en blanco el <input type=time>, por eso la hora AM no se pre-llenaba).
     STATE.turnos=(data.turnos||[]).map(t=>({ ...t, entrada:padHM(t.entrada), salida:padHM(t.salida) }));
@@ -225,7 +263,12 @@ function agregarBloque(){
   // D72: turno por defecto = 1 (diurno). Sus horas coinciden con la jornada estándar; si TURNOS no
   // está cargada, cae a la jornada del día.
   const t1=turnoHoras('1', STATE.fecha);
-  STATE.bloques.push({ id:STATE.nextBloqueId++, cc:'', proyecto:'', uf:'', cuadrilla:STATE.cuadrillaActual, turno:'1',
+  // D101: si el área de quien reporta tiene UN SOLO proyecto (UF3 → 3703), el bloque nace con esa UF
+  // elegida y la lista de CC aparece de una: nadie debería elegir "UF3" en un desplegable de una opción.
+  // Con varias (tierras: 3701/3702) se mantiene el "Elegir UF…" de siempre.
+  const ufs=proyectosDisponibles();
+  const ufIni = ufs.length===1 ? ufs[0] : '';
+  STATE.bloques.push({ id:STATE.nextBloqueId++, cc:'', proyecto:'', uf:ufIni, cuadrilla:STATE.cuadrillaActual, turno:'1',
     hora_entrada:(t1?t1.entrada:STATE.jornada.entrada)||'', hora_salida:(t1?t1.salida:STATE.jornada.salida)||'', ccQuery:'', ccAbierto:false });
   render();
 }
@@ -339,16 +382,16 @@ function bloqueUfChange(bid, v){
   const b=STATE.bloques.find(x=>x.id===bid);
   b.uf=v; b.cc=''; b.proyecto=''; b.ccQuery=''; b.ccAbierto=!!v; render();
 }
-// CAPATAZ: la búsqueda se queda SIEMPRE dentro de los CC FRECUENTES (hoja CC_USADOS) de la UF elegida
+// CAPATAZ: la búsqueda se queda SIEMPRE dentro de los CC de SU ÁREA (hoja CC_USADOS) de la UF elegida
 // —tanto la lista por defecto como al escribir—. No se abre al catálogo completo (eso solo lo hace el
 // residente en el resumen). La búsqueda calza por CÓDIGO o NOMBRE (cada string es "3701.02.07| …").
-// Si CC_USADOS está vacía (aún no configurada), cae al catálogo completo para no quedar sin opciones.
+// D101: el respaldo al catálogo global cuando CC_USADOS está vacía ya solo aplica a quien NO tiene área
+// forzada (ver poolCCdelArea) — antes le metía los CC de tierras a la residente de UF3.
 function resultadosCC(b){
   const q=(b.ccQuery||'').trim().toLowerCase();
   const uf=b.uf||'';
-  const enUF=cc=> !uf || String(cc).indexOf(uf)===0;   // "3701."/"3702." según prefijo del CC
-  const usados=(STATE.catCCUsados||[]).filter(enUF);
-  const pool = usados.length ? usados : STATE.catCC.filter(enUF);   // solo frecuentes si están definidos
+  const enUF=cc=> !uf || String(cc).indexOf(uf)===0;   // "3701."/"3702."/"3703." según prefijo del CC
+  const pool=poolCCdelArea().filter(enUF);
   if(!q) return pool;
   return pool.filter(cc=>cc.toLowerCase().indexOf(q)>=0);
 }
@@ -478,7 +521,9 @@ function render(){
       // que a un trabajador, columnas E/F del Parte) o su jornada de domingo/festivo.
       const cc=ccCapataz();
       const tieneOv=p.hora_entrada_ov!=null;
-      html+=`<span class="badge asig" title="Centro de costo propio de supervisión del capataz (no es la actividad de la cuadrilla)">👷 ${esc(cc.split('|')[0].trim())}</span>`;
+      html+= cc
+        ? `<span class="badge asig" title="Centro de costo propio de supervisión del capataz (no es la actividad de la cuadrilla)">👷 ${esc(cc.split('|')[0].trim())}</span>`
+        : `<span class="badge" title="No se pudo determinar el proyecto: asigna primero un centro de costo a algún bloque de la cuadrilla">👷 sin CC aún</span>`;
       html+=` <button class="link-ov" onclick="toggleOverrideCapataz(${p._pid})">${tieneOv?'usar jornada estándar':'ajustar horario'}</button>`;
       if(tieneOv){
         capatazOv=`<div class="miembro-ov"><input type="time" value="${esc(p.hora_entrada_ov)}" onchange="setOverride(${p._pid},'hora_entrada_ov',this.value)">`
@@ -526,13 +571,26 @@ function bloqueHtml(b, personas){
   let h='<div class="bloque"><div class="bloque-head">'
     + `<span class="tag">Bloque #${b.id}</span>`
     + `<button class="btn-x" onclick="quitarBloque(${b.id})">✕ Quitar</button></div>`;
-  // Selector de UF (3701/3702): define los primeros dígitos del CC. Siempre visible para poder cambiarlo.
-  h+='<div class="row" style="margin-bottom:8px;"><div class="field" style="max-width:220px;"><label>Unidad Funcional</label>'
-    + `<select onchange="bloqueUfChange(${b.id},this.value)">`
-    + `<option value="" ${!b.uf?'selected':''}>Elegir UF…</option>`
-    + `<option value="3701" ${b.uf==='3701'?'selected':''}>3701 · UF1</option>`
-    + `<option value="3702" ${b.uf==='3702'?'selected':''}>3702 · UF2</option>`
-    + '</select></div></div>';
+  // Selector de UF: define los primeros dígitos del CC. Las opciones salen de los CC del área de quien
+  // reporta (proyectosDisponibles), no de una lista cableada — en tierras siguen siendo 3701/3702.
+  // D101: con UNA sola UF (el caso de UF3) no hay nada que elegir: se muestra como etiqueta fija y el
+  // bloque nace ya con esa UF puesta. Sin ninguna, el área no tiene CC cargados y hay que decirlo.
+  const ufs=proyectosDisponibles();
+  if(!ufs.length){
+    h+='<p style="font-size:12px;color:var(--error);">⚠️ No hay centros de costo cargados para tu área en la hoja <b>CC_USADOS</b>. Avisa al administrador: sin ellos no se puede elegir la actividad.</p></div>';
+    return h;
+  }
+  if(ufs.length===1){
+    if(!b.uf) b.uf=ufs[0];   // sin selector no hay dónde elegirla: se fija sola
+    const et=etiquetaUF(ufs[0]);
+    h+=`<div class="row" style="margin-bottom:8px;"><span class="tag">${ufs[0]}${et?' · '+et:''}</span></div>`;
+  } else {
+    h+='<div class="row" style="margin-bottom:8px;"><div class="field" style="max-width:220px;"><label>Unidad Funcional</label>'
+      + `<select onchange="bloqueUfChange(${b.id},this.value)">`
+      + `<option value="" ${!b.uf?'selected':''}>Elegir UF…</option>`
+      + ufs.map(p=>{ const et=etiquetaUF(p); return `<option value="${p}" ${b.uf===p?'selected':''}>${p}${et?' · '+et:''}</option>`; }).join('')
+      + '</select></div></div>';
+  }
   if(b.cc){
     h+=`<div class="cc-chosen"><span><b>${esc(b.proyecto)}</b> · ${esc(b.cc)}</span><button class="btn-x" onclick="cambiarCC(${b.id})">Cambiar</button></div>`;
   } else if(!b.uf){

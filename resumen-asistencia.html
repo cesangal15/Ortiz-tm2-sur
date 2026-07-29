@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Resumen de Asistencias — Residente</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<!-- SheetJS (generador del Parte Navision): se carga BAJO DEMANDA, no aquí. Etiquetada en la cabecera
+     bloqueaba el primer pintado con ~900 KB que solo hacen falta al pulsar "Excel 3701/3702" (ver
+     ensureXLSX()). Misma librería y misma versión: no es una dependencia nueva. -->
 <style>
   :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--success:#2ecc71;--error:#e74c3c;--input-bg:#12151f;}
   *{box-sizing:border-box;margin:0;padding:0;}
@@ -63,9 +65,18 @@
   .cc-opt:last-child{border-bottom:none;}
   .cc-opt:hover{background:var(--surface2);color:var(--accent);}
   .cc-head{padding:5px 12px;font-size:9.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);background:var(--surface2);border-bottom:1px solid var(--border);position:sticky;top:0;}
+  /* Indicador de carga NO bloqueante (mismo tema oscuro/acento): barrita bajo el header + contenido
+     atenuado. Al cambiar de fecha ya no se borra la pantalla: se sigue viendo el día anterior hasta
+     que llega el nuevo. */
+  .loadbar{position:fixed;top:0;left:0;right:0;height:3px;background:rgba(245,166,35,0.15);overflow:hidden;z-index:30;display:none;}
+  .loadbar.on{display:block;}
+  .loadbar::after{content:'';position:absolute;top:0;left:0;height:100%;width:38%;background:linear-gradient(90deg,transparent,var(--accent),var(--accent2),transparent);animation:loadslide 1.05s linear infinite;}
+  @keyframes loadslide{0%{transform:translateX(-100%);}100%{transform:translateX(365%);}}
+  .cargando{opacity:0.5;transition:opacity .15s ease;pointer-events:none;}
 </style>
 </head>
 <body>
+<div class="loadbar" id="loadBar"></div>
 <div class="header">
   <div class="header-left">
     <div class="label">Asistencias</div>
@@ -83,7 +94,78 @@
 
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbymgvQX03ZqS_YzIz5l6WVesasDUMYwGOFItrggTJCdsFhcjXQvDPVz03E7mNcZQ4Nq/exec";
-let STATE = { usuario:'', rol:'', fecha:'', data:null, exportCache:{}, tplBuf:null, tplName:'', tplRecordada:false, tplBundle:false, filaInicio:2, personal:null, completar:{}, persQuery:'', areaFiltro:'' };
+
+/* ================= INSTRUMENTACIÓN DE RENDIMIENTO (temporal) =================
+ * Para medir el antes/después con F12 → Console. Apagar poniendo DEBUG_PERF=false (una línea).
+ * Mide cada petición al Apps Script (ida y vuelta + tamaño de la respuesta) y el pintado, y saca un
+ * console.table al final de cada ciclo. Si el backend llega a devolver `_ms` (tiempo de servidor,
+ * Fase 2), la tabla lo muestra en su propia columna para separar Apps Script de red/arranque. */
+const DEBUG_PERF = true;
+const PERF = [];
+function ahora(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
+function perfReset(){ PERF.length=0; }
+// fetch + JSON con cronómetro. Devuelve el objeto ya parseado (mismo contrato que resp.json()).
+async function perfFetch(label, url, opts){
+  const t0=ahora(); let cerrado=false;
+  if(DEBUG_PERF) console.time('⏱ '+label);
+  const cerrar=()=>{ if(DEBUG_PERF && !cerrado){ cerrado=true; console.timeEnd('⏱ '+label); } };
+  try{
+    const resp=await fetch(url, opts);
+    const txt=await resp.text();
+    const ms=Math.round(ahora()-t0);
+    cerrar();
+    let data=null, err=null;
+    try{ data=JSON.parse(txt); }catch(e){ err=e; }
+    if(DEBUG_PERF){
+      const reg={ peticion:label, ms, kb:Math.round(txt.length/102.4)/10 };
+      // `red_ms` = lo que NO fue Apps Script (arranque del contenedor, redirección de /exec, red y
+      // descarga). Se acota a 0: si los dos relojes discrepan podría salir negativo y confundir.
+      if(data && data._ms!=null){ reg.servidor_ms=Number(data._ms); reg.red_ms=Math.max(0, ms-Number(data._ms)); }
+      PERF.push(reg);
+    }
+    if(err) throw new Error('Respuesta no-JSON del Apps Script (¿implementación caída o sesión de Google?).');
+    return data;
+  }catch(e){ cerrar(); throw e; }
+}
+function perfMarca(label, ms){ if(DEBUG_PERF) PERF.push({ peticion:label, ms:Math.round(ms) }); }
+function perfTabla(ctx){
+  if(!DEBUG_PERF || !PERF.length) return;
+  const total=PERF.reduce((a,r)=>a+(r.ms||0),0);
+  console.log('%c⏱ resumen-asistencia · '+ctx+' · '+PERF.filter(r=>r.kb!=null).length+' petición(es) · '+Math.round(total)+' ms',
+    'color:#f5a623;font-weight:700');
+  console.table(PERF.slice());
+}
+
+/* SheetJS bajo demanda: solo hace falta para generar el Excel Navision. Cargarlo en el <head>
+ * bloqueaba el primer pintado del resumen con ~900 KB que la mayoría de las visitas no usa. Se
+ * inyecta al pulsar "Excel 3701/3702" (y, si el navegador queda ocioso, se precarga en segundo plano
+ * para que el primer clic tampoco espere). Misma librería/versión de siempre. */
+const XLSX_SRC='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+let _xlsxProm=null;
+function ensureXLSX(){
+  if(window.XLSX) return Promise.resolve(window.XLSX);
+  if(_xlsxProm) return _xlsxProm;
+  const t0=ahora();
+  _xlsxProm=new Promise(function(res, rej){
+    const s=document.createElement('script');
+    s.src=XLSX_SRC; s.async=true;
+    s.onload=function(){ perfMarca('SheetJS (carga)', ahora()-t0); res(window.XLSX); };
+    s.onerror=function(){ _xlsxProm=null; rej(new Error('No se pudo cargar la librería de Excel (SheetJS). Revisa la conexión.')); };
+    document.head.appendChild(s);
+  });
+  return _xlsxProm;
+}
+// Trabajo diferido a cuando el navegador esté ocioso (con respaldo por si no hay requestIdleCallback).
+function alOcioso(fn, ms){ if(window.requestIdleCallback) requestIdleCallback(fn,{timeout:ms||2000}); else setTimeout(fn, ms||600); }
+
+let STATE = { usuario:'', rol:'', fecha:'', data:null, exportCache:{}, tplBuf:null, tplName:'', tplRecordada:false, tplBundle:false, filaInicio:2, personal:null, completar:{}, persQuery:'', areaFiltro:'',
+  // D94 — seguimiento de ausencias por rango (independiente del día del resumen): se conserva entre
+  // re-renders (render() reconstruye el contenedor completo) para no perder la consulta ni los filtros.
+  aus:{ abierto:false, desde:'', hasta:'', data:null, cargando:false, error:'', motivo:'', cuadrilla:'', q:'', incluirSinRep:false, vista:'persona' },
+  // Render progresivo: los bloques pesados (detalle por cuadrilla D76, lista de sin-reportar y
+  // "Completar faltantes") se arman la PRIMERA vez que se despliegan, no al pintar el resumen.
+  // `_lazy` recuerda cuáles ya se armaron en este render (render() lo reinicia).
+  _lazy:{} };
 
 // Plantilla recordada entre sesiones (localStorage): así solo se sube UNA vez, no cada sesión. Se
 // guarda como base64 del .xlsx. Si es demasiado grande para localStorage, cae a "solo esta sesión".
@@ -104,15 +186,24 @@ function olvidarPlantilla(){
 }
 // Plantilla incluida en el repo: la app busca `plantilla_parte.xlsx` junto al HTML. Si existe, la usa
 // sola (sin que el usuario suba nada). Si no está (404) o no es un .xlsx válido, cae al modo subir.
+// D101: la plantilla incluida depende del ÁREA que se revisa. Las de 3701 y 3703 tienen la misma
+// estructura (7 hojas, Parte de 18 columnas A–R, mismo listado de Trabajadores) pero NO el mismo
+// catálogo de `Centros de coste` ni la misma hoja `Proyectos`, así que exportar UF3 con la plantilla de
+// tierras metería el Parte en un libro con los CC del 3701. El generador solo llena la hoja `Parte` y
+// conserva las demás intactas: por eso el libro de partida tiene que ser el del proyecto correcto.
+function plantillaBundleUrl(){
+  const esUF3 = STATE.rol==='asistencia_plus_uf3' || (STATE.rol==='admin' && STATE.areaFiltro==='uf3');
+  return esUF3 ? 'plantilla_parte_uf3.xlsx' : 'plantilla_parte.xlsx';
+}
 async function cargarPlantillaBundle(){
   if(STATE.tplBuf) return; // ya hay una (recordada o subida esta sesión)
   try{
-    const resp=await fetch('plantilla_parte.xlsx', {cache:'no-store'});
+    const resp=await fetch(plantillaBundleUrl(), {cache:'no-store'});
     if(!resp.ok) return;
     const buf=await resp.arrayBuffer();
     const sig=new Uint8Array(buf.slice(0,2));            // un .xlsx es un ZIP: empieza con 'PK' (0x50 0x4B)
     if(sig[0]!==0x50 || sig[1]!==0x4B) return;           // 404 servido como HTML u otro archivo -> ignora
-    STATE.tplBuf=buf; STATE.tplName='plantilla incluida en la app'; STATE.tplBundle=true; STATE.tplRecordada=false;
+    STATE.tplBuf=buf; STATE.tplName=plantillaBundleUrl(); STATE.tplBundle=true; STATE.tplRecordada=false;
     if(STATE.data) render();
   }catch(e){}
 }
@@ -122,7 +213,10 @@ window.onload = function(){
   // Guard: residente(tierras), admin, jeisson (rol asistencia_plus, D69), residente de área odt/odl (D72)
   // o residente de drenajes unificado (residente_dren → ODT+ODL en un solo archivo, D84).
   // D74b: jeisson entraba con rol 'asistencia_plus' (NO 'jeisson'), por eso lo devolvía al login.
-  const rolesOk=['residente','admin','asistencia_plus','residente_odt','residente_odl','residente_dren'];
+  // D88: `asistencia_plus_dren` (duvan) = jeisson pero de drenajes (ODT+ODL, solo asistencias).
+  // D101: `asistencia_plus_uf3` (residente_uf3) = lo mismo para UF3 (área `uf3`, proyecto 3703). El
+  // backend le fuerza el área e ignora `&area=`, así que desde aquí no puede ampliar su alcance.
+  const rolesOk=['residente','admin','asistencia_plus','asistencia_plus_dren','asistencia_plus_uf3','residente_odt','residente_odl','residente_dren'];
   if(!rol || rolesOk.indexOf(rol)<0){ window.location.href='index.html'; return; }
   STATE.usuario=usuario; STATE.rol=rol;
   document.getElementById('userDisplay').textContent=usuario;
@@ -130,47 +224,94 @@ window.onload = function(){
   bm.style.display='inline-block';
   if(rol==='admin'){ bm.onclick=function(){location.href='menu.html';}; bm.textContent='← Menú'; }
   else if(rol==='residente'){ bm.onclick=function(){location.href='residente.html';}; }
-  else { bm.onclick=function(){location.href='seleccion-reporte.html';}; }  // jeisson + residentes de área
+  else { bm.onclick=function(){location.href='seleccion-reporte.html';}; }  // jeisson/duvan + residentes de área
   STATE.fecha=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
   restaurarPlantilla();
   cargarResumen();
-  cargarPlantillaBundle();
+  // La plantilla del repo (~90 KB) y SheetJS (~900 KB) solo hacen falta al EXPORTAR: se bajan cuando el
+  // navegador queda ocioso, para no competir con la petición del resumen (que es lo que el usuario mira).
+  alOcioso(function(){ cargarPlantillaBundle(); });
+  alOcioso(function(){ ensureXLSX().catch(function(){}); }, 4000);
 };
 function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); window.location.href='index.html'; }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 // Mostrar/ocultar una lista larga por su id (puro DOM, sin re-render → no borra nada que se esté llenando).
+// Render progresivo: si la lista aún no se ha armado (`LAZY[id]`), se arma en el momento de abrirla —
+// así el resumen pinta primero KPIs y cuadrillas, y el HTML pesado solo se paga si se pide.
+const LAZY={};   // id de contenedor -> función que devuelve su HTML (se llama UNA vez)
 function toggleLista(id, btn){
   const el=document.getElementById(id); if(!el) return;
   const show = el.style.display==='none';
+  if(show && LAZY[id]){ const t0=ahora(); el.innerHTML=LAZY[id](); delete LAZY[id]; perfMarca('armar '+id, ahora()-t0); }
   el.style.display = show ? 'block' : 'none';
   if(btn) btn.textContent = show ? 'Ocultar' : 'Mostrar';
 }
 
 /* ================= RESUMEN DEL DÍA ================= */
+// Indicador de carga NO bloqueante: barrita de progreso bajo el borde del header y contenido atenuado.
+// Al cambiar de fecha ya NO se borra la pantalla — el día anterior sigue a la vista hasta que llega el
+// nuevo, así el cambio se siente instantáneo aunque el Apps Script tarde.
+function loadBar(on){
+  const b=document.getElementById('loadBar'); if(b) b.classList.toggle('on', !!on);
+  const c=document.getElementById('container'); if(c) c.classList.toggle('cargando', !!on && !!STATE.data);
+}
 async function cargarResumen(){
-  document.getElementById('container').innerHTML='<div class="loading">⏳ Consultando…</div>';
+  const cont=document.getElementById('container');
+  if(!STATE.data) cont.innerHTML='<div class="loading">⏳ Consultando…</div>';
+  loadBar(true); perfReset();
   try{
-    const resp=await fetch(`${APPS_SCRIPT_URL}?action=asistencia&fecha=${STATE.fecha}&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`);
-    const data=await resp.json();
+    const data=await perfFetch('asistencia (día)',
+      `${APPS_SCRIPT_URL}?action=asistencia&fecha=${STATE.fecha}&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`);
     if(!data.ok) throw new Error(data.error||'asistencia');
     STATE.data=data;
     render();
+    perfTabla('carga del día '+STATE.fecha);
   }catch(err){
+    // Con error se BORRA el contenido a propósito: dejar a la vista los números del día anterior con un
+    // aviso encima sería peor (se leerían como los del día pedido).
+    STATE.data=null;
     document.getElementById('container').innerHTML='<div class="empty-state">⚠️ No se pudo consultar. Revisa el Apps Script.<br><small>'+esc(err.message||err)+'</small></div>';
+  }finally{
+    loadBar(false);
   }
 }
 // ¿La vista actual es de TIERRAS? (residente de tierras, jeisson, o admin sin filtrar ODT/ODL).
 // El flujo especial de dom/fest (D81c: subir solo a quienes trabajaron, sin aviso de sin-reportar)
 // aplica SOLO a tierras — drenajes ODT/ODL siguen reportando por cuadrilla también esos días.
+// D101 (P3, decisión del usuario jul-2026): UF3 sigue la regla CONSERVADORA de drenajes — el aviso de
+// "gente sin reportar" se conserva TODOS los días, también domingos y festivos. Por eso
+// `asistencia_plus_uf3` NO entra aquí. Si más adelante se confirma que UF3 va con la regla de tierras
+// (D81), es una línea: agregar el rol a esta condición y `uf3` a las áreas de abajo.
+// El caso del admin se escribe ahora en POSITIVO (antes era "todo lo que no sea odt/odl"): con la
+// lista negra, elegir "Ver como UF3" habría caído por descarte en el flujo de tierras.
 function esVistaTierras(){
   return STATE.rol==='residente' || STATE.rol==='asistencia_plus'
-    || (STATE.rol==='admin' && STATE.areaFiltro!=='odt' && STATE.areaFiltro!=='odl');
+    || (STATE.rol==='admin' && (STATE.areaFiltro==='' || STATE.areaFiltro==='tierras'));
+}
+// D101: ¿la vista está acotada a un área? Con `areas` del backend (o, si el Apps Script aún no se
+// redesplegó, con las que guardó el login en localStorage) más el filtro "Ver como" del admin. Cuando
+// lo está, no se ofrecen proyectos ni CC del catálogo global, que hoy es de tierras.
+function vistaAcotada(d){
+  if(d && d.areas && d.areas.length) return true;
+  if(STATE.rol==='admin') return !!STATE.areaFiltro;
+  try{ const a=JSON.parse(localStorage.getItem('areas')||'[]'); if(Array.isArray(a) && a.length) return true; }catch(e){}
+  return false;
 }
 function onFechaChange(v){ STATE.fecha=v; STATE.exportCache={}; cargarResumen(); }
 // D74b: admin cambia la vista de área (Todas/Tierras/ODT/ODL); recarga resumen y limpia caché de export.
-function onAreaFiltro(v){ STATE.areaFiltro=v; STATE.exportCache={}; STATE.personal=null; cargarResumen(); }
+function onAreaFiltro(v){
+  STATE.areaFiltro=v; STATE.exportCache={}; STATE.personal=null;
+  // D101: si la plantilla a la vista es la INCLUIDA en la app, se recarga la del área elegida (tierras
+  // ↔ UF3). Una plantilla subida o recordada por el usuario NO se toca: manda la suya.
+  if(STATE.tplBundle){ STATE.tplBuf=null; STATE.tplBundle=false; cargarPlantillaBundle(); }
+  cargarResumen();
+}
 
 function render(){
+  const _t0=ahora();
+  // render() reconstruye el contenedor: los bloques diferidos pendientes del render anterior ya no
+  // existen en el DOM, así que se descartan (si no, quedarían apuntando a ids muertos).
+  Object.keys(LAZY).forEach(k=>delete LAZY[k]);
   const d=STATE.data;
   const filas=d.filas||[], cuadrillas=d.cuadrillas||[], faltantes=d.faltantes||[];
   // Presente cuenta SOLO si tiene CC. Presente sin CC = no reportado (ya viene en faltantes).
@@ -186,7 +327,8 @@ function render(){
     // D74b: solo el admin puede ver TODO o filtrar por área ("ver como" tierras/ODT/ODL). Los residentes
     // ya vienen acotados por el backend a su área, así que no necesitan el selector.
     + (STATE.rol==='admin' ? `<div class="field" style="max-width:200px;"><label>Ver como</label><select onchange="onAreaFiltro(this.value)">`
-        + ['','tierras','odt','odl'].map(a=>`<option value="${a}" ${STATE.areaFiltro===a?'selected':''}>${a===''?'Todas las áreas':(a==='tierras'?'Tierras':a.toUpperCase())}</option>`).join('')
+        // D101: `uf3` entra en la lista (el backend la acepta en areasEfectivas).
+        + ['','tierras','odt','odl','uf3'].map(a=>`<option value="${a}" ${STATE.areaFiltro===a?'selected':''}>${a===''?'Todas las áreas':(a==='tierras'?'Tierras':a.toUpperCase())}</option>`).join('')
         + '</select></div>' : '')
     + '</div></div>';
 
@@ -216,12 +358,22 @@ function render(){
   // para poder registrar un CC especial. Reemplaza el <datalist> (no mostraba el listado completo de
   // forma confiable) por un buscador desplegable real.
   STATE._ccUsados=(d.catCCUsados||[]);
-  STATE._ccResto=(d.catCC||[]).filter(cc=>STATE._ccUsados.indexOf(cc)<0);
+  // D101: el "resto" (CAT_CC) es el catálogo GLOBAL y hoy solo tiene CC de tierras. Cuando la vista está
+  // acotada a un área (residente de UF3/drenajes, o el admin con "Ver como"), se filtra a los proyectos
+  // de esa área para no ofrecerle CC de otro frente; si no se sabe cuáles son, no se ofrece ninguno.
+  const proysArea=proyectosDelArea();
+  const acotada=vistaAcotada(d);
+  STATE._ccResto=(d.catCC||[])
+    .filter(cc=>STATE._ccUsados.indexOf(cc)<0)
+    .filter(cc=>!acotada || proysArea.indexOf(proyectoDeCC(cc))>=0);
   STATE._detalle={}; STATE._detIdx=0;
+  // Una sola pasada por `filas` para agrupar por cuadrilla (antes era un filter por cuadrilla = N×M).
+  const porCuadrilla={}; filas.forEach(f=>{ (porCuadrilla[f.cuadrilla]=porCuadrilla[f.cuadrilla]||[]).push(f); });
+  STATE._porCuadrilla=porCuadrilla;
   html+='<div class="section-title">Cuadrillas</div><div class="card">';
   cuadrillas.forEach((c,ci)=>{
     const detId='detCuad'+ci;
-    const filasCuad=filas.filter(f=>f.cuadrilla===c.cuadrilla);
+    const filasCuad=porCuadrilla[c.cuadrilla]||[];
     const tieneDet=filasCuad.length>0;
     html+=`<div class="cuad-row" ${tieneDet?`style="cursor:pointer;" onclick="toggleCuad('${detId}',this)"`:''}>`
       + `<span>${esc(c.cuadrilla)} <small style="color:var(--muted)">(${esc(c.responsables)})</small></span>`
@@ -229,7 +381,12 @@ function render(){
       + (c.reporto ? `<span class="ok">✓ Reportó — ${esc(c.reporta)}</span>` : `<span class="no">✗ No ha reportado</span>`)
       + (tieneDet ? `<button class="mini-btn detToggle" onclick="event.stopPropagation();toggleCuad('${detId}',this.closest('.cuad-row'))">Ver detalle</button>` : '')
       + '</span></div>';
-    if(tieneDet) html+=`<div id="${detId}" style="display:none;">`+detalleCuadrillaHtml(c, filasCuad)+'</div>';
+    // D76 diferido: el contenedor va vacío y el detalle (clasificación de horas + editor por persona)
+    // se arma al desplegar esa cuadrilla, no para todas por adelantado. Resultado visible idéntico.
+    if(tieneDet){
+      html+=`<div id="${detId}" style="display:none;"></div>`;
+      LAZY[detId]=(function(cc, ff){ return function(){ return detalleCuadrillaHtml(cc, ff); }; })(c, filasCuad);
+    }
   });
   html+='</div>';
 
@@ -249,12 +406,14 @@ function render(){
     html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
       +'<p style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1px;">Sin reportar ('+sinReportar.length+')</p>'
       +'<button class="mini-btn" onclick="toggleLista(\'listaSinRep\',this)">Mostrar</button></div>';
-    html+='<div id="listaSinRep" style="display:none;">';
-    sinReportar.forEach(f=>{
-      const badge = f.incompleto ? '<span class="badge sin">Presente sin CC</span>' : '<span class="badge sin">Sin reportar</span>';
-      html+=`<div class="falt-row"><div class="nm"><b>${esc(f.nombre)}</b><small>${esc(f.cargo)} · ${esc(f.cuadrilla)} · resp. ${esc(f.responsable)}</small></div>${badge}</div>`;
-    });
-    html+='</div>';
+    // Diferido: la lista nace oculta, así que su HTML se arma al pulsar "Mostrar".
+    html+='<div id="listaSinRep" style="display:none;"></div>';
+    LAZY['listaSinRep']=function(){
+      return sinReportar.map(f=>{
+        const badge = f.incompleto ? '<span class="badge sin">Presente sin CC</span>' : '<span class="badge sin">Sin reportar</span>';
+        return `<div class="falt-row"><div class="nm"><b>${esc(f.nombre)}</b><small>${esc(f.cargo)} · ${esc(f.cuadrilla)} · resp. ${esc(f.responsable)}</small></div>${badge}</div>`;
+      }).join('');
+    };
   }
   if(ausentesConMotivo.length){
     html+='<p style="color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:1px;margin:10px 0 4px;">Reportado ausente (con motivo)</p>';
@@ -266,18 +425,30 @@ function render(){
 
   html+=seccionCompletar(d);
 
+  html+=seccionAusencias();   // D94: seguimiento de ausencias por rango de fechas
+
   html+='<div class="section-title">Descargar Excel Navision</div>';
   html+=exportCardHtml();
 
   // D72/D74b: gestión de personal para residente(tierras), admin, jeisson y residentes de área; el backend
   // la limita a su área (jeisson = tierras, mismos permisos que el residente de tierras).
-  if(['residente','admin','asistencia_plus','residente_odt','residente_odl','residente_dren'].indexOf(STATE.rol)>=0){
+  // D88: duvan (asistencia_plus_dren) igual pero acotado por el backend a ODT+ODL.
+  if(['residente','admin','asistencia_plus','asistencia_plus_dren','asistencia_plus_uf3','residente_odt','residente_odl','residente_dren'].indexOf(STATE.rol)>=0){
     html+='<div class="section-title">Gestión de personal</div>';
-    html+='<div class="card" id="gestionCard"><button class="btn-ghost" onclick="cargarPersonal()">Cargar personal ↻</button><div id="gestionBody" style="margin-top:12px;"></div></div>';
+    html+='<div class="card" id="gestionCard"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">'
+      + '<button class="btn-ghost" onclick="cargarPersonal()">Cargar personal ↻</button>'
+      // D99 (Fase 2 punto 5): el backend cachea 6 h los catálogos casi estáticos (CAT_CC, CAT_MOTIVOS,
+      // CC_USADOS, CONFIG, TURNOS, CUADRILLAS…). Lo que se edita A MANO en el Sheet no pasa por el
+      // script, así que este botón fuerza la relectura sin esperar el TTL ni redesplegar.
+      + '<button class="btn-ghost" onclick="refrescarCatalogos(this)" title="Úsalo si acabas de editar CAT_CC, motivos, CONFIG o cuadrillas directamente en el Sheet">↻ Refrescar catálogos</button>'
+      + '<span id="cacheMsg" style="font-size:12px;color:var(--muted);"></span>'
+      + '</div><div id="gestionBody" style="margin-top:12px;"></div></div>';
   }
 
   document.getElementById('container').innerHTML=html;
   if(STATE.personal) renderPersonal();
+  renderAusFiltros(); renderAusResultados();   // D94: repinta lo ya consultado tras un re-render
+  perfMarca('pintado (render)', ahora()-_t0);
 }
 
 /* ================= BUSCADOR DE CC (D78) =================
@@ -327,6 +498,8 @@ function ccPickBlur(id){ setTimeout(function(){ const b=document.getElementById(
 function toggleCuad(id, rowEl){
   const el=document.getElementById(id); if(!el) return;
   const show = el.style.display==='none';
+  // Render progresivo (D76): el detalle de ESTA cuadrilla se arma la primera vez que se despliega.
+  if(show && LAZY[id]){ const t0=ahora(); el.innerHTML=LAZY[id](); delete LAZY[id]; perfMarca('detalle '+id, ahora()-t0); }
   el.style.display = show ? 'block' : 'none';
   const b=rowEl.querySelector('.detToggle'); if(b) b.textContent = show ? 'Ocultar' : 'Ver detalle';
 }
@@ -447,9 +620,11 @@ async function guardarDetalle(idx){
   }
   const msg=document.getElementById('det-msg-'+idx); msg.innerHTML='<div class="aviso">⏳ Guardando…</div>';
   try{
-    const resp=await fetch(APPS_SCRIPT_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    perfReset();
+    const data=await perfFetch('asistencia_individual (detalle)', APPS_SCRIPT_URL, { method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
       body: JSON.stringify({ action:'asistencia_individual', fecha:STATE.fecha, reporta:STATE.usuario, usuario:STATE.usuario, filas:[fila] }) });
-    const data=await resp.json();
+    perfTabla('guardar detalle');
     if(data.ok){ STATE.exportCache={}; cargarResumen(); }
     else msg.innerHTML='<div class="aviso">⚠️ '+esc(data.error||'error')+'</div>';
   }catch(err){ msg.innerHTML='<div class="aviso">⚠️ '+esc(err.message||err)+'</div>'; }
@@ -461,7 +636,7 @@ async function guardarDetalle(idx){
  * responsable de la cuadrilla. */
 function proyectoFromCC(cc){ const m=String(cc||'').match(/^(\d{4})/); return m?m[1]:''; }
 function seccionCompletar(d){
-  if(['residente','admin','asistencia_plus','residente_odt','residente_odl','residente_dren'].indexOf(STATE.rol)<0) return '';
+  if(['residente','admin','asistencia_plus','asistencia_plus_dren','asistencia_plus_uf3','residente_odt','residente_odl','residente_dren'].indexOf(STATE.rol)<0) return '';
   const faltantes=d.faltantes||[];
   const comp=[];
   // Los "presente sin CC" ya vienen en faltantes como sin_reportar (incompleto=true), así que basta
@@ -479,6 +654,16 @@ function seccionCompletar(d){
   });
   if(!comp.length) return '';
   STATE._comp=comp;
+  let h='<div style="display:flex;justify-content:space-between;align-items:center;margin:22px 0 10px;">'
+    + '<span style="font-family:\'Syne\',sans-serif;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Completar faltantes ('+comp.length+')</span>'
+    + '<button class="mini-btn" onclick="toggleLista(\'listaCompletar\',this)">Mostrar</button></div>';
+  // Diferido: este bloque nace oculto y es el más pesado del resumen (una ficha con CC, turno, horario
+  // y motivo por CADA faltante). Su HTML se arma al pulsar "Mostrar"; el resultado es idéntico.
+  h+='<div id="listaCompletar" class="card" style="display:none;"></div>';
+  LAZY['listaCompletar']=function(){ return completarListaHtml(d, comp); };
+  return h;
+}
+function completarListaHtml(d, comp){
   const catMotivos=d.catMotivos||[], j=Object.assign({},d.jornada||{});
   // D77: en domingo/festivo el backend puede mandar la jornada vacía; se pre-llena el horario típico
   // (07:00–15:00; 8h − 1h almuerzo = 7h Dom/Fest) para completar faltantes sin teclear las horas.
@@ -488,11 +673,10 @@ function seccionCompletar(d){
   const turnos=d.turnos||[]; STATE._compTurnos=turnos;
   const turnoOpts = turnoOptsHtml(turnos, '1');
   const esDomFest = tipoJornadaDeFecha(STATE.fecha, d.festivos||[])==='domfest';
+  // Las <option> de motivos son las mismas para todas las personas: se arman UNA vez, no por ficha.
+  const motivoOpts = catMotivos.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('');
   // D78: el CC se elige con el buscador ccPickerHtml (frecuentes del área primero + catálogo completo).
-  let h='<div style="display:flex;justify-content:space-between;align-items:center;margin:22px 0 10px;">'
-    + '<span style="font-family:\'Syne\',sans-serif;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">Completar faltantes ('+comp.length+')</span>'
-    + '<button class="mini-btn" onclick="toggleLista(\'listaCompletar\',this)">Mostrar</button></div>';
-  h+='<div id="listaCompletar" class="card" style="display:none;"><p style="font-size:12px;color:var(--muted);margin-bottom:10px;">Agrega o corrige personas que no reportaron (o quedaron presentes sin CC). Marca su estado y guarda; <b>no borra</b> lo que ya reportó el responsable de la cuadrilla.</p>';
+  let h='<p style="font-size:12px;color:var(--muted);margin-bottom:10px;">Agrega o corrige personas que no reportaron (o quedaron presentes sin CC). Marca su estado y guarda; <b>no borra</b> lo que ya reportó el responsable de la cuadrilla.</p>';
   // D81: en domingo/festivo trabaja solo el personal disponible (revuelto de cuadrillas y responsables),
   // así que ESTE es el canal para subir el día (Jeisson/residente): se marca SOLO a quienes trabajaron;
   // los demás se dejan sin tocar (no cuentan como ausentes — el domingo no trabajado es lo normal).
@@ -524,12 +708,11 @@ function seccionCompletar(d){
      + `<div class="field" style="max-width:120px;"><label>Entrada</label><input type="time" id="comp-ent-${i}" value="${esc(j.entrada||'')}"></div>`
      + `<div class="field" style="max-width:120px;"><label>Salida</label><input type="time" id="comp-sal-${i}" value="${esc(j.salida||'')}"></div>`
      + `</div></div>`
-     + `<div id="comp-aus-${i}" style="display:none;margin-top:8px;"><select id="comp-mot-${i}"><option value="">Motivo de ausencia…</option>${catMotivos.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('')}</select></div>`
+     + `<div id="comp-aus-${i}" style="display:none;margin-top:8px;"><select id="comp-mot-${i}"><option value="">Motivo de ausencia…</option>${motivoOpts}</select></div>`
      + `</div>`;
   });
   h+='</div>'; // /#compPendientes
   h+='<button class="btn" style="margin-top:12px;" onclick="guardarCompletar()">Guardar faltantes →</button><div id="compMsg" style="margin-top:8px;"></div>';
-  h+='</div>';
   return h;
 }
 function compToggle(i){
@@ -570,7 +753,8 @@ function compTurnoChange(i){
 async function guardarCompletar(){
   const comp=STATE._comp||[], filas=[];
   comp.forEach((p,i)=>{
-    const est=document.getElementById('comp-est-'+i).value;
+    const sel=document.getElementById('comp-est-'+i);
+    const est=sel?sel.value:'';   // la lista se arma al desplegarla: sin desplegar no hay nada marcado
     if(!est) return;
     if(est==='Si'){
       const cc=document.getElementById('comp-cc-'+i).value.trim();
@@ -587,12 +771,260 @@ async function guardarCompletar(){
   if(filas.some(f=>f.presente==='No' && !f.motivo_ausencia)){ alert('Falta el motivo de alguna persona marcada como ausente.'); return; }
   const msg=document.getElementById('compMsg'); msg.innerHTML='<div class="aviso">⏳ Guardando…</div>';
   try{
-    const resp=await fetch(APPS_SCRIPT_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    perfReset();
+    const data=await perfFetch('asistencia_individual (faltantes)', APPS_SCRIPT_URL, { method:'POST',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
       body: JSON.stringify({ action:'asistencia_individual', fecha:STATE.fecha, reporta:STATE.usuario, usuario:STATE.usuario, filas }) });
-    const data=await resp.json();
+    perfTabla('guardar faltantes');
     if(data.ok){ STATE.exportCache={}; cargarResumen(); }
     else msg.innerHTML='<div class="aviso">⚠️ '+esc(data.error||'error')+'</div>';
   }catch(err){ msg.innerHTML='<div class="aviso">⚠️ '+esc(err.message||err)+'</div>'; }
+}
+
+/* ================= SEGUIMIENTO DE AUSENCIAS POR RANGO (D94) =================
+ * Pedido del usuario (jul-2026): "de cierta fecha a cierta fecha, ver quiénes faltaron y filtrarlo
+ * según el motivo, para hacerle seguimiento al personal". Va en ESTA pantalla (no en una nueva) porque
+ * quien hace el seguimiento es el mismo que revisa el resumen (residente / jeisson / duvan / admin) y
+ * así reusa el guard, el filtro por área del backend y los catálogos que ya trae la página.
+ *   - Consulta el endpoint `?action=ausencias&desde=&hasta=` (solo lectura, acotado al área del usuario).
+ *   - Filtros en el cliente: motivo, cuadrilla y buscador por nombre/cargo.
+ *   - Dos vistas: POR PERSONA (reincidencias, con el detalle de fechas) y POR FECHA (el día a día).
+ *   - Checkbox "incluir no reportados": días en que la cuadrilla reportó pero a la persona no la
+ *     incluyeron. No es una ausencia confirmada — por eso va aparte y apagado por defecto.
+ *   - Descarga CSV de lo filtrado, para adjuntar al seguimiento (no es el Parte de Navision).
+ * Es independiente de la fecha del resumen: cambiar el día de arriba no borra esta consulta. */
+const AUS_SIN_REPORTE='(no reportado)';
+function primerDiaDelMes(f){ return String(f||'').slice(0,8)+'01'; }
+function ausInit(){
+  const a=STATE.aus;
+  if(!a.hasta) a.hasta=STATE.fecha;
+  if(!a.desde) a.desde=primerDiaDelMes(STATE.fecha);
+}
+function seccionAusencias(){
+  ausInit(); const a=STATE.aus;
+  let h='<div style="display:flex;justify-content:space-between;align-items:center;margin:22px 0 10px;">'
+    + '<span style="font-family:\'Syne\',sans-serif;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;">🔎 Seguimiento de ausencias (rango)</span>'
+    + `<button class="mini-btn" onclick="ausToggle(this)">${a.abierto?'Ocultar':'Mostrar'}</button></div>`;
+  h+=`<div id="ausPanel" class="card" style="display:${a.abierto?'block':'none'};">`;
+  h+='<p style="font-size:12px;color:var(--muted);margin-bottom:10px;">Quién faltó entre dos fechas y por qué motivo, para el seguimiento del personal. Solo lectura: no modifica ninguna asistencia.</p>';
+  h+='<div class="row">'
+    + `<div class="field" style="max-width:170px;"><label>Desde</label><input type="date" id="ausDesde" value="${esc(a.desde)}"></div>`
+    + `<div class="field" style="max-width:170px;"><label>Hasta</label><input type="date" id="ausHasta" value="${esc(a.hasta)}"></div>`
+    + '<div class="field" style="flex:0;"><button class="btn" onclick="ausConsultar()">Consultar →</button></div>'
+    + '</div>';
+  h+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">'
+    + '<button class="mini-btn" onclick="ausRangoRapido(\'mes\')">Este mes</button>'
+    + '<button class="mini-btn" onclick="ausRangoRapido(\'30\')">Últimos 30 días</button>'
+    + '<button class="mini-btn" onclick="ausRangoRapido(\'mesant\')">Mes pasado</button>'
+    + '</div>';
+  h+='<div id="ausFiltros" style="margin-top:14px;"></div><div id="ausResultados"></div>';
+  h+='</div>';
+  return h;
+}
+function ausToggle(btn){
+  STATE.aus.abierto=!STATE.aus.abierto;
+  const el=document.getElementById('ausPanel'); if(el) el.style.display=STATE.aus.abierto?'block':'none';
+  if(btn) btn.textContent=STATE.aus.abierto?'Ocultar':'Mostrar';
+}
+// Atajos de rango. Fechas en hora de Bogotá (D50: nunca toISOString).
+function ausRangoRapido(cual){
+  const hoy=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
+  const p=hoy.split('-'); const y=Number(p[0]), m=Number(p[1]);
+  let desde=hoy, hasta=hoy;
+  if(cual==='mes'){ desde=primerDiaDelMes(hoy); }
+  else if(cual==='30'){ const d=new Date(y, m-1, Number(p[2])); d.setDate(d.getDate()-29);
+    desde=d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+  else if(cual==='mesant'){ const ini=new Date(y, m-2, 1), fin=new Date(y, m-1, 0);
+    const f=x=>x.getFullYear()+'-'+('0'+(x.getMonth()+1)).slice(-2)+'-'+('0'+x.getDate()).slice(-2);
+    desde=f(ini); hasta=f(fin); }
+  STATE.aus.desde=desde; STATE.aus.hasta=hasta;
+  const de=document.getElementById('ausDesde'), ha=document.getElementById('ausHasta');
+  if(de) de.value=desde; if(ha) ha.value=hasta;
+  ausConsultar();
+}
+async function ausConsultar(){
+  const de=document.getElementById('ausDesde'), ha=document.getElementById('ausHasta');
+  const a=STATE.aus;
+  a.desde=de?de.value:a.desde; a.hasta=ha?ha.value:a.hasta;
+  if(!a.desde || !a.hasta){ alert('Elige las dos fechas del rango.'); return; }
+  if(a.hasta < a.desde){ alert('El rango está invertido: "Hasta" es anterior a "Desde".'); return; }
+  a.cargando=true; a.error=''; a.data=null; a.motivo=''; a.cuadrilla=''; a.abiertos={};
+  renderAusFiltros(); renderAusResultados();
+  try{
+    const url=`${APPS_SCRIPT_URL}?action=ausencias&desde=${a.desde}&hasta=${a.hasta}`
+      + `&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`;
+    perfReset();
+    const data=await perfFetch('ausencias (rango)', url);
+    perfTabla('ausencias '+a.desde+' → '+a.hasta);
+    if(!data.ok) throw new Error(data.error||'ausencias');
+    // Backend sin redesplegar: doGet devuelve {ok:true, msg:'API Asistencias viva'} para una acción que
+    // aún no conoce. Se detecta por la ausencia de `filas` y se avisa con la causa real.
+    if(!data.filas) throw new Error('El Apps Script de asistencias todavía no tiene el endpoint de ausencias. Redespliega CodigoAsistencias.gs (editar implementación → versión nueva, misma URL).');
+    a.data=data;
+  }catch(err){ a.error=err.message||String(err); }
+  a.cargando=false;
+  renderAusFiltros(); renderAusResultados();
+}
+// Universo consultado según el checkbox de "no reportados" (antes de los filtros de motivo/cuadrilla/texto).
+function ausUniverso(){
+  const a=STATE.aus, d=a.data; if(!d) return [];
+  return a.incluirSinRep ? (d.filas||[]).concat(d.sinReportar||[]) : (d.filas||[]).slice();
+}
+function ausFilas(){
+  const a=STATE.aus, q=(a.q||'').trim().toLowerCase();
+  return ausUniverso().filter(f=>
+      (!a.motivo    || f.motivo===a.motivo)
+   && (!a.cuadrilla || f.cuadrilla===a.cuadrilla)
+   && (!q || (String(f.nombre)+' '+String(f.cargo)+' '+String(f.cuadrilla)).toLowerCase().indexOf(q)>=0))
+   .sort((x,y)=> x.fecha===y.fecha ? (x.nombre<y.nombre?-1:1) : (x.fecha<y.fecha?1:-1));
+}
+function ausKey(f){ return String(f.codigo||'').trim() || ('CED:'+String(f.cedula||'').trim()); }
+// Controles de filtro: viven FUERA de #ausResultados para no perder el foco del buscador al teclear
+// (mismo patrón que el filtro de gestión de personal).
+function renderAusFiltros(){
+  const box=document.getElementById('ausFiltros'); if(!box) return;
+  const a=STATE.aus;
+  if(!a.data){ box.innerHTML=''; return; }
+  const uni=ausUniverso();
+  const motivos=[]; uni.forEach(f=>{ if(motivos.indexOf(f.motivo)<0) motivos.push(f.motivo); }); motivos.sort();
+  const cuads=[];   uni.forEach(f=>{ if(cuads.indexOf(f.cuadrilla)<0) cuads.push(f.cuadrilla); }); cuads.sort();
+  let h='<div class="row">'
+    + '<div class="field"><label>Motivo</label><select onchange="ausSetFiltro(\'motivo\',this.value)">'
+    +   `<option value="">Todos los motivos</option>`
+    +   motivos.map(m=>`<option value="${esc(m)}" ${a.motivo===m?'selected':''}>${esc(m)}</option>`).join('')
+    + '</select></div>'
+    + '<div class="field"><label>Cuadrilla</label><select onchange="ausSetFiltro(\'cuadrilla\',this.value)">'
+    +   `<option value="">Todas</option>`
+    +   cuads.map(c=>`<option value="${esc(c)}" ${a.cuadrilla===c?'selected':''}>${esc(c)}</option>`).join('')
+    + '</select></div>'
+    + '<div class="field"><label>Buscar persona</label><input type="text" id="ausQ" placeholder="Nombre, cargo o cuadrilla…" '
+    +   `value="${esc(a.q)}" oninput="ausSetTexto(this.value)"></div>`
+    + '</div>';
+  h+='<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-top:10px;font-size:12px;color:var(--muted);">'
+    + `<label style="display:flex;gap:6px;align-items:center;text-transform:none;letter-spacing:0;margin:0;cursor:pointer;">`
+    +   `<input type="checkbox" style="width:auto;" ${a.incluirSinRep?'checked':''} onchange="ausSetSinRep(this.checked)"> `
+    +   `Incluir días <b style="color:var(--text)">no reportados</b> (la cuadrilla reportó, pero a la persona no la incluyeron)</label>`
+    + '<span style="flex:1;"></span>'
+    + `<button class="mini-btn" onclick="ausSetVista('persona')" style="${a.vista==='persona'?'border-color:var(--accent);color:var(--accent);':''}">Por persona</button>`
+    + `<button class="mini-btn" onclick="ausSetVista('fecha')" style="${a.vista==='fecha'?'border-color:var(--accent);color:var(--accent);':''}">Por fecha</button>`
+    + '</div>';
+  box.innerHTML=h;
+}
+function ausSetFiltro(k, v){ STATE.aus[k]=v; renderAusResultados(); }
+// Clic en una línea del desglose "Por motivo": filtra por ese motivo, o lo quita si ya estaba puesto.
+function ausMotivoClick(i){
+  const m=(STATE.aus._motivos||[])[i]; if(m==null) return;
+  STATE.aus.motivo = (STATE.aus.motivo===m) ? '' : m;
+  renderAusFiltros(); renderAusResultados();
+}
+function ausSetTexto(v){ STATE.aus.q=v; renderAusResultados(); }     // el input no se repinta: no pierde foco
+function ausSetVista(v){ STATE.aus.vista=v; renderAusFiltros(); renderAusResultados(); }
+function ausSetSinRep(v){ STATE.aus.incluirSinRep=v; if(STATE.aus.motivo===AUS_SIN_REPORTE && !v) STATE.aus.motivo=''; renderAusFiltros(); renderAusResultados(); }
+// El detalle se abre por índice de pintado (id DOM seguro) pero se RECUERDA por clave de persona, para
+// que siga abierto al cambiar un filtro (que repinta la lista).
+function ausToggleDetalle(i, btn){
+  const k=(STATE.aus._orden||[])[i]; if(k==null) return;
+  STATE.aus.abiertos=STATE.aus.abiertos||{};
+  STATE.aus.abiertos[k]=!STATE.aus.abiertos[k];
+  const el=document.getElementById('ausdet-'+i); if(el) el.style.display=STATE.aus.abiertos[k]?'block':'none';
+  if(btn) btn.textContent=STATE.aus.abiertos[k]?'Ocultar':'Ver fechas';
+}
+function renderAusResultados(){
+  const box=document.getElementById('ausResultados'); if(!box) return;
+  const a=STATE.aus;
+  if(a.cargando){ box.innerHTML='<div class="loading">⏳ Consultando el rango…</div>'; return; }
+  if(a.error){ box.innerHTML='<div class="aviso">⚠️ '+esc(a.error)+'</div>'; return; }
+  if(!a.data){ box.innerHTML='<p style="font-size:12.5px;color:var(--muted);margin-top:12px;">Elige el rango y pulsa <b>Consultar</b>.</p>'; return; }
+  const filas=ausFilas();
+  const personas={}; filas.forEach(f=>{ personas[ausKey(f)]=1; });
+  const dias={};     filas.forEach(f=>{ dias[f.fecha]=1; });
+  let h='<div class="kpis" style="margin-top:14px;">'
+    + `<div class="kpi"><div class="k-val">${filas.length}</div><div class="k-lbl">Ausencias</div></div>`
+    + `<div class="kpi"><div class="k-val">${Object.keys(personas).length}</div><div class="k-lbl">Personas</div></div>`
+    + `<div class="kpi"><div class="k-val">${Object.keys(dias).length}</div><div class="k-lbl">Días con ausencias</div></div>`
+    + '</div>';
+  h+=`<p style="font-size:11px;color:var(--muted);margin:2px 0 12px;">Rango ${esc(a.data.desde)} → ${esc(a.data.hasta)} (${a.data.dias} día(s)). `
+    + `${a.data.filas.length} ausencia(s) con motivo`
+    + (a.incluirSinRep ? ` · ${(a.data.sinReportar||[]).length} día(s)-persona no reportados` : '')
+    + '.</p>';
+  if(!filas.length){
+    h+='<p class="empty-state" style="padding:18px;">Sin ausencias con estos filtros.</p>';
+    box.innerHTML=h; return;
+  }
+  // Desglose por motivo (clic = filtra). Es la lectura rápida del "por qué" del periodo.
+  const porMotivo={}; ausUniverso().forEach(f=>{ porMotivo[f.motivo]=(porMotivo[f.motivo]||0)+1; });
+  const motivosOrd=Object.keys(porMotivo).sort((x,y)=>porMotivo[y]-porMotivo[x]);
+  STATE.aus._motivos=motivosOrd;   // el clic va por índice: el texto del motivo puede traer comillas
+  h+='<div class="section-title" style="margin:8px 0 6px;">Por motivo</div>'
+    + '<p style="font-size:11px;color:var(--muted);margin:-4px 0 6px;">Clic en un motivo para filtrar; otro clic lo quita.</p>'
+    + '<div class="card" style="background:var(--surface2);">';
+  motivosOrd.forEach((m,i)=>{
+    const sel=a.motivo===m;
+    h+=`<div class="cuad-row" style="cursor:pointer;${sel?'color:var(--accent);':''}" onclick="ausMotivoClick(${i})">`
+      + `<span>${esc(m)}${sel?' ✓':''}</span><b>${porMotivo[m]}</b></div>`;
+  });
+  h+='</div>';
+
+  if(a.vista==='persona'){
+    // Reincidencias: quién falta más en el periodo (lo que sirve para el seguimiento).
+    const map={};
+    filas.forEach(f=>{ const k=ausKey(f);
+      if(!map[k]) map[k]={ nombre:f.nombre, cargo:f.cargo, cuadrilla:f.cuadrilla, codigo:f.codigo, n:0, motivos:{}, fechas:[] };
+      map[k].n++; map[k].motivos[f.motivo]=(map[k].motivos[f.motivo]||0)+1; map[k].fechas.push(f);
+    });
+    const orden=Object.keys(map).sort((x,y)=> map[y].n-map[x].n || (map[x].nombre<map[y].nombre?-1:1));
+    STATE.aus._orden=orden;
+    h+='<div class="section-title" style="margin:16px 0 6px;">Por persona ('+orden.length+')</div><div class="card" style="background:var(--surface2);">';
+    orden.forEach((k,i)=>{
+      const p=map[k], det=(STATE.aus.abiertos||{})[k];
+      const mot=Object.keys(p.motivos).sort((x,y)=>p.motivos[y]-p.motivos[x])
+        .map(m=>`${esc(m)}${p.motivos[m]>1?' ×'+p.motivos[m]:''}`).join(' · ');
+      h+='<div style="border-bottom:1px solid rgba(46,52,80,0.5);padding:9px 0;">'
+        + '<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap;">'
+        +   `<div class="nm" style="flex:1;min-width:180px;"><b>${esc(p.nombre)}</b> <small style="color:var(--muted)">${esc(p.cargo)} · ${esc(p.cuadrilla)}${p.codigo?' · cód. '+esc(p.codigo):''}</small>`
+        +   `<br><small style="color:var(--muted)">${mot}</small></div>`
+        +   `<span style="display:flex;gap:8px;align-items:center;"><span class="badge aus">${p.n} falta(s)</span>`
+        +   `<button class="mini-btn" onclick="ausToggleDetalle(${i},this)">${det?'Ocultar':'Ver fechas'}</button></span>`
+        + '</div>'
+        + `<div id="ausdet-${i}" style="display:${det?'block':'none'};margin-top:6px;">`
+        +   p.fechas.map(f=>`<div class="falt-row" style="padding:5px 0;"><span><b style="color:var(--text)">${esc(f.fecha)}</b> <small style="color:var(--muted)">${esc(f.motivo)}</small></span>`
+        +     `<small style="color:var(--muted)">${f.reporta?'reportó '+esc(f.reporta):''}</small></div>`).join('')
+        + '</div></div>';
+    });
+    h+='</div>';
+  } else {
+    // Día a día: útil para cruzar con un frente parado o un día puntual.
+    const porFecha={};
+    filas.forEach(f=>{ (porFecha[f.fecha]=porFecha[f.fecha]||[]).push(f); });
+    const fechas=Object.keys(porFecha).sort().reverse();
+    h+='<div class="section-title" style="margin:16px 0 6px;">Por fecha ('+fechas.length+')</div><div class="card" style="background:var(--surface2);">';
+    fechas.forEach(fe=>{
+      h+=`<div style="border-bottom:1px solid rgba(46,52,80,0.5);padding:9px 0;"><div style="display:flex;justify-content:space-between;">`
+        + `<b style="color:var(--accent)">${esc(fe)}</b><span class="badge aus">${porFecha[fe].length} falta(s)</span></div>`;
+      porFecha[fe].forEach(f=>{
+        h+=`<div class="falt-row" style="padding:5px 0;"><div class="nm"><b>${esc(f.nombre)}</b><small>${esc(f.cargo)} · ${esc(f.cuadrilla)}</small></div>`
+         + `<span class="badge ${f.tipo==='sin_reportar'?'sin':'aus'}">${esc(f.motivo)}</span></div>`;
+      });
+      h+='</div>';
+    });
+    h+='</div>';
+  }
+  h+=`<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;"><button class="btn-ghost" onclick="ausCSV()">⬇️ Descargar CSV (${filas.length} fila(s))</button></div>`;
+  box.innerHTML=h;
+}
+// CSV de lo FILTRADO, para adjuntar al seguimiento del personal. UTF-8 con BOM y separador ';' (mismo
+// criterio que la digitadora: Excel en español lo abre en columnas sin pasos extra). No es el Parte.
+function ausCSV(){
+  const filas=ausFilas(); if(!filas.length) return;
+  const esc2=v=>{ const s=String(v==null?'':v); return /[";\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
+  const cab=['Fecha','Codigo','Cedula','Nombre','Cargo','Cuadrilla','Motivo','Tipo','Reporto'];
+  const lineas=[cab.join(';')].concat(filas.map(f=>[f.fecha,f.codigo,f.cedula,f.nombre,f.cargo,f.cuadrilla,f.motivo,
+    f.tipo==='sin_reportar'?'No reportado':'Ausencia reportada',f.reporta].map(esc2).join(';')));
+  const blob=new Blob(['﻿'+lineas.join('\r\n')], {type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob), a=document.createElement('a');
+  a.href=url; a.download=`Ausencias_${STATE.aus.desde}_a_${STATE.aus.hasta}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
 }
 
 /* ================= EXPORT NAVISION (SheetJS, cliente) ================= */
@@ -614,11 +1046,41 @@ function exportCardHtml(){
       + `<div class="field" style="max-width:160px;"><label>Fila inicial de datos</label><input type="number" id="filaInicio" value="${STATE.filaInicio}" min="2" onchange="STATE.filaInicio=parseInt(this.value)||2"></div>`
       + '</div>';
   }
+  // D101: un botón por PROYECTO del área que se está revisando, derivado de los datos (no cableado):
+  // los CC del área (CC_USADOS → catálogo completo como respaldo) más los proyectos que ya aparecen en
+  // las filas del día. En tierras siguen saliendo los mismos dos (3701/3702); la residente de UF3 ve
+  // uno solo (3703) y el admin sin filtro los ve todos.
   h+='<div class="export-btns">'
-    + `<button class="btn" onclick="generarExcel('3701')">Excel 3701 →</button>`
-    + `<button class="btn" onclick="generarExcel('3702')">Excel 3702 →</button>`
+    + proyectosDelAreaHtml()
     + '</div><div id="exportMsg"></div></div>';
   return h;
+}
+// Prefijos de proyecto presentes en el área revisada. Orden estable (numérico ascendente).
+function proyectosDelArea(){
+  const d=STATE.data||{};
+  const set={};
+  // D101: el respaldo al catálogo GLOBAL (tierras) solo vale si la vista NO está acotada a un área —
+  // si no, a la residente de UF3 le salían los botones de 3701/3702 mientras CC_USADOS estaba vacía.
+  const acotada=vistaAcotada(d);
+  const pool=(d.catCCUsados&&d.catCCUsados.length) ? d.catCCUsados : (acotada ? [] : (d.catCC||[]));
+  pool.forEach(cc=>{ const p=proyectoDeCC(cc); if(p) set[p]=true; });
+  // Lo ya reportado ese día manda igual: si hay filas de un proyecto, su botón tiene que estar.
+  (d.filas||[]).forEach(f=>{ const p=String(f.proyecto||'').trim(); if(p) set[p]=true; });
+  return Object.keys(set).sort();
+}
+function proyectoDeCC(cc){ const m=String(cc||'').match(/^(\d{4})/); return m?m[1]:''; }
+// Proyecto más frecuente entre las filas PRESENTES de una lista (respaldo para ausentes sin histórico).
+function proyectoMayoritario(filas){
+  const c={};
+  filas.forEach(f=>{ if(f.presente!=='Si') return; const p=String(f.proyecto||'').trim(); if(p) c[p]=(c[p]||0)+1; });
+  let best='', bestN=0;
+  Object.keys(c).forEach(p=>{ if(c[p]>bestN){ bestN=c[p]; best=p; } });
+  return best;
+}
+function proyectosDelAreaHtml(){
+  const ps=proyectosDelArea();
+  if(!ps.length) return '<p style="font-size:12.5px;color:var(--muted);margin:0;">No hay centros de costo cargados para esta área, así que no se puede saber qué proyecto exportar. Revisa la hoja <b>CC_USADOS</b>.</p>';
+  return ps.map(p=>`<button class="btn" onclick="generarExcel('${p}')">Excel ${p} →</button>`).join('');
 }
 function onTplFile(ev){
   const file=ev.target.files[0]; if(!file) return;
@@ -735,10 +1197,13 @@ function tipoJornadaDeFecha(fechaStr, festivos){
   return 'lv';
 }
 
+// El crudo del export NO depende del proyecto (3701/3702 se filtran en el cliente): una sola petición
+// por fecha sirve para los dos botones — `exportCache` ya lo reusa; se invalida al cambiar fecha, área
+// o al guardar (detalle / faltantes).
 async function obtenerExport(fecha){
   if(STATE.exportCache[fecha]) return STATE.exportCache[fecha];
-  const resp=await fetch(`${APPS_SCRIPT_URL}?action=export&fecha=${fecha}&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`);
-  const data=await resp.json();
+  const data=await perfFetch('export (crudo del día)',
+    `${APPS_SCRIPT_URL}?action=export&fecha=${fecha}&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`);
   if(!data.ok) throw new Error(data.error||'export');
   STATE.exportCache[fecha]=data;
   return data;
@@ -836,11 +1301,22 @@ async function generarExcel(proyecto){
   }
   msg.innerHTML='<div class="aviso">⏳ Generando…</div>';
   try{
-    const data=await obtenerExport(STATE.fecha);
+    perfReset();
+    // SheetJS ya no viene en el <head>: se carga aquí (o ya está, si el navegador la precargó ocioso).
+    // Va en PARALELO con el crudo del día, no encadenado, para no sumar las dos esperas.
+    const [ , data ] = await Promise.all([ ensureXLSX(), obtenerExport(STATE.fecha) ]);
+    perfTabla('generar Excel '+proyecto);
     const cfg=data.config||{}, festivos=data.festivos||[], turnos=data.turnos||[];
-    const proyectoStr = proyecto==='3701' ? (cfg.proyecto_3701||'3701') : (cfg.proyecto_3702||'3702');
-    if(proyecto==='3702' && (!cfg.proyecto_3702 || cfg.proyecto_3702==='PENDIENTE')){
-      msg.innerHTML='<div class="aviso">⚠️ El string de CONFIG.proyecto_3702 sigue como "PENDIENTE" (parámetro abierto). Se usará "3702" tal cual; ajusta CONFIG cuando llegue la plantilla del 3702.</div>';
+    // D101: el string de proyecto se busca por CLAVE (`proyecto_` + prefijo), no con un ternario de dos
+    // valores: un proyecto nuevo solo necesita su fila en CONFIG, sin tocar código. Si falta o quedó en
+    // "PENDIENTE", se avisa con la causa EXACTA y se usa el número pelado (nunca se inventa el string).
+    const claveProy='proyecto_'+proyecto;
+    const proyectoCfg=String(cfg[claveProy]||'').trim();
+    const proyectoStr = (proyectoCfg && proyectoCfg!=='PENDIENTE') ? proyectoCfg : proyecto;
+    if(!proyectoCfg){
+      msg.innerHTML='<div class="aviso">⚠️ Falta <b>CONFIG.'+esc(claveProy)+'</b> en la hoja CONFIG: no hay string Navision para el proyecto '+esc(proyecto)+'. Se usará "'+esc(proyecto)+'" tal cual, que Navision NO reconoce. Agrega esa fila y vuelve a descargar.</div>';
+    } else if(proyectoCfg==='PENDIENTE'){
+      msg.innerHTML='<div class="aviso">⚠️ El string de <b>CONFIG.'+esc(claveProy)+'</b> sigue como "PENDIENTE" (parámetro abierto). Se usará "'+esc(proyecto)+'" tal cual; ajusta CONFIG cuando llegue la plantilla de ese proyecto.</div>';
     }
     // Lee la plantilla y saca el catálogo de Trabajadores de SU PROPIA hoja "Trabajadores" (string exacto
     // de Navision, columna A). El mapa de la plantilla manda sobre lo que traiga el backend (que en la
@@ -849,9 +1325,14 @@ async function generarExcel(proyecto){
     const catTrabajadores=Object.assign({}, data.catTrabajadores||{}, mapTrabajadoresDeWb(wb));
     const tipoJornada=tipoJornadaDeFecha(STATE.fecha, festivos);
     const avisosProyDefecto=[];
+    // D101: los AUSENTES no llevan CC, así que su proyecto sale del histórico de su cuadrilla
+    // (proyectoDefecto). El respaldo cuando esa cuadrilla no tiene histórico ya NO es "3701" fijo —eso
+    // mandaba a los ausentes de UF3 (o de cualquier área futura) al Parte de tierras—: se usa el
+    // proyecto mayoritario de las filas del propio día y, si tampoco hay, el que se está generando.
+    const proyRespaldo=proyectoMayoritario(data.filas||[]) || proyecto;
     const filasProyecto=(data.filas||[]).filter(f=>{
       if(f.presente==='Si') return String(f.proyecto||'')===proyecto;
-      const def=data.proyectoDefecto[f.cuadrilla] || '3701';
+      const def=data.proyectoDefecto[f.cuadrilla] || proyRespaldo;
       if(!data.proyectoDefecto[f.cuadrilla]) avisosProyDefecto.push(f.nombre);
       return def===proyecto;
     });
@@ -925,13 +1406,35 @@ async function generarExcel(proyecto){
   }
 }
 
+/* D99 — Refresca el caché de catálogos del backend (6 h) y recarga el día. Solo hace falta tras editar
+ * el Sheet A MANO (CAT_CC, CAT_MOTIVOS, CC_USADOS, CONFIG, TURNOS, estado/área de CUADRILLAS): lo que
+ * se cambia desde la app ya invalida su hoja sola. Si el Apps Script no está redesplegado, el endpoint
+ * no existe y se avisa con la causa exacta en vez de fallar en silencio. */
+async function refrescarCatalogos(btn){
+  const msg=document.getElementById('cacheMsg');
+  if(btn) btn.disabled=true;
+  if(msg) msg.textContent='⏳ Refrescando…';
+  try{
+    const data=await perfFetch('cache_reset', `${APPS_SCRIPT_URL}?action=cache_reset&usuario=${encodeURIComponent(STATE.usuario)}`);
+    if(!data.ok) throw new Error(data.error||'cache_reset');
+    if(!data.hojas) throw new Error('El Apps Script todavía no tiene el refresco de catálogos. Redespliega CodigoAsistencias.gs (editar implementación → versión nueva, misma URL).');
+    if(msg) msg.textContent='✓ Catálogos releídos del Sheet.';
+    STATE.exportCache={}; STATE.personal=null;
+    cargarResumen();
+  }catch(err){
+    if(msg) msg.textContent='⚠️ '+(err.message||err);
+  }finally{ if(btn) btn.disabled=false; }
+}
+
 /* ================= GESTIÓN DE PERSONAL (solo residente/admin) ================= */
 async function cargarPersonal(){
   const body=document.getElementById('gestionBody');
   body.innerHTML='<p style="color:var(--muted);font-size:13px;">⏳ Cargando…</p>';
   try{
-    const resp=await fetch(`${APPS_SCRIPT_URL}?action=personal&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`);
-    const data=await resp.json();
+    perfReset();
+    const data=await perfFetch('personal (gestión)',
+      `${APPS_SCRIPT_URL}?action=personal&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`);
+    perfTabla('gestión de personal');
     if(!data.ok) throw new Error(data.error||'personal');
     STATE.personal=data;
     renderPersonal();
@@ -987,10 +1490,14 @@ function renderPersonalTabla(){
   h+='</tbody></table></div>';
   wrap.innerHTML=h;
 }
+// (POST de gestión de personal — mismo contrato de siempre, ahora cronometrado con DEBUG_PERF.)
 async function postPersonal(payload){
   payload.action='personal'; payload.usuario=STATE.usuario;
-  const resp=await fetch(APPS_SCRIPT_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(payload) });
-  return resp.json();
+  perfReset();
+  const data=await perfFetch('personal ('+(payload.op||'op')+')', APPS_SCRIPT_URL,
+    { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body:JSON.stringify(payload) });
+  perfTabla('gestión de personal · '+(payload.op||''));
+  return data;
 }
 async function altaPersona(){
   const codigo=document.getElementById('altaCodigo').value.trim();

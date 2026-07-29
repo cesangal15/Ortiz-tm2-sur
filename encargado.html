@@ -54,8 +54,9 @@
   .li-act{font-size:13px;font-weight:600;}
   .li-sub{font-size:11px;color:var(--muted);margin-top:2px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
   .li-dest{font-size:10.5px;color:var(--accent);margin-top:2px;opacity:0.85;}
+  .li-nota{font-size:10.5px;color:var(--muted);margin-top:2px;font-style:italic;}   /* D103: nota del capataz por actividad */
   .conf-dest{width:auto;font-size:11px;padding:3px 26px 3px 8px;margin-left:4px;background-position:right 8px center;}
-  /* D88 — resolución del subtramo + selector de corrección por línea */
+  /* D104 — resolución del subtramo + selector de corrección por línea */
   .li-tramo{font-size:10.5px;color:var(--muted);margin-top:3px;line-height:1.5;}
   .li-tramo .res{color:var(--text);opacity:.9;}
   .li-tramo .auto{color:var(--muted);font-size:9.5px;}
@@ -183,8 +184,8 @@ function buildElemento(pki,pkf){
   const b=pkNorm(fin); return b? ('tm2 pk '+a+' - '+b) : ('tm2 pk '+a);
 }
 
-/* ===================== D88 — SUBTRAMO: resolución visible + corrección del residente =====================
- * El jefe trabaja con SUBTRAMOS (los liberados). Hasta D88 el residente no veía a qué subtramo iba a
+/* ===================== D104 — SUBTRAMO: resolución visible + corrección del residente =====================
+ * El jefe trabaja con SUBTRAMOS (los liberados). Hasta D104 el residente no veía a qué subtramo iba a
  * caer una línea hasta encontrarla en DATA: ese era el hueco. Aquí se muestra la resolución bajo cada
  * línea y se deja corregirla antes de enviar.
  * La resolución de abajo es un ESPEJO EXACTO del cruce del backend (`lookupElemento` en Codigo.gs):
@@ -267,7 +268,7 @@ function avisoSubtramo(c){
   }
   return avisos.length ? ('⚠ Revisar subtramo: '+avisos.join(' · ')) : '';
 }
-/* Fija el subtramo de una línea. Espejo del override del backend (`elemento_forzado`, D88):
+/* Fija el subtramo de una línea. Espejo del override del backend (`elemento_forzado`, D104):
  *  · elegir el automático -> se BORRA el campo (la línea viaja sin él y el backend resuelve solo).
  *  · elegir otro -> se guarda el ELEMENTO verbatim y se re-derivan UF/proyecto/CC desde el ABS INICIO
  *    de ese subtramo (D04/D63b), para que el badge, los totales y el WhatsApp queden coherentes con
@@ -356,7 +357,7 @@ async function consultar(){
     // sus residentes en residente-drenajes.html y no deben aparecer (ni enviarse) desde aquí.
     let url=`${APPS_SCRIPT_URL}?action=bandeja&fecha=${fecha}&area=tierras`;
     if(proyecto) url+=`&proyecto=${encodeURIComponent(proyecto)}`;
-    // D88: el catálogo de subtramos (?action=tramos) se pide en paralelo con la bandeja; es estable,
+    // D104: el catálogo de subtramos (?action=tramos) se pide en paralelo con la bandeja; es estable,
     // así que solo se descarga la primera consulta. Si falla, el panel funciona igual y el bloque de
     // subtramo simplemente no se muestra (el backend sigue resolviendo solo).
     const [resp] = await Promise.all([fetch(url), loadTramos()]);
@@ -400,6 +401,7 @@ function categoria(c){
 const ORDEN_CAT=['Excavación aprovechable','Excavación préstamo','Excavación no aprovechable','Conformación / ZODME','Terraplén','Subbase','Base / BTC','Riego de imprimación','Desmonte y limpieza','Estructuras / MSR','Otras actividades'];
 const SPLIT_UF=['Terraplén','Subbase','Base / BTC'];
 function fmt(n){ return (Math.round(n*100)/100).toLocaleString('es-CO'); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
 function calcTotales(){
   const t={};
@@ -423,6 +425,33 @@ function esDerivadaDescapote(c){ return /orig:descapote\/desmonte/i.test(c.obser
 // "→" (ej. "Masivo 2 · 36 viajes · → Terraplén 300 · Puente 150 m³"). Indicativo: explica a dónde se
 // envió lo excavado (los m³ que no aparecen en terraplén fueron a puente/ODL/ODT o al botadero).
 function destinosDe(c){ const m=/→\s*(.+)$/.exec(c.observacion||''); return m ? m[1].trim() : ''; }
+/* D103 — nota MANUAL de una línea: lo que el capataz escribió en "Observación" de esa actividad.
+ * La columna `observacion` de BANDEJA/DATA carga además sellos AUTOMÁTICOS que no son notas y que ya
+ * tienen su lugar en el mensaje o en el panel, así que se descartan:
+ *   · toda la observación de la chequeadora (es armada por el formulario: "Masivo 2 · 36 viajes · → …",
+ *     D67; el destino ya sale compacto entre paréntesis por D80),
+ *   · las filas ZODME automáticas ("Auto · secuencial a no aprovechable", D17/D58),
+ *   · las filas selladas 'orig:descapote/desmonte' (D58): son la no aprovechable DERIVADA del
+ *     descapote/desmonte y copian la nota de su fila madre, que ya la muestra — se evita el eco,
+ *   · el tramo "→ destinos" de la observación.
+ * Lo que queda es texto humano, y ese sí va al WhatsApp (paridad con la nota por actividad de drenajes). */
+function notaManual(c){
+  const obs=String(c.observacion||'').trim();
+  if(!obs) return '';
+  if(String(c.rol||'')==='chequeadora') return '';
+  if(/^auto\s*·/i.test(obs)) return '';
+  if(/orig:descapote\/desmonte/i.test(obs)) return '';
+  // el desglose de destinos va SIEMPRE al final, tras "→": se corta desde ahí (D67/D80)
+  return obs.split('→')[0].split('·').map(s=>s.trim())
+    .filter(s=> !!s)
+    .join(' · ');
+}
+/* Líneas "📝 nota" de un grupo de filas, con la sangría del bloque donde se insertan (WhatsApp). */
+function notasTxt(lines, ind){
+  let s='';
+  lines.forEach(c=>{ const n=notaManual(c); if(n) s+=ind+'📝 '+n+'\n'; });
+  return s;
+}
 // D80 (WhatsApp): destinos DISTINTOS de terraplén de una o varias líneas, sumados por tipo desde la
 // observación sellada por la chequeadora (D67). Devuelve "Puente 126 · ODT 50 m³" o '' si todo fue a
 // terraplén. Terraplén NO se menciona (es el destino normal y ya tiene su propia sección del mensaje);
@@ -611,6 +640,10 @@ function renderBandeja(){
         const ofiTag = (!c._control && c.rol==='chequeadora' && CAT_CONTROL_CAPATAZ.includes(cat)) ? `<span class="ofi-tag">oficial</span>` : '';
         const dest = destinosDe(c); // a dónde se envió el material excavado (indicativo, D67)
         const destLine = dest ? `<div class="li-dest">→ ${dest}</div>` : '';
+        // D103: la nota que escribió el capataz en esa actividad (sin los sellos automáticos), visible
+        // en el panel y ahora también en el WhatsApp.
+        const nota = notaManual(c);
+        const notaLine = nota ? `<div class="li-nota">📝 ${esc(nota)}</div>` : '';
         // D79: selector de DESTINO de la conformación (lo elige el residente): RCD → 3701/UF1,
         // ZODME → 3702/UF2. Define ELEMENTO/ABS/UF/proyecto de la fila en DATA (el backend los ancla).
         const confSel = (cat==='Conformación / ZODME')
@@ -621,7 +654,7 @@ function renderBandeja(){
         html+=`<div class="linea-item ${c._inc?'':'off'}${c._control?' control':''}${dupCls}" id="li_${idx}">
           <button class="tog ${c._inc?'on':'no'}" onclick="toggleInc(${idx})">${c._inc?'✓':'✕'}</button>
           <div class="li-main"><div class="li-act">${c.actividad||c.descripcion||''}${ofiTag}${ctrlTag}</div>
-          <div class="li-sub"><span class="src ${srcClass(c)}">${c.rol||'?'}·${c.reporta||'?'}</span> PK ${pk||'—'}${uf?` <span class="badge ${uf.toLowerCase()}">${uf}</span>`:''}${dupBadge}</div>${destLine}${confSel}${renderTramo(c,idx)}</div>
+          <div class="li-sub"><span class="src ${srcClass(c)}">${c.rol||'?'}·${c.reporta||'?'}</span> PK ${pk||'—'}${uf?` <span class="badge ${uf.toLowerCase()}">${uf}</span>`:''}${dupBadge}</div>${destLine}${notaLine}${confSel}${renderTramo(c,idx)}</div>
           <div class="li-largo"><input type="number" step="any" value="${c.largo}" onchange="editLargo(${idx},this.value)"></div>
           <div class="li-unit">${c.unidad||''}</div>
         </div>`;
@@ -768,7 +801,8 @@ function generarMensaje(){
       // Cambio 1: sin total en el encabezado (las actividades MSR mezclan unidades: M3/M2/UND/M).
       // Cambio 2: cada línea muestra el nombre de la actividad con su unidad propia, no el PK.
       msg+=`\n* *${cat}:\n`;
-      byCat[cat].forEach(c=>{ msg+=`${c.actividad||c.descripcion||'—'}  ${fmt(c.largo)} ${c.unidad}\n`; });
+      byCat[cat].forEach(c=>{ msg+=`${c.actividad||c.descripcion||'—'}  ${fmt(c.largo)} ${c.unidad}\n`;
+        msg+=notasTxt([c],'  '); });   // D103: nota del capataz bajo su actividad
     } else if(cat==='Excavación aprovechable' || cat==='Excavación préstamo'){
       // D80 (antes Cambio 3/D56): total en el encabezado + UNA línea por origen. La excavación ya es
       // una fila acumulada al PK del origen (D63), así que no se repite el PK debajo del origen ni se
@@ -787,8 +821,9 @@ function generarMensaje(){
         if(lines.length>1){   // varias líneas del mismo origen (caso raro): se detallan por PK
           lines.forEach(c=>{ const pk=c.pk_inicial+(c.pk_final?(' - '+c.pk_final):'');
             const ex1=destinosNoTerra([c]);
-            msg+=`    ${pk||'—'}  ${fmt(c.largo)} ${c.unidad}${ex1?` (${ex1})`:''}\n`; });
-        }
+            msg+=`    ${pk||'—'}  ${fmt(c.largo)} ${c.unidad}${ex1?` (${ex1})`:''}\n`;
+            msg+=notasTxt([c],'      '); });   // D103
+        } else msg+=notasTxt(lines,'    ');    // D103: nota del origen (la excavación de la chequeadora no trae)
       });
     } else {
       let head=`\n* *${cat}: ${fmt(o.total)} ${o.uni}`;
@@ -800,7 +835,8 @@ function generarMensaje(){
       byCat[cat].forEach(c=>{ const pk=c.pk_inicial+(c.pk_final?(' - '+c.pk_final):'');
         // D79: la conformación indica su DESTINO (RCD 15+800 / ZODME PK30) elegido por el residente.
         const confTag=(cat==='Conformación / ZODME'&&c.destino_conf)?(' · '+(c.destino_conf==='ZODME'?'ZODME PK30':'RCD 15+800')):'';
-        msg+=`${pk||'—'}  ${fmt(c.largo)} ${c.unidad}${confTag}\n`; });
+        msg+=`${pk||'—'}  ${fmt(c.largo)} ${c.unidad}${confTag}\n`;
+        msg+=notasTxt([c],'  '); });   // D103: nota del capataz bajo su actividad
     }
   });
   // Equipos: una línea por {máquina, capataz}, agregando sus apariciones del día (D46/D51).

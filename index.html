@@ -101,6 +101,22 @@ const USUARIOS = {
   'luzdary':  { clave: 'cheq2025', rol: 'chequeadora', redirige: 'seleccion-reporte.html' },
   // Módulo de Asistencias (D69): jeisson reporta operadores + resumen sin gestión de personal.
   'jeisson':  { clave: 'Oficial2026', rol: 'asistencia_plus', redirige: 'seleccion-reporte.html' },
+  // D88: `duvan` es el equivalente de jeisson para DRENAJES — asistencias y NADA más: REPORTA la
+  // asistencia de cualquier cuadrilla de ODT/ODL (elige la cuadrilla en el formulario, como el admin,
+  // pero acotado a esas dos áreas), revisa el resumen del día, completa faltantes, descarga el Excel
+  // Navision y gestiona personal de ODT+ODL. NO entra al panel ni al reporte de drenajes (eso es de
+  // `residente_dren`), por eso lleva un rol propio `asistencia_plus_dren` en vez de reutilizar
+  // `residente_dren` (los guards de esas pantallas van por rol). Doble deber → seleccion-reporte.html.
+  'duvan':    { clave: 'Oficial2026', rol: 'asistencia_plus_dren', areas: ['odt','odl'], redirige: 'seleccion-reporte.html' },
+  // D101: residente de UF3 (proyecto 3703) — asistencias y NADA más, mismo molde que duvan. REPORTA la
+  // asistencia de cualquier cuadrilla de UF3 (incluidos días anteriores: el formulario no tiene tope de
+  // fecha hacia atrás), revisa el resumen, completa faltantes, consulta ausencias, descarga el Excel
+  // Navision de 3703 y gestiona el personal de su área. Rol PROPIO `asistencia_plus_uf3` en vez de
+  // reutilizar `residente`: los guards de las pantallas de obra van por ROL, así queda imposible por
+  // construcción que entre a bandeja/DATA/maquinaria (mismo argumento de D88a). Esto NO es el sistema
+  // espejo de UF3 (backlog 3.5): es el canal de asistencias, y es reversible (marcar sus cuadrillas
+  // `estado=inactiva` y quitar esta línea). Clave placeholder por área (endurecimiento 2.21).
+  'residente_uf3': { clave: 'uf32026', rol: 'asistencia_plus_uf3', areas: ['uf3'], redirige: 'seleccion-reporte.html' },
   // Digitación de volquetas (D83, backlog 2.22): la digitadora pre-llena la BASE de transporte a
   // partir de VOLQUETAS y exporta; no ve el resto del sistema. Clave placeholder (endurecimiento 2.21).
   'digitadora': { clave: 'volquetas2026', rol: 'digitadora', redirige: 'digitadora.html' },
