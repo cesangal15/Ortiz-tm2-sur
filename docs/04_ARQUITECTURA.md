@@ -53,6 +53,8 @@
 │              `personal_ayudantes` · `turno_noche` · `nota_libre` (cols 25–28, D70)       │
 │  MAQUINARIA  equipos con producción individual (directo, sin aprobación); interno `area` │
 │              tras produccion_capataz_orig — drenajes = captura libre, a_captura=NO (D70) │
+│  OBSERVACIONES nota GENERAL del día, 1 fila por envío (tierras y drenajes, D103); col   │
+│              `area` sellada con las áreas de las líneas del reporte (D86); no a DATA    │
 │  VOLQUETAS   desglose por placa de la chequeadora (1 fila/placa, informativo; no a DATA) │
 │  CUBICAJE    catálogo placa→cubicaje (lo lee el backend; lo mantiene el usuario; D53/2.10)│
 │  DATA        oficial; A–T = espejo del maestro TM2; internas U+ (…area, clima D37)      │
@@ -71,7 +73,7 @@
 
 ## Flujo de captura (diario)
 
-1. **Capataz** entra → agrega N actividades. Por actividad: actividad específica → (sistema muestra ítem contractual, unidad, UF, CC) → PK → producción (campo adaptativo) → equipos (máquina, operador, horas; motivo si faltan horas) → observación.
+1. **Capataz** entra → agrega N actividades. Por actividad: actividad específica → (sistema muestra ítem contractual, unidad, UF, CC) → PK → producción (campo adaptativo) → equipos (máquina, operador, horas; motivo si faltan horas) → **nota de la actividad** (col `observacion`; va a DATA col S y, D103, sale como `📝` bajo su actividad en el WhatsApp del día) + **una nota general del día** por envío (`observacion_general` → hoja OBSERVACIONES).
 2. **Chequeadora** entra → fecha, origen → N líneas {PK destino, tipo destino (Terraplén·Puente·ODL·ODT·Botadero), bloque de placas} + maquinaria (excavadoras del origen). Pega el desglose por placa estilo WhatsApp; el sistema parsea placa+viajes, calcula el **volumen real de la línea = Σ(viajes×cubicaje)** leyendo la hoja CUBICAJE (D53 sobre D06). Placa no registrada → fallback **14 fijo** (D54) + flag (naranja + `cubicaje_origen`=default). Cada placa se guarda en VOLQUETAS con su cubicaje y m3_placa. **Excavación = por ORIGEN, acumulada (D63):** la excavación se registra DONDE SE HIZO EL CORTE = el origen, así que el reporte genera **UNA sola fila de excavación = Σ(volúmenes de todas las líneas)** al PK del origen (Masivo 2→19+800, Masivo 1→14+400, Diviso→21+500, todos ≤30→UF1/3701; Complementario/Otro→el PK que teclea la chequeadora), del que derivan PK/ELEMENTO/ABS/UF/PROYECTO/CC. El **terraplén NO cambia**: 1 fila por línea con destino=Terraplén, al PK de DESTINO. No aprovechable acumulada sigue disparando ZODME (D17). Las excavadoras reportadas van a MAQUINARIA con producción = total excavado del día **repartido en partes iguales** entre ellas (D54; el encargado reconcilia duplicados con el capataz, D51).
 3. Ambos envían → BANDEJA (+ MAQUINARIA). Confirmación real del servidor (cuenta de filas guardadas).
 
@@ -84,7 +86,9 @@
    **marcador de obra**, 147 puntuales `ODT*` de `?action=drenajes`; 07→ODL pide **PK** inicial/final
    o un marcador ODT si es descole). Por línea: **cantidad directa** en la unidad contractual +
    opcional {oficiales, ayudantes, turno de noche, nota libre} + opcional máquinas (texto libre). El
-   resumen en vivo agrupa por área.
+   resumen en vivo agrupa por área. **D103: además, UNA nota general del día para todo el envío**
+   (`observacion_general` → hoja OBSERVACIONES, sellada con las áreas de las líneas, D86; no a DATA),
+   igual que la del capataz de tierras — la nota libre POR línea se conserva tal cual.
 2. Envía a BANDEJA (+ MAQUINARIA con `a_captura=NO`) con confirmación real (D30). El área queda en
    la col `area` de BANDEJA (derivada del CC, por línea). Dos flujos válidos sin código extra (D84):
    mezclar ODT+ODL en un envío, o dos envíos el mismo día (BANDEJA acumula, D02).

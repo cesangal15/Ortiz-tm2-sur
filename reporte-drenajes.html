@@ -33,10 +33,11 @@
   label{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-bottom:5px;letter-spacing:0.5px;text-transform:uppercase;}
   label .req{color:var(--accent);margin-left:2px;}
   label .opt{color:var(--muted);font-weight:400;text-transform:none;letter-spacing:0;}
-  select,input[type="number"],input[type="text"],input[type="date"]{width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 14px;outline:none;transition:border-color 0.2s;appearance:none;}
+  select,input[type="number"],input[type="text"],input[type="date"],textarea{width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 14px;outline:none;transition:border-color 0.2s;appearance:none;}
+  textarea{resize:vertical;}
   input[type="date"]{color-scheme:dark;}
   select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a80a0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:36px;cursor:pointer;}
-  select:focus,input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,0.1);}
+  select:focus,input:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,0.1);}
   select option,optgroup{background:#1a1d27;}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
   .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
@@ -144,6 +145,17 @@
     <div id="cantidadesContainer"></div>
     <div class="empty-hint" id="cantEmpty" style="display:none;">Agrega las actividades ejecutadas hoy</div>
     <button class="btn-add" id="btnAddLinea" onclick="addLinea()" style="display:none;">+ Agregar actividad</button>
+  </div>
+  <!-- Notas generales del día (D103): una por envío, del día completo — NO de una actividad. Va a la hoja
+       OBSERVACIONES (sellada con el área de las líneas, D86) y sale en el panel y el WhatsApp del
+       residente de drenajes. Las notas POR actividad siguen en cada línea (nota_libre). -->
+  <div class="card">
+    <div class="section-title">Notas generales del día</div>
+    <div class="field">
+      <label>Nota del día <span class="opt">(opcional)</span></label>
+      <textarea id="obsGeneral" rows="3" placeholder="ej. llegó el acero de la ODT 18+300; el frente de ODL paró 2h por lluvia" oninput="refreshAll()"></textarea>
+      <div class="item-hint" style="display:block;">Novedades del día completo (clima, materiales, retrasos). No va a DATA: solo al panel y al WhatsApp del residente.</div>
+    </div>
   </div>
   <div class="resumen-card" id="resumenCard" style="display:none;">
     <div class="section-title">Resumen a enviar</div>
@@ -500,6 +512,11 @@ function refreshCounts(){
   refreshAll();
 }
 function refreshAll(){ updateResumen(); }
+/* D103 — nota GENERAL del día (una por envío). Distinta de la `nota_libre` de cada actividad: esa
+ * explica una línea, esta el día completo. Viaja como `observacion_general` y el backend la guarda en
+ * OBSERVACIONES sellada con el área de las líneas del reporte (areasDeReporte, D86), así que el panel
+ * y el WhatsApp de ODT/ODL la muestran y las de tierras no se mezclan. Nunca va a DATA. */
+function obsGeneral(){ const el=document.getElementById('obsGeneral'); return el ? (el.value||'').trim() : ''; }
 
 function updateResumen(){
   const lineas=document.querySelectorAll('#cantidadesContainer .linea');
@@ -551,6 +568,10 @@ function updateResumen(){
   } else {
     html = grupos.odt.concat(grupos.odl, grupos['']).join('');
   }
+  // D103: la nota general del día se muestra aparte de las líneas (es del envío completo, no de una actividad)
+  const obsGen=obsGeneral();
+  if(obsGen) html+='<div class="resumen-row"><div class="resumen-act">📝 Nota general del día</div>'
+    +'<div class="resumen-pk">'+esc(obsGen)+'</div></div>';
   html+='<div class="resumen-footer"><span><b>'+lineas.length+'</b> actividad'+(lineas.length!==1?'es':'')+' · <b>'+nMaq+'</b> máquina'+(nMaq!==1?'s':'')+'</span>'
     +(warnings?'<span style="color:var(--accent)">⚠ '+warnings+' campo'+(warnings!==1?'s':'')+' incompleto'+(warnings!==1?'s':'')+'</span>':'<span style="color:var(--success)">✓ listo para enviar</span>')+'</div>';
   body.innerHTML=html;
@@ -647,10 +668,14 @@ async function submitForm(){
   let exito=false;
   const btn=document.getElementById('btnSubmit'); btn.textContent='ENVIANDO...'; btn.disabled=true;
   // D82: id_registro por fila generados EN EL CLIENTE (dedupe de reenvíos en Codigo.gs)
-  const data={ fecha:document.getElementById('fechaReporte').value,
+  // D103: `id_reporte` (uno por envío) + `observacion_general` — el backend deduplica la nota general
+  // por ese id, así que un reenvío desde la cola offline no la duplica en OBSERVACIONES.
+  const data={ id_reporte:TM2Offline.uuid(),
+    fecha:document.getElementById('fechaReporte').value,
     rol:localStorage.getItem('rol')||('capataz_'+AREA),
     capataz:localStorage.getItem('usuario')||('capataz_'+AREA),
-    cantidades:getCantidades() };
+    cantidades:getCantidades(),
+    observacion_general:obsGeneral() };
   // confirmación real del servidor (D30) con rama offline (D82): intento directo con timeout ~15 s;
   // si no hay red / no responde, el payload EXACTO va a la cola local
   const r=await TM2Offline.enviarConCola({ tipo:'reporte', url:APPS_SCRIPT_URL, payload:data, fecha_obra:data.fecha, usuario:data.capataz });
@@ -672,6 +697,7 @@ async function submitForm(){
 }
 function resetForm(){
   document.getElementById('cantidadesContainer').innerHTML=''; lineaIdx=0;
+  document.getElementById('obsGeneral').value='';   // D103
   document.getElementById('successScreen').classList.remove('visible');
   document.getElementById('formMain').classList.remove('hidden');
   document.getElementById('submitBar').classList.remove('hidden');
