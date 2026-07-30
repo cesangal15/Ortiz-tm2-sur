@@ -63,10 +63,13 @@
   .li-tramo .forz{color:var(--accent);font-weight:600;}
   .tramo-warn{display:block;font-size:10px;color:var(--accent);background:rgba(245,166,35,0.08);
     border:1px solid rgba(245,166,35,0.35);border-radius:6px;padding:3px 8px;margin-top:3px;}
-  .tramo-pick{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin-top:3px;}
-  .tramo-q{width:96px;font-size:10.5px;padding:3px 8px;}
+  .tramo-pick{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:3px;}
   .tramo-sel{width:auto;max-width:100%;font-size:11px;padding:3px 26px 3px 8px;background-position:right 8px center;}
   .tramo-sel.forzado{border-color:var(--accent);color:var(--accent);}
+  /* "cambiar" / "volver al automático": enlace discreto, sin peso visual de botón */
+  .tramo-link{background:none;border:none;padding:0 0 0 6px;color:var(--muted);font-family:'DM Sans',sans-serif;
+    font-size:10.5px;text-decoration:underline;cursor:pointer;}
+  .tramo-link:hover{color:var(--accent);}
   .src{font-size:10px;font-weight:600;padding:1px 7px;border-radius:12px;border:1px solid var(--border);}
   .src.cap{border-color:rgba(245,166,35,0.4);color:var(--accent);}
   .src.cheq{border-color:rgba(58,155,220,0.4);color:var(--uf1);}
@@ -294,41 +297,50 @@ function setSubtramoObj(c, elemento){
   c.elemento_forzado=t.elemento;                     // string verbatim de la celda J de la BASE
   aplicarUbicacion(c, t.abs_inicio);
 }
-function setSubtramo(idx, elemento){ setSubtramoObj(STATE.cantidades[idx], elemento); render(); }
-// Buscador del selector: filtra las opciones de ESA línea sin re-renderizar la pantalla (si se
-// re-renderizara, el input perdería el foco en cada tecla).
-function filtrarTramos(idx, q){
-  const sel=document.getElementById('tramoSel_'+idx);
-  if(!sel) return;
+function setSubtramo(idx, elemento){
   const c=STATE.cantidades[idx];
-  const actual=(subtramoDe(c)||{}).elemento||'';
-  sel.innerHTML=opcionesTramo(c, String(q||'').trim().toUpperCase(), actual);
+  c._tramoOpen=true;                                  // al corregir, el selector queda a la vista
+  setSubtramoObj(c, elemento);
+  render();
 }
-// Opciones del selector: primero los 3 sugeridos (anterior · automático · siguiente) y luego la lista
-// completa ordenada por abscisa. Con búsqueda activa se muestra solo lo que calza.
-function opcionesTramo(c, filtro, actual){
+function toggleTramo(idx){ const c=STATE.cantidades[idx]; c._tramoOpen=!c._tramoOpen; render(); }
+/* Opciones del selector (D104). SIN buscador propio, a propósito: la lista nativa YA trae búsqueda
+ * por teclado (con el desplegable abierto, teclear "14" salta a los que empiezan por 14), así que la
+ * cajita que había antes no aportaba nada y sí generaba dos problemas reportados por el usuario:
+ * ocupaba media línea de pantalla y, al escribir con el desplegable CERRADO, sólo se veía el renglón
+ * colapsado (parecía que "mostraba una sola opción"). Peor: al filtrar se reemplazaban las <option>,
+ * y si la seleccionada desaparecía del filtro el navegador cambiaba el valor mostrado sin disparar
+ * onchange — el renglón podía acabar enseñando un subtramo distinto del guardado.
+ * Se conserva el grupo "Sugeridos" (anterior · automático · siguiente) porque el error típico es de
+ * UN subtramo (la frontera), así que la corrección más común queda arriba sin tener que desplazarse.
+ * `selected` se marca SOLO en la lista completa: si se marcara en ambos grupos el navegador tomaría
+ * el último y el renglón colapsado mostraría una entrada distinta de la que se ve resaltada. */
+function opcionesTramo(c, actual){
   const auto=resolverSubtramo(c);
   const i=auto ? TRAMOS.indexOf(auto) : -1;
-  const op=t=>`<option value="${String(t.elemento).replace(/"/g,'&quot;')}" ${normTramo(t.elemento)===normTramo(actual)?'selected':''}>${t.pk}</option>`;
+  const val=t=>String(t.elemento).replace(/"/g,'&quot;');
   let html='';
-  if(!filtro){
-    const sug=[];
-    if(i>0) sug.push({t:TRAMOS[i-1], lbl:'anterior'});
-    if(auto) sug.push({t:auto, lbl:'automático'});
-    if(i>=0 && i<TRAMOS.length-1) sug.push({t:TRAMOS[i+1], lbl:'siguiente'});
-    if(sug.length){
-      html+='<optgroup label="Sugeridos">';
-      sug.forEach(s=>{ html+=`<option value="${String(s.t.elemento).replace(/"/g,'&quot;')}" ${normTramo(s.t.elemento)===normTramo(actual)?'selected':''}>${s.t.pk} · ${s.lbl}</option>`; });
-      html+='</optgroup>';
-    }
+  const sug=[];
+  if(i>0) sug.push({t:TRAMOS[i-1], lbl:'anterior'});
+  if(auto) sug.push({t:auto, lbl:'automático'});
+  if(i>=0 && i<TRAMOS.length-1) sug.push({t:TRAMOS[i+1], lbl:'siguiente'});
+  if(sug.length){
+    html+='<optgroup label="Sugeridos">';
+    sug.forEach(s=>{ html+=`<option value="${val(s.t)}">${s.t.pk} · ${s.lbl}</option>`; });
+    html+='</optgroup>';
   }
-  const lista=filtro ? TRAMOS.filter(t=>normTramo(t.pk).indexOf(filtro)>=0 || normTramo(t.elemento).indexOf(filtro)>=0) : TRAMOS;
-  html+=`<optgroup label="${filtro?('Coincidencias ('+lista.length+')'):'Todos los subtramos'}">`;
-  html+=lista.map(op).join('');
+  html+='<optgroup label="Todos los subtramos">';
+  html+=TRAMOS.map(t=>`<option value="${val(t)}" ${normTramo(t.elemento)===normTramo(actual)?'selected':''}>${t.pk}</option>`).join('');
   html+='</optgroup>';
   return html;
 }
-// Bloque bajo la línea: resolución en texto pequeño + aviso (si aplica) + selector de corrección.
+/* Bloque bajo la línea (D104). COMPACTO por defecto: una sola línea de texto con la resolución, que
+ * es lo que de verdad hacía falta ver (a qué subtramo va a caer la línea antes de que llegue a DATA).
+ * El SELECTOR está plegado, porque corregir el subtramo es la excepción, no la norma — tenerlo
+ * desplegado en todas las líneas saturaba la pantalla sin necesidad. Se despliega solo cuando:
+ *   · el residente toca "cambiar";
+ *   · hay un aviso ⚠ (ahí sí conviene tenerlo a mano); o
+ *   · la línea ya está corregida (para poder revertirla de un toque). */
 function renderTramo(c, idx){
   if(!esLineaTramo(c) || !TRAMOS.length) return '';
   const t=subtramoDe(c);
@@ -338,15 +350,15 @@ function renderTramo(c, idx){
     ? `<span class="${forzado?'forz':'res'}">${t.elemento}</span>${forzado?' <span class="auto">(corregido)</span>':''}`
     : `<span class="forz">sin subtramo — el PK queda fuera del eje (irá como REVISAR)</span>`;
   const aviso=avisoSubtramo(c);
-  return `<div class="li-tramo">PK ${pk||'—'} → ${destino}
-    ${aviso?`<span class="tramo-warn">${aviso}</span>`:''}
-    <div class="tramo-pick">
-      <span>Subtramo:</span>
-      <input class="tramo-q" type="text" placeholder="buscar…" oninput="filtrarTramos(${idx},this.value)">
-      <select class="tramo-sel${forzado?' forzado':''}" id="tramoSel_${idx}" onchange="setSubtramo(${idx},this.value)">
-        ${opcionesTramo(c,'',(t||{}).elemento||'')}
-      </select>
-    </div></div>`;
+  const abierto = c._tramoOpen || !!aviso || forzado;
+  const picker = abierto
+    ? `<div class="tramo-pick"><select class="tramo-sel${forzado?' forzado':''}" onchange="setSubtramo(${idx},this.value)">
+        ${opcionesTramo(c,(t||{}).elemento||'')}
+      </select>${forzado?`<button class="tramo-link" onclick="setSubtramo(${idx},'')">volver al automático</button>`:''}</div>`
+    : '';
+  const link = (abierto||aviso) ? '' : `<button class="tramo-link" onclick="toggleTramo(${idx})">cambiar</button>`;
+  return `<div class="li-tramo">PK ${pk||'—'} → ${destino}${link}
+    ${aviso?`<span class="tramo-warn">${aviso}</span>`:''}${picker}</div>`;
 }
 
 async function consultar(){

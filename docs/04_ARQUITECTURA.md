@@ -222,6 +222,9 @@ Navision combinado, **duvan=`['odt','odl']`** (D88: solo asistencias, sin panel 
 admin=`[]` sin filtro); los filtros usan `includes`. **Quién reporta qué cuadrilla** lo resuelve
 `cuadrillasDeUsuario`: por la columna `responsables` para capataces/mairy/jeisson, TODAS para `admin` y
 **todas las de sus áreas para `duvan` y `residente_uf3`** (D88/D101, sin mirar `responsables`); siempre solo las **activas**.
+**D105:** `duvan` tiene además su **cuadrilla propia `DUVAN`** (`area=odt`, `responsables=duvan`), el análogo de `OPERADORES`/`jeisson`
+para drenajes: es una fila más en CUADRILLAS —la rama de área ya la devuelve y la de `responsables` también la encontraría—, sin
+personal sembrado (lo asigna él por la gestión del resumen) y **sin una línea de código nuevo** (seed `backend/seeds/CUADRILLAS_dren_duvan.tsv`).
 **Proyecto por CC:** `proyectoFromCC` toma los 4 primeros dígitos del CC (genérico, nunca una lista de
 proyectos), y el generador Navision busca su string en **`CONFIG['proyecto_'+prefijo]`** — `proyecto_3701`,
 `proyecto_3702`, **`proyecto_3703`** (D101); si falta o dice `PENDIENTE`, avisa con la causa exacta y no
