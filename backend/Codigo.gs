@@ -1713,13 +1713,38 @@ function enviarData(body){
  */
 const AUTH_ESTRICTO = true;
 
+/* ¿Este proyecto EMITE tokens o solo los verifica? Solo hay UN emisor: el de obra, que es donde vive
+ * la hoja `USUARIOS` y donde ocurre el login. Importa porque las Propiedades del Script son POR
+ * PROYECTO, no globales: si el verificador se autogenerara su propio secreto, firmaría distinto que
+ * el emisor y rechazaría TODOS los tokens buenos. Por eso el emisor lo crea y el verificador exige
+ * que se lo hayan copiado — y si no está, lo dice con todas las letras en vez de inventarse uno. */
+const AUTH_EMISOR = true;
+
 function _authProps_(){ return PropertiesService.getScriptProperties(); }
-/* El secreto se genera solo la primera vez y NUNCA sale del servidor. Si algún día hay que rotarlo,
- * basta con borrar la propiedad `AUTH_SECRETO`: se regenera y todos los tokens dejan de valer. */
+/* El secreto NUNCA sale del servidor por la API. Para rotarlo: borrar la propiedad `AUTH_SECRETO` en
+ * los DOS proyectos y volver a copiarla; todos los tokens dejan de valer y la gente entra otra vez. */
 function authSecreto_(){
   const p=_authProps_(); let s=p.getProperty('AUTH_SECRETO');
-  if(!s){ s=Utilities.getUuid()+'-'+Utilities.getUuid(); p.setProperty('AUTH_SECRETO', s); }
+  if(!s){
+    if(!AUTH_EMISOR) return '';                       // verificador sin secreto: NO se inventa uno
+    s=Utilities.getUuid()+'-'+Utilities.getUuid(); p.setProperty('AUTH_SECRETO', s);
+  }
   return s;
+}
+/* Se ejecuta A MANO desde el editor del proyecto EMISOR (obra) para leer el secreto y copiarlo al de
+ * asistencias con `fijarSecretoAuth`. Es el único momento en que el secreto se mira. */
+function mostrarSecretoAuth(){
+  const s=authSecreto_();
+  Logger.log('AUTH_SECRETO = ' + s);
+  Logger.log('Cópialo y ejecuta fijarSecretoAuth("'+s+'") en el proyecto de Asistencias.');
+  return s;
+}
+/* Fija el secreto a mano (se usa en el proyecto VERIFICADOR). También sirve aquí para rotarlo. */
+function fijarSecretoAuth(valor){
+  const v=String(valor||'').trim();
+  if(v.length<20) throw new Error('El secreto llegó vacío o demasiado corto. Cópialo de mostrarSecretoAuth() en el proyecto de obra.');
+  _authProps_().setProperty('AUTH_SECRETO', v);
+  return 'AUTH_SECRETO fijado. Los tokens emitidos por el otro proyecto ya se validan aquí.';
 }
 function authVersion_(){ return String(_authProps_().getProperty('AUTH_V') || '1'); }
 function _b64url_(bytes){ return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/,''); }
@@ -1747,6 +1772,10 @@ function verificarToken_(tok){
  * sale del token; el resto del archivo puede seguir usando `usuario` como siempre porque los puntos de
  * entrada lo sobrescriben con este valor. */
 function sesion_(e, body){
+  // Diagnóstico explícito: sin secreto configurado NADA validaría, y el error genérico («vuelve a
+  // entrar») mandaría a todo el mundo a dar vueltas al login sin que nadie entienda qué pasa.
+  if(!authSecreto_()) return {ok:false, error:'El servidor no tiene configurado AUTH_SECRETO. '
+    + 'Ejecuta mostrarSecretoAuth() en el Apps Script de obra y fijarSecretoAuth("…") en este.'};
   const tok = (body && body.token) || (e && e.parameter && e.parameter.token) || '';
   const r = tok ? verificarToken_(tok) : {ok:false, error:'Falta el token de sesión. Vuelve a entrar.'};
   if(r.ok) return r;
