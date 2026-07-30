@@ -1018,6 +1018,7 @@ function doPost(e){
   _t0 = Date.now();   // D100: cronómetro de servidor también en las escrituras
   try{
     const body=JSON.parse(e.postData.contents);
+    if(body.action==='login') return login(body);                 // D107 (backlog 2.21)
     if(body.action==='enviar_data') return enviarData(body);
     if(body.action==='maquinaria_produccion') return maquinariaProduccionGuardar(body);
     return guardarReporte(body);
@@ -1666,6 +1667,131 @@ function enviarData(body){
     banSh.getRange(r._row, eCol+1).setValue(inc[r.id_registro]?'incluido':'descartado');
   });
   return json({ok:true, enviadas:rows.length, area:area});
+}
+
+/* ============ D107 — LOGIN VALIDADO EN EL BACKEND (backlog 2.21) ============
+ *
+ * EL PROBLEMA. Hasta ahora el mapa `USUARIOS` con las contraseñas EN CLARO vivía dentro de
+ * `index.html`. GitHub Pages sirve el archivo tal cual, así que cualquiera con la URL podía leer
+ * todas las claves del sistema con «ver código fuente». No hacía falta ni entrar.
+ *
+ * QUÉ ARREGLA Y QUÉ NO — dicho sin adornos, para que no se lea como más de lo que es:
+ *   · SÍ: las claves salen del archivo público. Pasan a la hoja privada `USUARIOS` de este Sheet.
+ *   · NO: esto NO convierte el sistema en autenticado. Los endpoints siguen abiertos a quien tenga la
+ *     URL del Apps Script, y quien sepa lo que hace puede escribir `rol: admin` en el almacenamiento
+ *     de su navegador. Blindar eso de verdad es un token en cada petición validado en los DOS
+ *     backends, y choca con la cola sin señal (un reporte encolado se envía horas después, con un
+ *     token que tendría que seguir siendo válido). Es otro proyecto; 2.21 no lo pide.
+ *
+ * LA HOJA `USUARIOS` (privada, solo el dueño del Sheet la ve):
+ *   usuario · clave · rol · areas · redirige · estado
+ *   · `clave` admite las dos formas y el login lo detecta solo: texto plano (para arrancar rápido) o
+ *     el hash SHA-256 de `usuario:clave` en hex (64 caracteres). `endurecerClaves()` convierte en el
+ *     sitio todo lo que esté en claro. El hash lleva el USUARIO dentro a propósito: dos personas con
+ *     la misma contraseña no producen el mismo hash.
+ *   · `areas` es la lista separada por comas (`odt,odl`) del campo opcional de D84.
+ *   · `estado` vacío o `activo` = puede entrar; cualquier otra cosa (p. ej. `inactivo`) lo bloquea
+ *     SIN borrar la fila — el equivalente al `estado` de CUADRILLAS (D84), para las salidas tipo UF3.
+ *
+ * LAS CLAVES NO SE SIEMBRAN DESDE EL CÓDIGO. `setupUsuarios()` crea la hoja con usuario/rol/areas/
+ * redirige (que no son secretos) y deja `clave` VACÍA a propósito: sembrarlas aquí las devolvería al
+ * repositorio, que es justo de lo que se trata salir. Se pegan a mano una vez y se corre
+ * `endurecerClaves()`.
+ *
+ * OFFLINE (D82) — el punto delicado. Como `start_url` del PWA es `index.html` y esa pantalla siempre
+ * pedía credenciales, mover la validación aquí dejaría a un capataz fuera en zona muerta. El frontend
+ * lo resuelve por su lado (reconoce la sesión guardada y recuerda un hash local tras el primer login
+ * CON señal); este endpoint no tiene estado y no necesita saber nada de eso.
+ */
+const USUARIOS_HEADERS = ['usuario','clave','rol','areas','redirige','estado'];
+
+// SHA-256 de `usuario:clave` en hex minúscula. El `& 0xff` es obligatorio: computeDigest devuelve
+// bytes CON SIGNO (-128..127) y sin la máscara los negativos salen como 'ffffffxx'.
+function hashClave_(usuario, clave){
+  const txt = String(usuario||'').trim().toLowerCase() + ':' + String(clave==null?'':clave);
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, txt, Utilities.Charset.UTF_8);
+  let hex='';
+  for (let i=0;i<bytes.length;i++) hex += ('0' + (bytes[i] & 0xff).toString(16)).slice(-2);
+  return hex;
+}
+const _ES_HASH = /^[0-9a-f]{64}$/;
+
+// POST {action:'login', usuario, clave} -> {ok, rol, areas, redirige} | {ok:false, error}
+function login(body){
+  const u = String(body.usuario||'').trim().toLowerCase();
+  const c = String(body.clave==null?'':body.clave);
+  if(!u || !c) return json({ok:false, error:'Faltan el usuario o la contraseña.'});
+  const filas = readSheet('USUARIOS').filter(function(r){ return String(r.usuario||'').trim().toLowerCase()===u; });
+  // Mensaje ÚNICO para usuario inexistente, clave mala o cuenta inactiva: si se distinguieran, la
+  // pantalla serviría para averiguar qué usuarios existen.
+  const malo = json({ok:false, error:'Usuario o contraseña incorrectos.'});
+  if(!filas.length) return malo;
+  const r = filas[0];
+  const estado = String(r.estado||'').trim().toLowerCase();
+  if(estado && estado!=='activo') return malo;
+  const guardada = String(r.clave==null?'':r.clave).trim();
+  if(!guardada) return malo;                                  // fila sin clave cargada todavía
+  const ok = _ES_HASH.test(guardada) ? (hashClave_(u, c)===guardada) : (guardada===c);
+  if(!ok) return malo;
+  const areas = String(r.areas||'').split(',').map(function(x){ return x.trim().toLowerCase(); }).filter(Boolean);
+  return json({ ok:true, usuario:u, rol:String(r.rol||'').trim(),
+                areas:areas, redirige:String(r.redirige||'').trim() || 'menu.html' });
+}
+
+/* Se ejecuta UNA VEZ desde el editor. Crea `USUARIOS` con la plantilla de roles/redirecciones/áreas
+ * —que no son secretos— y la columna `clave` VACÍA. Si la hoja ya tiene filas, no toca nada.
+ * Después: pegar las contraseñas a mano en la columna `clave` y ejecutar `endurecerClaves()`. */
+function setupUsuarios(){
+  const sh=getSheet('USUARIOS', USUARIOS_HEADERS);
+  if(sh.getLastRow()>1){ Logger.log('USUARIOS ya tiene datos: no se toca nada.'); return; }
+  const filas=[
+    ['admin','','admin','','menu.html','activo'],
+    ['encargado','','encargado','','encargado.html','activo'],
+    ['residente','','residente','','residente.html','activo'],
+    ['jefe','','jefe','','jefe.html','activo'],
+    ['angel','','capataz','','seleccion-reporte.html','activo'],
+    ['alejo','','capataz','','seleccion-reporte.html','activo'],
+    ['robinson','','capataz','','seleccion-reporte.html','activo'],
+    ['mauricio','','capataz_odt','odt,odl','seleccion-reporte.html','activo'],
+    ['eduardo','','capataz_odt','odt,odl','seleccion-reporte.html','activo'],
+    ['enrique','','capataz_odt','odt,odl','seleccion-reporte.html','activo'],
+    ['jairo','','capataz_odl','odt,odl','seleccion-reporte.html','activo'],
+    ['residente_dren','','residente_dren','','seleccion-reporte.html','activo'],
+    ['maleja','','chequeadora','','seleccion-reporte.html','activo'],
+    ['mairy','','chequeadora','','seleccion-reporte.html','activo'],
+    ['maria','','chequeadora','','reporte-chequeadora.html','activo'],
+    ['luzdary','','chequeadora','','seleccion-reporte.html','activo'],
+    ['jeisson','','asistencia_plus','','seleccion-reporte.html','activo'],
+    ['duvan','','asistencia_plus_dren','odt,odl','seleccion-reporte.html','activo'],
+    ['residente_uf3','','asistencia_plus_uf3','uf3','seleccion-reporte.html','activo'],
+    ['digitadora','','digitadora','','digitadora.html','activo']
+  ];
+  ensureRows_(sh, filas.length);
+  sh.getRange(2,1,filas.length,USUARIOS_HEADERS.length).setValues(filas);
+  invalidarHoja_('USUARIOS');
+  Logger.log('USUARIOS creada con '+filas.length+' filas y la columna `clave` VACÍA. '
+    +'Pega las contraseñas en la columna B y ejecuta endurecerClaves().');
+}
+
+/* Convierte a hash SHA-256 toda `clave` que esté en texto plano. Idempotente: lo que ya es hash se
+ * deja igual, así que se puede correr las veces que haga falta (p. ej. tras cambiarle la clave a
+ * alguien). Escribe SOLO la columna `clave`. */
+function endurecerClaves(){
+  const sh=getSheet('USUARIOS', USUARIOS_HEADERS);
+  const last=sh.getLastRow();
+  if(last<2){ Logger.log('USUARIOS vacía.'); return 0; }
+  const uCol=USUARIOS_HEADERS.indexOf('usuario')+1, cCol=USUARIOS_HEADERS.indexOf('clave')+1;
+  const v=leerRango_(sh,2,1,last-1,USUARIOS_HEADERS.length);
+  let n=0;
+  for(let i=0;i<v.length;i++){
+    const u=String(v[i][uCol-1]||'').trim(), c=String(v[i][cCol-1]==null?'':v[i][cCol-1]).trim();
+    if(!u || !c || _ES_HASH.test(c)) continue;                 // vacía o ya endurecida
+    sh.getRange(i+2, cCol).setValue(hashClave_(u, c));
+    n++;
+  }
+  invalidarHoja_('USUARIOS');
+  Logger.log('Claves endurecidas: '+n+'. Las que ya eran hash se dejaron igual.');
+  return n;
 }
 
 /* ---------- debug ---------- */
