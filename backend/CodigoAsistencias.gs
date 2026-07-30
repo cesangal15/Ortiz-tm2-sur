@@ -579,6 +579,88 @@ function leerFilasPorFecha_(nombreHoja, desdeISO, hastaISO){
   return (_memoRango[clave] = out);
 }
 
+/* ============ D106 — ESCRITURA QUIRÚRGICA (backlog 4.11: la otra mitad de D102) ============
+ *
+ * EL PROBLEMA. D102 acotó las LECTURAS por fecha, pero dejó las escrituras intactas y lo dijo por
+ * escrito: `guardarAsistencia` y `guardarIndividual` hacían `clearContents()` de TODA la hoja y la
+ * reescribían entera. Con 17 columnas eso son **17·N celdas leídas + 17·N escritas por cada envío**:
+ * ~306.000 + ~306.000 con 2,4 meses de histórico, ~1,3 M + 1,3 M con un año. Y no es un envío al día:
+ * son ~11 cuadrillas MÁS cada clic de "Completar faltantes" y cada corrección del detalle — corregirle
+ * la hora a UNA persona reescribía las 18.000 filas.
+ *
+ * EL DISEÑO, igual que el `enviar_data` de obra: en vez de reescribir, se BORRAN las filas que el
+ * upsert tiene que pisar y se AÑADEN las nuevas al final.
+ *   1) Localizar: se leen SOLO las columnas que deciden (fecha+cuadrilla, o fecha+codigo+cedula), en
+ *      UN bloque contiguo. Son 3 y 5 de 17 columnas.
+ *   2) Borrar: las filas se agrupan en tramos contiguos y cada tramo sale con UN `deleteRows`. El
+ *      bloque de una cuadrilla se escribe junto, así que en la práctica es 1 llamada.
+ *   3) Añadir: las nuevas al final, con `ensureRows_` (D93) delante.
+ *
+ * LO QUE NO CAMBIA — verificado punto por punto antes de tocar nada:
+ *   · **Pisado D03.** Se borra exactamente el mismo conjunto que antes quedaba fuera del `keep`: el
+ *     predicado es el mismo, solo que ahora decide sobre 3 columnas en vez de sobre las 17.
+ *   · **Idempotencia offline D82.** Reenviar el mismo payload borra el bloque recién escrito y vuelve
+ *     a escribir lo mismo. Sigue sin necesitar UUID ni dedupe, igual que antes.
+ *   · **Orden de las filas.** Antes era `keep + nuevas` (las nuevas al final); ahora es exactamente lo
+ *     mismo, porque borrar cierra el hueco y las nuevas van al final de la hoja.
+ *   · **Compacidad.** `deleteRows` sube las filas de abajo, así que la hoja no queda con huecos y el
+ *     agrupamiento por bloques de D102 sigue siendo tan eficiente como antes.
+ *
+ * LO QUE SÍ MEJORA DE PROPINA: la hoja deja de barajarse entera en cada envío. Editar el Sheet a mano
+ * mientras alguien reporta deja de ser una ruleta (las filas ya no se mueven bajo el cursor).
+ */
+
+// Nº de filas de más que se toleran dentro de un mismo `deleteRows`. A diferencia de la LECTURA, aquí
+// un hueco NO se puede absorber: borraríamos filas de otro día. Por eso los tramos son estrictamente
+// contiguos y esta constante no existe. (Nota deliberada para quien venga a "optimizar" esto.)
+
+/**
+ * Localiza los números de fila REALES que cumplen un predicado, leyendo solo las columnas necesarias.
+ * `campos` = nombres de columna del encabezado; se lee el bloque contiguo que las cubre a todas.
+ * `pred(v)` recibe un objeto {campo: valor} y devuelve true si esa fila hay que borrarla.
+ */
+function localizarFilas_(sh, headers, campos, pred){
+  const last=sh.getLastRow();
+  if(last<=1) return [];
+  const idx=campos.map(function(c){ return headers.indexOf(c); });
+  if(idx.some(function(i){ return i<0; })) throw new Error('localizarFilas_: columna inexistente en '+campos.join(','));
+  const desdeCol=Math.min.apply(null, idx)+1, hastaCol=Math.max.apply(null, idx)+1;
+  const ancho=Math.min(hastaCol-desdeCol+1, sh.getMaxColumns()-desdeCol+1);
+  const v=leerRango_(sh, 2, desdeCol, last-1, ancho);
+  const out=[];
+  for(let i=0;i<v.length;i++){
+    const o={};
+    // idx[k] es 0-based y desdeCol 1-based: el desplazamiento dentro del bloque leído es idx[k]-(desdeCol-1).
+    for(let k=0;k<campos.length;k++) o[campos[k]]=v[i][idx[k]-desdeCol+1];
+    if(pred(o)) out.push(i+2);            // número de fila real de la hoja
+  }
+  return out;
+}
+
+/**
+ * Borra las filas indicadas agrupándolas en tramos CONTIGUOS, de abajo hacia arriba (si se borrara de
+ * arriba hacia abajo, cada borrado correría los números de las siguientes). Devuelve cuántas borró.
+ */
+function borrarFilas_(sh, filas){
+  if(!filas || !filas.length) return 0;
+  const orden=filas.slice().sort(function(a,b){ return a-b; });
+  const tramos=[]; let ini=orden[0], prev=orden[0];
+  for(let i=1;i<orden.length;i++){
+    if(orden[i]!==prev+1){ tramos.push([ini,prev]); ini=orden[i]; }
+    prev=orden[i];
+  }
+  tramos.push([ini,prev]);
+  for(let t=tramos.length-1;t>=0;t--) sh.deleteRows(tramos[t][0], tramos[t][1]-tramos[t][0]+1);
+  return orden.length;
+}
+
+/** Añade filas al final de la hoja, con la guarda de capacidad de D93. */
+function anexarFilas_(sh, filas, need){
+  if(!filas.length) return;
+  ensureRows_(sh, filas.length);
+  sh.getRange(sh.getLastRow()+1, 1, filas.length, need).setValues(filas);
+}
+
 // Días de calendario que abarca [desde, hasta] (ambos inclusive), sin construir la lista. Aritmética
 // con Date local (Bogotá no tiene DST), mismo patrón que `diasDelRango`. Rango vacío o inválido ⇒ 0.
 function diasEntre_(desde, hasta){
@@ -1032,29 +1114,26 @@ function guardarIndividual(body){
   const ajena=(body.filas||[]).map(f=>String(f.cuadrilla||'')).filter(function(c,i,a){ return a.indexOf(c)===i; })
     .filter(function(c){ return !cuadrillaPermitidaPara(usuario, c); });
   if(ajena.length) return json({ok:false, error:'Esa cuadrilla no es de tu área: '+ajena.join(', ')});
-  const sh=getSheet('ASISTENCIA', ASISTENCIA_HEADERS), need=ASISTENCIA_HEADERS.length, last=sh.getLastRow();
-  let rows = last>1 ? leerRango_(sh,2,1,last-1,need) : [];
+  const sh=getSheet('ASISTENCIA', ASISTENCIA_HEADERS), need=ASISTENCIA_HEADERS.length;
   function keyOf(codigo,cedula){
     const c=String(codigo||'').trim();
     return c ? ('COD:'+c) : ('CED:'+String(cedula||'').trim());
   }
   const incoming=body.filas||[], keys={};
   incoming.forEach(f=>{ keys[keyOf(f.codigo,f.cedula)]=true; });
-  // quita la fila existente de ese día SOLO para las personas entrantes (col C=fecha, F=codigo, G=cedula)
-  rows = rows.filter(r=> !(fdate(r[2])===fecha && keys[keyOf(r[5], r[6])]));
   const nuevas=incoming.map(f=>[
     Utilities.getUuid(), ts, fecha, body.reporta||usuario, f.cuadrilla||'', f.codigo||'', f.cedula||'', f.nombre||'', f.cargo||'',
     f.cc||'', f.proyecto||'', f.hora_entrada||'', f.hora_salida||'',
     (f.presente===false||f.presente==='No')?'No':'Si', f.motivo_ausencia||'', f.observacion||'', f.turno||''
   ]);
-  const todas=rows.concat(nuevas);
-  sh.clearContents();
-  sh.getRange(1,1,1,need).setValues([ASISTENCIA_HEADERS]);
-  // D93: capacidad antes de la escritura en bloque. Va DESPUÉS del encabezado a propósito: tras el
-  // clearContents la hoja queda con getLastRow()=1 (el encabezado), así que ensureRows_ pide
-  // exactamente 1+todas.length filas — las que ocupa la reescritura completa.
-  if(todas.length){ ensureRows_(sh, todas.length);
-    sh.getRange(2,1,todas.length,need).setValues(todas); }
+  // D106: se borra la fila de ESE día SOLO de las personas entrantes y se anexan las nuevas al final.
+  // Predicado idéntico al `filter` que tenía antes (fecha + clave de persona); lo único que cambia es
+  // que se decide leyendo 5 columnas (fecha·codigo·cedula caen en el bloque 3–7) en vez de las 17.
+  const aBorrar=localizarFilas_(sh, ASISTENCIA_HEADERS, ['fecha','codigo','cedula'], function(o){
+    return fdate(o.fecha)===fecha && !!keys[keyOf(o.codigo, o.cedula)];
+  });
+  borrarFilas_(sh, aBorrar);
+  anexarFilas_(sh, nuevas, need);
   invalidarHoja_('ASISTENCIA');   // D99: la memoria de esta ejecución ya no refleja la hoja
   return json({ok:true, filas:nuevas.length});
 }
@@ -1287,24 +1366,19 @@ function guardarAsistencia(body){
     return json({ok:false, error:'Esa cuadrilla no es de tu área.'});
   const sh=getSheet('ASISTENCIA', ASISTENCIA_HEADERS);
   const need=ASISTENCIA_HEADERS.length;
-  const last=sh.getLastRow();
-  let keep=[];
-  if(last>1){
-    const v=leerRango_(sh,2,1,last-1,need);
-    keep=v.filter(row=> !(fdate(row[2])===fecha && String(row[4])===cuadrilla)); // col C fecha, col E cuadrilla
-  }
   const nuevas=(body.filas||[]).map(f=>[
     Utilities.getUuid(), ts, fecha, reporta, cuadrilla, f.codigo||'', f.cedula||'', f.nombre||'', f.cargo||'',
     f.cc||'', f.proyecto||'', f.hora_entrada||'', f.hora_salida||'',
     f.presente===false||f.presente==='No' ? 'No':'Si', f.motivo_ausencia||'', f.observacion||'', f.turno||''
   ]);
-  const todas=keep.concat(nuevas);
-  sh.clearContents();
-  sh.getRange(1,1,1,need).setValues([ASISTENCIA_HEADERS]);
-  // D93: capacidad antes de reescribir el bloque completo (ver nota en guardarIndividual: tras el
-  // clearContents + encabezado, getLastRow()=1, así que se piden 1+todas.length filas).
-  if(todas.length){ ensureRows_(sh, todas.length);
-    sh.getRange(2,1,todas.length,need).setValues(todas); }
+  // D106: borrado quirúrgico del bloque fecha+cuadrilla + anexo al final, en vez de reescribir la hoja
+  // entera. Mismo predicado que el `keep` de antes (col C fecha, col E cuadrilla), decidido leyendo
+  // solo el bloque de columnas 3–5 (fecha·reporta·cuadrilla) en vez de las 17.
+  const aBorrar=localizarFilas_(sh, ASISTENCIA_HEADERS, ['fecha','cuadrilla'], function(o){
+    return fdate(o.fecha)===fecha && String(o.cuadrilla)===cuadrilla;
+  });
+  borrarFilas_(sh, aBorrar);
+  anexarFilas_(sh, nuevas, need);
   invalidarHoja_('ASISTENCIA');   // D99
   // D74: nota libre del día por cuadrilla (pisa fecha+cuadrilla, igual que las filas).
   upsertNotaDia(fecha, cuadrilla, reporta, body.nota, ts);
