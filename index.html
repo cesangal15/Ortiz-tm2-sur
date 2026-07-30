@@ -44,7 +44,7 @@
     <h1>Reporte de Obra</h1>
     <p>Ingresa tus credenciales para continuar</p>
   </div>
-  <!-- D107: si ya hay sesión en este teléfono se ofrece continuar sin teclear nada. Es lo que hace
+  <!-- D108: si ya hay sesión en este teléfono se ofrece continuar sin teclear nada. Es lo que hace
        que el login del backend no rompa el modo sin conexión: el capataz abre la app y entra. -->
   <div id="sesionBox" style="display:none;">
     <button class="btn" id="btnSesion" onclick="continuarSesion()">CONTINUAR →</button>
@@ -66,7 +66,7 @@
   <div class="version">Sistema de Reporte v2.0</div>
 </div>
 <script>
-/* ============ D107 — LOGIN VALIDADO EN EL BACKEND (backlog 2.21) ============
+/* ============ D108 — LOGIN VALIDADO EN EL BACKEND (backlog 2.21) ============
  * Antes, este archivo llevaba dentro el mapa `USUARIOS` con TODAS las contraseñas en claro. Como
  * GitHub Pages sirve el archivo tal cual, se leían con «ver código fuente» sin siquiera entrar.
  * Ahora las claves viven en la hoja privada `USUARIOS` y las valida el Apps Script.
@@ -138,7 +138,7 @@ const REDIRIGE_POR_ROL = {
 function sesionGuardada(){
   const u=localStorage.getItem('usuario'), r=localStorage.getItem('rol');
   if(!u || !r) return null;
-  // D108: una sesión SIN token no sirve para nada — el backend rechaza todas sus llamadas. Pasa con
+  // D109: una sesión SIN token no sirve para nada — el backend rechaza todas sus llamadas. Pasa con
   // las sesiones que dejó la versión anterior (entonces no existían los tokens). En vez de dejar
   // "Continuar" y que la persona entre a una pantalla que falla en cada consulta, se pide el login
   // otra vez: es un único trámite y sale de ahí con token.
@@ -176,7 +176,7 @@ async function login(){
     if(!data || !data.ok){ document.getElementById('clave').value=''; verError((data&&data.error)||'Usuario o contraseña incorrectos'); return; }
     // Login bueno CON señal: se recuerda el hash para poder entrar sin señal la próxima vez.
     const h = await hashClave(u, c);
-    // D108: el token firmado se guarda junto a la credencial recordada, para que el ingreso SIN señal
+    // D109: el token firmado se guarda junto a la credencial recordada, para que el ingreso SIN señal
     // recupere también la sesión con la que hablar al backend cuando vuelva la cobertura.
     if(h) localStorage.setItem('cred_'+u, JSON.stringify({ h:h, rol:data.rol, areas:data.areas||[], redirige:data.redirige, token:data.token||'' }));
     if(data.token) TM2Auth.set(data.token);
@@ -188,7 +188,7 @@ async function login(){
       try{
         const g=JSON.parse(guardada), h=await hashClave(u,c);
         if(h && h===g.h){
-          if(g.token) TM2Auth.set(g.token);   // D108: se reusa el token del último ingreso con señal
+          if(g.token) TM2Auth.set(g.token);   // D109: se reusa el token del último ingreso con señal
           entrar({ usuario:u, rol:g.rol, areas:g.areas||[], redirige:g.redirige }); return;
         }
         document.getElementById('clave').value='';

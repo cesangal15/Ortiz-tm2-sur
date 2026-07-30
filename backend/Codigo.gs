@@ -174,7 +174,7 @@ const CUBICAJE_HEADERS = ['placa','cubicaje','tipo'];
  */
 var _t0 = null;
 /**
- * D106 — campo `_celdas` = celdas de Sheet LEÍDAS en esta ejecución (mismo instrumento que D102 puso
+ * D107 — campo `_celdas` = celdas de Sheet LEÍDAS en esta ejecución (mismo instrumento que D102 puso
  * en el módulo de Asistencias). Es el `_ms` del volumen: permite ver en campo si la lectura acotada
  * está entrando o si se cayó al respaldo, sin adivinar. Lo suma `leerRango_`, único punto por el que
  * pasa TODO `getValues` del archivo — por eso agregar una lectura nueva no lo puede desfasar.
@@ -186,7 +186,7 @@ function json(o){
   if(_t0 !== null && o && typeof o === 'object' && o._celdas === undefined) o._celdas = _celdas;
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
 }
-// D106 — ÚNICO punto de lectura del Sheet. Todo getValues pasa por aquí (ver `_celdas`).
+// D107 — ÚNICO punto de lectura del Sheet. Todo getValues pasa por aquí (ver `_celdas`).
 function leerRango_(sh, fila, col, nFilas, nCols){
   _celdas += nFilas * nCols;
   return sh.getRange(fila, col, nFilas, nCols).getValues();
@@ -199,7 +199,7 @@ function fdate(v){
   return String(v).slice(0,10);
 }
 function toDate(s){ const p=String(s||'').slice(0,10).split('-'); if(p.length<3) return ''; return new Date(Number(p[0]),Number(p[1])-1,Number(p[2])); }
-/* D105 — portero de fechas, gemelo del de CodigoAsistencias.gs (son dos proyectos separados, D69).
+/* D106 — portero de fechas, gemelo del de CodigoAsistencias.gs (son dos proyectos separados, D69).
  * `fdate` normaliza pero no valida: con vacío devuelve '' y con basura devuelve los 10 primeros
  * caracteres. Aquí eso terminaba en `toDate('')` = '' escrito en la col A de DATA, que es la columna
  * FECHA del maestro TM2 — una fila que se pega en el Excel sin fecha. Las capturas de obra ya validan
@@ -266,7 +266,7 @@ function ss_(){ if(!_ss) _ss = SpreadsheetApp.openById(SHEET_ID); return _ss; }
  * propósito —CUBICAJE lo mantiene el usuario a mano (D53)—, así que acotarlas sería una regresión.
  */
 var _memoHoja = {};
-/* D106 — invalida las DOS memorias: la de la hoja completa y la de las lecturas ACOTADAS por fecha.
+/* D107 — invalida las DOS memorias: la de la hoja completa y la de las lecturas ACOTADAS por fecha.
  * Si solo se borrara `_memoHoja`, una lectura acotada hecha ANTES de escribir seguiría sirviéndose de
  * `_memoRango` después de la escritura, en la misma ejecución, y devolvería datos viejos en silencio.
  * (`_memoRango` se declara más abajo, junto al lector; en Apps Script el `var` está izado, así que
@@ -289,7 +289,7 @@ function getSheet(name, headers){
   // auto-sana la fila de encabezados si no coincide con el esquema actual del código.
   // (tras el realineado de MAQUINARIA a Captura_Diaria, las filas con layout viejo quedan
   // con `fecha` ilegible y el filtro por fecha de la bandeja/estado las descarta solas.)
-  const cur=leerRango_(sh,1,1,1,need)[0];   // D106: pasa por el contador `_celdas`
+  const cur=leerRango_(sh,1,1,1,need)[0];   // D107: pasa por el contador `_celdas`
   let diff=false; for(let i=0;i<need;i++){ if(String(cur[i]||'')!==headers[i]){ diff=true; break; } }
   if(diff) sh.getRange(1,1,1,need).setValues([headers]);
   return sh;
@@ -305,7 +305,7 @@ function readSheet(name){
   return out;
 }
 
-/* ============ D106 — LECTURA ACOTADA POR FECHA EN OBRA (backlog 3.6) ============
+/* ============ D107 — LECTURA ACOTADA POR FECHA EN OBRA (backlog 3.6) ============
  *
  * El mismo lever que D102 le puso a `ASISTENCIA`, ahora en las hojas que crecen de este Sheet:
  * BANDEJA, MAQUINARIA, VOLQUETAS y OBSERVACIONES. Hoy los endpoints por fecha leen la hoja ENTERA y
@@ -402,7 +402,7 @@ function filasCrudasPorFecha_(name, fecha, colFechaFija){
   return (_memoRango[clave] = out);
 }
 
-/* D106 — borrado quirúrgico, gemelo del de CodigoAsistencias.gs. `enviarData` ya borraba solo las
+/* D107 — borrado quirúrgico, gemelo del de CodigoAsistencias.gs. `enviarData` ya borraba solo las
  * filas del día (no reescribía la hoja), pero lo hacía con `deleteRow` UNA A UNA: un día de 40 filas
  * eran 40 llamadas al servicio de Sheets. Agrupadas en tramos contiguos suelen ser 1 o 2. */
 function borrarFilas_(sh, filas){
@@ -977,7 +977,7 @@ function volquetasDelDia(e){
   const fecha = fdate((e && e.parameter && e.parameter.fecha) || '');
   const ss = ss_(), sh = ss.getSheetByName('VOLQUETAS');
   if(!sh || sh.getLastRow() < 2) return json({ok:true, fecha:fecha, filas:[]});
-  // D106: las filas ya vienen ACOTADAS al día y como objetos con las claves del encabezado REAL de la
+  // D107: las filas ya vienen ACOTADAS al día y como objetos con las claves del encabezado REAL de la
   // hoja — que es exactamente la tolerancia al orden/columnas extra que daba el mapa `col` de antes
   // (la hoja la mantiene el usuario, D53/D100). Una columna que no exista queda `undefined` y cae al
   // mismo valor por defecto que daba el `get()` anterior. El filtro por fecha ya lo aplicó el lector.
@@ -1002,7 +1002,7 @@ function volquetasDelDia(e){
 function doGet(e){
   _t0 = Date.now();   // D100: siembra el cronómetro de servidor (`_ms` en la respuesta)
   const a=((e.parameter.action)||'').toLowerCase();
-  // D108: puerta única. La identidad sale del TOKEN y sobrescribe lo que venga en la petición, así
+  // D109: puerta única. La identidad sale del TOKEN y sobrescribe lo que venga en la petición, así
   // que el resto del archivo puede seguir leyendo `usuario` igual que siempre — pero ya autenticado.
   const ses=sesion_(e, null);
   if(!ses.ok) return json({ok:false, auth:false, error:ses.error});
@@ -1023,8 +1023,8 @@ function doPost(e){
   _t0 = Date.now();   // D100: cronómetro de servidor también en las escrituras
   try{
     const body=JSON.parse(e.postData.contents);
-    if(body.action==='login') return login(body);                 // D107: única acción SIN token (aún no lo tiene)
-    // D108: puerta única de escritura. `usuario` sale del token; `capataz`/`reporta` NO se tocan
+    if(body.action==='login') return login(body);                 // D108: única acción SIN token (aún no lo tiene)
+    // D109: puerta única de escritura. `usuario` sale del token; `capataz`/`reporta` NO se tocan
     // porque son atribución de la LÍNEA (el envío del encargado conserva quién reportó cada fila).
     const ses=sesion_(e, body);
     if(!ses.ok) return json({ok:false, auth:false, error:ses.error});
@@ -1053,7 +1053,7 @@ function idsExistentes(sh, headers, idHeader, fecha){
   return out;
 }
 function guardarReporte(body){
-  // D105: sin fecha válida no se escribe nada. Una fila de BANDEJA sin fecha no la ve el encargado en
+  // D106: sin fecha válida no se escribe nada. Una fila de BANDEJA sin fecha no la ve el encargado en
   // ningún día, y el capataz creería que su reporte quedó subido.
   const fecha=fdateValida_(body.fecha), reporta=body.capataz||'', rol=body.rol||'capataz', ts=new Date();
   if(!fecha) return json({ok:false, error:ERROR_FECHA});
@@ -1269,7 +1269,7 @@ function bandeja(e){
   getSheet('BANDEJA', BANDEJA_HEADERS);  // auto-sana encabezados (+ cols de área D69) antes de leer
   getSheet('MAQUINARIA', MAQ_HEADERS);   // auto-sana encabezados al layout D52 (+ area) antes de leer
   getSheet('OBSERVACIONES', OBS_HEADERS);// auto-sana encabezados (+ col `area`, D86) antes de leer
-  // D106 (backlog 3.6): lectura ACOTADA al día en vez de leer las hojas enteras y filtrar en memoria.
+  // D107 (backlog 3.6): lectura ACOTADA al día en vez de leer las hojas enteras y filtrar en memoria.
   // El filtro por fecha ya viene aplicado; aquí solo quedan proyecto y área.
   const cantidades=readSheetPorFecha_('BANDEJA', fecha).filter(r=> (!proy||String(r.proyecto)===proy)
     && (!areaQ || areaDeFila(r.area, r.centro_costo)===areaQ));
@@ -1291,7 +1291,7 @@ function consolidado(e){
   const fecha=fdate(e.parameter.fecha), proy=e.parameter.proyecto||'';
   let cantidades=[];
   {
-    // D106 (backlog 3.6): filas de DATA ya acotadas al día. La columna de fecha se pasa FIJA (col A del
+    // D107 (backlog 3.6): filas de DATA ya acotadas al día. La columna de fecha se pasa FIJA (col A del
     // maestro) porque el encabezado de DATA no se llama `fecha` sino `FECHA`.
     const v=filasCrudasPorFecha_('DATA', fecha, C.FECHA+1).map(function(x){ return x.v; });
     for(let i=0;i<v.length;i++){
@@ -1348,7 +1348,7 @@ function consolidadoRango(e){
 function estado(e){
   const fecha=fdate(e.parameter.fecha), proy=e.parameter.proyecto||'';
   getSheet('MAQUINARIA', MAQ_HEADERS); // auto-sana encabezados al layout D52 antes de leer
-  const maquinas=readSheetPorFecha_('MAQUINARIA', fecha).filter(r=> (!proy||String(r.proyecto)===proy));   // D106
+  const maquinas=readSheetPorFecha_('MAQUINARIA', fecha).filter(r=> (!proy||String(r.proyecto)===proy));   // D107
   const seen={}, reportadas=[];
   maquinas.forEach(m=>{ if(!m.id_maquina||seen[m.id_maquina]) return; seen[m.id_maquina]=1; reportadas.push({id_maquina:m.id_maquina, capataz:m.reporta}); });
   return json({reportadas});
@@ -1481,7 +1481,7 @@ function maquinariaProduccion(e){
   // Volúmenes y PK oficiales de DATA por proyecto|bucket (solo LECTURA; jamás se escribe DATA aquí)
   const dataVol={}, dataPk={};
   {
-    const v=filasCrudasPorFecha_('DATA', fecha, C.FECHA+1).map(function(x){ return x.v; });   // D106
+    const v=filasCrudasPorFecha_('DATA', fecha, C.FECHA+1).map(function(x){ return x.v; });   // D107
     for(let i=0;i<v.length;i++){
       const cc=ccCorto(v[i][3]); if(!MAQ_PROD_CC[cc]) continue;
       const b=bucketDeData(cc, v[i][5]); if(!b) continue;       // col F = DESCRIPCION
@@ -1493,9 +1493,9 @@ function maquinariaProduccion(e){
   }
   // PK del capataz por id de cantidad (BANDEJA): la fila de MAQUINARIA enlaza con id_cantidad.
   const banPk={};
-  readSheetPorFecha_('BANDEJA', fecha).forEach(r=>{ banPk[String(r.id_registro||'')]=pkRange(r.pk_inicial, r.pk_final); });   // D106
+  readSheetPorFecha_('BANDEJA', fecha).forEach(r=>{ banPk[String(r.id_registro||'')]=pkRange(r.pk_inicial, r.pk_final); });   // D107
   // Todas las filas de MAQUINARIA del día (para presentes/faltantes) y las que generan producción.
-  const todas=readSheetPorFecha_('MAQUINARIA', fecha);   // D106
+  const todas=readSheetPorFecha_('MAQUINARIA', fecha);   // D107
   const presentes={}; todas.forEach(r=>{ if(r.id_maquina) presentes[r.id_maquina]=1; });
   const producen=todas.filter(r=> !esTipoSinProduccion(r.app_tipo_equipo) && String(r.cap_actividad||'')!=='APOYO');
   function rowLabel(r){ const b=bucketDeMaqRow(r); return b?MAQ_BUCKETS[b].label:(r.cap_actividad||r.actividad||'—'); }
@@ -1548,7 +1548,7 @@ function maquinariaProduccion(e){
 // original del capataz en produccion_capataz_orig la PRIMERA vez; (2) crea filas nuevas (nuevas[])
 // para redirigir producción huérfana a una máquina (D60). ESCRIBE SOLO MAQUINARIA: nunca DATA/BANDEJA.
 function maquinariaProduccionGuardar(body){
-  // D105: las filas NUEVAS de este panel llevan la fecha del payload a MAQUINARIA.
+  // D106: las filas NUEVAS de este panel llevan la fecha del payload a MAQUINARIA.
   const fecha=fdateValida_(body.fecha), ajustes=body.ajustes||[], nuevas=body.nuevas||[];
   if(!fecha) return json({ok:false, error:ERROR_FECHA});
   const sh=getSheet('MAQUINARIA', MAQ_HEADERS);
@@ -1624,7 +1624,7 @@ function maquinariaProduccionGuardar(body){
 // borra lo de tierras ni lo de ODL (y viceversa). body.area viene del rol que envía; si falta
 // (frontend viejo en caché) se asume 'tierras', el único emisor que existía antes de drenajes.
 function enviarData(body){
-  // D105: la más delicada de las tres — la col A de DATA es la FECHA del maestro TM2 (paste A:S), y
+  // D106: la más delicada de las tres — la col A de DATA es la FECHA del maestro TM2 (paste A:S), y
   // además el borrado de abajo se hace POR FECHA: con la fecha vacía se borrarían las filas huérfanas
   // de otro envío fallido en vez del día que se quiere pisar.
   const fecha=fdateValida_(body.fecha), incluidas=body.cantidades||[], ts=new Date();
@@ -1636,7 +1636,7 @@ function enviarData(body){
   // areaDeFila, así que su clasificación no cambia. Esto permite que la demolición (CC 01.02, que
   // deriva 'tierras') se pise por ODT/ODL y NO por el envío de tierras.
   const sh=getSheet('DATA', DATA_HEADERS);
-  // D106 (backlog 3.6/4.11): antes se leía DATA ENTERA y se borraba con `deleteRow` UNA FILA A LA VEZ
+  // D107 (backlog 3.6/4.11): antes se leía DATA ENTERA y se borraba con `deleteRow` UNA FILA A LA VEZ
   // (un día de 40 filas = 40 llamadas al servicio de Sheets). Ahora se leen SOLO las tres columnas que
   // deciden —FECHA (A), CENTRO DE COSTO (D) y la interna `area`—, que caben en un bloque contiguo, y
   // el borrado va por TRAMOS contiguos (normalmente 1 llamada: el día se escribió junto).
@@ -1667,7 +1667,7 @@ function enviarData(body){
     sh.getRange(sh.getLastRow()+1,1,rows.length,DATA_HEADERS.length).setValues(rows); }
   // 2) BANDEJA: marcar incluido / descartado SOLO las filas de esa área
   const banSh=getSheet('BANDEJA', BANDEJA_HEADERS);
-  // D106: las filas del día se traen ya acotadas (readSheetPorFecha_ memoriza, así que si el panel
+  // D107: las filas del día se traen ya acotadas (readSheetPorFecha_ memoriza, así que si el panel
   // las leyó en esta misma ejecución no cuesta una celda). El estado se sigue escribiendo celda a
   // celda porque son las filas de UN día y no son contiguas en columna: el ahorro está en la lectura.
   const bh=BANDEJA_HEADERS, eCol=bh.indexOf('estado');
@@ -1679,15 +1679,15 @@ function enviarData(body){
   return json({ok:true, enviadas:rows.length, area:area});
 }
 
-/* ============ D108 — AUTENTICACIÓN POR TOKEN FIRMADO (backlog 2.25) ============
+/* ============ D109 — AUTENTICACIÓN POR TOKEN FIRMADO (backlog 2.25) ============
  *
- * EL AGUJERO QUE CIERRA. Hasta D107 el rol vivía en el navegador y el backend se creía la identidad
+ * EL AGUJERO QUE CIERRA. Hasta D108 el rol vivía en el navegador y el backend se creía la identidad
  * que le mandaba el cliente (`e.parameter.usuario`, `body.usuario`). Dos consecuencias, las dos
  * comprobadas sobre este mismo código: cualquiera podía escribir `rol: admin` en el almacenamiento de
  * su navegador y entrar al menú; y, peor, la URL del Apps Script está en el código de 13 pantallas, así
  * que se podía llamar a los endpoints desde una terminal diciendo «soy la residente» — sin contraseña.
  * Los cerrojos de área (D69h/D101) eran decorativos frente a eso: el área se derivaba del usuario que
- * el propio cliente declaraba. D107 sacó las claves del archivo público, pero NO arregló nada de esto.
+ * el propio cliente declaraba. D108 sacó las claves del archivo público, pero NO arregló nada de esto.
  *
  * CÓMO SE CIERRA. Al entrar, el backend emite un TOKEN que lleva dentro `usuario·rol·áreas` y va
  * FIRMADO con HMAC-SHA256 usando un secreto que vive en las Propiedades del Script — ni en la hoja, ni
@@ -1702,7 +1702,7 @@ function enviarData(body){
  * no vence por reloj: vence por VERSIÓN.
  *   · `AUTH_V` (Propiedades del Script) — subirlo invalida TODOS los tokens de golpe. Es el botón de
  *     «sacar a todo el mundo» (teléfono perdido). Hay que subirlo en LOS DOS proyectos.
- *   · `estado` en la hoja `USUARIOS` (D107) — ponerlo distinto de `activo` deja fuera a UNA persona.
+ *   · `estado` en la hoja `USUARIOS` (D108) — ponerlo distinto de `activo` deja fuera a UNA persona.
  *     Efecto inmediato en el backend de obra, que es el que tiene la hoja.
  *
  * CONSECUENCIA QUE HAY QUE SABER: si sacas a alguien que tiene reportes pendientes en su teléfono,
@@ -1787,7 +1787,7 @@ function sesion_(e, body){
   return r;
 }
 
-/* ============ D107 — LOGIN VALIDADO EN EL BACKEND (backlog 2.21) ============
+/* ============ D108 — LOGIN VALIDADO EN EL BACKEND (backlog 2.21) ============
  *
  * EL PROBLEMA. Hasta ahora el mapa `USUARIOS` con las contraseñas EN CLARO vivía dentro de
  * `index.html`. GitHub Pages sirve el archivo tal cual, así que cualquiera con la URL podía leer
@@ -1853,7 +1853,7 @@ function login(body){
   if(!ok) return malo;
   const areas = String(r.areas||'').split(',').map(function(x){ return x.trim().toLowerCase(); }).filter(Boolean);
   const rol = String(r.rol||'').trim();
-  // D108: el token FIRMADO es lo que a partir de ahora acredita quién eres y qué rol tienes. El
+  // D109: el token FIRMADO es lo que a partir de ahora acredita quién eres y qué rol tienes. El
   // cliente lo guarda y lo adjunta a cada petición; no puede alterarlo sin romper la firma.
   return json({ ok:true, usuario:u, rol:rol, areas:areas,
                 redirige:String(r.redirige||'').trim() || 'menu.html',
@@ -1919,7 +1919,7 @@ function endurecerClaves(){
 /* ---------- debug ---------- */
 function debug(e){
   const fechaQ=fdate(e.parameter.fecha||'');
-  const ban=readSheetPorFecha_('BANDEJA', fechaQ);   // D106
+  const ban=readSheetPorFecha_('BANDEJA', fechaQ);   // D107
   const data=readSheet('DATA') ? '' : '';
   return json({version:'v11', sheetTZ:shTZ(), queryFecha:fechaQ, bandejaFilas:ban.length,
     muestra: ban.slice(0,5).map(r=>({reporta:r.reporta, rol:r.rol, actividad:r.actividad, pk:r.pk_inicial, largo:r.largo, estado:r.estado})) });

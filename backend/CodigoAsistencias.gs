@@ -158,15 +158,15 @@ function ftime(v){
   if(m) return ('0'+m[1]).slice(-2)+':'+m[2];
   return s.slice(0,5);
 }
-/* ============ D108 — AUTENTICACIÓN POR TOKEN FIRMADO (backlog 2.25) ============
+/* ============ D109 — AUTENTICACIÓN POR TOKEN FIRMADO (backlog 2.25) ============
  *
- * EL AGUJERO QUE CIERRA. Hasta D107 el rol vivía en el navegador y el backend se creía la identidad
+ * EL AGUJERO QUE CIERRA. Hasta D108 el rol vivía en el navegador y el backend se creía la identidad
  * que le mandaba el cliente (`e.parameter.usuario`, `body.usuario`). Dos consecuencias, las dos
  * comprobadas sobre este mismo código: cualquiera podía escribir `rol: admin` en el almacenamiento de
  * su navegador y entrar al menú; y, peor, la URL del Apps Script está en el código de 13 pantallas, así
  * que se podía llamar a los endpoints desde una terminal diciendo «soy la residente» — sin contraseña.
  * Los cerrojos de área (D69h/D101) eran decorativos frente a eso: el área se derivaba del usuario que
- * el propio cliente declaraba. D107 sacó las claves del archivo público, pero NO arregló nada de esto.
+ * el propio cliente declaraba. D108 sacó las claves del archivo público, pero NO arregló nada de esto.
  *
  * CÓMO SE CIERRA. Al entrar, el backend emite un TOKEN que lleva dentro `usuario·rol·áreas` y va
  * FIRMADO con HMAC-SHA256 usando un secreto que vive en las Propiedades del Script — ni en la hoja, ni
@@ -181,7 +181,7 @@ function ftime(v){
  * no vence por reloj: vence por VERSIÓN.
  *   · `AUTH_V` (Propiedades del Script) — subirlo invalida TODOS los tokens de golpe. Es el botón de
  *     «sacar a todo el mundo» (teléfono perdido). Hay que subirlo en LOS DOS proyectos.
- *   · `estado` en la hoja `USUARIOS` (D107) — ponerlo distinto de `activo` deja fuera a UNA persona.
+ *   · `estado` en la hoja `USUARIOS` (D108) — ponerlo distinto de `activo` deja fuera a UNA persona.
  *     La hoja `USUARIOS` vive en el Sheet de OBRA, así que aquí ese cerrojo no se comprueba (D69: módulos aislados):
  *     para dejar fuera a alguien de ESTE módulo de inmediato hay que subir `AUTH_V` también aquí.
  *
@@ -267,7 +267,7 @@ function sesion_(e, body){
   return r;
 }
 
-/* ============ D105 — PORTERO DE FECHAS (incidente "reportes sin fecha", jul-2026) ============
+/* ============ D106 — PORTERO DE FECHAS (incidente "reportes sin fecha", jul-2026) ============
  *
  * EL PROBLEMA QUE ARREGLA. `fdate` NORMALIZA pero no VALIDA: con `''`/`null` devuelve `''` y con
  * basura devuelve los 10 primeros caracteres tal cual (`'15/07/2026'`, `'undefined'`). Las dos rutas
@@ -688,7 +688,7 @@ function leerFilasPorFecha_(nombreHoja, desdeISO, hastaISO){
   return (_memoRango[clave] = out);
 }
 
-/* ============ D106 — ESCRITURA QUIRÚRGICA (backlog 4.11: la otra mitad de D102) ============
+/* ============ D107 — ESCRITURA QUIRÚRGICA (backlog 4.11: la otra mitad de D102) ============
  *
  * EL PROBLEMA. D102 acotó las LECTURAS por fecha, pero dejó las escrituras intactas y lo dijo por
  * escrito: `guardarAsistencia` y `guardarIndividual` hacían `clearContents()` de TODA la hoja y la
@@ -986,7 +986,7 @@ function proyectoFromCC(cc){
 function doGet(e){
   _t0 = Date.now();   // D99: siembra el cronómetro de servidor (`_ms` en la respuesta)
   const a=((e.parameter.action)||'').toLowerCase();
-  // D108: puerta única. Aquí importa el doble que en obra, porque TODA la autorización de este módulo
+  // D109: puerta única. Aquí importa el doble que en obra, porque TODA la autorización de este módulo
   // (áreas, cuadrillas permitidas, quién puede completar faltantes) se derivaba del `usuario` que
   // mandaba el cliente. Ahora sale del token firmado y sobrescribe lo que venga en la petición.
   const ses=sesion_(e, null);
@@ -1009,7 +1009,7 @@ function doPost(e){
   _t0 = Date.now();   // D99: cronómetro de servidor también en las escrituras
   try{
     const body=JSON.parse(e.postData.contents);
-    // D108: identidad desde el token. Se sobrescriben `usuario` Y `reporta` porque en este módulo los
+    // D109: identidad desde el token. Se sobrescriben `usuario` Y `reporta` porque en este módulo los
     // dos son el que está en sesión (el formulario manda su propio usuario en ambos) y de ellos
     // dependen `cuadrillaPermitidaPara` y el guard de "completar faltantes".
     const ses=sesion_(e, body);
@@ -1061,7 +1061,7 @@ function roster(e){
   const cuadrillas=cuadrillasDeUsuario(usuario);
   const cfg=getConfigMap();
   const festivos=getFestivos();
-  // D105: el roster es de solo lectura y abre el formulario del capataz, así que aquí NO se corta la
+  // D106: el roster es de solo lectura y abre el formulario del capataz, así que aquí NO se corta la
   // respuesta — una fecha inválida cae al día de hoy (mismo respaldo que ya existía para la ausente).
   const fecha=fdateValida_(e.parameter.fecha) || Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy-MM-dd');
   const personalTodo=readSheet('PERSONAL', PERSONAL_HEADERS);
@@ -1106,7 +1106,7 @@ function roster(e){
 
 /* ---------- GET asistencia: resumen del día para el residente/jeisson ---------- */
 function asistenciaDia(e){
-  // D105: sin fecha válida NO se contesta. Antes, `fecha=''` hacía que el lector por rango devolviera
+  // D106: sin fecha válida NO se contesta. Antes, `fecha=''` hacía que el lector por rango devolviera
   // justo las filas con la fecha en blanco (`f>='' && f<=''` solo se cumple con `f===''`): el resumen
   // mostraba las huérfanas como si fueran el día pedido y "Completar faltantes" las reescribía otra
   // vez sin fecha. Cortar aquí es lo que rompe ese círculo.
@@ -1226,7 +1226,7 @@ function guardarIndividual(body){
   // D101: `residente_uf3` completa los faltantes de UF3 (acotado a ['uf3'] por areasDeUsuario).
   if(['residente','admin','jeisson','duvan','residente_uf3','residente_odt','residente_odl','residente_dren'].indexOf(usuario)<0)
     return json({ok:false, error:'No autorizado para completar faltantes.'});
-  // D105: portero de fecha ANTES de tocar la hoja. Con la fecha vacía este upsert no solo escribía
+  // D106: portero de fecha ANTES de tocar la hoja. Con la fecha vacía este upsert no solo escribía
   // filas huérfanas: su filtro de abajo (`fdate(r[2])===fecha`) borraba las huérfanas que ya hubiera.
   const fecha=fdateValida_(body.fecha), ts=new Date();
   if(!fecha) return json({ok:false, error:ERROR_FECHA});
@@ -1247,7 +1247,7 @@ function guardarIndividual(body){
     f.cc||'', f.proyecto||'', f.hora_entrada||'', f.hora_salida||'',
     (f.presente===false||f.presente==='No')?'No':'Si', f.motivo_ausencia||'', f.observacion||'', f.turno||''
   ]);
-  // D106: se borra la fila de ESE día SOLO de las personas entrantes y se anexan las nuevas al final.
+  // D107: se borra la fila de ESE día SOLO de las personas entrantes y se anexan las nuevas al final.
   // Predicado idéntico al `filter` que tenía antes (fecha + clave de persona); lo único que cambia es
   // que se decide leyendo 5 columnas (fecha·codigo·cedula caen en el bloque 3–7) en vez de las 17.
   const aBorrar=localizarFilas_(sh, ASISTENCIA_HEADERS, ['fecha','codigo','cedula'], function(o){
@@ -1275,7 +1275,7 @@ function personalCompleto(e){
 
 /* ---------- GET export: crudo del día completo para el generador Navision (cliente, SheetJS) ---------- */
 function exportDia(e){
-  // D105: igual que `asistenciaDia` — un Parte de Navision armado sobre las filas sin fecha sería un
+  // D106: igual que `asistenciaDia` — un Parte de Navision armado sobre las filas sin fecha sería un
   // archivo con gente de días revueltos. Mejor no entregar nada y decir por qué.
   const fecha=fdateValida_(e.parameter.fecha);
   if(!fecha) return json({ok:false, error:'Falta la fecha del día a exportar (o llegó con un formato que no se entiende). Elige el día en el campo "Fecha".'});
@@ -1353,7 +1353,7 @@ function keyPersona(codigo, cedula){
   return c ? ('COD:'+c) : ('CED:'+String(cedula||'').trim());
 }
 function ausenciasRango(e){
-  const desde=fdateValida_(e.parameter.desde), hasta=fdateValida_(e.parameter.hasta);   // D105
+  const desde=fdateValida_(e.parameter.desde), hasta=fdateValida_(e.parameter.hasta);   // D106
   if(!desde || !hasta) return json({ok:false, error:'Faltan las fechas del rango (desde/hasta), o llegaron con un formato que no se entiende.'});
   if(hasta < desde)    return json({ok:false, error:'El rango está invertido: "hasta" es anterior a "desde".'});
   const dias=diasDelRango(desde, hasta);
@@ -1420,13 +1420,13 @@ function extrasAdminDelDia(fecha){
 }
 // GET ?action=extras_admin&fecha=YYYY-MM-DD → registro del día (o null) para prefill/edición.
 function extrasAdminDia(e){
-  const fecha=fdateValida_(e.parameter.fecha);   // D105
+  const fecha=fdateValida_(e.parameter.fecha);   // D106
   const regs=extrasAdminDelDia(fecha);
   return json({ ok:true, fecha, registro: regs.length? regs[0] : null });
 }
 // POST {action:'extras_admin', fecha, cc, horas, tipo} → upsert por `fecha`. Deriva `proyecto` del CC.
 function guardarExtrasAdmin(body){
-  const fecha=fdateValida_(body.fecha);   // D105: ya rechazaba la vacía; ahora también la mal formada
+  const fecha=fdateValida_(body.fecha);   // D106: ya rechazaba la vacía; ahora también la mal formada
   const cc=String(body.cc||'').trim();
   const horas=Number(body.horas);
   const tipo=norm(body.tipo);
@@ -1451,7 +1451,7 @@ function guardarExtrasAdmin(body){
 }
 // POST {action:'extras_admin_delete', fecha} → elimina la fila del día.
 function borrarExtrasAdmin(body){
-  const fecha=fdateValida_(body.fecha);   // D105
+  const fecha=fdateValida_(body.fecha);   // D106
   if(!fecha) return json({ok:false, error:'Falta la fecha.'});
   const sh=getSheet('EXTRAS_ADMIN', EXTRAS_ADMIN_HEADERS), need=EXTRAS_ADMIN_HEADERS.length, last=sh.getLastRow();
   let rows = last>1 ? leerRango_(sh,2,1,last-1,need) : [];
@@ -1478,7 +1478,7 @@ function borrarExtrasAdmin(body){
  * es el más reciente). upsertNotaDia (D74) sigue la misma regla. */
 function guardarAsistencia(body){
   const fecha=fdateValida_(body.fecha), cuadrilla=body.cuadrilla||'', reporta=body.reporta||'', ts=new Date();
-  // D105: portero de fecha ANTES de tocar la hoja. Es el punto exacto por donde entraron las dos
+  // D106: portero de fecha ANTES de tocar la hoja. Es el punto exacto por donde entraron las dos
   // veces los bloques sin fecha: con `fecha=''` este upsert escribía la cuadrilla entera con la
   // columna C en blanco y, en el siguiente envío igual, se borraba a sí mismo (ver fdateValida_).
   if(!fecha) return json({ok:false, error:ERROR_FECHA});
@@ -1492,7 +1492,7 @@ function guardarAsistencia(body){
     f.cc||'', f.proyecto||'', f.hora_entrada||'', f.hora_salida||'',
     f.presente===false||f.presente==='No' ? 'No':'Si', f.motivo_ausencia||'', f.observacion||'', f.turno||''
   ]);
-  // D106: borrado quirúrgico del bloque fecha+cuadrilla + anexo al final, en vez de reescribir la hoja
+  // D107: borrado quirúrgico del bloque fecha+cuadrilla + anexo al final, en vez de reescribir la hoja
   // entera. Mismo predicado que el `keep` de antes (col C fecha, col E cuadrilla), decidido leyendo
   // solo el bloque de columnas 3–5 (fecha·reporta·cuadrilla) en vez de las 17.
   const aBorrar=localizarFilas_(sh, ASISTENCIA_HEADERS, ['fecha','cuadrilla'], function(o){
@@ -1510,7 +1510,7 @@ function guardarAsistencia(body){
 // Upsert por fecha+cuadrilla. Nota vacía = borra la del día (re-envío sin nota la limpia).
 function upsertNotaDia(fecha, cuadrilla, reporta, nota, ts){
   const f=fdateValida_(fecha), c=cuadrilla||'', txt=String(nota==null?'':nota).trim();
-  if(!f) return;   // D105: su único llamador ya valida; la nota nunca se queda sin fecha por su cuenta
+  if(!f) return;   // D106: su único llamador ya valida; la nota nunca se queda sin fecha por su cuenta
   const sh=getSheet('NOTAS_ASISTENCIA', NOTAS_ASISTENCIA_HEADERS), need=NOTAS_ASISTENCIA_HEADERS.length, last=sh.getLastRow();
   let rows = last>1 ? leerRango_(sh,2,1,last-1,need) : [];
   rows = rows.filter(r=> !(fdate(r[0])===f && String(r[1])===c));   // quita la del día+cuadrilla
@@ -1731,7 +1731,7 @@ function diagnosticoCapacidad() {
   });
 }
 
-/* ---------- D105 — FILAS SIN FECHA: diagnóstico y reparación puntual ----------
+/* ---------- D106 — FILAS SIN FECHA: diagnóstico y reparación puntual ----------
  * Herramientas de MANTENIMIENTO, no endpoints: se corren A MANO desde el editor de Apps Script
  * (basta guardar el archivo, no exigen redesplegar). Mismo patrón previsualizar/aplicar que
  * `previsualizarDescripcionesData` / `actualizarDescripcionesData` de Codigo.gs.

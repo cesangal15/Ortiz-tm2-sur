@@ -236,7 +236,7 @@ async function cargarRoster(){
   }
 }
 
-/* D105 — la fecha del reporte NUNCA puede quedar vacía. Un <input type="date"> devuelve '' cuando se
+/* D106 — la fecha del reporte NUNCA puede quedar vacía. Un <input type="date"> devuelve '' cuando se
  * borra el campo o se teclea un día a medias, y hasta ahora ese '' se guardaba en STATE.fecha y viajaba
  * al backend: la cuadrilla entera se escribía en ASISTENCIA con la columna `fecha` en blanco, invisible
  * para el resumen y para el Parte. Las capturas de OBRA (capataz/chequeadora/drenajes) ya validaban
@@ -687,7 +687,7 @@ async function enviar(){
     }
   }
 
-  // D105: última barrera del cliente. Sin fecha válida no se envía nada (el backend también lo
+  // D106: última barrera del cliente. Sin fecha válida no se envía nada (el backend también lo
   // rechaza, pero avisar aquí evita gastar el envío y, sin señal, encolar un reporte inservible).
   if(!fechaValida(STATE.fecha)){
     alert('⚠️ No se puede enviar sin fecha.\n\nElige el día en el campo "Fecha" y vuelve a intentarlo.');

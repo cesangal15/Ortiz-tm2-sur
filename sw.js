@@ -18,7 +18,7 @@
  * archivo). Con network-first, el CONTENIDO de los archivos se refresca solo al haber señal — un
  * cambio de texto en un HTML NO requiere subir la versión.
  */
-// D107: se sube la versión para que los equipos en campo reciban el login nuevo — el que ya NO lleva
+// D108: se sube la versión para que los equipos en campo reciban el login nuevo — el que ya NO lleva
 // las contraseñas dentro y sabe entrar sin señal con la sesión/credencial recordada. Sin subirla, un
 // teléfono podría seguir sirviendo el index.html viejo desde el precache.
 // (D84 la subió antes por el login sin ariel/albert/residente_odt y el reporte de drenajes multi-área.)

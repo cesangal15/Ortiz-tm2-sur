@@ -172,7 +172,7 @@
 │    necesitan todas las filas (ver D102 y backlog 4.11).                │
 │  Capacidad de grilla (D93): ensureRows_ antes                          │
 │  de cada bloque; la grilla crece sola.                                 │
-│  D105 — PORTERO DE FECHAS (fdateValida_): toda fecha que entra por     │
+│  D106 — PORTERO DE FECHAS (fdateValida_): toda fecha que entra por     │
 │    la API se valida (yyyy-MM-dd + día que exista) antes de tocar la    │
 │    hoja. `fdate` normaliza pero NO valida, y con la fecha vacía se     │
 │    escribían bloques enteros sin fecha en ASISTENCIA.                  │

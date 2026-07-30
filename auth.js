@@ -1,7 +1,7 @@
 /**
- * TM2 Sur — Token de sesión en el cliente (D108, backlog 2.25)
+ * TM2 Sur — Token de sesión en el cliente (D109, backlog 2.25)
  *
- * Adjunta el token FIRMADO que emitió el backend al entrar (D107) a TODA llamada dirigida al Apps
+ * Adjunta el token FIRMADO que emitió el backend al entrar (D108) a TODA llamada dirigida al Apps
  * Script, sea GET o POST. Se hace envolviendo `fetch` en vez de tocar los ~60 sitios donde las 13
  * pantallas llaman a la API: así es imposible que se quede una llamada sin token por descuido, que es
  * exactamente el tipo de olvido que deja un agujero abierto.
@@ -11,7 +11,7 @@
  * POR QUÉ ESTO ARREGLA LO DEL MODO SIN CONEXIÓN: la cola de D82 reenvía con `fetch`, así que el token
  * se pega EN EL MOMENTO DEL ENVÍO, no cuando se capturó el reporte. Un reporte que pasó el fin de
  * semana en el teléfono sube con el token vigente, no con el que hubiera entonces. Y como el token no
- * caduca por reloj (vence por versión, ver D108 en el backend), sigue valiendo días después.
+ * caduca por reloj (vence por versión, ver D109 en el backend), sigue valiendo días después.
  *
  * El token NO es un secreto que haya que esconder del usuario: es SU sesión, y solo le sirve para
  * hacer lo que su propio rol ya le permite. Lo que impide es fabricarse otro rol o suplantar a otro,
