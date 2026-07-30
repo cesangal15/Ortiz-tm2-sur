@@ -58,6 +58,7 @@
   <div class="loading">⏳ Cargando…</div>
 </div>
 
+<script src="auth.js"></script>
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbymgvQX03ZqS_YzIz5l6WVesasDUMYwGOFItrggTJCdsFhcjXQvDPVz03E7mNcZQ4Nq/exec";
 const LAST_CC_KEY = 'extras_admin_last_cc';
@@ -80,7 +81,7 @@ window.onload = function(){
   STATE.fecha=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});   // D50 zona Colombia
   cargar();
 };
-function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); window.location.href='index.html'; }
+function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); localStorage.removeItem('tm2_token'); window.location.href='index.html'; }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 function proyectoFromCC(cc){ const m=String(cc||'').match(/^(\d{4})/); return m?m[1]:''; }
 

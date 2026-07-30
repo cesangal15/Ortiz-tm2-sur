@@ -129,7 +129,7 @@ window.onload = function(){
 };
 function logout(){
   // solo la sesión: la cola de envíos pendientes NO se borra al cerrar sesión (D82)
-  localStorage.removeItem('usuario'); localStorage.removeItem('rol');
+  localStorage.removeItem('usuario'); localStorage.removeItem('rol'); localStorage.removeItem('tm2_token');
   window.location.href='index.html';
 }
 </script>

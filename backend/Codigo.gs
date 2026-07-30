@@ -1002,6 +1002,11 @@ function volquetasDelDia(e){
 function doGet(e){
   _t0 = Date.now();   // D100: siembra el cronómetro de servidor (`_ms` en la respuesta)
   const a=((e.parameter.action)||'').toLowerCase();
+  // D108: puerta única. La identidad sale del TOKEN y sobrescribe lo que venga en la petición, así
+  // que el resto del archivo puede seguir leyendo `usuario` igual que siempre — pero ya autenticado.
+  const ses=sesion_(e, null);
+  if(!ses.ok) return json({ok:false, auth:false, error:ses.error});
+  if(ses.usuario) e.parameter.usuario = ses.usuario;
   if(a==='bandeja')     return bandeja(e);
   if(a==='consolidado') return consolidado(e);
   if(a==='estado')      return estado(e);
@@ -1018,7 +1023,12 @@ function doPost(e){
   _t0 = Date.now();   // D100: cronómetro de servidor también en las escrituras
   try{
     const body=JSON.parse(e.postData.contents);
-    if(body.action==='login') return login(body);                 // D107 (backlog 2.21)
+    if(body.action==='login') return login(body);                 // D107: única acción SIN token (aún no lo tiene)
+    // D108: puerta única de escritura. `usuario` sale del token; `capataz`/`reporta` NO se tocan
+    // porque son atribución de la LÍNEA (el envío del encargado conserva quién reportó cada fila).
+    const ses=sesion_(e, body);
+    if(!ses.ok) return json({ok:false, auth:false, error:ses.error});
+    if(ses.usuario) body.usuario = ses.usuario;
     if(body.action==='enviar_data') return enviarData(body);
     if(body.action==='maquinaria_produccion') return maquinariaProduccionGuardar(body);
     return guardarReporte(body);
@@ -1669,6 +1679,85 @@ function enviarData(body){
   return json({ok:true, enviadas:rows.length, area:area});
 }
 
+/* ============ D108 — AUTENTICACIÓN POR TOKEN FIRMADO (backlog 2.25) ============
+ *
+ * EL AGUJERO QUE CIERRA. Hasta D107 el rol vivía en el navegador y el backend se creía la identidad
+ * que le mandaba el cliente (`e.parameter.usuario`, `body.usuario`). Dos consecuencias, las dos
+ * comprobadas sobre este mismo código: cualquiera podía escribir `rol: admin` en el almacenamiento de
+ * su navegador y entrar al menú; y, peor, la URL del Apps Script está en el código de 13 pantallas, así
+ * que se podía llamar a los endpoints desde una terminal diciendo «soy la residente» — sin contraseña.
+ * Los cerrojos de área (D69h/D101) eran decorativos frente a eso: el área se derivaba del usuario que
+ * el propio cliente declaraba. D107 sacó las claves del archivo público, pero NO arregló nada de esto.
+ *
+ * CÓMO SE CIERRA. Al entrar, el backend emite un TOKEN que lleva dentro `usuario·rol·áreas` y va
+ * FIRMADO con HMAC-SHA256 usando un secreto que vive en las Propiedades del Script — ni en la hoja, ni
+ * en el repositorio, ni en el navegador. Cada petición lo trae; cada endpoint verifica la firma y saca
+ * la identidad DEL TOKEN, ignorando lo que diga el cliente. Sin el secreto no se puede fabricar ni
+ * alterar un token: cambiarle un byte al rol invalida la firma.
+ *
+ * POR QUÉ NO CADUCA POR TIEMPO — esto es lo que lo hace compatible con el modo sin conexión (D82).
+ * Un reporte capturado el viernes en zona muerta puede pasar el fin de semana en la cola del teléfono
+ * y subirse el lunes. Con un token «válido 24 h» ese reporte sería rechazado y, como la cola solo
+ * suelta lo que el servidor confirma, se quedaría atascado para siempre reintentando. Así que el token
+ * no vence por reloj: vence por VERSIÓN.
+ *   · `AUTH_V` (Propiedades del Script) — subirlo invalida TODOS los tokens de golpe. Es el botón de
+ *     «sacar a todo el mundo» (teléfono perdido). Hay que subirlo en LOS DOS proyectos.
+ *   · `estado` en la hoja `USUARIOS` (D107) — ponerlo distinto de `activo` deja fuera a UNA persona.
+ *     Efecto inmediato en el backend de obra, que es el que tiene la hoja.
+ *
+ * CONSECUENCIA QUE HAY QUE SABER: si sacas a alguien que tiene reportes pendientes en su teléfono,
+ * esos reportes ya no suben. Antes de dar de baja a alguien, mirar que su contador esté en cero.
+ *
+ * `AUTH_ESTRICTO` es la válvula: en `false` se aceptan peticiones sin token válido y solo se anotan en
+ * el registro (útil para ver qué teléfono sigue con la app vieja). Se despliega en `true`.
+ */
+const AUTH_ESTRICTO = true;
+
+function _authProps_(){ return PropertiesService.getScriptProperties(); }
+/* El secreto se genera solo la primera vez y NUNCA sale del servidor. Si algún día hay que rotarlo,
+ * basta con borrar la propiedad `AUTH_SECRETO`: se regenera y todos los tokens dejan de valer. */
+function authSecreto_(){
+  const p=_authProps_(); let s=p.getProperty('AUTH_SECRETO');
+  if(!s){ s=Utilities.getUuid()+'-'+Utilities.getUuid(); p.setProperty('AUTH_SECRETO', s); }
+  return s;
+}
+function authVersion_(){ return String(_authProps_().getProperty('AUTH_V') || '1'); }
+function _b64url_(bytes){ return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/,''); }
+function _firmar_(txt){
+  return _b64url_(Utilities.computeHmacSha256Signature(txt, authSecreto_(), Utilities.Charset.UTF_8));
+}
+function emitirToken_(usuario, rol, areas){
+  const carga={ u:String(usuario||''), r:String(rol||''), a:areas||[], v:authVersion_(), t:Date.now() };
+  const p=_b64url_(Utilities.newBlob(JSON.stringify(carga)).getBytes());
+  return p+'.'+_firmar_(p);
+}
+/* Verifica FIRMA primero y solo después interpreta el contenido: nunca se parsea algo no firmado. */
+function verificarToken_(tok){
+  const s=String(tok||''), i=s.indexOf('.');
+  if(i<1) return {ok:false, error:'Falta el token de sesión. Vuelve a entrar.'};
+  const carga=s.slice(0,i), firma=s.slice(i+1);
+  if(_firmar_(carga)!==firma) return {ok:false, error:'Sesión no válida. Vuelve a entrar.'};
+  let o;
+  try{ o=JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(carga)).getDataAsString()); }
+  catch(err){ return {ok:false, error:'Sesión ilegible. Vuelve a entrar.'}; }
+  if(String(o.v)!==authVersion_()) return {ok:false, error:'Sesión cerrada por el administrador. Vuelve a entrar con señal.'};
+  return {ok:true, usuario:String(o.u||'').trim().toLowerCase(), rol:String(o.r||''), areas:Array.isArray(o.a)?o.a:[]};
+}
+/* Punto ÚNICO de autenticación: lo llaman doGet y doPost, nadie más. Devuelve la sesión REAL, la que
+ * sale del token; el resto del archivo puede seguir usando `usuario` como siempre porque los puntos de
+ * entrada lo sobrescriben con este valor. */
+function sesion_(e, body){
+  const tok = (body && body.token) || (e && e.parameter && e.parameter.token) || '';
+  const r = tok ? verificarToken_(tok) : {ok:false, error:'Falta el token de sesión. Vuelve a entrar.'};
+  if(r.ok) return r;
+  if(!AUTH_ESTRICTO){
+    Logger.log('AUTH tolerante: petición aceptada SIN token válido ('+r.error+') — action='
+      + ((body && body.action) || (e && e.parameter && e.parameter.action) || '?'));
+    return {ok:true, usuario:'', rol:'', tolerado:true};
+  }
+  return r;
+}
+
 /* ============ D107 — LOGIN VALIDADO EN EL BACKEND (backlog 2.21) ============
  *
  * EL PROBLEMA. Hasta ahora el mapa `USUARIOS` con las contraseñas EN CLARO vivía dentro de
@@ -1734,8 +1823,12 @@ function login(body){
   const ok = _ES_HASH.test(guardada) ? (hashClave_(u, c)===guardada) : (guardada===c);
   if(!ok) return malo;
   const areas = String(r.areas||'').split(',').map(function(x){ return x.trim().toLowerCase(); }).filter(Boolean);
-  return json({ ok:true, usuario:u, rol:String(r.rol||'').trim(),
-                areas:areas, redirige:String(r.redirige||'').trim() || 'menu.html' });
+  const rol = String(r.rol||'').trim();
+  // D108: el token FIRMADO es lo que a partir de ahora acredita quién eres y qué rol tienes. El
+  // cliente lo guarda y lo adjunta a cada petición; no puede alterarlo sin romper la firma.
+  return json({ ok:true, usuario:u, rol:rol, areas:areas,
+                redirige:String(r.redirige||'').trim() || 'menu.html',
+                token: emitirToken_(u, rol, areas) });
 }
 
 /* Se ejecuta UNA VEZ desde el editor. Crea `USUARIOS` con la plantilla de roles/redirecciones/áreas

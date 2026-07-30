@@ -126,6 +126,7 @@
   </div>
 </div>
 
+<script src="auth.js"></script>
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
 
@@ -176,7 +177,7 @@ window.onload = async function(){
   document.getElementById('fecha').value=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'}); // D50
   cargarCatalogo();
 };
-function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); window.location.href='index.html'; }
+function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); localStorage.removeItem('tm2_token'); window.location.href='index.html'; }
 function pintarTitulo(){
   const n = MULTI ? 'ODT + ODL' : ((AREA==='odt')?'ODT · Transversal':'ODL · Longitudinal');
   const tag = MULTI ? 'ODT+ODL' : (AREA==='odt'?'ODT':'ODL');

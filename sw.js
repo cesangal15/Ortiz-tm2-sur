@@ -22,7 +22,7 @@
 // las contraseñas dentro y sabe entrar sin señal con la sesión/credencial recordada. Sin subirla, un
 // teléfono podría seguir sirviendo el index.html viejo desde el precache.
 // (D84 la subió antes por el login sin ariel/albert/residente_odt y el reporte de drenajes multi-área.)
-const CACHE_V = 'tm2-v3';
+const CACHE_V = 'tm2-v4';
 const FONT_CACHE = CACHE_V + '-fonts';
 
 // Lista explícita: shell + capturas + app. NO precachear las páginas fuera de alcance
@@ -36,6 +36,7 @@ const PRECACHE = [
   './reporte-chequeadora.html',
   './reporte-drenajes.html',
   './asistencia.html',
+  './auth.js',
   './offline.js',
   './manifest.json',
   './icons/icon-192.png',

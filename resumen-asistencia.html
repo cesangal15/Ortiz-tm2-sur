@@ -92,6 +92,7 @@
   <div class="loading">⏳ Cargando…</div>
 </div>
 
+<script src="auth.js"></script>
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbymgvQX03ZqS_YzIz5l6WVesasDUMYwGOFItrggTJCdsFhcjXQvDPVz03E7mNcZQ4Nq/exec";
 
@@ -233,7 +234,7 @@ window.onload = function(){
   alOcioso(function(){ cargarPlantillaBundle(); });
   alOcioso(function(){ ensureXLSX().catch(function(){}); }, 4000);
 };
-function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); window.location.href='index.html'; }
+function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); localStorage.removeItem('tm2_token'); window.location.href='index.html'; }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 // Mostrar/ocultar una lista larga por su id (puro DOM, sin re-render → no borra nada que se esté llenando).
 // Render progresivo: si la lista aún no se ha armado (`LAZY[id]`), se arma en el momento de abrirla —

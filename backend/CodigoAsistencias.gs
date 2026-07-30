@@ -158,6 +158,86 @@ function ftime(v){
   if(m) return ('0'+m[1]).slice(-2)+':'+m[2];
   return s.slice(0,5);
 }
+/* ============ D108 — AUTENTICACIÓN POR TOKEN FIRMADO (backlog 2.25) ============
+ *
+ * EL AGUJERO QUE CIERRA. Hasta D107 el rol vivía en el navegador y el backend se creía la identidad
+ * que le mandaba el cliente (`e.parameter.usuario`, `body.usuario`). Dos consecuencias, las dos
+ * comprobadas sobre este mismo código: cualquiera podía escribir `rol: admin` en el almacenamiento de
+ * su navegador y entrar al menú; y, peor, la URL del Apps Script está en el código de 13 pantallas, así
+ * que se podía llamar a los endpoints desde una terminal diciendo «soy la residente» — sin contraseña.
+ * Los cerrojos de área (D69h/D101) eran decorativos frente a eso: el área se derivaba del usuario que
+ * el propio cliente declaraba. D107 sacó las claves del archivo público, pero NO arregló nada de esto.
+ *
+ * CÓMO SE CIERRA. Al entrar, el backend emite un TOKEN que lleva dentro `usuario·rol·áreas` y va
+ * FIRMADO con HMAC-SHA256 usando un secreto que vive en las Propiedades del Script — ni en la hoja, ni
+ * en el repositorio, ni en el navegador. Cada petición lo trae; cada endpoint verifica la firma y saca
+ * la identidad DEL TOKEN, ignorando lo que diga el cliente. Sin el secreto no se puede fabricar ni
+ * alterar un token: cambiarle un byte al rol invalida la firma.
+ *
+ * POR QUÉ NO CADUCA POR TIEMPO — esto es lo que lo hace compatible con el modo sin conexión (D82).
+ * Un reporte capturado el viernes en zona muerta puede pasar el fin de semana en la cola del teléfono
+ * y subirse el lunes. Con un token «válido 24 h» ese reporte sería rechazado y, como la cola solo
+ * suelta lo que el servidor confirma, se quedaría atascado para siempre reintentando. Así que el token
+ * no vence por reloj: vence por VERSIÓN.
+ *   · `AUTH_V` (Propiedades del Script) — subirlo invalida TODOS los tokens de golpe. Es el botón de
+ *     «sacar a todo el mundo» (teléfono perdido). Hay que subirlo en LOS DOS proyectos.
+ *   · `estado` en la hoja `USUARIOS` (D107) — ponerlo distinto de `activo` deja fuera a UNA persona.
+ *     La hoja `USUARIOS` vive en el Sheet de OBRA, así que aquí ese cerrojo no se comprueba (D69: módulos aislados):
+ *     para dejar fuera a alguien de ESTE módulo de inmediato hay que subir `AUTH_V` también aquí.
+ *
+ * CONSECUENCIA QUE HAY QUE SABER: si sacas a alguien que tiene reportes pendientes en su teléfono,
+ * esos reportes ya no suben. Antes de dar de baja a alguien, mirar que su contador esté en cero.
+ *
+ * `AUTH_ESTRICTO` es la válvula: en `false` se aceptan peticiones sin token válido y solo se anotan en
+ * el registro (útil para ver qué teléfono sigue con la app vieja). Se despliega en `true`.
+ */
+const AUTH_ESTRICTO = true;
+
+function _authProps_(){ return PropertiesService.getScriptProperties(); }
+/* El secreto se genera solo la primera vez y NUNCA sale del servidor. Si algún día hay que rotarlo,
+ * basta con borrar la propiedad `AUTH_SECRETO`: se regenera y todos los tokens dejan de valer. */
+function authSecreto_(){
+  const p=_authProps_(); let s=p.getProperty('AUTH_SECRETO');
+  if(!s){ s=Utilities.getUuid()+'-'+Utilities.getUuid(); p.setProperty('AUTH_SECRETO', s); }
+  return s;
+}
+function authVersion_(){ return String(_authProps_().getProperty('AUTH_V') || '1'); }
+function _b64url_(bytes){ return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/,''); }
+function _firmar_(txt){
+  return _b64url_(Utilities.computeHmacSha256Signature(txt, authSecreto_(), Utilities.Charset.UTF_8));
+}
+function emitirToken_(usuario, rol, areas){
+  const carga={ u:String(usuario||''), r:String(rol||''), a:areas||[], v:authVersion_(), t:Date.now() };
+  const p=_b64url_(Utilities.newBlob(JSON.stringify(carga)).getBytes());
+  return p+'.'+_firmar_(p);
+}
+/* Verifica FIRMA primero y solo después interpreta el contenido: nunca se parsea algo no firmado. */
+function verificarToken_(tok){
+  const s=String(tok||''), i=s.indexOf('.');
+  if(i<1) return {ok:false, error:'Falta el token de sesión. Vuelve a entrar.'};
+  const carga=s.slice(0,i), firma=s.slice(i+1);
+  if(_firmar_(carga)!==firma) return {ok:false, error:'Sesión no válida. Vuelve a entrar.'};
+  let o;
+  try{ o=JSON.parse(Utilities.newBlob(Utilities.base64DecodeWebSafe(carga)).getDataAsString()); }
+  catch(err){ return {ok:false, error:'Sesión ilegible. Vuelve a entrar.'}; }
+  if(String(o.v)!==authVersion_()) return {ok:false, error:'Sesión cerrada por el administrador. Vuelve a entrar con señal.'};
+  return {ok:true, usuario:String(o.u||'').trim().toLowerCase(), rol:String(o.r||''), areas:Array.isArray(o.a)?o.a:[]};
+}
+/* Punto ÚNICO de autenticación: lo llaman doGet y doPost, nadie más. Devuelve la sesión REAL, la que
+ * sale del token; el resto del archivo puede seguir usando `usuario` como siempre porque los puntos de
+ * entrada lo sobrescriben con este valor. */
+function sesion_(e, body){
+  const tok = (body && body.token) || (e && e.parameter && e.parameter.token) || '';
+  const r = tok ? verificarToken_(tok) : {ok:false, error:'Falta el token de sesión. Vuelve a entrar.'};
+  if(r.ok) return r;
+  if(!AUTH_ESTRICTO){
+    Logger.log('AUTH tolerante: petición aceptada SIN token válido ('+r.error+') — action='
+      + ((body && body.action) || (e && e.parameter && e.parameter.action) || '?'));
+    return {ok:true, usuario:'', rol:'', tolerado:true};
+  }
+  return r;
+}
+
 /* ============ D105 — PORTERO DE FECHAS (incidente "reportes sin fecha", jul-2026) ============
  *
  * EL PROBLEMA QUE ARREGLA. `fdate` NORMALIZA pero no VALIDA: con `''`/`null` devuelve `''` y con
@@ -877,6 +957,12 @@ function proyectoFromCC(cc){
 function doGet(e){
   _t0 = Date.now();   // D99: siembra el cronómetro de servidor (`_ms` en la respuesta)
   const a=((e.parameter.action)||'').toLowerCase();
+  // D108: puerta única. Aquí importa el doble que en obra, porque TODA la autorización de este módulo
+  // (áreas, cuadrillas permitidas, quién puede completar faltantes) se derivaba del `usuario` que
+  // mandaba el cliente. Ahora sale del token firmado y sobrescribe lo que venga en la petición.
+  const ses=sesion_(e, null);
+  if(!ses.ok) return json({ok:false, auth:false, error:ses.error});
+  if(ses.usuario) e.parameter.usuario = ses.usuario;
   if(a==='roster')     return roster(e);
   if(a==='asistencia') return asistenciaDia(e);
   if(a==='personal')   return personalCompleto(e);
@@ -894,6 +980,12 @@ function doPost(e){
   _t0 = Date.now();   // D99: cronómetro de servidor también en las escrituras
   try{
     const body=JSON.parse(e.postData.contents);
+    // D108: identidad desde el token. Se sobrescriben `usuario` Y `reporta` porque en este módulo los
+    // dos son el que está en sesión (el formulario manda su propio usuario en ambos) y de ellos
+    // dependen `cuadrillaPermitidaPara` y el guard de "completar faltantes".
+    const ses=sesion_(e, body);
+    if(!ses.ok) return json({ok:false, auth:false, error:ses.error});
+    if(ses.usuario){ body.usuario = ses.usuario; body.reporta = ses.usuario; }
     if(body.action==='reporte_asistencia')  return guardarAsistencia(body);
     if(body.action==='asistencia_individual') return guardarIndividual(body);
     if(body.action==='personal')            return gestionPersonal(body);

@@ -11,6 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="TM2 Sur">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<script src="auth.js"></script>
 <script src="offline.js"></script>
 <style>
   :root { --bg:#0f1117;--surface:#1a1d27;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--error:#e74c3c;--input-bg:#12151f; }
@@ -170,7 +171,10 @@ async function login(){
     if(!data || !data.ok){ document.getElementById('clave').value=''; verError((data&&data.error)||'Usuario o contraseña incorrectos'); return; }
     // Login bueno CON señal: se recuerda el hash para poder entrar sin señal la próxima vez.
     const h = await hashClave(u, c);
-    if(h) localStorage.setItem('cred_'+u, JSON.stringify({ h:h, rol:data.rol, areas:data.areas||[], redirige:data.redirige }));
+    // D108: el token firmado se guarda junto a la credencial recordada, para que el ingreso SIN señal
+    // recupere también la sesión con la que hablar al backend cuando vuelva la cobertura.
+    if(h) localStorage.setItem('cred_'+u, JSON.stringify({ h:h, rol:data.rol, areas:data.areas||[], redirige:data.redirige, token:data.token||'' }));
+    if(data.token) TM2Auth.set(data.token);
     entrar({ usuario:u, rol:data.rol, areas:data.areas||[], redirige:data.redirige });
   }catch(err){
     // Sin señal (o el servidor no contestó): se intenta contra la credencial recordada de ESTE usuario.
@@ -178,7 +182,10 @@ async function login(){
     if(guardada){
       try{
         const g=JSON.parse(guardada), h=await hashClave(u,c);
-        if(h && h===g.h){ entrar({ usuario:u, rol:g.rol, areas:g.areas||[], redirige:g.redirige }); return; }
+        if(h && h===g.h){
+          if(g.token) TM2Auth.set(g.token);   // D108: se reusa el token del último ingreso con señal
+          entrar({ usuario:u, rol:g.rol, areas:g.areas||[], redirige:g.redirige }); return;
+        }
         document.getElementById('clave').value='';
         verError('Contraseña incorrecta (validada sin señal, con la última que usaste en este teléfono).');
         return;
