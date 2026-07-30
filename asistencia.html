@@ -11,6 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="TM2 Sur">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<script src="auth.js"></script>
 <script src="offline.js"></script>
 <style>
   :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--success:#2ecc71;--error:#e74c3c;--input-bg:#12151f;--warn:#f5a623;}
@@ -119,7 +120,7 @@ window.onload = function(){
 };
 function logout(){
   // solo la sesión: la cola de envíos pendientes NO se borra al cerrar sesión (D82)
-  localStorage.removeItem('usuario'); localStorage.removeItem('rol');
+  localStorage.removeItem('usuario'); localStorage.removeItem('rol'); localStorage.removeItem('tm2_token');
   window.location.href='index.html';
 }
 
@@ -235,7 +236,23 @@ async function cargarRoster(){
   }
 }
 
+/* D106 — la fecha del reporte NUNCA puede quedar vacía. Un <input type="date"> devuelve '' cuando se
+ * borra el campo o se teclea un día a medias, y hasta ahora ese '' se guardaba en STATE.fecha y viajaba
+ * al backend: la cuadrilla entera se escribía en ASISTENCIA con la columna `fecha` en blanco, invisible
+ * para el resumen y para el Parte. Las capturas de OBRA (capataz/chequeadora/drenajes) ya validaban
+ * esto antes de enviar; asistencias era la única que no. */
+function fechaValida(v){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(v||''))) return false;
+  const p=String(v).split('-'), dt=new Date(Number(p[0]), Number(p[1])-1, Number(p[2]));
+  return dt.getFullYear()===Number(p[0]) && dt.getMonth()===Number(p[1])-1 && dt.getDate()===Number(p[2]);
+}
 function onFechaChange(v){
+  if(!fechaValida(v)){
+    // Se conserva la fecha anterior y se repinta: el campo vuelve solo al día que estaba puesto.
+    alert('⚠️ La fecha quedó vacía o incompleta.\n\nSe mantiene el ' + STATE.fecha + '. Elige el día en el calendario antes de reportar.');
+    render();
+    return;
+  }
   STATE.fecha=v;
   // recalcula jornada estándar del día en cliente (mismo criterio que el backend: L-V/sábado/dom-fest)
   const d=v.split('-'); const dt=new Date(Number(d[0]),Number(d[1])-1,Number(d[2])); const dow=dt.getDay();
@@ -668,6 +685,13 @@ async function enviar(){
     if(over.length){
       if(!confirm(`⚠️ ATENCIÓN — estas personas superan las horas ordinarias del día + máximo de extras (${maxExtra}h):\n\n${over.join('\n')}\n\nSolo se reconocen ${maxExtra} horas extra sobre el estándar del día. Revisa las horas de entrada/salida.\n\n¿Enviar de todas formas?`)) return;
     }
+  }
+
+  // D106: última barrera del cliente. Sin fecha válida no se envía nada (el backend también lo
+  // rechaza, pero avisar aquí evita gastar el envío y, sin señal, encolar un reporte inservible).
+  if(!fechaValida(STATE.fecha)){
+    alert('⚠️ No se puede enviar sin fecha.\n\nElige el día en el campo "Fecha" y vuelve a intentarlo.');
+    return;
   }
 
   if(!confirm(`Vas a enviar la asistencia de ${esc(STATE.cuadrillaActual)} del ${STATE.fecha}.\n\nSi ya existe un reporte de esa fecha+cuadrilla, se REEMPLAZARÁ por completo.\n\n¿Continuar?`)) return;

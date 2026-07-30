@@ -111,6 +111,7 @@
   </div>
 </div>
 
+<script src="auth.js"></script>
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
 
@@ -150,7 +151,7 @@ window.onload = function(){
   document.getElementById('hasta').value=hoy;
   syncRango();
 };
-function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); window.location.href='index.html'; }
+function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); localStorage.removeItem('tm2_token'); window.location.href='index.html'; }
 
 // hasta no puede ser menor que desde: fija el min y corrige si quedó por debajo.
 function syncRango(){

@@ -172,6 +172,23 @@
 │    necesitan todas las filas (ver D102 y backlog 4.11).                │
 │  Capacidad de grilla (D93): ensureRows_ antes                          │
 │  de cada bloque; la grilla crece sola.                                 │
+│  D106 — PORTERO DE FECHAS (fdateValida_): toda fecha que entra por     │
+│    la API se valida (yyyy-MM-dd + día que exista) antes de tocar la    │
+│    hoja. `fdate` normaliza pero NO valida, y con la fecha vacía se     │
+│    escribían bloques enteros sin fecha en ASISTENCIA.                  │
+│    · ESCRITURAS (reporte_asistencia, asistencia_individual,            │
+│      extras_admin, extras_admin_delete): fecha inválida ⇒ ok:false,    │
+│      NO se escribe nada. Sin ok:true el ítem se queda en la cola       │
+│      offline (D82) en vez de guardarse mal: el reporte no se pierde.   │
+│    · LECTURAS del día (asistencia, export, ausencias): fecha inválida  │
+│      ⇒ ok:false. Antes, `fecha=` vacía devolvía justo las filas SIN    │
+│      fecha y el resumen las mostraba como si fueran el día pedido.     │
+│    · roster: es la excepción — fecha inválida cae al día de hoy, para  │
+│      no dejar al capataz sin formulario.                               │
+│    · Mantenimiento (a mano desde el editor, no endpoints):             │
+│      diagnosticoFechasAsistencia() solo lee;                           │
+│      repararFechasAsistencia(true) rellena SOLO la celda `fecha` de    │
+│      las filas huérfanas con el día de su `timestamp`.                 │
 └────────────────────────┬────────────────────────────────────────────--┘
                           ▼
 ┌── GOOGLE SHEET NUEVO (1KrhzaIg3BSspyi0oH0gHkAJnSRXaOIdel_pKaMVHX9w) ───┐

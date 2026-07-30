@@ -100,6 +100,7 @@
   </div>
 </div>
 
+<script src="auth.js"></script>
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
 const TODAS_MAQUINAS = ['BL005','BL009','EXC001','EXC013','EXC014','EXC015','MO03','MO04','MO09','NH69'];
@@ -118,7 +119,7 @@ window.onload = function() {
   document.getElementById('fechaConsulta').value = new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
 };
 
-function logout() { localStorage.removeItem('usuario'); localStorage.removeItem('rol'); window.location.href = 'index.html'; }
+function logout() { localStorage.removeItem('usuario'); localStorage.removeItem('rol'); localStorage.removeItem('tm2_token'); window.location.href = 'index.html'; }
 
 async function consultar() {
   const fecha = document.getElementById('fechaConsulta').value;

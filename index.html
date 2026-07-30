@@ -11,6 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="TM2 Sur">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<script src="auth.js"></script>
 <script src="offline.js"></script>
 <style>
   :root { --bg:#0f1117;--surface:#1a1d27;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--error:#e74c3c;--input-bg:#12151f; }
@@ -27,6 +28,9 @@
   input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,0.1);}
   .btn{width:100%;padding:14px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:10px;color:#0f1117;font-family:'Syne',sans-serif;font-size:15px;font-weight:700;cursor:pointer;letter-spacing:1px;margin-top:8px;transition:all 0.2s;}
   .btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(245,166,35,0.3);}
+  .btn-sec{background:none;border:1px solid var(--border);color:var(--muted);box-shadow:none;margin-top:10px;}
+  .btn-sec:hover{transform:none;box-shadow:none;border-color:var(--accent);color:var(--accent);}
+  .aviso{background:rgba(245,166,35,0.08);border:1px solid rgba(245,166,35,0.35);border-radius:8px;padding:10px 14px;font-size:12.5px;color:var(--accent);margin-top:12px;line-height:1.5;}
   .error{background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.3);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--error);margin-top:12px;display:none;}
   .error.visible{display:block;}
   .divider{height:1px;background:var(--border);margin:24px 0;}
@@ -40,112 +44,184 @@
     <h1>Reporte de Obra</h1>
     <p>Ingresa tus credenciales para continuar</p>
   </div>
-  <div class="field">
-    <label>Usuario</label>
-    <input type="text" id="usuario" placeholder="tu usuario" autocomplete="username">
+  <!-- D108: si ya hay sesión en este teléfono se ofrece continuar sin teclear nada. Es lo que hace
+       que el login del backend no rompa el modo sin conexión: el capataz abre la app y entra. -->
+  <div id="sesionBox" style="display:none;">
+    <button class="btn" id="btnSesion" onclick="continuarSesion()">CONTINUAR →</button>
+    <button class="btn btn-sec" onclick="otraCuenta()">Entrar con otra cuenta</button>
   </div>
-  <div class="field">
-    <label>Contraseña</label>
-    <input type="password" id="clave" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter') login()">
+  <div id="formBox">
+    <div class="field">
+      <label>Usuario</label>
+      <input type="text" id="usuario" placeholder="tu usuario" autocomplete="username">
+    </div>
+    <div class="field">
+      <label>Contraseña</label>
+      <input type="password" id="clave" placeholder="••••••••" autocomplete="current-password" onkeydown="if(event.key==='Enter') login()">
+    </div>
+    <button class="btn" id="btnLogin" onclick="login()">INGRESAR →</button>
   </div>
-  <button class="btn" onclick="login()">INGRESAR →</button>
   <div class="error" id="errorMsg">Usuario o contraseña incorrectos</div>
   <div class="divider"></div>
   <div class="version">Sistema de Reporte v2.0</div>
 </div>
 <script>
-const USUARIOS = {
-  'admin':       { clave: 'venganza753', rol: 'admin',       redirige: 'menu.html' },
-  'encargado':   { clave: 'enc1-2', rol: 'encargado',  redirige: 'encargado.html' },
-  'residente':   { clave: 'Ortiz2026', rol: 'residente',  redirige: 'residente.html' },
-  'jefe':        { clave: 'Ortiz2026', rol: 'jefe',       redirige: 'jefe.html' },
-  // Capataces y mairy tienen doble deber (reporte de obra + asistencia de personal, D69): aterrizan
-  // en seleccion-reporte.html, que arma sus tiles según el usuario. El rol no cambia (sigue siendo
-  // 'capataz'/'chequeadora' para que encargado.html y demás guards no se vean afectados).
-  // D84: `albert` y `ariel` salieron a UF3 (fuera de este sistema); sus llaves se eliminan y NO se
-  // reutilizan. El histórico de BANDEJA/DATA/ASISTENCIA con reporta=albert/ariel se conserva tal cual.
-  // Capataces de tierras vigentes: angel, alejo, robinson.
-  'angel':       { clave: 'capataz2025',  rol: 'capataz',    redirige: 'seleccion-reporte.html' },
-  'alejo':       { clave: 'capataz2025',  rol: 'capataz',    redirige: 'seleccion-reporte.html' },
-  'robinson':    { clave: 'capataz2025',  rol: 'capataz',    redirige: 'seleccion-reporte.html' },
-  // Drenajes (D70): capataces NOMINALES por área (usuario propio → trazabilidad en `reporta`, igual
-  // que los de tierras). El ROL (capataz_odt/capataz_odl) es lo que activa el modo del formulario.
-  // Claves placeholder comunes por área; llaves en minúscula (login hace trim+toLowerCase).
-  // ODT (transversal): Mauricio, Eduardo, Enrique. ODL (longitudinal): Jairo.
-  // Doble deber (D72): igual que los capataces de tierra, ahora también reportan asistencia de su
-  // personal ODT/ODL, así que aterrizan en seleccion-reporte.html (reporte de drenajes + asistencia).
-  // D84: capataz de drenajes con acceso a AMBOS capítulos → campo OPCIONAL `areas` (['odt'],['odl'] o
-  // ['odt','odl']). Sin el campo, el área se deriva del rol como hoy (capataz_odt/capataz_odl) → los
-  // capataces de una sola área se comportan EXACTAMENTE igual que hoy (no-regresión). Para darle a un
-  // capataz las dos áreas basta con añadirle `areas: ['odt','odl']` a su fila (el reporte-drenajes
-  // deriva el área de cada línea del CC del ítem: 06.*→ODT, 07.*→ODL).
-  'mauricio':      { clave: 'dren2026',  rol: 'capataz_odt', areas: ['odt','odl'],  redirige: 'seleccion-reporte.html' },
-  'eduardo':       { clave: 'dren2026',  rol: 'capataz_odt',  areas: ['odt','odl'],  redirige: 'seleccion-reporte.html' },
-  'enrique':       { clave: 'dren2026',  rol: 'capataz_odt',  areas: ['odt','odl'],  redirige: 'seleccion-reporte.html' },
-  'jairo':         { clave: 'dren2026',  rol: 'capataz_odl', areas: ['odt','odl'],   redirige: 'seleccion-reporte.html' },
-  // Doble deber (D72): revisan su panel de drenajes + el resumen de asistencia de SU área (odt/odl),
-  // así que aterrizan en seleccion-reporte.html.
-  // D84: la residente ODT salió a UF3 y la residente ODL asume también ODT con un SOLO login
-  // `residente_dren` (rol residente_dren → ['odt','odl']). El panel y el resumen le muestran las dos
-  // áreas juntas. Los logins de una sola área (`residente_odt`/`residente_odl`) se ELIMINAN (decisión
-  // del usuario, jul-2026: un solo login para esa persona); los ROLES de un área se conservan en los
-  // guards/helpers por retrocompatibilidad, por si algún día vuelve un residente de una sola área.
-  'residente_dren': { clave: 'Ortiz2026', rol: 'residente_dren', redirige: 'seleccion-reporte.html' },
-  // Chequeadoras (claves: comparten una contraseña común; usuario se compara en minúsculas).
-  // maleja/mairy/luzdary tienen doble deber (reporte de obra + asistencia de su cuadrilla): aterrizan
-  // en seleccion-reporte.html. maleja -> cuadrilla ALBERT, luzdary -> cuadrilla ALEJANDRO (se definen
-  // en la columna `responsables` de la hoja CUADRILLAS). El rol sigue siendo 'chequeadora'.
-  'maleja':   { clave: 'cheq2025', rol: 'chequeadora', redirige: 'seleccion-reporte.html' },
-  'mairy':    { clave: 'cheq2025', rol: 'chequeadora', redirige: 'seleccion-reporte.html' },
-  'maria':    { clave: 'cheq2025', rol: 'chequeadora', redirige: 'reporte-chequeadora.html' },
-  'luzdary':  { clave: 'cheq2025', rol: 'chequeadora', redirige: 'seleccion-reporte.html' },
-  // Módulo de Asistencias (D69): jeisson reporta operadores + resumen sin gestión de personal.
-  'jeisson':  { clave: 'Oficial2026', rol: 'asistencia_plus', redirige: 'seleccion-reporte.html' },
-  // D88: `duvan` es el equivalente de jeisson para DRENAJES — asistencias y NADA más: REPORTA la
-  // asistencia de cualquier cuadrilla de ODT/ODL (elige la cuadrilla en el formulario, como el admin,
-  // pero acotado a esas dos áreas), revisa el resumen del día, completa faltantes, descarga el Excel
-  // Navision y gestiona personal de ODT+ODL. NO entra al panel ni al reporte de drenajes (eso es de
-  // `residente_dren`), por eso lleva un rol propio `asistencia_plus_dren` en vez de reutilizar
-  // `residente_dren` (los guards de esas pantallas van por rol). Doble deber → seleccion-reporte.html.
-  'duvan':    { clave: 'Oficial2026', rol: 'asistencia_plus_dren', areas: ['odt','odl'], redirige: 'seleccion-reporte.html' },
-  // D101: residente de UF3 (proyecto 3703) — asistencias y NADA más, mismo molde que duvan. REPORTA la
-  // asistencia de cualquier cuadrilla de UF3 (incluidos días anteriores: el formulario no tiene tope de
-  // fecha hacia atrás), revisa el resumen, completa faltantes, consulta ausencias, descarga el Excel
-  // Navision de 3703 y gestiona el personal de su área. Rol PROPIO `asistencia_plus_uf3` en vez de
-  // reutilizar `residente`: los guards de las pantallas de obra van por ROL, así queda imposible por
-  // construcción que entre a bandeja/DATA/maquinaria (mismo argumento de D88a). Esto NO es el sistema
-  // espejo de UF3 (backlog 3.5): es el canal de asistencias, y es reversible (marcar sus cuadrillas
-  // `estado=inactiva` y quitar esta línea). Clave placeholder por área (endurecimiento 2.21).
-  'residente_uf3': { clave: 'uf32026', rol: 'asistencia_plus_uf3', areas: ['uf3'], redirige: 'seleccion-reporte.html' },
-  // Digitación de volquetas (D83, backlog 2.22): la digitadora pre-llena la BASE de transporte a
-  // partir de VOLQUETAS y exporta; no ve el resto del sistema. Clave placeholder (endurecimiento 2.21).
-  'digitadora': { clave: 'volquetas2026', rol: 'digitadora', redirige: 'digitadora.html' },
-};
+/* ============ D108 — LOGIN VALIDADO EN EL BACKEND (backlog 2.21) ============
+ * Antes, este archivo llevaba dentro el mapa `USUARIOS` con TODAS las contraseñas en claro. Como
+ * GitHub Pages sirve el archivo tal cual, se leían con «ver código fuente» sin siquiera entrar.
+ * Ahora las claves viven en la hoja privada `USUARIOS` y las valida el Apps Script.
+ *
+ * SIN SEÑAL (D82) — el punto que había que resolver antes de mover nada. El `start_url` del PWA es
+ * esta pantalla, y antes SIEMPRE pedía credenciales; validar contra el servidor habría dejado fuera
+ * a un capataz en zona muerta. Dos piezas lo evitan:
+ *   1. SESIÓN RECORDADA: si en este teléfono ya se entró, se ofrece «Continuar» y no se teclea nada.
+ *      De paso desaparece el login diario que hoy sufren en campo.
+ *   2. CREDENCIAL RECORDADA: tras el primer login CON señal se guarda el HASH (nunca la contraseña)
+ *      de `usuario:clave`, con el mismo algoritmo del backend. Sin señal, la clave se valida contra
+ *      ese hash y se restaura el rol que devolvió el servidor la última vez.
+ * O sea: hace falta señal UNA vez por teléfono, igual que ya pasa con el roster de asistencia.
+ *
+ * Lo que esto NO es: autenticación de verdad. Los endpoints siguen abiertos y el rol vive en el
+ * navegador. Sacar las claves del código público era el objetivo de 2.21; el resto es otro trabajo.
+ */
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
+const TIMEOUT_LOGIN_MS = 12000;
 
-function login() {
-  const u = document.getElementById('usuario').value.trim().toLowerCase();
-  const c = document.getElementById('clave').value;
-  const err = document.getElementById('errorMsg');
-  if (USUARIOS[u] && USUARIOS[u].clave === c) {
-    // D82: la sesión vive en localStorage para sobrevivir pestaña en segundo plano / cierre del
-    // navegador en zona muerta (antes sessionStorage, que se pierde al cerrar la pestaña).
-    localStorage.setItem('usuario', u);
-    localStorage.setItem('rol', USUARIOS[u].rol);
-    // D84: campo opcional `areas` (capataz de drenajes con acceso a ambos capítulos). Si el usuario
-    // no lo trae, se limpia y las pantallas derivan el área del rol como hoy (no-regresión).
-    const areas=USUARIOS[u].areas;
-    if(Array.isArray(areas) && areas.length) localStorage.setItem('areas', JSON.stringify(areas));
-    else localStorage.removeItem('areas');
-    // limpieza de la clave vieja de sessionStorage (versiones anteriores a D82)
-    sessionStorage.removeItem('usuario');
-    sessionStorage.removeItem('rol');
-    err.classList.remove('visible');
-    window.location.href = USUARIOS[u].redirige;
-  } else {
-    err.classList.add('visible');
-    document.getElementById('clave').value = '';
+// SHA-256 de `usuario:clave` en hex minúscula — MISMO texto y MISMO formato que hashClave_ del
+// backend, o el login sin señal no cuadraría. SubtleCrypto exige contexto seguro: GitHub Pages es
+// https, así que está disponible; si no lo estuviera, se devuelve '' y simplemente no se recuerda
+// la credencial (se sigue pudiendo entrar con señal).
+async function hashClave(usuario, clave){
+  try{
+    if(!(window.crypto && crypto.subtle)) return '';
+    const txt = String(usuario||'').trim().toLowerCase() + ':' + String(clave==null?'':clave);
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
+    return Array.from(new Uint8Array(buf)).map(b=>('0'+b.toString(16)).slice(-2)).join('');
+  }catch(e){ return ''; }
+}
+
+function verError(msg){
+  const err=document.getElementById('errorMsg');
+  err.textContent = msg || 'Usuario o contraseña incorrectos';
+  err.classList.add('visible');
+}
+function limpiarError(){ document.getElementById('errorMsg').classList.remove('visible'); }
+
+// Guarda la sesión y entra. `redirige` viaja con la sesión para que el camino sin señal sepa a dónde
+// mandar a cada quien sin tener que consultar nada.
+function entrar(sesion){
+  localStorage.setItem('usuario', sesion.usuario);
+  localStorage.setItem('rol', sesion.rol);
+  localStorage.setItem('redirige', sesion.redirige || 'menu.html');
+  // D84: `areas` solo si viene con contenido; si no, las pantallas lo derivan del rol (no-regresión).
+  if(Array.isArray(sesion.areas) && sesion.areas.length) localStorage.setItem('areas', JSON.stringify(sesion.areas));
+  else localStorage.removeItem('areas');
+  sessionStorage.removeItem('usuario');   // limpieza de versiones anteriores a D82
+  sessionStorage.removeItem('rol');
+  window.location.href = sesion.redirige || 'menu.html';
+}
+
+/* ---------- sesión recordada ---------- */
+/* Pantalla de aterrizaje por ROL. Solo se usa como RESPALDO para las sesiones que quedaron guardadas
+ * por el login ANTERIOR, que no dejaba `redirige` en el almacenamiento: sin esto, quien ya estuviera
+ * dentro al actualizar la app caería en `menu.html` (que es del admin) y su guard lo devolvería al
+ * login — justo en campo y quizá sin señal. Tras el siguiente login con señal manda el `redirige` que
+ * responde el servidor, que es el exacto. No es un secreto: es navegación. */
+const REDIRIGE_POR_ROL = {
+  admin:'menu.html', encargado:'encargado.html', residente:'residente.html', jefe:'jefe.html',
+  digitadora:'digitadora.html', chequeadora:'seleccion-reporte.html', capataz:'seleccion-reporte.html',
+  capataz_odt:'seleccion-reporte.html', capataz_odl:'seleccion-reporte.html',
+  residente_dren:'seleccion-reporte.html', residente_odt:'seleccion-reporte.html',
+  residente_odl:'seleccion-reporte.html', asistencia_plus:'seleccion-reporte.html',
+  asistencia_plus_dren:'seleccion-reporte.html', asistencia_plus_uf3:'seleccion-reporte.html'
+};
+function sesionGuardada(){
+  const u=localStorage.getItem('usuario'), r=localStorage.getItem('rol');
+  if(!u || !r) return null;
+  // D109: una sesión SIN token no sirve para nada — el backend rechaza todas sus llamadas. Pasa con
+  // las sesiones que dejó la versión anterior (entonces no existían los tokens). En vez de dejar
+  // "Continuar" y que la persona entre a una pantalla que falla en cada consulta, se pide el login
+  // otra vez: es un único trámite y sale de ahí con token.
+  if(!(window.TM2Auth && TM2Auth.get())) return null;
+  let areas=[]; try{ areas=JSON.parse(localStorage.getItem('areas')||'[]'); }catch(e){}
+  const destino = localStorage.getItem('redirige') || REDIRIGE_POR_ROL[r] || 'seleccion-reporte.html';
+  return { usuario:u, rol:r, areas:Array.isArray(areas)?areas:[], redirige:destino };
+}
+function continuarSesion(){ const s=sesionGuardada(); if(s) entrar(s); }
+function otraCuenta(){
+  document.getElementById('sesionBox').style.display='none';
+  document.getElementById('formBox').style.display='block';
+  limpiarError();
+  document.getElementById('usuario').focus();
+}
+
+/* ---------- login ---------- */
+async function login(){
+  const u=document.getElementById('usuario').value.trim().toLowerCase();
+  const c=document.getElementById('clave').value;
+  const btn=document.getElementById('btnLogin');
+  limpiarError();
+  if(!u || !c){ verError('Escribe tu usuario y tu contraseña.'); return; }
+  btn.disabled=true; btn.textContent='VALIDANDO…';
+  try{
+    const ctrl = window.AbortController ? new AbortController() : null;
+    const t = ctrl ? setTimeout(()=>ctrl.abort(), TIMEOUT_LOGIN_MS) : null;
+    const resp = await fetch(APPS_SCRIPT_URL, {
+      method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({ action:'login', usuario:u, clave:c }),
+      signal: ctrl ? ctrl.signal : undefined
+    });
+    if(t) clearTimeout(t);
+    const data = await resp.json();
+    if(!data || !data.ok){ document.getElementById('clave').value=''; verError((data&&data.error)||'Usuario o contraseña incorrectos'); return; }
+    // Login bueno CON señal: se recuerda el hash para poder entrar sin señal la próxima vez.
+    const h = await hashClave(u, c);
+    // D109: el token firmado se guarda junto a la credencial recordada, para que el ingreso SIN señal
+    // recupere también la sesión con la que hablar al backend cuando vuelva la cobertura.
+    if(h) localStorage.setItem('cred_'+u, JSON.stringify({ h:h, rol:data.rol, areas:data.areas||[], redirige:data.redirige, token:data.token||'' }));
+    if(data.token) TM2Auth.set(data.token);
+    entrar({ usuario:u, rol:data.rol, areas:data.areas||[], redirige:data.redirige });
+  }catch(err){
+    // Sin señal (o el servidor no contestó): se intenta contra la credencial recordada de ESTE usuario.
+    const guardada = localStorage.getItem('cred_'+u);
+    if(guardada){
+      try{
+        const g=JSON.parse(guardada), h=await hashClave(u,c);
+        if(h && h===g.h){
+          if(g.token) TM2Auth.set(g.token);   // D109: se reusa el token del último ingreso con señal
+          entrar({ usuario:u, rol:g.rol, areas:g.areas||[], redirige:g.redirige }); return;
+        }
+        document.getElementById('clave').value='';
+        verError('Contraseña incorrecta (validada sin señal, con la última que usaste en este teléfono).');
+        return;
+      }catch(e){}
+    }
+    verError('Sin señal y este usuario todavía no ha entrado en este teléfono. '
+      + 'Hay que entrar UNA vez con señal; después ya se puede sin conexión.');
+  }finally{
+    btn.disabled=false; btn.textContent='INGRESAR →';
   }
 }
+
+// Arranque: si ya hay sesión, se ofrece continuar en vez de pedir credenciales otra vez.
+(function(){
+  const s=sesionGuardada();
+  if(!s){
+    // Sesión vieja (usuario/rol guardados pero sin token): se explica por qué se vuelve a pedir la
+    // clave, para que no parezca que el sistema se rompió.
+    if(localStorage.getItem('usuario') && !(window.TM2Auth && TM2Auth.get())){
+      const c=document.querySelector('.card'), d=document.createElement('div');
+      d.className='aviso';
+      d.textContent='Actualizamos la seguridad del sistema: entra una vez con tu usuario y contraseña. '
+        + 'Después el teléfono te deja entrar solo, también sin señal.';
+      c.insertBefore(d, document.getElementById('formBox'));
+    }
+    return;
+  }
+  document.getElementById('btnSesion').textContent='CONTINUAR COMO '+s.usuario.toUpperCase()+' →';
+  document.getElementById('sesionBox').style.display='block';
+  document.getElementById('formBox').style.display='none';
+})();
 </script>
 </body>
 </html>
