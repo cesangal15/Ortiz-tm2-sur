@@ -138,6 +138,11 @@ const REDIRIGE_POR_ROL = {
 function sesionGuardada(){
   const u=localStorage.getItem('usuario'), r=localStorage.getItem('rol');
   if(!u || !r) return null;
+  // D108: una sesión SIN token no sirve para nada — el backend rechaza todas sus llamadas. Pasa con
+  // las sesiones que dejó la versión anterior (entonces no existían los tokens). En vez de dejar
+  // "Continuar" y que la persona entre a una pantalla que falla en cada consulta, se pide el login
+  // otra vez: es un único trámite y sale de ahí con token.
+  if(!(window.TM2Auth && TM2Auth.get())) return null;
   let areas=[]; try{ areas=JSON.parse(localStorage.getItem('areas')||'[]'); }catch(e){}
   const destino = localStorage.getItem('redirige') || REDIRIGE_POR_ROL[r] || 'seleccion-reporte.html';
   return { usuario:u, rol:r, areas:Array.isArray(areas)?areas:[], redirige:destino };
@@ -201,7 +206,18 @@ async function login(){
 // Arranque: si ya hay sesión, se ofrece continuar en vez de pedir credenciales otra vez.
 (function(){
   const s=sesionGuardada();
-  if(!s) return;
+  if(!s){
+    // Sesión vieja (usuario/rol guardados pero sin token): se explica por qué se vuelve a pedir la
+    // clave, para que no parezca que el sistema se rompió.
+    if(localStorage.getItem('usuario') && !(window.TM2Auth && TM2Auth.get())){
+      const c=document.querySelector('.card'), d=document.createElement('div');
+      d.className='aviso';
+      d.textContent='Actualizamos la seguridad del sistema: entra una vez con tu usuario y contraseña. '
+        + 'Después el teléfono te deja entrar solo, también sin señal.';
+      c.insertBefore(d, document.getElementById('formBox'));
+    }
+    return;
+  }
   document.getElementById('btnSesion').textContent='CONTINUAR COMO '+s.usuario.toUpperCase()+' →';
   document.getElementById('sesionBox').style.display='block';
   document.getElementById('formBox').style.display='none';
