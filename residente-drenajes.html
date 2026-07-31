@@ -514,7 +514,9 @@ function addLinea(){
  * de ese día NO se llama — un payload vacío con `area` borraría lo que esa área ya tuviera en DATA ese
  * día. Envío secuencial; si una llamada falla, NO se continúa con la siguiente y se dice cuál quedó sin
  * enviar. Resultado: conteo REAL devuelto por el servidor por área (D30). */
+let enviandoDren=false;   // D110: candado anti doble envío (dos toques seguidos = dos pisadas del día)
 async function enviar(){
+  if(enviandoDren) return;
   // Guard: solo áreas que TIENEN al menos una fila en la bandeja de ese día.
   const areasEnvio=AREAS.filter(ar=> STATE.cantidades.some(c=>c._area===ar));
   if(!areasEnvio.length){ alert('No hay filas en la bandeja para enviar en este día.'); return; }
@@ -523,11 +525,18 @@ async function enviar(){
     const incluidas=rows.filter(c=>c._inc);
     return { ar, incluidas, inc:incluidas.length, desc:rows.length-incluidas.length };
   });
+  // D110: el guard de arriba cubre el área SIN filas, pero no el área con filas y TODAS apagadas —
+  // ese envío manda cero filas y el pisado por día+área deja esa área en blanco en DATA. Se avisa.
+  const vacias=plan.filter(p=>!p.inc).map(p=>p.ar.toUpperCase());
+  if(vacias.length){
+    if(!confirm('⚠️ ATENCIÓN — sin ninguna fila incluida en '+vacias.join(' y ')+'.\n\nSi envías así, DATA queda SIN NADA de '+vacias.join(' ni ')+' para el '+STATE.fecha+' (se borra lo que ya hubiera).\n\n¿Enviar de todas formas?')) return;
+  }
   let txt='Vas a enviar a DATA para el '+STATE.fecha+':\n\n';
   plan.forEach(p=>{ txt+='• '+p.ar.toUpperCase()+': '+p.inc+' incluidas'+(p.desc?(' · '+p.desc+' descartadas'):'')+'\n'; });
   txt+='\nSe PISA ese día '+(plan.length>1?'en cada una de esas áreas':'en '+plan[0].ar.toUpperCase())+' (tierras'+(plan.length>1?' y la otra área':'')+' no se tocan). ¿Continuar?';
   if(!confirm(txt)) return;
 
+  enviandoDren=true;
   const hechas=[];
   for(let i=0;i<plan.length;i++){
     const p=plan[i];
@@ -538,6 +547,7 @@ async function enviar(){
       if(!res||!res.ok) throw new Error((res&&res.error)||'Respuesta inesperada');
       hechas.push({ar:p.ar, n:(res.enviadas!=null?res.enviadas:p.inc)});
     }catch(err){
+      enviandoDren=false;
       const pend=plan.slice(i).map(x=>x.ar.toUpperCase());
       const box=document.getElementById('msgBox'); box.style.display='block';
       box.textContent='⚠ Falló el envío de '+p.ar.toUpperCase()+': '+err.message+'\n\n'
@@ -546,6 +556,7 @@ async function enviar(){
       return;
     }
   }
+  enviandoDren=false;
   const f=document.getElementById('savedFlag'); if(f){ f.style.display='inline'; setTimeout(()=>f.style.display='none',3000); }
   const box=document.getElementById('msgBox'); box.style.display='block';
   box.textContent='✅ Enviado a DATA ('+STATE.fecha+'):\n'+hechas.map(h=>'• '+h.ar.toUpperCase()+': '+h.n+' fila'+(h.n!==1?'s':'')+' ✓').join('\n');
