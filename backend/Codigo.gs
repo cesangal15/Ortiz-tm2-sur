@@ -141,11 +141,12 @@ function derivarEstado(motivo, muertas){
   // Sin frente / Esperando material / Abastecimiento / Traslado/movilización / Otro / texto libre
   return 'ESPERA';
 }
-// Tipos cuya producción (T) es SIEMPRE nula: vibrocompactadores + minicargador/minibuldozer (D41/D44).
-// Estas máquinas compactan/apoyan frentes de otras; no generan producción propia.
+// Tipos cuya producción (T) es SIEMPRE nula: vibrocompactadores + minicargador/minibuldozer (D41/D44)
+// + la retroexcavadora RT-02 "la pajarita" (alquilada). Estas máquinas compactan/apoyan frentes de
+// otras; no generan producción propia.
 function esTipoSinProduccion(tipo){
   const t=(tipo||'').toUpperCase();
-  return t==='VIBROCOMPACTADOR' || t==='MINICARGADOR' || t==='MINIBULDOZER';
+  return t==='VIBROCOMPACTADOR' || t==='MINICARGADOR' || t==='MINIBULDOZER' || t==='RETROEXCAVADORA';
 }
 
 // OBSERVACIONES: observación general del día que escribe quien reporta (una fila por envío).
@@ -1393,7 +1394,8 @@ const MAQ_CATALOGO = {
   FNG02:{tipo:'FINISHER',prog:6.4},
   CR019:{tipo:'VIBROCOMPACTADOR',prog:6.4}, CR013:{tipo:'VIBROCOMPACTADOR',prog:6.4}, CR016:{tipo:'VIBROCOMPACTADOR',prog:6.4},
   CS78B:{tipo:'VIBROCOMPACTADOR',prog:5}, NH403:{tipo:'VIBROCOMPACTADOR',prog:5}, NH404:{tipo:'VIBROCOMPACTADOR',prog:5}, NH420:{tipo:'VIBROCOMPACTADOR',prog:5}, CAT900:{tipo:'VIBROCOMPACTADOR',prog:5},
-  NH421:{tipo:'MINICARGADOR',prog:5}, CR026:{tipo:'MINIBULDOZER',prog:6.4}
+  NH421:{tipo:'MINICARGADOR',prog:5}, CR026:{tipo:'MINIBULDOZER',prog:6.4},
+  'RT-02':{tipo:'RETROEXCAVADORA',prog:5}
 };
 // Flota "requerida" diaria (mismo conjunto que estado.html): máquinas productivas cuya presencia se
 // espera cada día. El panel la usa para mostrar las FALTANTES (sin reporte) y permitir registrar sus

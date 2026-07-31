@@ -126,12 +126,14 @@ Terraplén (genera fila de terraplén) · Puente · ODL · Botadero (solo excava
 | CAT900 | VIBROCOMPACTADOR | 5 | SK RENTAL (alquilada) |
 | NH421 | MINICARGADOR | 5 | DINISSAN (alquilada) |
 | CR026 | MINIBULDOZER | 6.4 | ORTIZ (propia) |
+| RT-02 ("la pajarita") | RETROEXCAVADORA | 5 | Alquilada |
 
 **Retiradas de la obra (jun-2026, D61):** CAT320 (excavadora alquilada) y MC705 (motoniveladora alquilada). Ya no aparecen en los desplegables de capataz/chequeadora, ni en el panel de producción, ni en el estado de máquinas faltantes.
 
 **Regla de producción por tipo:**
 - VIBROCOMPACTADOR: producción siempre nula — compactan frentes ejecutados por otras máquinas; el campo producción no se muestra ni se guarda.
 - MINICARGADOR y MINIBULDOZER (NH421, CR026): producción siempre nula — mismo tratamiento que los vibrocompactadores en cuanto al campo `produccion`.
+- RETROEXCAVADORA (RT-02, la pajarita, D111): producción siempre nula — apoya frentes de otras máquinas. Solo aparece en el reporte del capataz de TIERRAS (no en el de la chequeadora, cuyo selector es solo excavadoras, ni en drenajes, que captura máquinas en texto libre); no entra en la flota esperada de `estado.html` ni en el selector de "redirigir producción" de `produccion-maquinaria.html`.
 - Actividades de apoyo (Compactación terraplén/subbase/BTC · Paisajeo / Adecuación de caminos / Limpieza de derrumbe): producción nula para cualquier tipo de máquina.
 - Todos los demás tipos + actividades productivas: producción = largo de la línea de la actividad.
 
