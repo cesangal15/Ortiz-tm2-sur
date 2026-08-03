@@ -745,6 +745,15 @@ function getBaseData(){
           const dk=ccKey+'|'+it.norm;
           if(!drenSeen[dk]){ drenSeen[dk]=1;
             _baseDrenItems.push({ cc:ccKey, corto:corto||ccKey, area:areaIt, desc:String(d), unidad:u }); }
+          // D113c: variantes por MATERIAL del mismo ítem (mismo CC/desc/unidad, distinta `actividad`).
+          // Van como opciones aparte del catálogo; sin `actividad` la entrada es el ítem "normal".
+          const vars = corto ? VARIANTES_DREN[corto] : null;
+          if(vars) vars.forEach(function(nombreAct){
+            const vk=dk+'|'+nombreAct;
+            if(!drenSeen[vk]){ drenSeen[vk]=1;
+              _baseDrenItems.push({ cc:ccKey, corto:corto||ccKey, area:areaIt, desc:String(d), unidad:u,
+                                    actividad:nombreAct, variante:true }); }
+          });
         } else if(corto && EXTRA_DREN[corto]){
           // Ítems "extra" de drenajes (D71): viven bajo un CC que deriva 'tierras' pero deben ofrecerse
           // en los reportes de drenajes con su propio capítulo. Se sirven en el catálogo para cada área
@@ -1448,6 +1457,27 @@ function ccCorto(centroCosto){ const m=String(centroCosto==null?'':centroCosto).
 // de la BASE (no se codifican aquí). Ampliable sin tocar más código.
 const EXTRA_DREN = {
   '01.02': { areas:['odt','odl'], capitulo:'DEMOLICIONES Y REUBICACIONES' } // Demolición de Estructuras
+};
+/* D113c — VARIANTES DE ACTIVIDAD por MATERIAL en drenajes (CC corto → nombres de actividad).
+ * El mismo caso del terraplén de tierras (D113), traído a drenajes: el ítem contractual es UNO
+ * ("Rellenos con material seleccionado", 06.02) y lo que hay que distinguir es CON QUÉ MATERIAL se
+ * hizo. En drenajes el catálogo es vivo desde la BASE y hasta ahora la actividad ERA la descripción
+ * del ítem (`actividad = it.desc` en los dos frontends), así que no había dónde poner la distinción.
+ * Estas variantes se sirven en `?action=drenajes` como opciones ADICIONALES del mismo ítem: mismo CC,
+ * misma DESCRIPCION verbatim de la BASE y misma unidad — solo cambia el campo `actividad`.
+ * Consecuencias buscadas:
+ *   · la fila que llega a DATA NO cambia (A–T idéntico: el maestro sigue viendo el ítem contractual);
+ *     la distinción viaja en la columna INTERNA `actividad`, igual que en tierras,
+ *   · se ve en la captura, el panel del residente de drenajes, su WhatsApp y el "Desglosar por
+ *     actividad" del panel del jefe (D113), que agrupa justo por esa columna,
+ *   · el acumulado por ODT (`acumulado_drenajes`) suma las variantes junto al ítem, que es lo
+ *     correcto: contractualmente son el mismo ítem.
+ * Ampliable sin tocar más código: agregar el CC corto y sus nombres. Los nombres quedan grabados en
+ * BANDEJA y DATA, así que cambiarlos después parte el histórico en dos (mismo aviso que en D113). */
+const VARIANTES_DREN = {
+  // 06.02 = "Rellenos con material seleccionado" (ODT). El nombre sin variante sigue siendo el del
+  // ítem: quien rellena con material normal no ve ningún cambio.
+  '06.02': ['Relleno con crudo de río', 'Relleno de UF3']
 };
 function deriveArea(cc){
   const c=String(cc==null?'':cc).trim();

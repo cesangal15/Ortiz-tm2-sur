@@ -113,22 +113,34 @@ Reglas:
 - Máquinas de drenajes: **texto libre** (id/placa + operador + horas opcionales), sin catálogo;
   `a_captura=NO` siempre (no pasan a Captura_Diaria).
 
-**Crudo de río en las ODT — `37xx.06.02` "crudo ODT" (D113b): NO necesita código.** El dueño pidió
-(ago-2026) la misma distinción de material del terraplén de tierras, pero para drenajes transversales.
-Al ser el catálogo **vivo desde la BASE**, basta con que la fila `CC | DESCRIPCION` exista en la tabla
-de ítems (A–H): `?action=drenajes` sirve TODO ítem cuyo CC derive un área de drenaje, así que aparece
-sola en el buscador de actividad de `reporte-drenajes.html` (se encuentra por "crudo" o por "06.02"),
-con su unidad verbatim. Nada que desplegar, nada que tocar en el frontend. La fila sale a DATA por la
-rama de drenajes de siempre: GRUPO `DRENAJES Y ESTRUCTURAS`, CAPÍTULO `DRENAJE TRANSVERSAL`, ELEMENTO
-= el marcador ODT que elige el capataz, ABS = su abscisa puntual, cantidad directa y columna interna
-`area='odt'` (pisado por día+área). **El único punto delicado, verificado:** 06.02 pasa a tener **dos
-ítems bajo el mismo CC**, y `lookupDescripcion` (D68) desempata por el texto reportado — devuelve
-"crudo ODT" cuando se reporta "crudo ODT" y el otro ítem cuando se reporta el otro, así que la
-distinción sobrevive a la escritura de DATA. Igual en UF2, donde el CC se re-ancla a `3702.06.02` y la
-descripción se resuelve por la llave corta aunque solo 3701 tenga la fila. Comprobado en
-`backend/pruebas/verificar_crudo_odt_drenajes.js` (24 comprobaciones). Esto **no contradice la piedra
-filtro parqueada** (D113): allí el problema era llevar un CC `.06.*` al reporte de **tierras**, contra
-la derivación de área; aquí el ítem se queda donde su CC dice que va.
+**Distinción por MATERIAL en drenajes (D113c) — `Relleno con crudo de río` y `Relleno de UF3`.**
+El ítem contractual de la BASE es UNO —`37xx.06.02` **"Rellenos con material seleccionado"**, m³, ODT—
+y lo que hay que distinguir es con qué material se hizo, igual que el terraplén de tierras (§1). Como
+en drenajes la actividad ERA la descripción del ítem, se resuelve con **variantes de actividad**:
+config `VARIANTES_DREN` en `Codigo.gs` (CC corto → nombres), servida en `?action=drenajes` como
+opciones adicionales del mismo ítem — **mismo CC, misma DESCRIPCION verbatim, misma unidad**; lo único
+que cambia es el campo `actividad`. Consecuencias:
+- **La fila que llega a DATA es idéntica en A–T** a la del ítem normal (GRUPO `DRENAJES Y
+  ESTRUCTURAS`, CAPÍTULO `DRENAJE TRANSVERSAL`, ELEMENTO = el marcador ODT, ABS puntual, DESCRIPCION
+  del ítem contractual). **Al maestro no llega el material**; la distinción vive en la columna interna
+  `actividad`, como en tierras.
+- Se ve en el buscador del capataz (`Relleno con crudo de río · Rellenos con material seleccionado —
+  06.02 [m3]`: se encuentra por el material, por el ítem o por el CC), en el panel del residente de
+  drenajes, en su WhatsApp y en el **"Desglosar por actividad"** del panel del jefe (D113).
+- El panel de drenajes agrupa por `actividad||descripcion` (`actKey`), no al revés: para lo ya
+  reportado es el mismo string —los dos frontends guardaban `actividad = descripcion`—, así que el
+  histórico se ve igual y solo las variantes salen separadas.
+- El **acumulado por ODT** (`acumulado_drenajes`) suma las variantes junto al ítem: contractualmente
+  son el mismo ítem.
+Ampliable sin más código: agregar CC corto y nombres a `VARIANTES_DREN`. **Los nombres quedan grabados
+en BANDEJA y DATA** — cambiarlos después parte el histórico en dos.
+
+**Ítem NUEVO de drenajes: no necesita código (D113b).** Distinto del caso de arriba. Como el catálogo
+es vivo, `?action=drenajes` sirve TODO ítem `.06.*`/`.07.*` de la tabla de ítems de la BASE (A–H) con
+su descripción y unidad verbatim: **agregar la fila a la BASE es la implementación completa**, aparece
+solo en el buscador y sale a DATA por la rama de drenajes de siempre. Lo que NO resuelve es distinguir
+el material bajo un ítem que ya existe — para eso están las variantes de arriba, porque la DESCRIPCION
+viaja verbatim al maestro (D68) y ahí debe verse el ítem contractual, no el material.
 
 **Ítems "extra" de drenajes (D71) — CC que NO deriva el área por sí solo.** Config `EXTRA_DREN` en
 `Codigo.gs` (CC corto → { áreas ofrecidas, capítulo verbatim }). Se sirven en `?action=drenajes` para

@@ -306,19 +306,33 @@ function itemsArea(){
   const seen={}, out=[];
   ITEMS.forEach(it=>{
     if(MULTI ? (AREAS.indexOf(it.area)<0) : (it.area!==AREA)) return;
-    const k=(it.corto||it.cc)+'|'+String(it.desc||'').trim();
+    // D113c: la llave incluye `actividad` — las variantes por material (crudo de río / UF3) comparten
+    // CC y descripción con su ítem, así que sin esto la deduplicación se las comía.
+    const k=(it.corto||it.cc)+'|'+String(it.desc||'').trim()+'|'+String(it.actividad||'');
     if(seen[k]) return; seen[k]=1;
     out.push(it);
   });
   return out;
 }
+/* D113c — nombre de la ACTIVIDAD de un ítem del catálogo. Por defecto es la descripción del ítem de
+ * la BASE (como siempre); en las variantes por material es el nombre de la variante. Es lo que se
+ * guarda en la columna `actividad` de BANDEJA/DATA: la DESCRIPCION que va al maestro no cambia. */
+function nombreAct(it){ return (it && it.actividad) ? it.actividad : (it ? it.desc : ''); }
 /* ---------- D85: buscador de actividad (patrón del buscador de CC de asistencias, D78) ----------
  * Reemplaza el <select> de actividad: input de texto que filtra por descripción o CC, con las opciones
  * agrupadas por área en modo multi-área. El índice elegido (sobre itemsArea()) se guarda en el input
  * OCULTO `.l-act`, así el resto del código (refreshLinea/getCantidades/validate/updateResumen) sigue
  * leyendo `.l-act` sin cambios. Etiqueta "Descripción — 06.02 [unidad]" (pedido ODT, D70). */
 const ACT_PICK_CAP=60;   // tope de opciones visibles a la vez; el resto aparece al filtrar
-function actLabel(it){ const cc=it.corto||it.cc||''; return it.desc+(cc?(' — '+cc):'')+(it.unidad?(' ['+it.unidad+']'):''); }
+// D113c: en una variante por material se muestra el nombre de la variante y, detrás, el ítem
+// contractual del que sale — así el capataz ve qué está reportando de verdad ("Relleno con crudo de
+// río · Rellenos con material seleccionado — 06.02 [m3]") y el buscador la encuentra por cualquiera
+// de los dos textos, o por el CC.
+function actLabel(it){
+  const cc=it.corto||it.cc||'';
+  const base=it.actividad ? (it.actividad+' · '+it.desc) : it.desc;
+  return base+(cc?(' — '+cc):'')+(it.unidad?(' ['+it.unidad+']'):'');
+}
 function actividadPickerHtml(i){
   return '<div class="act-search">'
     +'<input type="text" class="l-act-q" placeholder="Buscar actividad por nombre o CC…" autocomplete="off" oninput="actPickFilter('+i+')" onfocus="actPickFilter('+i+')" onblur="actPickBlur('+i+')">'
@@ -551,7 +565,7 @@ function updateResumen(){
     });
     const sinUbicTxt = (lineArea==='odl') ? 'PK' : 'marcador';
     const row='<div class="resumen-row'+(inc?' incompleto':'')+'">'
-      +'<div class="resumen-act">'+(it?esc(it.desc):'⚠ sin actividad')+'</div>'
+      +'<div class="resumen-act">'+(it?esc(nombreAct(it)):'⚠ sin actividad')+'</div>'
       +'<div class="resumen-pk">📍 '+(u.pkTxt?esc(u.pkTxt):'⚠ sin '+sinUbicTxt)+(u.uf?(' · '+u.uf):'')+'</div>'
       +(cant?('<div class="resumen-prod">'+esc(cant)+' '+(it?esc(it.unidad||''):'')+'</div>'):'<div class="resumen-warn">⚠ sin cantidad</div>')
       +(persTxt?('<div class="resumen-pk">'+persTxt+'</div>'):'')
@@ -608,7 +622,9 @@ function getCantidades(){
       // capítulo por defecto del área; los ítems "extra" (D71: Demolición de Estructuras) traen el suyo
       capitulo: it.capitulo || ((lineArea==='odt')?'DRENAJE TRANSVERSAL':'DRENAJE LONGITUDINAL'),
       area: lineArea,   // D71/D84: fija el área de la línea (necesaria para ítems cuyo CC deriva 'tierras')
-      actividad:it.desc, descripcion:it.desc, sub_actividad:'',
+      // D113c: `descripcion` es SIEMPRE la del ítem de la BASE (es la que viaja al maestro, verbatim
+      // por D68); `actividad` es la variante por material cuando la hay — columna interna, control.
+      actividad:nombreAct(it), descripcion:it.desc, sub_actividad:'',
       centro_costo: u.proy ? (u.proy+'.'+(it.corto||it.cc)) : (it.cc||''),
       unidad:it.unidad||'', data:true, uf:u.uf||'', proyecto:u.proy||'',
       elemento:elemento, pk_inicial:pkIni, pk_final:u.marc?'':(u.pkf||''),
