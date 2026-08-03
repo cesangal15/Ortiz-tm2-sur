@@ -23,8 +23,8 @@ cambios). **NO se dividen en núcleo y corona** — decisión explícita del due
 materiales esa distinción no interesa, *"simplemente es terraplén"*. Por eso son **una actividad cada
 una**, al lado de núcleo y corona, y no una variante de ellas. La distinción es **solo de control
 interno** y viaja por la columna interna `actividad` de BANDEJA/DATA: se ve en la captura, el panel del
-residente, el WhatsApp y el resumen por rango del jefe (toggle "Desglosar por actividad"), nunca en el
-maestro. Par H/I de Captura_Diaria: **TERRAPLEN / NUCLEO DE TERRAPLEN** para las dos (el modelo de
+residente, el WhatsApp y el resumen por rango del jefe (fila **Desglose** dentro del bloque de la
+actividad, D113d: la línea no se saca de su actividad y el total no cambia), nunca en el maestro. Par H/I de Captura_Diaria: **TERRAPLEN / NUCLEO DE TERRAPLEN** para las dos (el modelo de
 maquinaria no tiene SUB ACTIVIDAD propia para estos materiales — confirmado con el dueño). Su
 tratamiento aparte en el panel del residente está en §8.
 
@@ -126,7 +126,8 @@ que cambia es el campo `actividad`. Consecuencias:
   `actividad`, como en tierras.
 - Se ve en el buscador del capataz (`Relleno con crudo de río · Rellenos con material seleccionado —
   06.02 [m3]`: se encuentra por el material, por el ítem o por el CC), en el panel del residente de
-  drenajes, en su WhatsApp y en el **"Desglosar por actividad"** del panel del jefe (D113).
+  drenajes, en su WhatsApp y en el **desglose por material** del panel del jefe (D113d), dentro del
+  bloque del ítem.
 - El panel de drenajes agrupa por `actividad||descripcion` (`actKey`), no al revés: para lo ya
   reportado es el mismo string —los dos frontends guardaban `actividad = descripcion`—, así que el
   histórico se ve igual y solo las variantes salen separadas.

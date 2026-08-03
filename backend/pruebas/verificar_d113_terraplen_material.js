@@ -143,44 +143,61 @@ console.log('\n== encargado.html — panel del residente ==');
   ok('terraplén normal sin etiqueta', ctx.tagMaterial(L('Núcleo de terraplén','capataz',1))==='');
 }
 
-console.log('\n== jefe.html — desglose por actividad ==');
+console.log('\n== jefe.html — desglose por MATERIAL dentro de la actividad (D113d) ==');
 {
   const ctx=contexto(jsDe('jefe.html'));
-  const S=ctx._eval('STATE');
   const chk={checked:false};
   ctx._els['fDesglose']=chk; ctx._els['fArea']={value:''}; ctx._els['fActividad']={value:''}; ctx._els['fUf']={value:''};
   const DESC='Terraplenes (solo conformación)';
-  //            0:FECHA .. 5:DESCRIPCION .. 13:UNIDAD 14:LARGO .. 20:actividad (interna, D113)
-  const fila=(desc, largo, act)=>{ const r=new Array(20).fill(''); r[0]='2026-08-01'; r[3]='3701.02.07'; r[5]=desc;
-    r[6]='UF1'; r[8]='tm2 pk 20+000 - 20+800'; r[9]=20000; r[10]=20800; r[13]='m3'; r[14]=largo;
-    if(act!==undefined) r.push(act); return r; };
-  const filas=[ fila(DESC,500,'Núcleo de terraplén'), fila(DESC,300,'Terraplén con crudo de río'),
-                fila(DESC,200,'Terraplén de UF3'), fila(DESC,400,'') ];   // la última: fila vieja, sin actividad
+  const fila=(largo, act, pk)=>{ const r=new Array(20).fill(''); r[0]='2026-08-03'; r[3]='3701.02.07'; r[5]=DESC;
+    r[6]='UF1'; r[8]='tm2 pk 20+000 - 20+800'; r[9]=pk||20000; r[10]=(pk||20000)+800; r[13]='m3'; r[14]=largo;
+    r.push(act===undefined?'':act); return r; };
+  // El ejemplo del dueño: 5.000 de terraplén, de los cuales 200 son de crudo de río.
+  const filas=[ fila(3000,'Núcleo de terraplén'), fila(1800,'Corona de terraplén',21000),
+                fila(200,'Terraplén con crudo de río',22000) ];
+  const S=ctx._eval('STATE');
   S.filas=filas; S.cols={FECHA:0,GRUPO:2,CC:3,DESCRIPCION:5,UF:6,ELEMENTO:8,ABS_INI:9,ABS_FIN:10,UNIDAD:13,LARGO:14,ACTIVIDAD:20,COPY_END:15};
+  const res=ctx.resumenActividades(filas);
+  ok('la actividad NO se parte: sigue siendo un solo bloque', res.length===1 && res[0].actividad===DESC, JSON.stringify(res.map(r=>r.actividad)));
+  ok('  · con su total de siempre: 5.000 m³', res[0].unidades['m3']===5000, String(res[0].unidades['m3']));
+  const mats=res[0].materiales;
+  ok('  · y el desglose por material: 3 componentes', mats.length===3, JSON.stringify(mats.map(m=>m.nombre+' '+m.total)));
+  ok('  · ordenado de mayor a menor (núcleo 3.000 primero)', mats[0].nombre==='Núcleo de terraplén' && mats[0].total===3000);
+  ok('  · el crudo de río va al final con 200', mats[2].nombre==='Terraplén con crudo de río' && mats[2].total===200);
+  ok('  · los componentes suman exactamente el total', mats.reduce((s,m)=>s+m.total,0)===5000);
+  const html=ctx.bloqueActividad(res[0]);
+  ok('el bloque muestra el total y el desglose juntos', /5\.000/.test(html) && /Terraplén con crudo de río/.test(html) && /200/.test(html));
+  ok('  · las ubicaciones (PK) siguen ahí', /PK 20\+000/.test(html));
+  ok('  · el HTML del bloque cierra bien (no sobran ni faltan divs)',
+     (html.match(/<div/g)||[]).length===(html.match(/<\/div>/g)||[]).length,
+     (html.match(/<div/g)||[]).length+' abre / '+(html.match(/<\/div>/g)||[]).length+' cierra');
 
-  let res=ctx.resumenActividades(filas);
-  ok('APAGADO: una sola actividad (la vista de hoy, intacta)', res.length===1 && res[0].actividad===DESC, JSON.stringify(res.map(r=>r.actividad)));
-  ok('APAGADO: suma los 1.400 m³ juntos', res[0].unidades['m3']===1400, String(res[0].unidades['m3']));
-
-  chk.checked=true;
-  res=ctx.resumenActividades(filas);
-  const nombres=res.map(r=>r.actividad).sort();
-  ok('ENCENDIDO: se separan en 4 grupos', res.length===4, JSON.stringify(nombres));
-  ok('ENCENDIDO: aparece "Terraplén con crudo de río" con 300', (res.find(r=>r.actividad==='Terraplén con crudo de río')||{unidades:{}}).unidades['m3']===300);
-  ok('ENCENDIDO: aparece "Terraplén de UF3" con 200', (res.find(r=>r.actividad==='Terraplén de UF3')||{unidades:{}}).unidades['m3']===200);
-  ok('ENCENDIDO: la fila SIN actividad respalda en DESCRIPCION (400)', (res.find(r=>r.actividad===DESC)||{unidades:{}}).unidades['m3']===400);
-
-  // backend viejo (sin la columna): la fila llega con 20 celdas
-  const viejas=[ fila(DESC,500), fila(DESC,300) ];
-  S.cols={FECHA:0,GRUPO:2,CC:3,DESCRIPCION:5,UF:6,ELEMENTO:8,ABS_INI:9,ABS_FIN:10,UNIDAD:13,LARGO:14,COPY_END:15};
-  res=ctx.resumenActividades(viejas);
-  ok('backend anterior al redespliegue: cae al respaldo, no se rompe', res.length===1 && res[0].unidades['m3']===800);
-
-  // el copiado al maestro no cambia con la columna nueva
-  S.cols={FECHA:0,GRUPO:2,CC:3,DESCRIPCION:5,UF:6,ELEMENTO:8,ABS_INI:9,ABS_FIN:10,UNIDAD:13,LARGO:14,ACTIVIDAD:20,COPY_END:15};
-  ok('COPY_END sigue en 15 (A:O)', ctx.col('COPY_END')===15);
-  const celdas=[]; for(let j=0;j<ctx.col('COPY_END');j++) celdas.push(ctx.celdaCopia(filas[1][j]));
-  ok('el copiado A:O no arrastra la actividad', celdas.length===15 && celdas.join('\t').indexOf('crudo de río')<0);
+  // Una actividad de un solo material: la vista NO estrena línea.
+  const solas=[ fila(500,'Conformación de subbase') ];
+  ok('actividad con un solo material: sin línea de desglose', ctx.lineaMateriales(ctx.resumenActividades(solas)[0])==='');
+  // Filas anteriores al cambio (sin `actividad` en DATA): tampoco.
+  const viejas=[ fila(300, ''), fila(200, '') ];
+  ok('filas anteriores al cambio: sin línea de desglose (caen bajo su actividad)',
+     ctx.lineaMateriales(ctx.resumenActividades(viejas)[0])==='');
+  // Mezcla de viejo y nuevo en el mismo rango: lo viejo se agrupa bajo el nombre de la actividad.
+  const mixto=[ fila(400, ''), fila(100,'Terraplén de UF3') ];
+  const rm=ctx.resumenActividades(mixto)[0];
+  ok('rango que cruza el despliegue: lo viejo bajo su actividad, lo nuevo aparte',
+     rm.materiales.length===2 && rm.materiales[0].nombre===DESC && rm.materiales[0].total===400
+     && rm.materiales[1].nombre==='Terraplén de UF3' && rm.materiales[1].total===100,
+     JSON.stringify(rm.materiales.map(m=>m.nombre+' '+m.total)));
+  // ODT: mismo mecanismo, misma columna interna.
+  const odt=(largo,act)=>{ const r=new Array(20).fill(''); r[0]='2026-08-03'; r[3]='3701.06.02';
+    r[5]='Rellenos con material seleccionado'; r[6]='UF1'; r[8]='ODT1-14+300'; r[9]=14300; r[10]=14300;
+    r[13]='m3'; r[14]=largo; r.push(act); return r; };
+  const ro=ctx.resumenActividades([odt(70,'Rellenos con material seleccionado'), odt(30,'Relleno con crudo de río')])[0];
+  ok('ODT: un solo bloque de 100 m³ con su desglose de material',
+     ro.unidades['m3']===100 && ro.materiales.length===2 && ro.materiales[1].nombre==='Relleno con crudo de río' && ro.materiales[1].total===30,
+     JSON.stringify(ro.materiales.map(m=>m.nombre+' '+m.total)));
+  // El copiado al maestro no se entera de nada de esto.
+  ok('el copiado A:O sigue sin arrastrar la actividad',
+     (()=>{ const c=[]; for(let j=0;j<ctx.col('COPY_END');j++) c.push(ctx.celdaCopia(filas[2][j]));
+            return c.length===15 && c.join('\t').indexOf('crudo de río')<0; })());
 }
 
 console.log('\n'+(fallos? '✗ '+fallos+' fallo(s) de '+casos : '✓ '+casos+' comprobaciones OK'));

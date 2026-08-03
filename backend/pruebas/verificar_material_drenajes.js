@@ -16,7 +16,7 @@
  *     BASE, el maestro no se entera— y la distinción viaja en la columna INTERNA `actividad`;
  *   · el panel del residente agrupa las variantes aparte del ítem normal, y lo ya reportado (donde
  *     `actividad` y `descripcion` son el mismo string) se sigue viendo exactamente igual;
- *   · el desglose del panel del jefe (D113) las separa, que es el objetivo final.
+ *   · el panel del jefe muestra la ODT con su total y el desglose por material debajo (D113d).
  *
  *   node backend/pruebas/verificar_material_drenajes.js
  */
@@ -138,23 +138,26 @@ console.log('\n== residente-drenajes.html (panel + WhatsApp) ==');
      r2.order.length===1 && r2.t[ITEM+'||m3'].total===75, JSON.stringify(r2.order));
 }
 
-console.log('\n== jefe.html — el desglose por actividad (D113) las separa ==');
+console.log('\n== jefe.html — la ODT se ve con su desglose de material (D113d) ==');
 {
   const c=contexto(jsDe('jefe.html'));
-  const chk={checked:false}; c._els['fDesglose']=chk;
+  c._els['fArea']={value:''}; c._els['fActividad']={value:''}; c._els['fUf']={value:''};
   const fila=(largo,act)=>{ const r=new Array(20).fill(''); r[0]='2026-08-03'; r[3]='3701.06.02'; r[5]=ITEM;
     r[6]='UF1'; r[8]='ODT1-14+300'; r[9]=14300; r[10]=14300; r[13]='m3'; r[14]=largo; r.push(act); return r; };
-  const filas=[fila(20,ITEM), fila(30,CRUDO), fila(15,UF3)];
+  const filas=[fila(70,ITEM), fila(20,CRUDO), fila(10,UF3)];
   const S=c._eval('STATE');
   S.filas=filas; S.cols={FECHA:0,GRUPO:2,CC:3,DESCRIPCION:5,UF:6,ELEMENTO:8,ABS_INI:9,ABS_FIN:10,UNIDAD:13,LARGO:14,ACTIVIDAD:20,COPY_END:15};
-  const apagado=c.resumenActividades(filas);
-  ok('APAGADO: una sola línea de 65 m³ (la vista de hoy)', apagado.length===1 && apagado[0].unidades['m3']===65);
-  chk.checked=true;
-  const r=c.resumenActividades(filas);
-  ok('ENCENDIDO: 3 grupos', r.length===3, JSON.stringify(r.map(x=>x.actividad)));
-  ok('  · "'+CRUDO+'" con 30 m³', (r.find(x=>x.actividad===CRUDO)||{unidades:{}}).unidades['m3']===30);
-  ok('  · "'+UF3+'" con 15 m³', (r.find(x=>x.actividad===UF3)||{unidades:{}}).unidades['m3']===15);
-  ok('  · el ítem normal con 20 m³', (r.find(x=>x.actividad===ITEM)||{unidades:{}}).unidades['m3']===20);
+  const r=c.resumenActividades(filas)[0];
+  ok('la ODT sigue siendo UN bloque con su total (100 m³)', r.actividad===ITEM && r.unidades['m3']===100, r.actividad+' '+r.unidades['m3']);
+  ok('  · con el desglose de los 3 materiales', r.materiales.length===3, JSON.stringify(r.materiales.map(m=>m.nombre+' '+m.total)));
+  ok('  · el ítem normal 70, crudo de río 20, UF3 10',
+     r.materiales[0].total===70 && r.materiales.find(m=>m.nombre===CRUDO).total===20 && r.materiales.find(m=>m.nombre===UF3).total===10);
+  ok('  · los materiales suman el total', r.materiales.reduce((s,m)=>s+m.total,0)===100);
+  const html=c.bloqueActividad(r);
+  ok('el bloque pinta el total y el desglose', /100/.test(html) && html.indexOf(CRUDO)>0 && html.indexOf(UF3)>0);
+  ok('  · el copiado A:O no arrastra la actividad',
+     (()=>{ const cel=[]; for(let j=0;j<c.col('COPY_END');j++) cel.push(c.celdaCopia(filas[1][j]));
+            return cel.length===15 && cel.join('\t').indexOf(CRUDO)<0; })());
 }
 
 console.log('\n'+(fallos? '✗ '+fallos+' fallo(s) de '+casos : '✓ '+casos+' comprobaciones OK'));
