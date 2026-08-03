@@ -1538,7 +1538,7 @@ function vistaPaso5(){
     </select>${p.ambitoAuto?' <span class="note" style="font-size:10px" title="sugerido por el nombre del archivo — confírmalo">auto</span>':''}`}</td>
     <td><button class="btn sec mini" onclick="Paso5.verPaginas(${i})">Hojear</button></td></tr>`).join('');
   const lista=falt.map(rc=>{
-    const cands=(S.ocr.candidatos[rc.remision]||[]).filter(c=>!S.ocr.descartados[rc.remision+'|'+c.key]);
+    const cands=Paso5._candsDe(rc);   // una fila por página: el contador cuadra con lo que se pinta
     const v=cands.filter(c=>c.nivel==='verde').length, n=cands.filter(c=>c.nivel==='naranja').length;
     return `<div class="falt-item ${S.ui.faltanteSel===rc.id?'sel':''}" onclick="Paso5.sel('${rc.id}')">
       <span class="mono"><b>${escapeHtml(rc.remision)}</b></span>
@@ -1693,7 +1693,7 @@ const Paso5={
       </div>
       <div class="pagina-view" id="pgRevisar"><div class="note">renderizando página…</div></div>`);
     try{
-      const c=await this.renderPagina(fileIdx,pg,1.6);
+      const c=await this.pagDom(fileIdx,pg,1.6);
       const cont=$('pgRevisar'); if(cont&&c){ cont.innerHTML=''; cont.appendChild(c); }
     }catch(e){ const cont=$('pgRevisar'); if(cont) cont.textContent='no se pudo renderizar: '+e.message; }
   },
@@ -1737,7 +1737,7 @@ const Paso5={
       d.querySelector('button').onclick=(e)=>{ e.stopPropagation(); Paso5.restaurar(x.fi,x.pg); };
       grid.appendChild(d);
       try{
-        const c=await this.renderPagina(x.fi,x.pg,0.3);
+        const c=await this.pagDom(x.fi,x.pg,0.3);
         if(c) d.insertBefore(c,d.firstChild);
       }catch(_){}
     }
@@ -1761,7 +1761,7 @@ const Paso5={
       <div class="pagina-view" id="pgEdit" style="margin-top:12px"><div class="note">renderizando página…</div></div>`);
     const inp=$('lecturaEdit'); if(inp){ inp.focus(); inp.onkeydown=e=>{ if(e.key==='Enter') Paso5.guardarLectura(fileIdx,pg); }; }
     try{
-      const c=await this.renderPagina(fileIdx,pg,1.4);
+      const c=await this.pagDom(fileIdx,pg,1.4);
       const cont=$('pgEdit'); if(cont&&c){ cont.innerHTML=''; cont.appendChild(c); }
     }catch(e){ const cont=$('pgEdit'); if(cont) cont.textContent='no se pudo renderizar: '+e.message; }
   },
@@ -1808,7 +1808,7 @@ const Paso5={
       d.querySelector('button').onclick=(e)=>{ e.stopPropagation(); Paso5.editarLectura(x.fi,x.pg); };
       grid.appendChild(d);
       try{
-        const c=await this.renderPagina(x.fi,x.pg,0.3);
+        const c=await this.pagDom(x.fi,x.pg,0.3);
         if(c) d.insertBefore(c,d.firstChild);
       }catch(_){}
     }
@@ -1863,6 +1863,20 @@ const Paso5={
     if(this._pageCache.size>10){ const k0=this._pageCache.keys().next().value; this._pageCache.delete(k0); }
     this._pageCache.set(key,canvas);
     return canvas;
+  },
+  // El canvas del caché es UN SOLO nodo del DOM: insertarlo en dos sitios no lo copia, lo MUEVE
+  // (bug ago-2026: dos candidatos de la misma página —el exacto y el de un dígito— pedían la
+  // misma página y el segundo le robaba el canvas al primero, que quedaba como el renglón solo;
+  // igual pasaba entre un render viejo en vuelo y el nuevo). Todo lo que va al DOM usa una COPIA;
+  // el maestro se queda en el caché. El OCR sigue usando renderPagina (no toca el DOM y la copia
+  // a escala 2.0 sería cara).
+  async pagDom(pdfIdx,pagina,scale){
+    const src=await this.renderPagina(pdfIdx,pagina,scale);
+    if(!src) return null;
+    const c=document.createElement('canvas');
+    c.width=src.width; c.height=src.height;
+    c.getContext('2d').drawImage(src,0,0);
+    return c;
   },
 
   // ---- OCR ----
@@ -1979,12 +1993,32 @@ const Paso5={
     }
   },
 
+  // Candidatos VISIBLES de una faltante: sin los descartados y con UNA sola fila por página.
+  // Una misma página puede entrar dos veces (el OCR lee el número exacto y, de otro parte de
+  // la misma hoja, uno a un dígito): eran dos renglones pidiendo la misma página, y el segundo
+  // le robaba el canvas al primero. Se fusionan conservando todas las lecturas y el mejor nivel;
+  // el exacto queda arriba. Fuente única para pintar, para contar los badges y para "No es".
+  _candsDe(rc){
+    const out=[]; const porKey=new Map();
+    for(const c of (S.ocr.candidatos[rc.remision]||[])){
+      if(S.ocr.descartados[rc.remision+'|'+c.key]) continue;
+      const ya=porKey.get(c.key);
+      if(!ya){ const cp=Object.assign({},c,{tokens:[c.token]}); porKey.set(c.key,cp); out.push(cp); continue; }
+      if(ya.tokens.indexOf(c.token)<0) ya.tokens.push(c.token);
+      if(c.nivel==='verde'&&ya.nivel!=='verde'){ ya.nivel='verde'; ya.token=c.token; }
+    }
+    out.sort((a,b)=>(a.nivel==='verde'?0:1)-(b.nivel==='verde'?0:1));
+    return out;
+  },
+
   // ---- UI derecha: candidatos de la faltante seleccionada ----
   async _renderCandidatos(rcId){
     const rc=S.corte.reclamos.find(r=>r.id===rcId); if(!rc) return;
     const cont=$('p5derecha'); if(!cont) return;
-    const cands=(S.ocr.candidatos[rc.remision]||[]).filter(c=>!S.ocr.descartados[rc.remision+'|'+c.key]);
-    cands.sort((a,b)=>a.nivel==='verde'&&b.nivel!=='verde'?-1:b.nivel==='verde'&&a.nivel!=='verde'?1:0);
+    // Guarda de carrera: pintar las páginas es asíncrono y cada render() rehace el panel. Sin
+    // esto, el bucle viejo seguía vivo sobre nodos ya reemplazados y estorbaba al nuevo.
+    const gen=++this._candGen;
+    const cands=this._candsDe(rc);
     let html=`<h3 style="font-size:13px;color:var(--accent);margin-bottom:8px">Candidatos para <span class="mono">${escapeHtml(rc.remision)}</span></h3>`;
     if(!cands.length) html+='<div class="note">Sin candidatos OCR (corre el OCR o usa el navegador manual de abajo).</div>';
     html+='<div id="candPaginas"></div>';
@@ -1997,9 +2031,11 @@ const Paso5={
       // índice resuelto por NOMBRE: tras importar sesión los PDFs pueden re-cargarse en otro orden
       const fi=S.pdfs.findIndex(p=>p.name===c.file);
       const div=document.createElement('div'); div.className='pagina-view';
+      const leyo=(c.tokens||[c.token]).filter(Boolean);
       div.innerHTML=`<div class="flexrow" style="margin-bottom:6px">
         <span class="badge ${c.nivel}">${c.nivel==='verde'?'exacto':'≈ '+escapeHtml(c.token)}</span>
         <b>${escapeHtml(c.file)}</b> · página ${c.page}
+        <span class="note">OCR leyó: ${escapeHtml(leyo.join(', '))}</span>
         <span class="right"></span>
         ${fi>=0?`<button class="btn mini ok" onclick="Paso5.confirmar('${rc.id}',${fi},${c.page})">✔ Confirmar comprobante</button>
         <button class="btn mini sec" onclick="Paso5.esAsfalto('${rc.id}',${fi},${c.page})">Es ASFALTO</button>`:''}
@@ -2008,11 +2044,14 @@ const Paso5={
       cp.appendChild(div);
       if(fi<0){ div.querySelector('.ph').textContent='archivo no cargado en esta sesión: re-selecciona '+c.file+' arriba.'; continue; }
       try{
-        const canvas=await this.renderPagina(fi,c.page,1.4);
-        if(canvas){ div.querySelector('.ph').replaceWith(canvas); }
-      }catch(e){ div.querySelector('.ph').textContent='no se pudo renderizar: '+e.message; }
+        const canvas=await this.pagDom(fi,c.page,1.4);
+        if(gen!==this._candGen) return;   // el panel ya se rehizo: este render quedó obsoleto
+        const ph=div.querySelector('.ph');
+        if(canvas&&ph) ph.replaceWith(canvas);
+      }catch(e){ const ph=div.querySelector('.ph'); if(ph) ph.textContent='no se pudo renderizar: '+e.message; }
     }
   },
+  _candGen:0,
   confirmar(rcId,fileIdx,page){
     const rc=S.corte.reclamos.find(r=>r.id===rcId); if(!rc) return;
     const p=S.pdfs[fileIdx];
@@ -2032,9 +2071,7 @@ const Paso5={
   },
   noEs(rcId,candIdx){
     const rc=S.corte.reclamos.find(r=>r.id===rcId); if(!rc) return;
-    const cands=(S.ocr.candidatos[rc.remision]||[]).filter(c=>!S.ocr.descartados[rc.remision+'|'+c.key]);
-    cands.sort((a,b)=>a.nivel==='verde'&&b.nivel!=='verde'?-1:b.nivel==='verde'&&a.nivel!=='verde'?1:0);
-    const c=cands[candIdx]; if(!c) return;
+    const c=this._candsDe(rc)[candIdx]; if(!c) return;   // misma lista que se pintó
     S.ocr.descartados[rc.remision+'|'+c.key]=true;
     autosave(); render();
   },
@@ -2054,7 +2091,7 @@ const Paso5={
       d.onclick=()=>Paso5.verGrande(fileIdx,pg);
       grid.appendChild(d);
       try{
-        const c=await this.renderPagina(fileIdx,pg,0.3);
+        const c=await this.pagDom(fileIdx,pg,0.3);
         if(c) d.insertBefore(c,d.firstChild);
       }catch(_){}
     }
@@ -2074,7 +2111,7 @@ const Paso5={
       </div>
       <div class="pagina-view" id="pgGrande"><div class="note">renderizando…</div></div>`);
     try{
-      const c=await this.renderPagina(fileIdx,page,1.8);
+      const c=await this.pagDom(fileIdx,page,1.8);
       const cont=$('pgGrande'); if(cont){ cont.innerHTML=''; cont.appendChild(c); }
     }catch(e){ const cont=$('pgGrande'); if(cont) cont.textContent='error: '+e.message; }
   }
@@ -2208,7 +2245,7 @@ function ccCatalogo(tipo){
 }
 
 // Propuesta automática de área/CC (César la confirma o corrige en pantalla):
-//  · el origen/destino/obs de la proforma menciona un área observada → área ajena, CC fijo 3701.11.03
+//  · el destino/obs de la proforma menciona un área observada → área ajena, CC fijo 3701.11.03
 //  · nuestra: SUFIJO por material (config.ccPorMaterial, levantado de las BASE 2026 reales:
 //    granulares sub base→.03.02, BTC/base→.03.04, crudo→.02.11…; terraplén→.02.11) y
 //    PREFIJO por PK del destino (≤30→3701, >30→3702). Las variaciones 06.*/07.* son de
@@ -2218,16 +2255,14 @@ function ccCatalogo(tipo){
 //  · sin señal suficiente → CC vacío (lo pone César)
 function propuestaPendiente(rc){
   const s=rc.secundarios||{};
-  // El origen es el sitio de CARGUE (PLANTA PUTANA, AVENSA, PEKIN…): son lugares nuestros.
-  // Su texto NO debe disparar "área ajena" aunque contenga una palabra de área (p.ej. la
-  // "PLANTA" de "PLANTA PUTANA" ≠ planta de hormigón). Si el origen es un cargue conocido
-  // (config.kmPorOrigen) se excluye del escaneo de áreas; el área siempre está en el destino/obs.
-  const origenConocido=(S.config.kmPorOrigen||[]).some(rg=>{
-    try{ return new RegExp(rg.patron,'i').test(normTexto(s.origen||'')); }catch(_){ return false; }
-  });
-  const partesArea=[s.destino,rc.obs];
-  if(!origenConocido) partesArea.push(s.origen);
-  const texto=normTexto(partesArea.filter(Boolean).join(' '));
+  // El ORIGEN NUNCA entra al escaneo de áreas (corrección ago-2026). Es el sitio de CARGUE
+  // (la planta de Putana, AVENSA, PEKIN…) y en la proforma viene escrito de mil formas
+  // —"PLANTA", "PLANTA PUTANA", "Planta"—, así que la palabra "PLANTA" del origen no dice
+  // nada del área: es siempre el mismo sitio nuestro, no la planta de otro. Filtrarlo solo
+  // cuando matcheaba config.kmPorOrigen ("PUTANA") dejaba pasar el "PLANTA" pelado y mandaba
+  // filas nuestras al CC ajeno 3701.11.03. El área SIEMPRE se lee del destino/obs; si no la
+  // menciona, la propuesta es NUESTRA (área vacía) y César marca a mano las de puente/planta.
+  const texto=normTexto([s.destino,rc.obs].filter(Boolean).join(' '));
   for(const a of (S.config.areasObservadas||[])){
     const an=normTexto(a);
     if(an&&texto.indexOf(an)>=0) return {area:a,cc:CC_AREA_AJENA};
@@ -2494,7 +2529,9 @@ function cardActaPendientes(cab){
     actividad (material) de la proforma; kilometrajes = origen/destino (Km totales: Putana = destino + 2,5 · Avensa 25,7 ·
     Pekin 67,5 · resto |destino − origen|/1000, editable en ⚙️ Config → kmPorOrigen); m³·Km = Km totales × cantidad;
     unidad como la escribe la base. Solo quedan vacías tus derivadas (A, B, D, E, N, O). El <b>CC</b> es propuesta automática
-    (<span class="badge naranja">auto</span> = sin confirmar): área ajena (puente, planta…) → fijo ${CC_AREA_AJENA};
+    (<span class="badge naranja">auto</span> = sin confirmar): el <b>área se lee solo del DESTINO/observación</b> — el origen es el
+    sitio de cargue (planta de Putana, Avensa…) y nunca marca área, así que por defecto la fila sale <b>nuestra</b> y tú marcas
+    a mano las de puente/planta. Área ajena → fijo ${CC_AREA_AJENA};
     nuestros → sufijo por MATERIAL (sub base .03.02 · BTC/base .03.04 · crudo .02.11 · terraplén .02.11; mapeo
     editable en ⚙️ Config → ccPorMaterial) y prefijo 3701/3702 según PK ≤ 30 del destino. Las variaciones
     06.*/07.* de ODT/ODL son puntuales: corrígelas aquí. Revisa todo antes de copiar.
@@ -2858,7 +2895,7 @@ if(typeof module!=='undefined'&&module.exports){
     pkDeTexto,ccCatalogo,propuestaPendiente,valoresActaPendiente,pendientesConComprobante,filasActaPendientes,CC_AREA_AJENA,
     pkMetros,kmTotalesPendiente,unidadDominante,reglaMaterialPendiente,materialBasePendiente,numProforma,
     derivadosProforma,completarDesdeProforma,reclamosCompletados,huecosSinDato,reclamosConHuecos,CAMPOS_COMPLETABLES,LBL_CAMPO,
-    S,ESTADOS,ESTADOS_ACTA
+    Paso5,S,ESTADOS,ESTADOS_ACTA
   };
 }
 if(typeof document!=='undefined'){ init(); }
