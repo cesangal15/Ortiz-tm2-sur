@@ -102,6 +102,13 @@ const CAPTURA_ACT_MAP = {
   'Excavación de préstamo (Diviso)':                  ['EXCAVACION PRESTAMO','EXCAVACION APROVECHABLE'],
   'Núcleo de terraplén':                              ['TERRAPLEN','NUCLEO DE TERRAPLEN'],
   'Corona de terraplén':                              ['TERRAPLEN','CORONA DE TERRAPLEN'],
+  // D113 — terraplén por MATERIAL (crudo de río / UF3). Son terraplén normal (mismo ítem 02.07) y NO
+  // se dividen en núcleo/corona: la distinción es solo de material, para control interno. El modelo de
+  // maquinaria no tiene SUB ACTIVIDAD propia para ellos (confirmado con el dueño), así que sus máquinas
+  // pasan a Captura_Diaria como NUCLEO DE TERRAPLEN. Sin este par, `derivarActividad` devolvería
+  // a_captura='NO' y esas máquinas dejarían de pasar a Captura en silencio.
+  'Terraplén con crudo de río':                       ['TERRAPLEN','NUCLEO DE TERRAPLEN'],
+  'Terraplén de UF3':                                 ['TERRAPLEN','NUCLEO DE TERRAPLEN'],
   'Cereo de corona':                                  ['TERRAPLEN','CEREO CORONA'],
   'Conformación y disposición de sobrantes (ZODME)':  ['CONFORMACION','ZODME'],
   'Conformación de subbase':                          ['SUBBASE','CONFORMACION SUBBASE'],
@@ -738,6 +745,15 @@ function getBaseData(){
           const dk=ccKey+'|'+it.norm;
           if(!drenSeen[dk]){ drenSeen[dk]=1;
             _baseDrenItems.push({ cc:ccKey, corto:corto||ccKey, area:areaIt, desc:String(d), unidad:u }); }
+          // D113c: variantes por MATERIAL del mismo ítem (mismo CC/desc/unidad, distinta `actividad`).
+          // Van como opciones aparte del catálogo; sin `actividad` la entrada es el ítem "normal".
+          const vars = corto ? VARIANTES_DREN[corto] : null;
+          if(vars) vars.forEach(function(nombreAct){
+            const vk=dk+'|'+nombreAct;
+            if(!drenSeen[vk]){ drenSeen[vk]=1;
+              _baseDrenItems.push({ cc:ccKey, corto:corto||ccKey, area:areaIt, desc:String(d), unidad:u,
+                                    actividad:nombreAct, variante:true }); }
+          });
         } else if(corto && EXTRA_DREN[corto]){
           // Ítems "extra" de drenajes (D71): viven bajo un CC que deriva 'tierras' pero deben ofrecerse
           // en los reportes de drenajes con su propio capítulo. Se sirven en el catálogo para cada área
@@ -1316,6 +1332,13 @@ function consolidadoRango(e){
   const proy=e.parameter.proyecto||'';
   const AT=20;                                        // A–T (las 20 columnas espejo del maestro + Columna1)
   const climaCol=DATA_HEADERS.indexOf('clima');       // columna interna (tras A–T); no viaja al maestro
+  // D113 — `actividad` (columna INTERNA de DATA, como `clima`): la actividad del catálogo del capataz
+  // tal cual se reportó. Se expone APPEND al final de cada fila (índice AT) para que el panel del jefe
+  // pueda desglosar lo que DESCRIPCION funde en una sola línea: el terraplén con crudo de río y el de
+  // UF3 comparten ítem 02.07 y descripción verbatim de la BASE, así que sin esta columna se suman con
+  // el terraplén normal. NO entra en el copiado A:S del maestro (COPY_END=15 no cambia) ni altera el
+  // recorte A–T: se añade DESPUÉS, así que el copiado día a día es byte por byte el mismo de antes.
+  const actCol=DATA_HEADERS.indexOf('actividad');
   const ss=ss_(), sh=ss.getSheetByName('DATA');
   const filas=[], climaPorDia={};                     // D37: clima del día (leído de la col interna)
   if(desde && hasta && sh && sh.getLastRow()>1){
@@ -1328,6 +1351,7 @@ function consolidadoRango(e){
       if(climaCol>=0 && !climaPorDia[f]){ const cl=String(v[i][climaCol]||'').trim(); if(cl) climaPorDia[f]=cl; }
       const row=v[i].slice(0, AT);                     // recorta a A–T (el copiado A:S recorta a 19 en cliente)
       row[C.FECHA]=f;                                  // col A como cadena 'YYYY-MM-DD' (agrupar por día / copiar)
+      row.push(actCol>=0 ? String(v[i][actCol]==null?'':v[i][actCol]).trim() : '');   // D113: actividad interna
       filas.push(row);
     }
   }
@@ -1336,10 +1360,10 @@ function consolidadoRango(e){
   // ni OBSERVACION (texto que no debe ir al maestro).
   return json({
     ok:true, desde:desde, hasta:hasta,
-    header: DATA_HEADERS.slice(0, AT),
+    header: DATA_HEADERS.slice(0, AT).concat(['actividad']),   // D113: la interna va al final
     cols: { FECHA:0, ORDEN:1, GRUPO:2, CC:3, CAPITULO:4, DESCRIPCION:5, UF:6, PROYECTO:7, ELEMENTO:8,
             ABS_INI:9, ABS_FIN:10, LIBERACION:11, ACTA:12, UNIDAD:13, LARGO:14, ESPESOR:15, FC:16,
-            CANTIDAD:17, OBSERVACION:18, COLUMNA1:19, COPY_END:15 },
+            CANTIDAD:17, OBSERVACION:18, COLUMNA1:19, ACTIVIDAD:AT, COPY_END:15 },
     climaPorDia: climaPorDia,   // D37: {fecha -> clima}; el jefe lo muestra en el resumen (no va al maestro)
     filas: filas
   });
@@ -1433,6 +1457,27 @@ function ccCorto(centroCosto){ const m=String(centroCosto==null?'':centroCosto).
 // de la BASE (no se codifican aquí). Ampliable sin tocar más código.
 const EXTRA_DREN = {
   '01.02': { areas:['odt','odl'], capitulo:'DEMOLICIONES Y REUBICACIONES' } // Demolición de Estructuras
+};
+/* D113c — VARIANTES DE ACTIVIDAD por MATERIAL en drenajes (CC corto → nombres de actividad).
+ * El mismo caso del terraplén de tierras (D113), traído a drenajes: el ítem contractual es UNO
+ * ("Rellenos con material seleccionado", 06.02) y lo que hay que distinguir es CON QUÉ MATERIAL se
+ * hizo. En drenajes el catálogo es vivo desde la BASE y hasta ahora la actividad ERA la descripción
+ * del ítem (`actividad = it.desc` en los dos frontends), así que no había dónde poner la distinción.
+ * Estas variantes se sirven en `?action=drenajes` como opciones ADICIONALES del mismo ítem: mismo CC,
+ * misma DESCRIPCION verbatim de la BASE y misma unidad — solo cambia el campo `actividad`.
+ * Consecuencias buscadas:
+ *   · la fila que llega a DATA NO cambia (A–T idéntico: el maestro sigue viendo el ítem contractual);
+ *     la distinción viaja en la columna INTERNA `actividad`, igual que en tierras,
+ *   · se ve en la captura, el panel del residente de drenajes, su WhatsApp y el "Desglosar por
+ *     actividad" del panel del jefe (D113), que agrupa justo por esa columna,
+ *   · el acumulado por ODT (`acumulado_drenajes`) suma las variantes junto al ítem, que es lo
+ *     correcto: contractualmente son el mismo ítem.
+ * Ampliable sin tocar más código: agregar el CC corto y sus nombres. Los nombres quedan grabados en
+ * BANDEJA y DATA, así que cambiarlos después parte el histórico en dos (mismo aviso que en D113). */
+const VARIANTES_DREN = {
+  // 06.02 = "Rellenos con material seleccionado" (ODT). El nombre sin variante sigue siendo el del
+  // ítem: quien rellena con material normal no ve ningún cambio.
+  '06.02': ['Relleno con crudo de río', 'Relleno de UF3']
 };
 function deriveArea(cc){
   const c=String(cc==null?'':cc).trim();

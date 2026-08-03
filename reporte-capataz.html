@@ -175,6 +175,13 @@ const ACTIVIDADES = [
   {g:'Excavación', a:'Excavación de préstamo (Diviso)', item:'Excavación en material común de préstamos', uni:'m3', cc:'02.06', medida:'m3', data:true},
   {g:'Terraplén', a:'Núcleo de terraplén', item:'Terraplenes (solo conformación)', uni:'m3', cc:'02.07', medida:'m3', data:true},
   {g:'Terraplén', a:'Corona de terraplén', item:'Terraplenes (solo conformación)', uni:'m3', cc:'02.07', medida:'m3', data:true},
+  // D113 — terraplén distinguido por MATERIAL. Mismo ítem contractual del terraplén (02.07) y misma
+  // fila en DATA que el resto (GRUPO TIERRAS, CAPÍTULO EXPLANACIONES, DESCRIPCION verbatim de la BASE):
+  // la distinción es solo para control interno y se ve por la columna interna `actividad`. NO se
+  // dividen en núcleo y corona (decisión del dueño: para estos dos materiales esa distinción no
+  // interesa, "simplemente es terraplén"), por eso son una actividad cada una y no una variante.
+  {g:'Terraplén', a:'Terraplén con crudo de río', item:'Terraplenes (solo conformación)', uni:'m3', cc:'02.07', medida:'m3', data:true},
+  {g:'Terraplén', a:'Terraplén de UF3', item:'Terraplenes (solo conformación)', uni:'m3', cc:'02.07', medida:'m3', data:true},
   {g:'Terraplén', a:'Cereo de corona', item:'Cereo de corona', uni:'m2', cc:'', medida:'m2_via', data:false},
   {g:'Subbase', a:'Conformación de subbase', item:'Subbase Granular', uni:'m3', cc:'03.01', medida:'m3', data:true},
   {g:'Subbase', a:'Cereo de subbase', item:'Cereo de subbase', uni:'m2', cc:'', medida:'m2_via', data:false},

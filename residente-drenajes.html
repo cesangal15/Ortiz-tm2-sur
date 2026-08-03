@@ -253,13 +253,19 @@ async function consultar(){
   }
 }
 
-/* agrupación por ACTIVIDAD (descripción verbatim del ítem) dentro de UN área — drenajes no usa las
- * categorías de tierras; los totales NUNCA se suman entre áreas (capítulos distintos, D84). */
+/* agrupación por ACTIVIDAD dentro de UN área — drenajes no usa las categorías de tierras; los totales
+ * NUNCA se suman entre áreas (capítulos distintos, D84).
+ * D113c: la llave es `actividad` con respaldo a `descripcion`, no al revés. Para todo lo reportado
+ * hasta ahora es EL MISMO string (los dos frontends guardaban `actividad = descripcion = ítem de la
+ * BASE`), así que nada cambia de aspecto; lo que gana es que las variantes por material (relleno con
+ * crudo de río / de UF3) salen separadas del ítem normal en vez de fundirse con él, que es justo lo
+ * que se quiere ver. La DESCRIPCION que va al maestro sigue siendo la del ítem. */
+function actKey(c){ return c.actividad||c.descripcion||'—'; }
 function calcTotalesArea(ar){
   const t={}, order=[];
   STATE.cantidades.forEach(c=>{ if(c._area!==ar || !c._inc) return;
-    const k=(c.descripcion||c.actividad||'—')+'||'+(c.unidad||'');
-    if(!t[k]){ t[k]={desc:(c.descripcion||c.actividad||'—'), uni:c.unidad||'', total:0}; order.push(k); }
+    const k=actKey(c)+'||'+(c.unidad||'');
+    if(!t[k]){ t[k]={desc:actKey(c), uni:c.unidad||'', total:0}; order.push(k); }
     t[k].total+=c.largo;
   });
   return {t, order};
@@ -394,7 +400,7 @@ function renderBandeja(){
     if(!arr.length) return;
     if(MULTI) html+='<div class="grupo-area">'+(ar==='odt'?'ODT · Transversal':'ODL · Longitudinal')+' ('+arr.length+')</div>';
     const byAct={}, orderAct=[];
-    arr.forEach(({c,idx})=>{ const k=c.descripcion||c.actividad||'—';
+    arr.forEach(({c,idx})=>{ const k=actKey(c);                     // D113c
       if(!byAct[k]){ byAct[k]=[]; orderAct.push(k); } byAct[k].push({c,idx}); });
     orderAct.forEach(k=>{
       html+=`<div class="grupo-cat">${esc(k)}</div>`;
@@ -408,9 +414,17 @@ function renderBandeja(){
  * ubicación (marcador/PK) se ajusta al ítem elegido. */
 function itemsAddArea(){
   const seen={}, its=[];
-  ITEMS.forEach(it=>{ if(AREAS.indexOf(it.area)<0) return; const k=(it.corto||it.cc)+'|'+String(it.desc||'').trim(); if(seen[k])return; seen[k]=1; its.push(it); });
+  // D113c: la llave incluye `actividad` — las variantes por material (crudo de río / UF3) comparten
+  // CC y descripción con su ítem, así que sin esto la deduplicación se las comía.
+  ITEMS.forEach(it=>{ if(AREAS.indexOf(it.area)<0) return; const k=(it.corto||it.cc)+'|'+String(it.desc||'').trim()+'|'+String(it.actividad||''); if(seen[k])return; seen[k]=1; its.push(it); });
   return its;
 }
+/* D113c — nombre de la ACTIVIDAD de un ítem del catálogo: la descripción del ítem de la BASE, salvo
+ * en las variantes por material, donde es el nombre de la variante. Es lo que se guarda en la columna
+ * interna `actividad`; la DESCRIPCION que viaja al maestro no cambia. */
+function nombreAct(it){ return (it && it.actividad) ? it.actividad : (it ? it.desc : ''); }
+// Etiqueta del desplegable: en una variante, el nombre + el ítem contractual del que sale.
+function actOpt(it){ return (it.actividad ? (it.actividad+' · '+it.desc) : it.desc)+(it.unidad?(' ['+it.unidad+']'):''); }
 function renderAddCard(){
   if(!ITEMS.length) return '<div class="add-card"><div class="nota-maq">⚠ Catálogo de la BASE no cargado; recarga la página para poder agregar líneas.</div></div>';
   const its=itemsAddArea();
@@ -422,11 +436,11 @@ function renderAddCard(){
       const grp=its.map((it,i)=>({it,i})).filter(x=>x.it.area===g[0]);
       if(!grp.length) return;
       opts+='<optgroup label="'+esc(g[1])+'">';
-      grp.forEach(x=>{ opts+=`<option value="${x.i}">${esc(x.it.desc)}${x.it.unidad?(' ['+esc(x.it.unidad)+']'):''}</option>`; });
+      grp.forEach(x=>{ opts+=`<option value="${x.i}">${esc(actOpt(x.it))}</option>`; });
       opts+='</optgroup>';
     });
   } else {
-    its.forEach((it,i)=>{ opts+=`<option value="${i}">${esc(it.desc)}${it.unidad?(' ['+esc(it.unidad)+']'):''}</option>`; });
+    its.forEach((it,i)=>{ opts+=`<option value="${i}">${esc(actOpt(it))}</option>`; });
   }
   // En combinado la ubicación se llena según el ítem (onAddActChange); en una sola área es estática.
   const ubic = MULTI ? '<div id="addUbic"></div>' : (AREA==='odt' ? addUbicOdtHtml() : addUbicOdlHtml());
@@ -501,7 +515,9 @@ function addLinea(){
     // capítulo por defecto del área; los ítems "extra" (D71: Demolición de Estructuras) traen el suyo
     capitulo: it.capitulo || ((lineArea==='odt')?'DRENAJE TRANSVERSAL':'DRENAJE LONGITUDINAL'),
     area: lineArea, _area: lineArea,   // D71/D84: fija el área de la línea (envío y agrupación)
-    actividad:it.desc, descripcion:it.desc,
+    // D113c: `descripcion` = la del ítem de la BASE (la que va al maestro); `actividad` = la variante
+    // por material cuando la hay.
+    actividad:nombreAct(it), descripcion:it.desc,
     centro_costo:proy?`${proy}.${it.corto||it.cc}`:(it.cc||''), unidad:it.unidad||'', uf, proyecto:proy,
     elemento, pk_inicial:pk, pk_final:'', abs_inicial:abs, abs_final:abs,
     liberacion:'CAMPO', largo:cant, observacion:'',
@@ -579,7 +595,7 @@ function waFecha(){ const f=new Date(STATE.fecha+'T12:00:00');
 function buildCuerpoArea(ar){
   const {t}=calcTotalesArea(ar);
   const byAct={}, orderAct=[];
-  STATE.cantidades.forEach(c=>{ if(c._area!==ar || !c._inc) return; const k=(c.descripcion||c.actividad||'—')+'||'+(c.unidad||'');
+  STATE.cantidades.forEach(c=>{ if(c._area!==ar || !c._inc) return; const k=actKey(c)+'||'+(c.unidad||'');   // D113c
     if(!byAct[k]){ byAct[k]=[]; orderAct.push(k); } byAct[k].push(c); });
   let msg='';
   orderAct.forEach(k=>{

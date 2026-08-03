@@ -42,6 +42,13 @@
   .act-name{font-family:'Syne',sans-serif;font-size:13px;font-weight:800;color:var(--accent);text-transform:uppercase;letter-spacing:0.5px;}
   .act-sub{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;}
   .act-sub .u{font-family:'DM Sans',sans-serif;font-size:11px;color:var(--muted);font-weight:400;margin-left:3px;}
+  /* D113d: desglose por material dentro del bloque de la actividad (no cambia el total de arriba) */
+  .mat-row{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px;padding:8px 0 9px;border-bottom:1px solid rgba(46,52,80,0.5);font-size:12.5px;color:var(--text);}
+  .mat-row .mat-lbl{font-family:'Syne',sans-serif;font-size:9.5px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:2px 8px;margin-right:2px;}
+  .mat-row .mat-item{background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:3px 9px;white-space:nowrap;}
+  .mat-row .mat-item b{font-weight:600;color:var(--text);}
+  .mat-row .mat-item .n{font-family:'Syne',sans-serif;font-weight:700;color:var(--accent);margin-left:5px;}
+  .mat-row .mat-item .u{font-family:'DM Sans',sans-serif;font-size:10.5px;color:var(--muted);margin-left:3px;}
   .tot-row .cat .badge{margin-left:6px;vertical-align:middle;}
   .tot-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(46,52,80,0.5);font-size:13px;}
   .tot-row:last-child{border-bottom:none;}
@@ -121,7 +128,11 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IV
 let STATE = { filas:[], cols:{}, desde:'', hasta:'', clima:{} };
 // ELEMENTO (col I / índice 8) = el SUBTRAMO al que quedó cargada la fila (D104): se muestra junto al
 // PK en el resumen para que el jefe detecte incoherencias. Solo lectura (D65): el jefe no corrige.
-const COLS_DEFAULT = { FECHA:0, GRUPO:2, CC:3, DESCRIPCION:5, UF:6, ELEMENTO:8, ABS_INI:9, ABS_FIN:10, UNIDAD:13, LARGO:14, COPY_END:15 };
+// ACTIVIDAD (índice 20) = columna INTERNA de DATA que el consolidado añade DESPUÉS del recorte A–T
+// (D113). No viaja al maestro y no entra en el copiado (COPY_END sigue en 15). Con un backend anterior
+// al despliegue de D113 la fila llega con 20 celdas y esta viene `undefined`: el desglose cae solo al
+// respaldo por DESCRIPCION, así que la pantalla nunca se rompe.
+const COLS_DEFAULT = { FECHA:0, GRUPO:2, CC:3, DESCRIPCION:5, UF:6, ELEMENTO:8, ABS_INI:9, ABS_FIN:10, UNIDAD:13, LARGO:14, ACTIVIDAD:20, COPY_END:15 };
 
 // Área derivada del CC en CLIENTE (espejo de deriveArea del backend, D70) — el esquema A–T de
 // consolidado no cambia: capítulo 06 → ODT, 07 → ODL, resto → tierras.
@@ -224,9 +235,13 @@ function pkCrudo(ini, fin){
 // Resumen por ACTIVIDAD y UBICACIÓN (lo que pide el jefe: qué se hizo, DÓNDE y cuánto). Agrupa por
 // actividad (DESCRIPCION) y, dentro, por ubicación (PK crudo inicial–final desde ABS + UF). Suma LARGO
 // separado por unidad de medida (nunca mezcla m³ con m²). Cada actividad trae su subtotal por unidad.
+/* D113d — la fila NUNCA se saca de su actividad: se agrupa por DESCRIPCION, como siempre, y dentro
+ * del bloque se muestra de qué material se compone ese total (ver lineaMateriales). Se probó antes un
+ * toggle que PARTÍA la actividad en bloques por material y se descartó: perdía el total de la
+ * actividad, que es el número con el que trabaja el jefe. */
 function resumenActividades(rows){
   const cA=col('DESCRIPCION'), cAi=col('ABS_INI'), cAf=col('ABS_FIN'), cU=col('UF'), cUn=col('UNIDAD'), cL=col('LARGO'),
-        cE=col('ELEMENTO');
+        cE=col('ELEMENTO'), cAct=col('ACTIVIDAD');
   const acts={};
   rows.forEach(r=>{
     const a=String(r[cA]||'').trim()||'—';
@@ -238,16 +253,27 @@ function resumenActividades(rows){
     // D104: el SUBTRAMO (ELEMENTO) al que la fila quedó cargada. Entra en la llave de agrupación para
     // que dos subtramos distintos no se colapsen en una sola ubicación aunque compartan PK/UF.
     const elem=String((cE!=null?r[cE]:'')||'').trim();
-    if(!acts[a]) acts[a]={n:0, unidades:{}, ubic:{}};
+    if(!acts[a]) acts[a]={n:0, unidades:{}, ubic:{}, mat:{}, matOrden:[]};
     acts[a].n++;
     acts[a].unidades[u]=(acts[a].unidades[u]||0)+val;
+    // D113d — DESGLOSE POR MATERIAL dentro de la actividad. La fila SIGUE perteneciendo a su actividad
+    // contractual (el total de arriba no se toca); esto solo dice de cuánto fue cada material. Se usa
+    // la `actividad` interna con respaldo a DESCRIPCION, así que las filas anteriores al cambio caen
+    // bajo el nombre de la actividad y no inventan un grupo aparte.
+    const m=(cAct!=null && String(r[cAct]||'').trim()) ? String(r[cAct]).trim() : a;
+    const mk=m+'||'+u;
+    if(!acts[a].mat[mk]){ acts[a].mat[mk]={nombre:m, unidad:u, total:0, n:0}; acts[a].matOrden.push(mk); }
+    acts[a].mat[mk].total+=val; acts[a].mat[mk].n++;
     const k=uf+'||'+pk+'||'+elem;
     if(!acts[a].ubic[k]) acts[a].ubic[k]={uf, pk, elem, unidad:u, total:0, n:0, _ini:isNaN(ini)?Infinity:ini};
     acts[a].ubic[k].total+=val; acts[a].ubic[k].n++;
   });
   // Ordena actividades alfabéticamente; las ubicaciones por UF y luego por PK ascendente (por metros).
+  // Los materiales, de MAYOR a menor cantidad: primero lo normal, y detrás lo puntual (el crudo de río
+  // o el de UF3), que es como se lee la frase "de los 5.000, 4.800 normal y 200 de crudo de río".
   return Object.keys(acts).sort().map(a=>({
     actividad:a, n:acts[a].n, unidades:acts[a].unidades,
+    materiales:Object.values(acts[a].mat).sort((x,y)=> y.total-x.total),
     ubicaciones:Object.values(acts[a].ubic).sort((x,y)=> (x.uf<y.uf?-1:x.uf>y.uf?1:0) || (x._ini-y._ini))
   }));
 }
@@ -307,6 +333,28 @@ function bloqueActividad(a){
   let h='<div class="resumen-block"><div class="act-head">'
     + `<span class="act-name">${esc(a.actividad)}</span>`
     + `<span class="act-sub">${fmtUnidades(a.unidades)}</span></div>`;
+  h+=lineaMateriales(a);
+  return h+bloqueUbicaciones(a)+'</div>';
+}
+/* D113d — el desglose por MATERIAL, dentro del bloque de su actividad.
+ * Lo que pidió el dueño, con sus palabras: "sale Terraplén 5.000, pero sale la distinción — terraplén
+ * normal 4.800 y 200 nomás es de crudo de río". La fila NO se mueve de su actividad ni el total de
+ * arriba cambia: esto es una lectura de en qué se compone ese total. Vale igual para el terraplén de
+ * tierras (núcleo/corona/crudo de río/UF3) y para el relleno de las ODT (ítem normal / crudo de río /
+ * UF3), porque en los dos casos sale de la MISMA columna interna `actividad` de DATA.
+ * Solo aparece cuando hay más de un componente: una actividad con un solo material se ve como siempre,
+ * y lo reportado antes del cambio —sin `actividad` en DATA— cae bajo el nombre de su actividad, así
+ * que tampoco estrena línea. Es puramente visual: no toca el copiado al maestro (A:O, COPY_END=15). */
+function lineaMateriales(a){
+  const m=a.materiales||[];
+  if(m.length<2) return '';
+  // Un "chip" por material, sin separadores sueltos: al envolverse en pantalla angosta (el jefe también
+  // la abre desde el teléfono) no queda un "·" colgando al final del renglón.
+  const partes=m.map(x=>`<span class="mat-item"><b>${esc(x.nombre)}</b><span class="n">${fmt(x.total)}</span><span class="u">${esc(x.unidad)}</span></span>`);
+  return '<div class="mat-row"><span class="mat-lbl">Desglose</span>'+partes.join('')+'</div>';
+}
+function bloqueUbicaciones(a){
+  let h='';
   a.ubicaciones.forEach(ub=>{
     // D104: subtramo (ELEMENTO) junto al PK. Un "REVISAR ·" delante señala que el PK quedó fuera de
     // todo subtramo del eje; se resalta para que salte a la vista en la revisión del jefe.
@@ -317,7 +365,7 @@ function bloqueActividad(a){
      + `<small>${ub.n} línea${ub.n!==1?'s':''}</small></div>`
      + `<div class="val">${fmt(ub.total)}<span class="u">${esc(ub.unidad)}</span></div></div>`;
   });
-  return h+'</div>';
+  return h;   // el <div> del bloque lo cierra bloqueActividad
 }
 
 // Un botón "Copiar [fecha]" por cada día presente. Independiente de Actividad/UF, pero respeta el
