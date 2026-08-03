@@ -20,6 +20,10 @@
  *                                                generador Navision (cliente decide por proyecto)
  *   GET  ?action=ausencias&desde=&hasta=…    -> seguimiento de ausencias por RANGO (D94): ausencias
  *                                                reportadas (con motivo) + días sin reportar
+ *   GET  ?action=persona&codigo=&cedula=&desde=&hasta=
+ *                                             -> horas de UNA persona en un rango (D112): filas CRUDAS
+ *                                                + config/festivos/turnos; clasifica el cliente con el
+ *                                                mismo `horas-nomina.js` del Parte. Solo lectura.
  *   POST {action:'reporte_asistencia', fecha, cuadrilla, reporta, filas:[…]}
  *                                             -> pisa fecha+cuadrilla, escribe (confirma conteo, D30)
  *   POST {action:'personal', op:'alta'|'retiro'|'mover'|'reactivar', usuario, …}
@@ -997,6 +1001,7 @@ function doGet(e){
   if(a==='personal')   return personalCompleto(e);
   if(a==='export')     return exportDia(e);
   if(a==='ausencias')  return ausenciasRango(e);   // D94: seguimiento de ausencias por rango
+  if(a==='persona')    return horasPersona(e);     // D112: horas de UNA persona en un rango (solo lectura)
   // D99: refresco manual del caché de catálogos, para quien acaba de editar el Sheet a mano
   // (CAT_CC, CAT_MOTIVOS, CC_USADOS, CONFIG, TURNOS, `estado`/`area` de CUADRILLAS…).
   if(a==='cache_reset') return cacheReset(e);
@@ -1407,6 +1412,102 @@ function ausenciasRango(e){
   });
 
   return json({ ok:true, desde, hasta, dias:dias.length, filas, sinReportar, catMotivos:motivosCatalogo() });
+}
+
+/* ---------- GET persona: horas de UNA persona en un RANGO (D112) ----------
+ * `?action=persona&codigo=&cedula=&desde=&hasta=` — **solo lectura, no escribe nada.**
+ *
+ * PARA QUÉ. Es la vista INVERSA del resumen: el resumen está armado por DÍA (un día × todas las
+ * cuadrillas), así que para reconstruir el mes de una persona —lo que hace falta cuando alguien
+ * reclama por lo que le pagaron— había que abrir 26 días uno por uno. Esto devuelve de una vez sus
+ * filas del período.
+ *
+ * REGLA DE ORO: aquí NO se clasifican horas. Se devuelven las filas CRUDAS de `ASISTENCIA` más
+ * `config`, `festivos` y `turnos`, igual que `exportDia`, y la clasificación la hace el cliente con el
+ * MISMO `horas-nomina.js` que genera el Parte de Navision. Es lo que garantiza que la pantalla de
+ * reclamos y el archivo que se importa a Navision no puedan discrepar: no hay dos cálculos.
+ *
+ * CERROJO DE ÁREA EN EL BACKEND (D69h/D109), no en la interfaz: la identidad sale del token firmado,
+ * así que un `residente_dren` que teclee en la URL el código de alguien de tierras recibe `ok:false`,
+ * no los datos. Para el HISTÓRICO manda la cuadrilla de cada FILA de ASISTENCIA, no solo la actual de
+ * PERSONAL: si a alguien lo movieron de cuadrilla, el área de sus días pasados es la de cada fila.
+ * Por eso: (1) cada fila se filtra por el área de SU cuadrilla; (2) el acceso se concede si la persona
+ * es del área hoy (PERSONAL) o lo fue en alguna fila del rango; si no, se rechaza.
+ */
+function horasPersona(e){
+  const desde=fdateValida_(e.parameter.desde), hasta=fdateValida_(e.parameter.hasta);   // D106
+  if(!desde || !hasta) return json({ok:false, error:'Faltan las fechas del período (desde/hasta), o llegaron con un formato que no se entiende.'});
+  if(hasta < desde)    return json({ok:false, error:'El período está invertido: "hasta" es anterior a "desde".'});
+  const dias=diasDelRango(desde, hasta);
+  if(dias.length > MAX_DIAS_RANGO) return json({ok:false, error:'Período demasiado largo (máximo '+MAX_DIAS_RANGO+' días). Consulta por tramos.'});
+
+  // Identidad de la persona: `codigo` manda; si viene vacío, `cedula` (mismo criterio que keyPersona/
+  // keyOf en el resto del módulo). No se mezclan: buscar por código y "además" por cédula podría traer
+  // filas de otra persona cuando una de las dos columnas está vacía en el histórico.
+  const codigo=String(e.parameter.codigo||'').trim();
+  const cedula=String(e.parameter.cedula||'').trim();
+  if(!codigo && !cedula) return json({ok:false, error:'Falta el código (o la cédula) de la persona.'});
+  const esLaPersona=function(r){
+    return codigo ? (String(r.codigo||'').trim()===codigo) : (String(r.cedula||'').trim()===cedula);
+  };
+
+  const areas=areasEfectivas(e);
+  const cuadArea=areaDeCuadrillaMap();
+  const enArea=function(c){ return cuadrillaEnAreas(c, areas, cuadArea); };
+
+  // Ficha desde PERSONAL (la de hoy). Puede no existir: alguien reportado y luego borrado de PERSONAL
+  // sigue teniendo histórico en ASISTENCIA, y ese histórico es justamente lo que se viene a consultar.
+  const personal=readSheet('PERSONAL', PERSONAL_HEADERS).filter(esLaPersona);
+  // Si hay varias filas (reingreso, D72: el reingreso crea fila NUEVA), manda la más reciente por
+  // fecha_ingreso — es la que describe su situación actual.
+  personal.sort(function(a,b){ return fdate(a.fecha_ingreso) < fdate(b.fecha_ingreso) ? -1 : 1; });
+  const p=personal.length ? personal[personal.length-1] : null;
+
+  // D102: lectura acotada al rango (escaneo de la columna `fecha` + solo los bloques de esos días; con
+  // rangos largos el helper cae solo a la lectura completa de siempre). El filtro por persona va en
+  // memoria: NADA de getDataRange() sobre la hoja entera.
+  const enRango=leerFilasPorFecha_('ASISTENCIA', desde, hasta).filter(esLaPersona);
+
+  // --- Cerrojo de área ---
+  const deSuAreaHoy = p ? enArea(String(p.cuadrilla||'')) : false;
+  const deSuAreaAntes = enRango.some(function(r){ return enArea(String(r.cuadrilla||'')); });
+  if(areas.length && !deSuAreaHoy && !deSuAreaAntes){
+    return json({ok:false, error:'Esa persona no es de tu área.'});
+  }
+
+  const filas=enRango.filter(function(r){ return enArea(String(r.cuadrilla||'')); })
+    .map(function(r){
+      return { fecha:fdate(r.fecha), reporta:String(r.reporta||''), cuadrilla:String(r.cuadrilla||''),
+        codigo:String(r.codigo||''), cedula:String(r.cedula||''), nombre:String(r.nombre||''),
+        cargo:String(r.cargo||''), cc:String(r.cc||''), proyecto:String(r.proyecto||''),
+        hora_entrada:ftime(r.hora_entrada), hora_salida:ftime(r.hora_salida),
+        presente:String(r.presente||'Si'), motivo_ausencia:String(r.motivo_ausencia||''),
+        observacion:String(r.observacion||''), turno:String(r.turno||'') };
+    })
+    .sort(function(a,b){ return a.fecha<b.fecha ? -1 : (a.fecha>b.fecha ? 1 : 0); });
+
+  // La ficha se arma con PERSONAL si existe; si no (histórico de alguien ya borrado), con lo que traen
+  // sus propias filas, para que la pantalla no salga sin nombre.
+  const ult = filas.length ? filas[filas.length-1] : null;
+  const persona = p ? {
+      codigo:String(p.codigo||''), cedula:String(p.cedula||''), nombre:String(p.nombre||''),
+      cargo:String(p.cargo||''), cuadrilla:String(p.cuadrilla||''), estado:String(p.estado||'activo'),
+      fecha_ingreso:fdate(p.fecha_ingreso), fecha_retiro:fdate(p.fecha_retiro), enPersonal:true
+    } : (ult ? {
+      codigo:ult.codigo, cedula:ult.cedula, nombre:ult.nombre, cargo:ult.cargo, cuadrilla:ult.cuadrilla,
+      estado:'', fecha_ingreso:'', fecha_retiro:'', enPersonal:false
+    } : null);
+  if(!persona) return json({ok:false, error:'No se encontró a esa persona (ni en PERSONAL ni en lo reportado del período).'});
+
+  // Mismos catálogos que `exportDia` para que el cliente clasifique IGUAL que el Parte: CONFIG (topes,
+  // ventana nocturna, almuerzo), FESTIVOS (tipo de jornada) y TURNOS (jornada programada).
+  return json({ ok:true, desde, hasta, dias:dias.length, persona, filas,
+    config:getConfigMap(), festivos:getFestivos(),
+    turnos: readSheet('TURNOS', TURNOS_HEADERS).map(function(t){
+      return { turno:String(t.turno||''), tipo_dia:norm(t.tipo_dia), entrada:ftime(t.entrada), salida:ftime(t.salida),
+        descanso_ini:ftime(t.descanso_ini), descanso_fin:ftime(t.descanso_fin),
+        cruza_medianoche: String(t.cruza_medianoche||'').toUpperCase()==='SI' };
+    }) });
 }
 
 /* ---------- EXTRAS_ADMIN (D73): canal "solo extras" del admin ----------
