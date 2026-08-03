@@ -113,6 +113,23 @@ Reglas:
 - Máquinas de drenajes: **texto libre** (id/placa + operador + horas opcionales), sin catálogo;
   `a_captura=NO` siempre (no pasan a Captura_Diaria).
 
+**Crudo de río en las ODT — `37xx.06.02` "crudo ODT" (D113b): NO necesita código.** El dueño pidió
+(ago-2026) la misma distinción de material del terraplén de tierras, pero para drenajes transversales.
+Al ser el catálogo **vivo desde la BASE**, basta con que la fila `CC | DESCRIPCION` exista en la tabla
+de ítems (A–H): `?action=drenajes` sirve TODO ítem cuyo CC derive un área de drenaje, así que aparece
+sola en el buscador de actividad de `reporte-drenajes.html` (se encuentra por "crudo" o por "06.02"),
+con su unidad verbatim. Nada que desplegar, nada que tocar en el frontend. La fila sale a DATA por la
+rama de drenajes de siempre: GRUPO `DRENAJES Y ESTRUCTURAS`, CAPÍTULO `DRENAJE TRANSVERSAL`, ELEMENTO
+= el marcador ODT que elige el capataz, ABS = su abscisa puntual, cantidad directa y columna interna
+`area='odt'` (pisado por día+área). **El único punto delicado, verificado:** 06.02 pasa a tener **dos
+ítems bajo el mismo CC**, y `lookupDescripcion` (D68) desempata por el texto reportado — devuelve
+"crudo ODT" cuando se reporta "crudo ODT" y el otro ítem cuando se reporta el otro, así que la
+distinción sobrevive a la escritura de DATA. Igual en UF2, donde el CC se re-ancla a `3702.06.02` y la
+descripción se resuelve por la llave corta aunque solo 3701 tenga la fila. Comprobado en
+`backend/pruebas/verificar_crudo_odt_drenajes.js` (24 comprobaciones). Esto **no contradice la piedra
+filtro parqueada** (D113): allí el problema era llevar un CC `.06.*` al reporte de **tierras**, contra
+la derivación de área; aquí el ítem se queda donde su CC dice que va.
+
 **Ítems "extra" de drenajes (D71) — CC que NO deriva el área por sí solo.** Config `EXTRA_DREN` en
 `Codigo.gs` (CC corto → { áreas ofrecidas, capítulo verbatim }). Se sirven en `?action=drenajes` para
 cada área listada (desc/unidad verbatim de la BASE) y el **área real de la línea la fija el reporte
