@@ -28,6 +28,9 @@
   .btn-consultar{padding:10px 18px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:8px;color:#0f1117;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;}
   .btn-consultar:hover{transform:translateY(-1px);}
   .filtros-din{margin-top:14px;padding-top:14px;border-top:1px solid var(--border);display:none;}
+  .desglose{display:flex;align-items:flex-start;gap:8px;margin-top:12px;font-size:12.5px;color:var(--text);text-transform:none;letter-spacing:0;cursor:pointer;flex-wrap:wrap;}
+  .desglose input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer;flex-shrink:0;margin-top:1px;}
+  .desglose small{flex-basis:100%;color:var(--muted);font-size:11px;padding-left:24px;}
   .section-title{font-family:'Syne',sans-serif;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin:26px 0 12px;display:flex;align-items:center;gap:8px;}
   .section-title::after{content:'';flex:1;height:1px;background:var(--border);}
   /* ---- Resumen (protagonista) ---- */
@@ -104,6 +107,11 @@
         <div class="field"><label>Actividad</label><select id="fActividad" onchange="render()"></select></div>
         <div class="field"><label>Unidad Funcional</label><select id="fUf" onchange="render()"></select></div>
       </div>
+      <!-- D113: apagado por defecto = la vista de siempre, intacta. Encendido, separa lo que la
+           DESCRIPCION funde: el terraplén con crudo de río y el de UF3 comparten ítem 02.07. -->
+      <label class="desglose"><input type="checkbox" id="fDesglose" onchange="render()"> Desglosar por actividad
+        <small>separa el terraplén por material (crudo de río · UF3) en vez de agrupar todo por la descripción del ítem</small>
+      </label>
     </div>
   </div>
   <div id="resultados">
@@ -121,7 +129,11 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IV
 let STATE = { filas:[], cols:{}, desde:'', hasta:'', clima:{} };
 // ELEMENTO (col I / índice 8) = el SUBTRAMO al que quedó cargada la fila (D104): se muestra junto al
 // PK en el resumen para que el jefe detecte incoherencias. Solo lectura (D65): el jefe no corrige.
-const COLS_DEFAULT = { FECHA:0, GRUPO:2, CC:3, DESCRIPCION:5, UF:6, ELEMENTO:8, ABS_INI:9, ABS_FIN:10, UNIDAD:13, LARGO:14, COPY_END:15 };
+// ACTIVIDAD (índice 20) = columna INTERNA de DATA que el consolidado añade DESPUÉS del recorte A–T
+// (D113). No viaja al maestro y no entra en el copiado (COPY_END sigue en 15). Con un backend anterior
+// al despliegue de D113 la fila llega con 20 celdas y esta viene `undefined`: el desglose cae solo al
+// respaldo por DESCRIPCION, así que la pantalla nunca se rompe.
+const COLS_DEFAULT = { FECHA:0, GRUPO:2, CC:3, DESCRIPCION:5, UF:6, ELEMENTO:8, ABS_INI:9, ABS_FIN:10, UNIDAD:13, LARGO:14, ACTIVIDAD:20, COPY_END:15 };
 
 // Área derivada del CC en CLIENTE (espejo de deriveArea del backend, D70) — el esquema A–T de
 // consolidado no cambia: capítulo 06 → ODT, 07 → ODL, resto → tierras.
@@ -224,12 +236,26 @@ function pkCrudo(ini, fin){
 // Resumen por ACTIVIDAD y UBICACIÓN (lo que pide el jefe: qué se hizo, DÓNDE y cuánto). Agrupa por
 // actividad (DESCRIPCION) y, dentro, por ubicación (PK crudo inicial–final desde ABS + UF). Suma LARGO
 // separado por unidad de medida (nunca mezcla m³ con m²). Cada actividad trae su subtotal por unidad.
+/* D113 — nombre bajo el que se agrupa una fila.
+ *   · Desglose APAGADO (defecto) = DESCRIPCION, exactamente la vista que el jefe ya validó.
+ *   · Desglose ENCENDIDO = la `actividad` interna de DATA (la que eligió el capataz), con RESPALDO a
+ *     DESCRIPCION cuando venga vacía — las filas anteriores al despliegue de la columna, y las que el
+ *     residente agregó desde el panel sin actividad. Así un rango que cruce la fecha del cambio se ve
+ *     completo: lo viejo sigue apareciendo por su descripción, junto a lo nuevo por su actividad. */
+function nombreGrupo(r, cA, cAct, desglosar){
+  if(desglosar && cAct!=null){
+    const act=String(r[cAct]||'').trim();
+    if(act) return act;
+  }
+  return String(r[cA]||'').trim()||'—';
+}
 function resumenActividades(rows){
   const cA=col('DESCRIPCION'), cAi=col('ABS_INI'), cAf=col('ABS_FIN'), cU=col('UF'), cUn=col('UNIDAD'), cL=col('LARGO'),
-        cE=col('ELEMENTO');
+        cE=col('ELEMENTO'), cAct=col('ACTIVIDAD');
+  const desglosar=!!(document.getElementById('fDesglose')||{}).checked;
   const acts={};
   rows.forEach(r=>{
-    const a=String(r[cA]||'').trim()||'—';
+    const a=nombreGrupo(r, cA, cAct, desglosar);
     const uf=String(r[cU]||'').trim();
     const pk=pkCrudo(r[cAi], r[cAf]);
     const ini=parseFloat(r[cAi]);
@@ -274,7 +300,8 @@ function render(){
   let html='';
   // ---- A) RESUMEN (protagonista): por actividad, con DÓNDE (ubicación) y cuánto ----
   html+='<div class="section-title">Resumen por actividad y ubicación</div>';
-  html+=`<p class="meta-line">${acts.length} actividad${acts.length!==1?'es':''} · ${rows.length} línea${rows.length!==1?'s':''} · ${dias.length} día${dias.length!==1?'s':''}</p>`;
+  const desgTag=(document.getElementById('fDesglose')||{}).checked ? ' · desglosado por actividad' : '';
+  html+=`<p class="meta-line">${acts.length} actividad${acts.length!==1?'es':''} · ${rows.length} línea${rows.length!==1?'s':''} · ${dias.length} día${dias.length!==1?'s':''}${desgTag}</p>`;
   html+=bloqueClima(dias);
   acts.forEach(a=>{ html+=bloqueActividad(a); });
 

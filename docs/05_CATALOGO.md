@@ -12,7 +12,27 @@ Formato: actividad de campo → ítem contractual | unidad | CC | medición | ¿
 ### Terraplén
 - Núcleo de terraplén → Terraplenes (solo conformación) | m3 | 02.07 | m³ directo | Sí
 - Corona de terraplén → Terraplenes (solo conformación) | m3 | 02.07 | m³ directo | Sí
+- **Terraplén con crudo de río** (D113) → Terraplenes (solo conformación) | m3 | 02.07 | m³ directo | Sí
+- **Terraplén de UF3** (D113) → Terraplenes (solo conformación) | m3 | 02.07 | m³ directo | Sí
 - Cereo de corona → (sin ítem) | m2 | — | (PKf−PKi)×11.5 | **No** (no_data)
+
+**D113 — terraplén distinguido por MATERIAL.** Las dos actividades nuevas son terraplén normal: mismo
+ítem contractual, mismo CC `37xx.02.07`, y a DATA salen estandarizadas como cualquier otra fila de
+terraplén (GRUPO `TIERRAS`, CAPÍTULO `EXPLANACIONES`, DESCRIPCION verbatim de la BASE, copiado A:S sin
+cambios). **NO se dividen en núcleo y corona** — decisión explícita del dueño: para estos dos
+materiales esa distinción no interesa, *"simplemente es terraplén"*. Por eso son **una actividad cada
+una**, al lado de núcleo y corona, y no una variante de ellas. La distinción es **solo de control
+interno** y viaja por la columna interna `actividad` de BANDEJA/DATA: se ve en la captura, el panel del
+residente, el WhatsApp y el resumen por rango del jefe (toggle "Desglosar por actividad"), nunca en el
+maestro. Par H/I de Captura_Diaria: **TERRAPLEN / NUCLEO DE TERRAPLEN** para las dos (el modelo de
+maquinaria no tiene SUB ACTIVIDAD propia para estos materiales — confirmado con el dueño). Su
+tratamiento aparte en el panel del residente está en §8.
+
+**Fuera de alcance — piedra filtro (CC `3701.06.03`), parqueada (D113).** Se evaluó y se descartó por
+costo/beneficio: se usa en contadas ocasiones y meterla al reporte de tierras obliga a abrir el
+mecanismo de áreas (su CC es del capítulo `.06.*` = ODT y el área se deriva del CC, así que la línea se
+sellaría como ODT y saldría en el panel de drenajes). Ver D113 para el detalle técnico de lo que
+exigiría. **No implementar** salvo que el material se vuelva frecuente.
 
 ### Conformación / Pedraplén
 - Conformación y disposición de sobrantes (ZODME) → ídem | m3 | 02.08 | m³ | Sí (también auto)
@@ -62,6 +82,8 @@ Aplican a excavadoras, motoniveladoras, bulldozer. Estado `no_data`; no van a DA
 - Excavación de préstamo (Diviso) → EXCAVACION PRESTAMO / EXCAVACION APROVECHABLE
 - Núcleo de terraplén → TERRAPLEN / NUCLEO DE TERRAPLEN
 - Corona de terraplén → TERRAPLEN / CORONA DE TERRAPLEN
+- Terraplén con crudo de río (D113) → TERRAPLEN / NUCLEO DE TERRAPLEN
+- Terraplén de UF3 (D113) → TERRAPLEN / NUCLEO DE TERRAPLEN
 - Cereo de corona → TERRAPLEN / CEREO CORONA
 - Conformación y disposición de sobrantes (ZODME) → CONFORMACION / ZODME
 - Conformación de subbase → SUBBASE / CONFORMACION SUBBASE
@@ -107,6 +129,10 @@ DATA lleva una columna interna `area` para pisar por día+área sin confundirlos
 - Otro origen (texto libre) → aprovechable
 
 Notas cerradas: Crudo de Río y Fresado = materiales, no orígenes. Botadero/RCD = destino, no origen.
+**Enmienda D113:** sigue siendo cierto que **no son orígenes** —la chequeadora no los ofrece, porque
+solo mide los viajes desde los bancos de corte propio—, pero el **crudo de río** ya tiene **actividad
+propia en el reporte del capataz** (`Terraplén con crudo de río`, §1), junto con `Terraplén de UF3`. La
+distinción de material se hace por actividad, no por origen. El **fresado** sigue sin actividad propia.
 
 ## 3. Tipos de destino (chequeadora) — CONFIRMADO
 Terraplén (genera fila de terraplén) · Puente · ODL · Botadero (solo excavación).
@@ -202,9 +228,23 @@ Nota: `alejo` (usuario real del login) y `alejandro` (nombre usado en la cuadril
   ya reportó esa misma categoría. Quedan marcadas "control · no suma".
   El encargado puede reactivarlas manualmente si hace falta.
 
+- **EXCEPCIÓN — terraplén de material EXTERNO (D113):** `Terraplén con crudo de río` y
+  `Terraplén de UF3` **no entran en la reconciliación automática** aunque caigan en la
+  categoría "Terraplén". La chequeadora **solo mide los viajes desde los bancos de corte
+  propio**: ese material no pasa por ella, así que no hay volumen oficial que sustituya al
+  del capataz y apagar sus líneas **perdería volumen real**. Por la misma razón tampoco se
+  marcan como "posible duplicado (control vs oficial)". Se reconocen por la columna
+  `actividad` (`esTerraplenExterno` en `encargado.html`).
+
 - **Regla terraplén ≤ aprovechable+préstamo**: el panel muestra un aviso verde/rojo
   comparando los totales. Si terraplén > aprovechable+préstamo = probable doble
   conteo o error de volumen. Chequearlo antes de enviar a DATA.
+  **D113: el terraplén de material externo (crudo de río / UF3) NO suma en el lado del
+  terraplén de esta comparación** — su material no salió de ninguna excavación de la obra, así
+  que dispararía la alerta roja sin que haya error. El **total** de la pantalla sí los incluye
+  (es terraplén de verdad, y así va a DATA); lo que los descuenta es solo la comparación. Para
+  que la diferencia no parezca un descuadre, el aviso lleva debajo una línea que dice cuántos
+  m³ dejó fuera, y el total de la categoría anota cuánto de él es material externo.
 
 - Las filas de chequeadora se etiquetan "oficial"; las de capataz en esas categorías
   se etiquetan "control · no suma" y tienen borde punteado.

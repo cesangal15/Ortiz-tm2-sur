@@ -162,6 +162,10 @@ const ACTIVIDADES = [
   {g:'Excavación', a:'Excavación de préstamo (Diviso)', item:'Excavación en material común de préstamos', uni:'m3', cc:'02.06'},
   {g:'Terraplén', a:'Núcleo de terraplén', item:'Terraplenes (solo conformación)', uni:'m3', cc:'02.07'},
   {g:'Terraplén', a:'Corona de terraplén', item:'Terraplenes (solo conformación)', uni:'m3', cc:'02.07'},
+  // D113: terraplén por MATERIAL (mismo ítem 02.07, sin dividir en núcleo/corona). Esta lista es la de
+  // "agregar línea" del panel — más corta que la del capataz, pero el residente también las necesita.
+  {g:'Terraplén', a:'Terraplén con crudo de río', item:'Terraplenes (solo conformación)', uni:'m3', cc:'02.07'},
+  {g:'Terraplén', a:'Terraplén de UF3', item:'Terraplenes (solo conformación)', uni:'m3', cc:'02.07'},
   {g:'Terraplén', a:'Cereo de corona', item:'Terraplenes (solo conformación)', uni:'m3', cc:'02.07'},
   {g:'Conformación', a:'Conformación y disposición de sobrantes (ZODME)', item:'Conformación y disposición de sobrantes', uni:'m3', cc:'02.08'},
   {g:'Subbase', a:'Conformación de subbase', item:'Subbase Granular', uni:'m3', cc:'03.01'},
@@ -509,6 +513,28 @@ function categoria(c){
   return 'Otras actividades';
 }
 const ORDEN_CAT=['Excavación aprovechable','Excavación préstamo','Excavación no aprovechable','Conformación / ZODME','Terraplén','Subbase','Base / BTC','Riego de imprimación','Desmonte y limpieza','Estructuras / MSR','Otras actividades'];
+/* D113 — TERRAPLÉN DE MATERIAL EXTERNO (crudo de río · UF3).
+ * Son terraplén normal (ítem 02.07, categoría 'Terraplén' de este panel, y así salen a DATA), pero su
+ * material NO viene de los bancos de corte propio: el crudo de río se compra y el de UF3 lo envía otra
+ * unidad funcional. La chequeadora SOLO mide los viajes desde los bancos propios, así que estas dos
+ * actividades no tienen contraparte "oficial" y se tratan aparte en las dos reglas del panel:
+ *   · reconciliación automática — apagarlas porque la chequeadora reportó terraplén PERDERÍA volumen
+ *     real (nadie más lo está contando), así que quedan fuera (también de la marca de duplicado, que
+ *     es la misma sospecha por otro nombre);
+ *   · validación "terraplén ≤ aprovechable + préstamo" — no suman en el lado del terraplén: dispararían
+ *     la alerta roja sin que haya error, porque su material no salió de ninguna excavación.
+ * Se reconocen por `actividad` (la columna que BANDEJA/DATA guardan verbatim). La comparación va sin
+ * tildes y en mayúsculas para que no dependa de cómo se teclee el acento. */
+function normAct(s){ return String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase(); }
+function esTerraplenExterno(c){
+  const a=normAct(c.actividad);                       // 'Terraplén con crudo de río' | 'Terraplén de UF3'
+  return /CRUDO DE RIO/.test(a) || /\bUF3\b/.test(a);
+}
+// Etiqueta corta del material, para el WhatsApp ('' = terraplén normal, sin etiqueta).
+function tagMaterial(c){
+  if(!esTerraplenExterno(c)) return '';
+  return /CRUDO DE RIO/.test(normAct(c.actividad)) ? 'crudo de río' : 'UF3';
+}
 const SPLIT_UF=['Terraplén','Subbase','Base / BTC'];
 function fmt(n){ return (Math.round(n*100)/100).toLocaleString('es-CO'); }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -517,8 +543,11 @@ function calcTotales(){
   const t={};
   STATE.cantidades.forEach(c=>{ if(!c._inc) return;
     const cat=categoria(c), uf=c.uf||ufFromPk(c.pk_inicial);
-    if(!t[cat]) t[cat]={total:0,uf1:0,uf2:0,uni:c.unidad||''};
+    if(!t[cat]) t[cat]={total:0,uf1:0,uf2:0,ext:0,uni:c.unidad||''};
     t[cat].total+=c.largo; if(uf==='UF1') t[cat].uf1+=c.largo; else if(uf==='UF2') t[cat].uf2+=c.largo;
+    // D113: parte del total que es material EXTERNO (crudo de río / UF3). El total de la pantalla lo
+    // sigue incluyendo —es terraplén de verdad—; solo la validación de abajo lo descuenta.
+    if(esTerraplenExterno(c)) t[cat].ext+=c.largo;
   });
   return t;
 }
@@ -584,10 +613,11 @@ function destinosNoTerra(lines){
 }
 function autoReconcile(){
   const rolesPorCat={};
-  STATE.cantidades.forEach(c=>{ if(c._nodata || esDerivadaDescapote(c)) return;
+  // D113: el terraplén de material externo (crudo de río / UF3) no entra — ver esTerraplenExterno.
+  STATE.cantidades.forEach(c=>{ if(c._nodata || esDerivadaDescapote(c) || esTerraplenExterno(c)) return;
     const cat=categoria(c); (rolesPorCat[cat]=rolesPorCat[cat]||new Set()).add(c.rol);
   });
-  STATE.cantidades.forEach(c=>{ if(c._nodata || esDerivadaDescapote(c)) return;
+  STATE.cantidades.forEach(c=>{ if(c._nodata || esDerivadaDescapote(c) || esTerraplenExterno(c)) return;
     const cat=categoria(c);
     const hayCheq=(rolesPorCat[cat]||new Set()).has('chequeadora');
     if(c.rol==='capataz' && hayCheq && CAT_CONTROL_CAPATAZ.includes(cat)){
@@ -600,13 +630,15 @@ function autoReconcile(){
 // "hard" = además coincide el PK inicial exacto entre roles distintos.
 function computeDups(){
   const catRoles={}, catIdx={};
-  STATE.cantidades.forEach((c,idx)=>{ if(c._nodata||!c._inc||esDerivadaDescapote(c)) return;
+  // D113: el terraplén de material externo tampoco se marca como posible duplicado — su volumen no lo
+  // reporta nadie más (la chequeadora no mide esos viajes), así que la sospecha sería siempre falsa.
+  STATE.cantidades.forEach((c,idx)=>{ if(c._nodata||!c._inc||esDerivadaDescapote(c)||esTerraplenExterno(c)) return;
     const cat=categoria(c);
     (catIdx[cat]=catIdx[cat]||[]).push(idx);
     (catRoles[cat]=catRoles[cat]||new Set()).add(c.rol);
   });
   const info={};
-  STATE.cantidades.forEach((c,idx)=>{ if(c._nodata||!c._inc||esDerivadaDescapote(c)) return;
+  STATE.cantidades.forEach((c,idx)=>{ if(c._nodata||!c._inc||esDerivadaDescapote(c)||esTerraplenExterno(c)) return;
     const cat=categoria(c), roles=catRoles[cat]||new Set();
     const crossRole = roles.has('chequeadora') && roles.has('capataz');
     if(!crossRole) return;
@@ -663,7 +695,7 @@ function render(){
   let any=false;
   ORDEN_CAT.forEach(cat=>{ if(!tot[cat])return; any=true; const o=tot[cat];
     let split=''; if(SPLIT_UF.includes(cat)&&(o.uf1||o.uf2)) split=`<span class="uf-split"> · <span class="u1">UF1 ${fmt(o.uf1)}</span> · <span class="u2">UF2 ${fmt(o.uf2)}</span></span>`;
-    html+=`<div class="tot-row"><span class="cat">${cat}${split}</span><span class="val">${fmt(o.total)} ${o.uni}</span></div>`;
+    html+=`<div class="tot-row"><span class="cat">${cat}${split}${notaExtTot(o)}</span><span class="val">${fmt(o.total)} ${o.uni}</span></div>`;
   });
   if(!any) html+='<div class="cat" style="color:var(--muted)">Sin cantidades incluidas</div>';
   html+='</div>';
@@ -719,24 +751,46 @@ function render(){
 // así que el terraplén debe ser siempre ≤ aprovechable. Si lo excede, probable doble conteo o error.
 // Texto del aviso si la regla se viola (''=coherente). D110 lo reusa para repetirlo en la confirmación
 // del envío: el aviso rojo del panel se pierde de vista al bajar hasta los botones.
+// D113: lo que ENTRA en la regla es el terraplén de material propio — ver terraValidable abajo.
+/* D113 — el terraplén que ENTRA en la regla: el total de la categoría MENOS el material externo
+ * (crudo de río / UF3), que no sale de ninguna excavación de la obra. Por eso el número del aviso
+ * puede ser MENOR que el "Terraplén" de los totales de arriba: la diferencia es exactamente `ext`,
+ * y el propio aviso lo dice para que no parezca un descuadre. */
+function terraValidable(tot){
+  const o=tot&&tot['Terraplén']; if(!o) return 0;
+  return o.total-(o.ext||0);
+}
+function terraExterno(tot){ const o=tot&&tot['Terraplén']; return (o&&o.ext)||0; }
+// Coletilla del TOTAL de la categoría: cuánto de ese número es material externo (D113). El total no
+// cambia (es terraplén y así va a DATA); solo se dice de dónde salió una parte.
+function notaExtTot(o){
+  return (o && o.ext>0) ? `<span class="uf-split"> · <span style="color:var(--muted)">incl. ${fmt(o.ext)} de crudo de río / UF3</span></span>` : '';
+}
 function avisoTerraplen(tot){
   tot=tot||calcTotales();
-  const terra=(tot['Terraplén']&&tot['Terraplén'].total)||0;
+  const terra=terraValidable(tot);
   const aprov=((tot['Excavación aprovechable']&&tot['Excavación aprovechable'].total)||0)
             +((tot['Excavación préstamo']&&tot['Excavación préstamo'].total)||0);
   if(terra<=0 || aprov<=0 || terra<=aprov) return '';
   return `Terraplén (${fmt(terra)}) supera al aprovechable+préstamo (${fmt(aprov)})`;
 }
+// Coletilla del aviso cuando parte del terraplén del día es material externo (siempre que lo haya,
+// tanto en el ✓ como en el ⚠): explica por qué el número comparado no es el total de la pantalla.
+function notaExternoTerraplen(tot){
+  const ext=terraExterno(tot);
+  if(ext<=0) return '';
+  return `<div class="check-row" style="opacity:.85;font-size:12px;">↳ <span>No entran en la comparación ${fmt(ext)} m³ de terraplén con crudo de río / de UF3: ese material no sale de la excavación de la obra y la chequeadora no lo mide. El total de arriba sí los incluye.</span></div>`;
+}
 function renderChequeoTerraplen(tot){
-  const terra=(tot['Terraplén']&&tot['Terraplén'].total)||0;
+  const terra=terraValidable(tot);
   const aprov=((tot['Excavación aprovechable']&&tot['Excavación aprovechable'].total)||0)
             +((tot['Excavación préstamo']&&tot['Excavación préstamo'].total)||0);
-  if(terra<=0 || aprov<=0) return '';
+  if(terra<=0 || aprov<=0) return notaExternoTerraplen(tot);
   const aviso=avisoTerraplen(tot);
   if(aviso){
-    return `<div class="check-row warn">⚠ <span>${aviso}. Revisa: posible doble conteo o material de más.</span></div>`;
+    return `<div class="check-row warn">⚠ <span>${aviso}. Revisa: posible doble conteo o material de más.</span></div>`+notaExternoTerraplen(tot);
   }
-  return `<div class="check-row ok">✓ <span>Terraplén ${fmt(terra)} ≤ aprovechable+préstamo ${fmt(aprov)} m³ (coherente)</span></div>`;
+  return `<div class="check-row ok">✓ <span>Terraplén ${fmt(terra)} ≤ aprovechable+préstamo ${fmt(aprov)} m³ (coherente)</span></div>`+notaExternoTerraplen(tot);
 }
 function renderBandeja(){
   if(!STATE.cantidades.length) return '<div class="empty-state" style="padding:20px;"><p>La bandeja está vacía para esta fecha.</p></div>';
@@ -881,7 +935,7 @@ function refreshTot(){ const tot=calcTotales(); const box=document.querySelector
   let html='',any=false;
   ORDEN_CAT.forEach(cat=>{ if(!tot[cat])return; any=true; const o=tot[cat];
     let split=''; if(SPLIT_UF.includes(cat)&&(o.uf1||o.uf2)) split=`<span class="uf-split"> · <span class="u1">UF1 ${fmt(o.uf1)}</span> · <span class="u2">UF2 ${fmt(o.uf2)}</span></span>`;
-    html+=`<div class="tot-row"><span class="cat">${cat}${split}</span><span class="val">${fmt(o.total)} ${o.uni}</span></div>`; });
+    html+=`<div class="tot-row"><span class="cat">${cat}${split}${notaExtTot(o)}</span><span class="val">${fmt(o.total)} ${o.uni}</span></div>`; });
   if(!any) html='<div class="cat" style="color:var(--muted)">Sin cantidades incluidas</div>';
   box.innerHTML=html;
 }
@@ -999,7 +1053,10 @@ function generarMensaje(){
       byCat[cat].forEach(c=>{ const pk=c.pk_inicial+(c.pk_final?(' - '+c.pk_final):'');
         // D79: la conformación indica su DESTINO (RCD 15+800 / ZODME PK30) elegido por el residente.
         const confTag=(cat==='Conformación / ZODME'&&c.destino_conf)?(' · '+(c.destino_conf==='ZODME'?'ZODME PK30':'RCD 15+800')):'';
-        msg+=`${pk||'—'}  ${fmt(c.largo)} ${c.unidad}${confTag}\n`;
+        // D113: el terraplén hecho con material externo se identifica en el mensaje (crudo de río /
+        // UF3). Sigue sumando en el total de la categoría: es terraplén, solo cambia de dónde salió.
+        const mat=tagMaterial(c), matTag=mat?(' · '+mat):'';
+        msg+=`${pk||'—'}  ${fmt(c.largo)} ${c.unidad}${confTag}${matTag}\n`;
         msg+=notasTxt([c],'  '); });   // D103: nota del capataz bajo su actividad
     }
   });
