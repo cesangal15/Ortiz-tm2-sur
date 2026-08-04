@@ -286,17 +286,36 @@ async function cargarResumen(){
   }
 }
 // ¿La vista actual es de TIERRAS? (residente de tierras, jeisson, o admin sin filtrar ODT/ODL).
-// El flujo especial de dom/fest (D81c: subir solo a quienes trabajaron, sin aviso de sin-reportar)
-// aplica SOLO a tierras — drenajes ODT/ODL siguen reportando por cuadrilla también esos días.
-// D101 (P3, decisión del usuario jul-2026): UF3 sigue la regla CONSERVADORA de drenajes — el aviso de
-// "gente sin reportar" se conserva TODOS los días, también domingos y festivos. Por eso
-// `asistencia_plus_uf3` NO entra aquí. Si más adelante se confirma que UF3 va con la regla de tierras
-// (D81), es una línea: agregar el rol a esta condición y `uf3` a las áreas de abajo.
-// El caso del admin se escribe ahora en POSITIVO (antes era "todo lo que no sea odt/odl"): con la
-// lista negra, elegir "Ver como UF3" habría caído por descarte en el flujo de tierras.
+// Se usa para lo que es de tierras POR NATURALEZA: hoy, el indicador de extras del admin (D73), cuyos
+// CC son de tierras. El flujo de dom/fest ya NO cuelga de aquí — ver `usaFlujoDomFest()` (D115).
+// El caso del admin se escribe en POSITIVO (antes era "todo lo que no sea odt/odl"): con la lista
+// negra, elegir "Ver como UF3" habría caído por descarte en el flujo de tierras.
 function esVistaTierras(){
   return STATE.rol==='residente' || STATE.rol==='asistencia_plus'
     || (STATE.rol==='admin' && (STATE.areaFiltro==='' || STATE.areaFiltro==='tierras'));
+}
+// D115: ¿esta vista usa el flujo CENTRALIZADO de dom/fest (D81c: se marca SOLO a quienes trabajaron
+// desde "Completar faltantes"; a los demás no se les espera)? Tierras lo tiene desde D81. DRENAJES
+// (ODT/ODL) se suma ahora: el permiso y el cálculo de horas ya eran idénticos —`guardarIndividual`
+// autoriza a `duvan`/`residente_dren` y `clasificarHoras` decide por TIPO DE DÍA, nunca por área—, así
+// que lo único que los separaba eran estas dos ayudas de pantalla: sin la guía de dom/fest y con el
+// aviso de "gente sin reportar" al exportar, que en domingo marca a media obra como si faltara cuando
+// lo normal es que no trabaje. Igualar la pantalla no cambia lo que se escribe ni lo que sale al Parte.
+// D101 (P3, decisión del usuario jul-2026): UF3 sigue con la regla CONSERVADORA — el aviso de "gente
+// sin reportar" se conserva TODOS los días, también dom/fest. Por eso `asistencia_plus_uf3` NO entra
+// aquí. Si más adelante se confirma que va con la regla de tierras, es una línea.
+function usaFlujoDomFest(){
+  return esVistaTierras()
+    || ['asistencia_plus_dren','residente_dren','residente_odt','residente_odl'].indexOf(STATE.rol)>=0
+    || (STATE.rol==='admin' && (STATE.areaFiltro==='odt' || STATE.areaFiltro==='odl'));
+}
+// D115: ¿la vista es de DRENAJES? En dom/fest hay un riesgo que tierras no tiene: allá los capataces
+// NO reportan ese día, pero en ODT/ODL sí reportan por cuadrilla todos los días, y el envío de cuadrilla
+// PISA fecha+cuadrilla (D03/D107) — un reporte del capataz posterior borra lo que se marcó aquí por
+// persona. De ahí el aviso extra en la guía; el orden seguro es que el resumen vaya de último.
+function esVistaDrenajes(){
+  return ['asistencia_plus_dren','residente_dren','residente_odt','residente_odl'].indexOf(STATE.rol)>=0
+    || (STATE.rol==='admin' && (STATE.areaFiltro==='odt' || STATE.areaFiltro==='odl'));
 }
 // D101: ¿la vista está acotada a un área? Con `areas` del backend (o, si el Apps Script aún no se
 // redesplegó, con las que guardó el login en localStorage) más el filtro "Ver como" del admin. Cuando
@@ -427,6 +446,14 @@ function render(){
   }
 
   html+='<div class="section-title">Personas faltantes</div><div class="card">';
+  // D115: en dom/fest, con el flujo centralizado (tierras y drenajes), "sin reportar" NO es un olvido —
+  // ese día trabaja solo el personal disponible y a los demás no se les espera. El número se conserva
+  // (sirve para buscar a alguien en "Completar faltantes"), pero se dice qué significa: sin esta línea
+  // el domingo parecía media obra faltando. No cambia ningún dato ni lo que sale al Parte.
+  const domFestFlujo = tipoJornadaDeFecha(STATE.fecha, d.festivos||[])==='domfest' && usaFlujoDomFest();
+  if(domFestFlujo && sinReportar.length){
+    html+='<div class="aviso" style="margin:0 0 10px;">📅 <b>Domingo/festivo:</b> los '+sinReportar.length+' "sin reportar" <b>no son faltantes</b> — ese día solo se sube a quienes trabajaron. No cuentan como ausentes ni salen al Parte.</div>';
+  }
   if(!faltantes.length){ html+='<p style="color:var(--muted);font-size:13px;">No hay faltantes: todas las cuadrillas reportaron y no hay ausentes.</p>'; }
   if(sinReportar.length){
     html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
@@ -708,11 +735,20 @@ function completarListaHtml(d, comp){
   // D81: en domingo/festivo trabaja solo el personal disponible (revuelto de cuadrillas y responsables),
   // así que ESTE es el canal para subir el día (Jeisson/residente): se marca SOLO a quienes trabajaron;
   // los demás se dejan sin tocar (no cuentan como ausentes — el domingo no trabajado es lo normal).
-  // SOLO TIERRAS: jeisson ya viene acotado a tierras por el backend (D74b); ODT/ODL siguen reportando
-  // por cuadrilla también en dom/fest (no se ha contemplado otra forma), así que a sus residentes no
-  // se les muestra esta guía.
-  if(esDomFest && esVistaTierras()){
-    h+='<div class="aviso" style="margin:0 0 10px;">📅 <b>Domingo/festivo:</b> marca únicamente a quienes trabajaron (CC + horario, pre-llenado 07:00–15:00 = 7h Dom/Fest; si hicieron más, hasta 2h van a extras Dom/Fest). A los demás <b>no los marques</b>: no cuentan como ausentes.</div>';
+  // D115: la guía ya no es solo de tierras — drenajes (duvan/residente_dren) usa el mismo canal, con el
+  // mismo cálculo. UF3 sigue fuera por decisión de D101 (ver `usaFlujoDomFest`).
+  if(esDomFest && usaFlujoDomFest()){
+    // D115: el descuento de almuerzo se dice EXPLÍCITO. El cálculo (horas-nomina.js) resta 1h solo si el
+    // rango cubre completo 12:00–13:00, así que 07:00–15:00 = 7h pero 07:00–14:00 = 6h — quien trabajó
+    // de corrido sin almorzar tiene que reportar la salida real (14:00) y le quedan 6h, no 7. Es la
+    // regla vigente, no un caso raro: en drenajes es común irse de corrido. Solo texto, no cambia nada.
+    h+='<div class="aviso" style="margin:0 0 10px;">📅 <b>Domingo/festivo:</b> marca únicamente a quienes trabajaron (CC + horario, pre-llenado 07:00–15:00 = 7h Dom/Fest; si hicieron más, hasta 2h van a extras Dom/Fest). A los demás <b>no los marques</b>: no cuentan como ausentes.'
+      + '<br><small style="color:var(--muted)">Ojo con el almuerzo: se descuenta 1h cuando el horario cubre 12:00–13:00. Por eso <b>07:00–15:00 = 7h</b> pero <b>07:00–14:00 = 6h</b>.</small></div>';
+    // D115: en ODT/ODL los capataces SÍ reportan por cuadrilla también en dom/fest, y ese envío pisa
+    // fecha+cuadrilla (D03/D107): si el capataz manda su reporte DESPUÉS, borra lo marcado aquí.
+    if(esVistaDrenajes()){
+      h+='<div class="aviso" style="margin:0 0 10px;">⚠️ <b>Drenajes:</b> si el capataz envía su cuadrilla <b>después</b> de que guardes aquí, su envío <b>pisa toda la cuadrilla</b> de ese día y se pierde lo que marcaste. En dom/fest súbelo por un solo canal — y si ambos lo hacen, que este resumen vaya de último.</div>';
+    }
   }
   // D81: buscador — la lista trae a TODO el personal esperado (útil en dom/fest, donde solo se busca a
   // los pocos que trabajaron). Filtra por DOM (sin re-render) para no perder lo ya diligenciado.
@@ -1240,10 +1276,12 @@ async function generarExcel(proyecto){
   // D74 (idea 3): avisa si vas a descargar con gente SIN REPORTAR (por si se pasó a alguien).
   // D81: en domingo/festivo NO se avisa — ese día trabaja solo el personal disponible y lo normal es
   // que casi todos queden sin reportar (no es un olvido; al Parte van solo los marcados presentes).
-  // SOLO TIERRAS: en ODT/ODL el reporte sigue siendo por cuadrilla también en dom/fest, así que a sus
-  // residentes el aviso se les conserva todos los días (allá el sin-reportar sí puede ser un olvido).
+  // D115: aplica también a DRENAJES (antes solo tierras). En ODT/ODL el domingo tampoco trabaja la obra
+  // entera, así que el aviso listaba a casi toda la gente como si faltara y entrenaba a saltárselo — el
+  // día que sí hay un olvido (entre semana, donde el aviso se conserva) ya no se lee. UF3 sigue con el
+  // aviso todos los días (D101).
   const esDomFestExp = tipoJornadaDeFecha(STATE.fecha, (STATE.data&&STATE.data.festivos)||[])==='domfest';
-  const sinRep=(esDomFestExp && esVistaTierras()) ? [] : ((STATE.data&&STATE.data.faltantes)||[]).filter(f=>f.tipo==='sin_reportar');
+  const sinRep=(esDomFestExp && usaFlujoDomFest()) ? [] : ((STATE.data&&STATE.data.faltantes)||[]).filter(f=>f.tipo==='sin_reportar');
   if(sinRep.length){
     const nombres=sinRep.slice(0,12).map(f=>'  • '+f.nombre).join('\n')+(sinRep.length>12?`\n  …y ${sinRep.length-12} más`:'');
     if(!confirm(`⚠️ Hay ${sinRep.length} persona(s) SIN REPORTAR hoy:\n\n${nombres}\n\nSi descargas ahora NO quedarán en el archivo. Lo correcto es completarlas (arriba en "Completar faltantes") o marcarlas ausentes.\n\n¿Descargar de todas formas?`)) { msg.innerHTML=''; return; }

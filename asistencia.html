@@ -507,7 +507,11 @@ function render(){
   if(j.tipo==='domfest'){
     // D81: hasta 7h van a Horas ordinarias Dom/Fest (col D); lo que pase del tope cuenta como
     // horas extra Dom/Fest (col H del Parte), máximo max_extras_dia (2h).
-    html+=`<div class="jornada-banner">⚠️ Día <b>domingo/festivo</b>: horario típico <b>${esc(j.entrada||'07:00')}</b> a <b>${esc(j.salida||'15:00')}</b> (se descuenta 1h de almuerzo → ${parseFloat(STATE.config.domfest_tope)||7}h a Dom/Fest). Las horas son editables; lo que pase del tope cuenta como <b>extra Dom/Fest</b> (máx ${parseFloat(STATE.config.max_extras_dia)||2}h).</div>`;
+    // D115: se explicita el descuento de almuerzo, que es la fuente real de confusión. El clasificador
+    // (horas-nomina.js) resta 1h siempre que el horario reportado CUBRA 12:00–13:00 completo, mire o no
+    // la gente el reloj del almuerzo: 07:00–15:00 = 7h, pero 07:00–14:00 = 6h. Quien trabaja de corrido
+    // y se va a las 2 queda con 6h, no con 7. Solo texto: el cálculo no cambia.
+    html+=`<div class="jornada-banner">⚠️ Día <b>domingo/festivo</b>: horario típico <b>${esc(j.entrada||'07:00')}</b> a <b>${esc(j.salida||'15:00')}</b> (se descuenta 1h de almuerzo → ${parseFloat(STATE.config.domfest_tope)||7}h a Dom/Fest). Las horas son editables; lo que pase del tope cuenta como <b>extra Dom/Fest</b> (máx ${parseFloat(STATE.config.max_extras_dia)||2}h).<br><small>El almuerzo se descuenta siempre que el horario cubra 12:00–13:00: <b>07:00–15:00 = 7h</b>, pero <b>07:00–14:00 = 6h</b> (aunque hayan trabajado de corrido).</small></div>`;
   } else {
     html+=`<div class="jornada-banner">Jornada estándar (<b>${j.tipo==='sabado'?'sábado':'lunes a viernes'}</b>): <b>${esc(j.entrada)}</b> a <b>${esc(j.salida)}</b> · tope ordinario <b>${j.tope}h</b></div>`;
   }
