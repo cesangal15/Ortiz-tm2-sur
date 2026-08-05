@@ -377,33 +377,62 @@ function clavePersona(f){
   const c=String((f&&f.codigo)||'').trim();
   return c ? ('COD:'+c) : ('CED:'+String((f&&f.cedula)||'').trim());
 }
-/* D117 — aviso de personas con MÁS DE UNA fila el mismo día. No es un detalle de presentación: el Parte
- * de Navision se arma con una línea por FILA (`generarExcel`), así que una persona duplicada se va al
- * archivo dos veces y cobra doble. Pasa porque el envío de cuadrilla pisa fecha+CUADRILLA (D03/D107):
- * dos cuadrillas distintas reportando a la misma persona dejan las dos filas vivas. Se arregla en los
- * datos —dejarla en UNA sola cuadrilla (gestión de personal → mover) y volver a enviar—, no aquí. */
+// D118: primera aparición de cada persona en una lista (misma clave que `clavePersona`). Se usa para
+// que todos los KPI cuenten gente y no filas, vengan de ASISTENCIA o del roster.
+function unicasPorPersona(lista){
+  const vistos={}, out=[];
+  (lista||[]).forEach(function(f){ const k=clavePersona(f); if(!vistos[k]){ vistos[k]=true; out.push(f); } });
+  return out;
+}
+/* D117/D118 — aviso de personas con MÁS DE UNA fila el mismo día. No es un detalle de presentación: el
+ * Parte de Navision se arma con una línea por FILA (`generarExcel`), así que una persona duplicada se va
+ * al archivo dos veces y cobra doble.
+ *
+ * D118 — hay DOS causas distintas y el aviso las separa, porque se arreglan en sitios distintos:
+ *  (a) filas en cuadrillas DISTINTAS: dos cuadrillas reportaron a la misma persona. El envío pisa
+ *      fecha+CUADRILLA (D03/D107), nunca fecha+persona, así que las dos sobreviven. Se arregla dejándola
+ *      en UNA cuadrilla (gestión de personal → mover) y reenviando.
+ *  (b) filas en la MISMA cuadrilla, mismo reportante — el caso encontrado en ODT el 01-ago-2026: eso NO
+ *      lo puede producir un doble envío (el segundo borra el primero). Solo pasa si la persona está DOS
+ *      VECES en la hoja PERSONAL: `roster` no deduplicaba, así que el formulario se la mostraba dos veces
+ *      al responsable y un solo envío escribía dos filas (por eso se ven marcas contradictorias: al
+ *      segundo renglón lo llenaron distinto). Se arregla borrando la fila sobrante en PERSONAL. */
 function duplicadasHtml(dups){
   if(!dups.length) return '';
+  const mismaCuad=dups.filter(function(fs){ return unicos(fs.map(function(f){ return f.cuadrilla||''; })).length===1; });
   let h='<div class="aviso" style="margin-top:10px;"><b>⚠️ '+dups.length+' persona(s) con más de un reporte hoy.</b> '
-    + 'Sus horas saldrían <b>repetidas en el Parte de Navision</b> (el archivo lleva una línea por fila reportada). '
-    + 'Ocurre cuando dos cuadrillas reportan a la misma persona: el envío pisa <i>fecha+cuadrilla</i>, no <i>fecha+persona</i>, '
-    + 'así que las dos filas quedan vivas. Corrígelo dejándola en una sola cuadrilla (abajo, en <b>Gestión de personal → mover</b>) '
-    + 'y pidiendo que esa cuadrilla vuelva a enviar.<div style="margin-top:8px;">';
+    + 'Sus horas saldrían <b>repetidas en el Parte de Navision</b> (el archivo lleva una línea por fila reportada).';
+  if(mismaCuad.length){
+    h+='<div style="margin-top:6px;">🔎 <b>'+mismaCuad.length+' está(n) repetida(s) DENTRO de la misma cuadrilla.</b> '
+      + 'Eso no lo causa un doble envío (el segundo pisa al primero): significa que la persona está <b>dos veces en la hoja PERSONAL</b>, '
+      + 'así que el formulario se la mostró dos veces al responsable. <b>Corrígelo borrando la fila sobrante en PERSONAL</b> '
+      + '(o marcándola <i>inactivo</i>) y pidiendo que esa cuadrilla vuelva a enviar el día.</div>';
+  }
+  if(mismaCuad.length<dups.length){
+    h+='<div style="margin-top:6px;">🔎 El resto está reportado por <b>dos cuadrillas distintas</b>: el envío pisa <i>fecha+cuadrilla</i>, '
+      + 'no <i>fecha+persona</i>, así que las dos filas quedan vivas. Déjala en una sola cuadrilla '
+      + '(abajo, en <b>Gestión de personal → mover</b>) y pide que esa cuadrilla vuelva a enviar.</div>';
+  }
+  h+='<div style="margin-top:8px;">';
   dups.forEach(function(filas){
     const f0=filas[0];
-    // Si las dos filas se contradicen (presente en una cuadrilla, ausente en otra) la persona cae en DOS
-    // KPI a la vez: por eso "Total personas" cuenta gente distinta y no la suma de los tres.
+    // Si las filas se contradicen (presente en una, ausente en otra) la persona cae en DOS KPI a la vez:
+    // por eso "Total personas" cuenta gente distinta y no la suma de los tres.
     const contradice = filas.some(function(f){ return f.presente==='No'; }) && filas.some(function(f){ return f.presente!=='No'; });
+    const unaCuad = unicos(filas.map(function(f){ return f.cuadrilla||''; })).length===1;
     const detalle=filas.map(function(f){
       const est = f.presente==='No' ? 'ausente' : (String(f.cc||'').trim() ? 'presente' : 'presente sin CC');
       return esc(f.cuadrilla||'(sin cuadrilla)')+' → '+est+(f.reporta?' ('+esc(f.reporta)+')':'');
-    }).join(' · ') + (contradice ? ' — <b>se contradicen</b>: cuenta como presente Y como ausente' : '');
+    }).join(' · ')
+      + (unaCuad ? ' — <b>misma cuadrilla</b>: revisa PERSONAL' : '')
+      + (contradice ? ' — <b>se contradicen</b>: cuenta como presente Y como ausente' : '');
     h+='<div style="padding:4px 0;"><b>'+esc(f0.nombre||'(sin nombre)')+'</b> '
       + '<small style="color:var(--muted)">'+esc(f0.codigo||f0.cedula||'')+'</small><br>'
       + '<small style="color:var(--muted)">'+detalle+'</small></div>';
   });
   return h+'</div></div>';
 }
+function unicos(arr){ return (arr||[]).filter(function(v,i,a){ return a.indexOf(v)===i; }); }
 
 function render(){
   const _t0=ahora();
@@ -414,8 +443,11 @@ function render(){
   const filas=d.filas||[], cuadrillas=d.cuadrillas||[], faltantes=d.faltantes||[];
   // Presente cuenta SOLO si tiene CC. Presente sin CC = no reportado (ya viene en faltantes).
   const presentesFilas=filas.filter(f=>f.presente==='Si' && String(f.cc||'').trim());
-  const ausentesConMotivo=faltantes.filter(f=>f.tipo==='ausente');
-  const sinReportar=faltantes.filter(f=>f.tipo==='sin_reportar');
+  // D118: los faltantes también se deduplican por persona. Salen de recorrer `personalActivo`, así que
+  // una persona con DOS filas en la hoja PERSONAL (la causa raíz, ver `duplicadasHtml`) aparecía dos
+  // veces en la lista y el KPI la contaba doble, igual que le pasaba a "Presentes" antes de D117.
+  const ausentesConMotivo=unicasPorPersona(faltantes.filter(f=>f.tipo==='ausente'));
+  const sinReportar=unicasPorPersona(faltantes.filter(f=>f.tipo==='sin_reportar'));
   /* D117 — "Presentes" cuenta PERSONAS, no filas. Este KPI contaba filas de ASISTENCIA mientras que
    * "Ausentes"/"Sin reportar" cuentan personas del roster, así que los tres no eran sumables: en ODT+ODL
    * del 03-ago-2026 daban 82+6+0 = 88 sobre una población de 82. La causa es que una persona puede tener
@@ -426,9 +458,7 @@ function render(){
    * (`guardarIndividual.keyOf`): código si lo tiene, si no la cédula. */
   const porPersona={};
   filas.forEach(f=>{ const k=clavePersona(f); (porPersona[k]=porPersona[k]||[]).push(f); });
-  const presentes=[];                       // una fila por PERSONA presente (la primera que aparezca)
-  const vistos={};
-  presentesFilas.forEach(f=>{ const k=clavePersona(f); if(!vistos[k]){ vistos[k]=true; presentes.push(f); } });
+  const presentes=unicasPorPersona(presentesFilas);   // una fila por PERSONA presente (la primera)
   // Personas con más de una fila ese día: el síntoma que descuadraba los KPI y —lo importante— lo que
   // duplicaría sus horas en el Parte de Navision, que se arma con UNA línea por fila (ver generarExcel).
   const duplicadas=Object.keys(porPersona).filter(k=>porPersona[k].length>1).map(k=>porPersona[k]);

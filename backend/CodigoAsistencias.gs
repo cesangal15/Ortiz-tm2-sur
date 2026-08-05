@@ -950,6 +950,50 @@ function activaEnFecha(p, fecha){
 // columna ya existe; `activaEnFecha` lo trata como activo porque solo 'inactivo' desactiva).
 function esEventual(p){ return norm(p.estado)==='eventual'; }
 
+/* ============ D118 — UNA PERSONA, UNA FILA (causa raíz de los reportes duplicados) ============
+ *
+ * SÍNTOMA. El 01-ago-2026 el resumen de ODT mostró 7 personas con DOS filas en ASISTENCIA el mismo día,
+ * todas en la MISMA cuadrilla (ENRIQUE) y del MISMO reportante (duvan), algunas con marcas
+ * contradictorias (una ausente y otra presente).
+ *
+ * POR QUÉ NO PODÍA SER UN DOBLE ENVÍO. `guardarAsistencia` borra el bloque fecha+cuadrilla y anexa: un
+ * segundo envío de la misma cuadrilla PISA al primero, nunca lo duplica (verificado en `borrarFilas_`,
+ * que agrupa en tramos contiguos y los borra de abajo hacia arriba). Si quedan dos filas de la misma
+ * persona en la misma cuadrilla, es que el ENVÍO YA TRAÍA DOS: el formulario se las mostró dos veces.
+ *
+ * LA RAÍZ. `roster` no deduplicaba: devolvía tal cual las filas de PERSONAL que pasaran el filtro. Y
+ * nada impedía que la hoja tuviera dos filas ACTIVAS de la misma persona — `alta` hacía `appendRow` sin
+ * mirar si ya existía, y `reingreso` (que crea fila nueva a propósito, para conservar el hueco de los
+ * días inactivos) no comprobaba que la fila de origen estuviera realmente retirada. Con dos filas vivas,
+ * el capataz veía a la persona dos veces, llenaba las dos y el día quedaba con horas duplicadas — que
+ * el Parte de Navision se lleva tal cual, porque escribe una línea por fila.
+ *
+ * EL CIERRE (tres puntos, este helper es el primero):
+ *   1. `roster` y el roster esperado de `asistenciaDia` deduplican por persona → el formulario ya no
+ *      puede mostrar a nadie dos veces, ni los faltantes contar a nadie dos veces.
+ *   2. `alta` rechaza un código/cédula que ya tenga fila activa; `reingreso` exige que la de origen esté
+ *      retirada. Se cierra la puerta por la que entraban las filas gemelas.
+ *   3. `diagnosticoPersonalDuplicado()` lista las que YA están en la hoja (mantenimiento a mano, mismo
+ *      patrón que `diagnosticoFechasAsistencia` de D106). No borra nada: la fila que sobra la decide el
+ *      usuario, porque cada una puede tener cuadrilla o fecha_ingreso distintas.
+ *
+ * Clave de persona: código si lo tiene, si no la cédula — la misma de `guardarIndividual.keyOf` y la de
+ * los faltantes, así que "una persona" significa lo mismo en todo el módulo. */
+function clavePersona_(p){
+  const c=String((p&&p.codigo)||'').trim();
+  return c ? ('COD:'+c) : ('CED:'+String((p&&p.cedula)||'').trim());
+}
+// Primera fila de cada persona, conservando el orden de la hoja. Sin duplicados devuelve la misma lista.
+function unicasPorPersona_(lista){
+  const vistos={}, out=[];
+  (lista||[]).forEach(function(p){
+    const k=clavePersona_(p);
+    if(k==='COD:' || k==='CED:'){ out.push(p); return; }   // sin código NI cédula: no se puede agrupar
+    if(!vistos[k]){ vistos[k]=true; out.push(p); }
+  });
+  return out;
+}
+
 /* ---------- CONFIG / FESTIVOS ---------- */
 function getConfigMap(){
   const rows=readSheet('CONFIG', CONFIG_HEADERS), m={};
@@ -1086,7 +1130,10 @@ function roster(e){
   const personalTodo=readSheet('PERSONAL', PERSONAL_HEADERS);
   // D72: roster date-aware — solo quien ya había ingresado y no estaba retirado a esa fecha.
   // D85: los eventuales no salen en el formulario del responsable (se marcan desde el resumen).
-  const personas=personalTodo.filter(p=> activaEnFecha(p, fecha) && !esEventual(p) && cuadrillas.indexOf(p.cuadrilla)>=0)
+  // D118: deduplicado por persona. Si PERSONAL trae dos filas activas de la misma persona, el formulario
+  // se la mostraba DOS veces al responsable y un solo envío escribía dos filas en ASISTENCIA — con horas
+  // duplicadas en el Parte. Es la causa raíz de los reportes repetidos de ODT (ago-2026).
+  const personas=unicasPorPersona_(personalTodo.filter(p=> activaEnFecha(p, fecha) && !esEventual(p) && cuadrillas.indexOf(p.cuadrilla)>=0))
     .map(p=>({ cedula:p.cedula||'', codigo:p.codigo||'', nombre:p.nombre||'', cargo:p.cargo||'', cuadrilla:p.cuadrilla||'' }));
   const jornada=jornadaDelDia(fecha, cfg, festivos);
   // D72: se excluye el CC de supervisión del encargado/capataz del picker de bloques (confunde al reportar).
@@ -1159,7 +1206,9 @@ function asistenciaDia(e){
   // D85: excluye a los eventuales del roster esperado (nunca cuentan como faltantes/sin-reportar).
   const inactivas=cuadrillasInactivasSet();
   const personalTodo=readSheet('PERSONAL', PERSONAL_HEADERS);
-  const personalActivo=personalTodo.filter(p=>activaEnFecha(p, fecha) && !esEventual(p) && enArea(p.cuadrilla) && !inactivas[p.cuadrilla]);
+  // D118: mismo deduplicado que el roster. Sin él, una persona con dos filas en PERSONAL salía DOS veces
+  // en `faltantes` y el resumen la contaba dos veces como ausente o como sin-reportar.
+  const personalActivo=unicasPorPersona_(personalTodo.filter(p=>activaEnFecha(p, fecha) && !esEventual(p) && enArea(p.cuadrilla) && !inactivas[p.cuadrilla]));
   // D85: personal eventual del área revisada — disponible en "Completar faltantes" del resumen (para
   // marcarlo presente los dom/fest u ocasiones puntuales) SIN aparecer como faltante. El frontend lo
   // ofrece solo si aún no tiene fila reportada ese día.
@@ -1667,6 +1716,19 @@ function gestionPersonal(body){
     const responsable=responsableDeCuadrilla(cuadrilla);
     // D72: fecha_ingreso (col 9) permite el alta retroactiva ("desde cierto día"); por defecto, hoy.
     const fechaIng=fdate(body.fecha_ingreso)||hoy;
+    // D118: no se dan de alta dos veces a la misma persona. Un `appendRow` a ciegas dejaba dos filas
+    // ACTIVAS con el mismo código y el formulario del capataz mostraba a esa persona dos veces, así que
+    // un solo envío escribía dos filas en ASISTENCIA y sus horas salían repetidas al Parte. Para un
+    // REINGRESO (persona que ya estuvo y volvió) está `op:'reingreso'`, que sí crea fila nueva pero
+    // exige que la anterior esté retirada — así el hueco de días inactivos se conserva.
+    const yaExiste=readSheet('PERSONAL', PERSONAL_HEADERS).find(function(p){
+      return clavePersona_(p)===clavePersona_(body) && activaEnFecha(p, hoy);
+    });
+    if(yaExiste){
+      return json({ok:false, error:'Ya existe una persona activa con ese '+(String(body.codigo||'').trim()?'código':'documento')
+        +' ('+(yaExiste.nombre||'')+', cuadrilla '+(yaExiste.cuadrilla||'')+'). '
+        +'Si cambió de cuadrilla usa MOVER; si volvió a la obra usa REINGRESO. Dar de alta otra vez la duplicaría en el Parte.'});
+    }
     sh.appendRow([body.cedula||'', body.codigo||'', body.nombre||'', body.cargo||'', cuadrilla, responsable, 'activo', '', fechaIng]);
     invalidarHoja_('PERSONAL');   // D99
     return json({ok:true, op:'alta'});
@@ -1703,6 +1765,14 @@ function gestionPersonal(body){
     const fechaIng=fdate(body.fecha_ingreso)||hoy;
     const src=readSheet('PERSONAL', PERSONAL_HEADERS).find(p=>p._row===row);
     if(!src) return json({ok:false, error:'No se encontró la persona a reingresar.'});
+    // D118: la fila de origen tiene que estar RETIRADA. Reingresar a alguien que sigue activo deja dos
+    // filas vivas de la misma persona: el formulario se la muestra dos veces al responsable y el día
+    // queda con las horas duplicadas. Si solo cambió de cuadrilla, la operación correcta es MOVER.
+    if(activaEnFecha(src, fechaIng)){
+      return json({ok:false, error:'Esa persona sigue ACTIVA'+(src.cuadrilla?' en la cuadrilla '+src.cuadrilla:'')
+        +', así que no hay reingreso que registrar. Retírala primero (con su fecha de salida) y reingrésala, '
+        +'o usa MOVER si lo que cambió fue la cuadrilla.'});
+    }
     const responsable=responsableDeCuadrilla(src.cuadrilla)||src.responsable||'';
     sh.appendRow([src.cedula||'', src.codigo||'', src.nombre||'', src.cargo||'', src.cuadrilla||'', responsable, 'activo', '', fechaIng]);
     invalidarHoja_('PERSONAL');   // D99
@@ -1900,3 +1970,41 @@ function _fechasAsistenciaPass(aplicar, soloListar){
 }
 function diagnosticoFechasAsistencia(){ return _fechasAsistenciaPass(false, true); }
 function repararFechasAsistencia(aplicar){ return _fechasAsistenciaPass(aplicar===true, false); }
+
+/* ---------- D118 — mantenimiento a mano: personas repetidas en la hoja PERSONAL ----------
+ * Mismo patrón que `diagnosticoFechasAsistencia` (D106): se ejecuta desde el editor de Apps Script y
+ * SOLO LISTA — no borra ni modifica nada, porque cuál de las dos filas sobra lo tiene que decidir el
+ * usuario (pueden diferir en cuadrilla, cargo o fecha_ingreso, y la buena es la que refleje la realidad).
+ *
+ * Qué busca: personas con MÁS DE UNA fila ACTIVA hoy (misma clave que el resto del módulo: código, o
+ * cédula si no tiene código). Son las que el formulario del responsable muestra dos veces y las que
+ * terminan con horas repetidas en el Parte de Navision.
+ *
+ * Cómo corregir cada una: dejar UNA fila y, en la sobrante, borrar la fila o ponerle `estado=inactivo`
+ * con su `fecha_retiro`. Después hay que pedirle a esa cuadrilla que VUELVA A ENVIAR los días afectados
+ * (el envío pisa fecha+cuadrilla, así que el reenvío deja el día limpio). Los días ya exportados a
+ * Navision hay que revisarlos aparte: el archivo salió con la línea repetida. */
+function diagnosticoPersonalDuplicado(){
+  const hoy=Utilities.formatDate(new Date(), 'America/Bogota', 'yyyy-MM-dd');
+  const activos=readSheet('PERSONAL', PERSONAL_HEADERS).filter(function(p){ return activaEnFecha(p, hoy); });
+  const grupos={};
+  activos.forEach(function(p){
+    const k=clavePersona_(p);
+    if(k==='COD:' || k==='CED:') return;             // sin código ni cédula: no se puede agrupar
+    (grupos[k]=grupos[k]||[]).push(p);
+  });
+  const dups=Object.keys(grupos).filter(function(k){ return grupos[k].length>1; });
+  const lineas=dups.map(function(k){
+    const g=grupos[k];
+    return '  · '+k+' '+(g[0].nombre||'(sin nombre)')+' — '+g.length+' filas: '
+      + g.map(function(p){ return 'fila '+p._row+' ('+(p.cuadrilla||'sin cuadrilla')+')'; }).join(' · ');
+  });
+  const msg='PERSONAL — personas con más de una fila activa: '+dups.length
+    + ' (de '+activos.length+' filas activas).'
+    + (lineas.length ? '\n'+lineas.join('\n')
+        + '\n\nDeja UNA fila por persona (borra la sobrante o ponle estado=inactivo con su fecha_retiro)'
+        + '\ny pide a esas cuadrillas que vuelvan a enviar los días afectados.'
+      : '\nSin duplicados.');
+  Logger.log(msg);
+  return { total:dups.length, detalle:lineas };
+}
