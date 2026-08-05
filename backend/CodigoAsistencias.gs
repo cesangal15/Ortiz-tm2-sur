@@ -849,10 +849,20 @@ function areasDeUsuario(usuario){
 }
 // Áreas efectivas de una petición: las forzadas por el usuario; si NO tiene (admin), respeta un &area=
 // de filtro. [] = sin filtro (admin sin &area). Los usuarios con área forzada no la pueden burlar.
+// D116: `&area=` admite VARIAS áreas separadas por coma (`odt,odl`), para que el "Ver como" del admin
+// pueda ver DRENAJES completo en una sola vista — lo que `residente_dren` ya veía por su rol (D84) y el
+// admin solo podía mirar por separado. Un solo valor sigue funcionando igual (`odt` = `['odt']`), así
+// que nada de lo existente cambia. Se valida contra la lista blanca y se deduplica: lo que no esté en
+// ella se descarta, y si no queda ninguna válida se cae a [] = sin filtro (el admin ve todas).
+const AREAS_VALIDAS = ['tierras','odt','odl','uf3'];   // D101: `uf3` entró en la lista blanca (D74b)
 function areasEfectivas(e){
   let areas=areasDeUsuario((e.parameter&&e.parameter.usuario)||'');
-  // D101: `uf3` entra en la lista blanca del "Ver como" del admin (D74b), junto a tierras/odt/odl.
-  if(!areas.length){ const af=norm(e.parameter&&e.parameter.area); if(af==='tierras'||af==='odt'||af==='odl'||af==='uf3') areas=[af]; }
+  if(!areas.length){
+    const pedidas=String((e.parameter&&e.parameter.area)||'').split(',')
+      .map(function(s){ return norm(s); })
+      .filter(function(a,i,arr){ return AREAS_VALIDAS.indexOf(a)>=0 && arr.indexOf(a)===i; });
+    if(pedidas.length) areas=pedidas;
+  }
   return areas;
 }
 // ¿La cuadrilla `c` cae dentro de las áreas dadas? [] = sin filtro (todas). Compat con === anterior.

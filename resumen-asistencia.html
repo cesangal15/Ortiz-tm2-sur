@@ -307,7 +307,7 @@ function esVistaTierras(){
 function usaFlujoDomFest(){
   return esVistaTierras()
     || ['asistencia_plus_dren','residente_dren','residente_odt','residente_odl'].indexOf(STATE.rol)>=0
-    || (STATE.rol==='admin' && (STATE.areaFiltro==='odt' || STATE.areaFiltro==='odl'));
+    || (STATE.rol==='admin' && filtroEsDrenajes());
 }
 // D115: ¿la vista es de DRENAJES? En dom/fest hay un riesgo que tierras no tiene: allá los capataces
 // NO reportan ese día, pero en ODT/ODL sí reportan por cuadrilla todos los días, y el envío de cuadrilla
@@ -315,7 +315,25 @@ function usaFlujoDomFest(){
 // persona. De ahí el aviso extra en la guía; el orden seguro es que el resumen vaya de último.
 function esVistaDrenajes(){
   return ['asistencia_plus_dren','residente_dren','residente_odt','residente_odl'].indexOf(STATE.rol)>=0
-    || (STATE.rol==='admin' && (STATE.areaFiltro==='odt' || STATE.areaFiltro==='odl'));
+    || (STATE.rol==='admin' && filtroEsDrenajes());
+}
+/* D116 — el "Ver como" del admin admite VARIAS áreas separadas por coma (`odt,odl` = drenajes completo,
+ * la misma vista que tiene `residente_dren` por su rol, D84). Estos tres helpers son todo lo que hacía
+ * falta: antes se comparaba el filtro con `==='odt'`, que con el valor combinado daba falso y dejaba a
+ * la vista de drenajes sin su flujo de dom/fest (D115) ni su aviso del pisado por cuadrilla. */
+function areasFiltro(){
+  return String(STATE.areaFiltro||'').split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+}
+// ¿El filtro apunta SOLO a drenajes? (`odt`, `odl` o `odt,odl`; vacío = todas, así que no).
+function filtroEsDrenajes(){
+  const as=areasFiltro();
+  return as.length>0 && as.every(function(a){ return a==='odt' || a==='odl'; });
+}
+function etiquetaArea(a){
+  if(a==='')        return 'Todas las áreas';
+  if(a==='tierras') return 'Tierras';
+  if(a==='odt,odl') return 'ODT + ODL (drenajes)';
+  return a.toUpperCase();
 }
 // D101: ¿la vista está acotada a un área? Con `areas` del backend (o, si el Apps Script aún no se
 // redesplegó, con las que guardó el login en localStorage) más el filtro "Ver como" del admin. Cuando
@@ -373,7 +391,10 @@ function render(){
     // ya vienen acotados por el backend a su área, así que no necesitan el selector.
     + (STATE.rol==='admin' ? `<div class="field" style="max-width:200px;"><label>Ver como</label><select onchange="onAreaFiltro(this.value)">`
         // D101: `uf3` entra en la lista (el backend la acepta en areasEfectivas).
-        + ['','tierras','odt','odl','uf3'].map(a=>`<option value="${a}" ${STATE.areaFiltro===a?'selected':''}>${a===''?'Todas las áreas':(a==='tierras'?'Tierras':a.toUpperCase())}</option>`).join('')
+        // D116: `odt,odl` = DRENAJES completo en una sola vista (el backend acepta varias áreas separadas
+        // por coma). Es lo que ya veía `residente_dren` por su rol (D84); el admin solo podía mirarlas
+        // por separado. Se ofrece ADEMÁS de ODT y ODL sueltas, que siguen igual.
+        + ['','tierras','odt','odl','odt,odl','uf3'].map(a=>`<option value="${a}" ${STATE.areaFiltro===a?'selected':''}>${esc(etiquetaArea(a))}</option>`).join('')
         + '</select></div>' : '')
     + '</div></div>';
 
