@@ -370,6 +370,41 @@ function onAreaFiltro(v){
   cargarResumen();
 }
 
+/* D117 — clave de PERSONA: código si lo tiene, si no la cédula. Misma regla que `guardarIndividual.keyOf`
+ * y que los faltantes del backend, así que lo que aquí se cuenta como una persona es lo mismo que allá.
+ * El prefijo evita que un código que casualmente valga "12345" choque con la cédula 12345. */
+function clavePersona(f){
+  const c=String((f&&f.codigo)||'').trim();
+  return c ? ('COD:'+c) : ('CED:'+String((f&&f.cedula)||'').trim());
+}
+/* D117 — aviso de personas con MÁS DE UNA fila el mismo día. No es un detalle de presentación: el Parte
+ * de Navision se arma con una línea por FILA (`generarExcel`), así que una persona duplicada se va al
+ * archivo dos veces y cobra doble. Pasa porque el envío de cuadrilla pisa fecha+CUADRILLA (D03/D107):
+ * dos cuadrillas distintas reportando a la misma persona dejan las dos filas vivas. Se arregla en los
+ * datos —dejarla en UNA sola cuadrilla (gestión de personal → mover) y volver a enviar—, no aquí. */
+function duplicadasHtml(dups){
+  if(!dups.length) return '';
+  let h='<div class="aviso" style="margin-top:10px;"><b>⚠️ '+dups.length+' persona(s) con más de un reporte hoy.</b> '
+    + 'Sus horas saldrían <b>repetidas en el Parte de Navision</b> (el archivo lleva una línea por fila reportada). '
+    + 'Ocurre cuando dos cuadrillas reportan a la misma persona: el envío pisa <i>fecha+cuadrilla</i>, no <i>fecha+persona</i>, '
+    + 'así que las dos filas quedan vivas. Corrígelo dejándola en una sola cuadrilla (abajo, en <b>Gestión de personal → mover</b>) '
+    + 'y pidiendo que esa cuadrilla vuelva a enviar.<div style="margin-top:8px;">';
+  dups.forEach(function(filas){
+    const f0=filas[0];
+    // Si las dos filas se contradicen (presente en una cuadrilla, ausente en otra) la persona cae en DOS
+    // KPI a la vez: por eso "Total personas" cuenta gente distinta y no la suma de los tres.
+    const contradice = filas.some(function(f){ return f.presente==='No'; }) && filas.some(function(f){ return f.presente!=='No'; });
+    const detalle=filas.map(function(f){
+      const est = f.presente==='No' ? 'ausente' : (String(f.cc||'').trim() ? 'presente' : 'presente sin CC');
+      return esc(f.cuadrilla||'(sin cuadrilla)')+' → '+est+(f.reporta?' ('+esc(f.reporta)+')':'');
+    }).join(' · ') + (contradice ? ' — <b>se contradicen</b>: cuenta como presente Y como ausente' : '');
+    h+='<div style="padding:4px 0;"><b>'+esc(f0.nombre||'(sin nombre)')+'</b> '
+      + '<small style="color:var(--muted)">'+esc(f0.codigo||f0.cedula||'')+'</small><br>'
+      + '<small style="color:var(--muted)">'+detalle+'</small></div>';
+  });
+  return h+'</div></div>';
+}
+
 function render(){
   const _t0=ahora();
   // render() reconstruye el contenedor: los bloques diferidos pendientes del render anterior ya no
@@ -378,9 +413,25 @@ function render(){
   const d=STATE.data;
   const filas=d.filas||[], cuadrillas=d.cuadrillas||[], faltantes=d.faltantes||[];
   // Presente cuenta SOLO si tiene CC. Presente sin CC = no reportado (ya viene en faltantes).
-  const presentes=filas.filter(f=>f.presente==='Si' && String(f.cc||'').trim());
+  const presentesFilas=filas.filter(f=>f.presente==='Si' && String(f.cc||'').trim());
   const ausentesConMotivo=faltantes.filter(f=>f.tipo==='ausente');
   const sinReportar=faltantes.filter(f=>f.tipo==='sin_reportar');
+  /* D117 — "Presentes" cuenta PERSONAS, no filas. Este KPI contaba filas de ASISTENCIA mientras que
+   * "Ausentes"/"Sin reportar" cuentan personas del roster, así que los tres no eran sumables: en ODT+ODL
+   * del 03-ago-2026 daban 82+6+0 = 88 sobre una población de 82. La causa es que una persona puede tener
+   * MÁS DE UNA fila el mismo día — el envío de cuadrilla pisa fecha+cuadrilla (D03/D107), no fecha+persona,
+   * así que la misma persona reportada en DOS cuadrillas (típico al poblar la cuadrilla DUVAN de D105 sin
+   * MOVER a la gente en PERSONAL, o el caso 76775 de MAURICIO/ODL ya advertido en D72) deja dos filas
+   * vivas. Agrupar por persona hace que los tres KPI vuelvan a sumar. La misma clave que usa el backend
+   * (`guardarIndividual.keyOf`): código si lo tiene, si no la cédula. */
+  const porPersona={};
+  filas.forEach(f=>{ const k=clavePersona(f); (porPersona[k]=porPersona[k]||[]).push(f); });
+  const presentes=[];                       // una fila por PERSONA presente (la primera que aparezca)
+  const vistos={};
+  presentesFilas.forEach(f=>{ const k=clavePersona(f); if(!vistos[k]){ vistos[k]=true; presentes.push(f); } });
+  // Personas con más de una fila ese día: el síntoma que descuadraba los KPI y —lo importante— lo que
+  // duplicaría sus horas en el Parte de Navision, que se arma con UNA línea por fila (ver generarExcel).
+  const duplicadas=Object.keys(porPersona).filter(k=>porPersona[k].length>1).map(k=>porPersona[k]);
   const porProyecto={};
   presentes.forEach(f=>{ const p=f.proyecto||'(sin proyecto)'; porProyecto[p]=(porProyecto[p]||0)+1; });
 
@@ -399,12 +450,26 @@ function render(){
     + '</div></div>';
 
   html+='<div class="section-title">Totales del día</div>';
+  /* D117 — el cuarto tile responde la duda del dueño (ago-2026): "¿los presentes ya incluyen a los
+   * ausentes?". No: son excluyentes. Pero el total NO se calcula sumando los tres, sino contando
+   * PERSONAS DISTINTAS entre los tres grupos, porque la suma falla en un caso real: si a alguien lo
+   * reportan presente en una cuadrilla y ausente en otra (dos filas vivas, el envío pisa fecha+cuadrilla),
+   * está en los dos KPI a la vez y sumar lo contaría dos veces. Con gente distinta el total es la
+   * población del día en cualquier escenario, y la discrepancia contra la suma queda explicada por el
+   * aviso de duplicadas de aquí abajo. */
+  const idsDia={};
+  presentes.forEach(f=>{ idsDia[clavePersona(f)]=true; });
+  ausentesConMotivo.forEach(f=>{ idsDia[clavePersona(f)]=true; });
+  sinReportar.forEach(f=>{ idsDia[clavePersona(f)]=true; });
+  const totalDia=Object.keys(idsDia).length;
   html+='<div class="kpis">'
     + `<div class="kpi"><div class="k-val">${presentes.length}</div><div class="k-lbl">Presentes</div></div>`
     + `<div class="kpi"><div class="k-val">${ausentesConMotivo.length}</div><div class="k-lbl">Ausentes (con motivo)</div></div>`
     + `<div class="kpi"><div class="k-val">${sinReportar.length}</div><div class="k-lbl">Sin reportar</div></div>`
+    + `<div class="kpi"><div class="k-val">${totalDia}</div><div class="k-lbl">Total personas</div></div>`
     + '</div>';
   html+='<div class="card">'+Object.keys(porProyecto).sort().map(p=>`<div class="cuad-row"><span>Proyecto ${esc(p)}</span><b>${porProyecto[p]}</b></div>`).join('')+'</div>';
+  html+=duplicadasHtml(duplicadas);
 
   // Indicador de extras del admin (D73): solo lectura, para el residente de tierras/jeisson/admin (las
   // extras son CC de tierras). D74b: se oculta si el admin está viendo ODT/ODL (no aplican allá).
@@ -1344,6 +1409,19 @@ async function generarExcel(proyecto){
       if(!data.proyectoDefecto[f.cuadrilla]) avisosProyDefecto.push(f.nombre);
       return def===proyecto;
     });
+    // D117: última barrera antes de generar el archivo. El Parte lleva UNA línea por fila reportada, así
+    // que una persona con dos filas ese día (dos cuadrillas la reportaron — el envío pisa fecha+cuadrilla,
+    // D03/D107) cobra DOBLE. El resumen ya lo avisa arriba, pero este es el punto donde el error sale del
+    // sistema hacia Navision, así que se pregunta explícitamente antes de descargar.
+    const dupExp={};
+    filasProyecto.forEach(function(f){ const k=clavePersona(f); (dupExp[k]=dupExp[k]||[]).push(f); });
+    const repetidas=Object.keys(dupExp).filter(function(k){ return dupExp[k].length>1; }).map(function(k){ return dupExp[k]; });
+    if(repetidas.length){
+      const lista=repetidas.slice(0,12).map(function(fs){
+        return '  • '+(fs[0].nombre||'(sin nombre)')+' — '+fs.length+' filas ('+fs.map(function(f){ return f.cuadrilla||'?'; }).join(', ')+')';
+      }).join('\n')+(repetidas.length>12?`\n  …y ${repetidas.length-12} más`:'');
+      if(!confirm(`⚠️ ${repetidas.length} persona(s) tienen MÁS DE UNA fila este día en el proyecto ${proyecto}:\n\n${lista}\n\nEl Parte lleva una línea por fila, así que sus horas quedarían REPETIDAS en Navision.\nLo correcto es dejar a cada persona en una sola cuadrilla y volver a enviar ese reporte.\n\n¿Descargar de todas formas?`)) { msg.innerHTML=''; return; }
+    }
     // Gancho D73: extras del admin de este día×proyecto (canal aparte, no está en `filas`). Se inyectan
     // como filas extra del Parte. `admin_recurso` (CONFIG) es parámetro abierto: si viene vacío, no se
     // agrega la fila y se avisa. Dom/Fest del admin va a col D (tope 7h, D73); H–N sigue abierto.
