@@ -167,3 +167,40 @@ de D84 no se ejecutó (siguen `activo` en tierras sin fecha de retiro), **primer
 quedan activos en dos áreas a la vez. El resto de las 34 filas va con
 `fecha_ingreso` **vacío** (= siempre activo), que es la convención de la plantilla base: solo los ingresos
 NUEVOS llevan fecha.
+
+---
+
+## `USUARIOS_asistencias_tm2.tsv` — el usuario de asistencias de TM2 Sur (D119)
+
+**Va en el Sheet de OBRA, no en el de asistencias.** La hoja `USUARIOS` (privada, D108) vive en el
+Sheet de obra porque ahí ocurre el login, y de ahí sale el token firmado que el módulo de asistencias
+verifica (D109).
+
+`usuario · clave · rol · areas · redirige · estado`
+
+```
+angie    Asist2026    asistencia_plus_tm2    tierras,odt,odl    seleccion-reporte.html    activo
+```
+
+**Pasos:**
+
+1. Pegar la fila al final de la hoja `USUARIOS` del Sheet de **obra**.
+2. Ejecutar **`endurecerClaves()`** desde el editor del Apps Script de obra. Convierte la clave en
+   claro a hash; es **idempotente**, así que no rompe las filas ya endurecidas.
+3. Redesplegar **solo el Apps Script de ASISTENCIAS** (Administrar implementaciones → editar la
+   existente → Nueva versión → **misma URL**). El de obra **no se toca**: el `login()` valida contra la
+   hoja de forma genérica, sin lista blanca de roles que ampliar.
+
+**Formato de `areas`:** separado por comas y **sin corchetes ni comillas** — `login()` hace
+`String(r.areas).split(',')` y ese array viaja al campo `a` del token. Un `['tierras','odt','odl']`
+escrito a mano se parsearía como tres áreas basura con corchetes pegados.
+
+**`Asist2026` es un placeholder.** Confirmar la clave definitiva con la persona antes de dar la
+decisión por cerrada, y volver a correr `endurecerClaves()` si se cambia.
+
+**No subir `AUTH_V`.** Agregar un usuario no invalida nada; subirlo saca de la sesión a TODO el mundo
+y solo sirve para revocar accesos.
+
+**UF3 queda fuera a propósito** (la lleva `residente_uf3`, D101). Si algún día entra, es agregar `uf3`
+a esta columna **y** a `areasDeUsuario('angie')` en `CodigoAsistencias.gs` — las dos, porque hoy el
+módulo deriva las áreas del mapa por usuario y no del token.

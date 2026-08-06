@@ -844,6 +844,12 @@ function areasDeUsuario(usuario){
   // D101: la residente de UF3 (proyecto 3703). UF3 es un ÁREA MÁS de este mismo módulo, no un sistema
   // aparte: reporta y revisa solo `uf3`, sin acceso a tierras ni a drenajes.
   if(u==='residente_uf3')  return ['uf3'];
+  // D119: `angie` — la persona dedicada a asistencias de TM2 Sur (rol `asistencia_plus_tm2`). Es el
+  // molde de `duvan` (D88) y `residente_uf3` (D101) pero con TRES áreas a la vez: revisa el resumen de
+  // tierras y de drenajes, reporta cualquier cuadrilla activa de las tres y gestiona su personal.
+  // UF3 (proyecto 3703) queda FUERA a propósito: la lleva `residente_uf3`. Sumarla algún día es
+  // agregar `'uf3'` a este array y nada más.
+  if(u==='angie')          return ['tierras','odt','odl'];
   if(u==='residente' || u==='jeisson') return ['tierras'];
   return [];   // admin: sin filtro (puede filtrar por &area=)
 }
@@ -855,15 +861,34 @@ function areasDeUsuario(usuario){
 // que nada de lo existente cambia. Se valida contra la lista blanca y se deduplica: lo que no esté en
 // ella se descarta, y si no queda ninguna válida se cae a [] = sin filtro (el admin ve todas).
 const AREAS_VALIDAS = ['tierras','odt','odl','uf3'];   // D101: `uf3` entró en la lista blanca (D74b)
+/* D119 — el `&area=` se INTERSECTA con las áreas forzadas, en vez de ignorarse cuando las hay.
+ *
+ * POR QUÉ. Hasta ahora el "Ver como" era exclusivo del admin: quien tenía área forzada por su rol veía
+ * el parámetro descartado entero. Con `angie` (tres áreas) el resumen "todo junto" es ruidoso y el
+ * filtro pasa a ser útil de verdad, así que hace falta un `&area=` que ACOTE sin poder AMPLIAR.
+ *
+ *   areasEfectivas = pedidas.length ? (pedidas ∩ forzadas) : forzadas
+ *
+ * La intersección solo puede DEVOLVER UN SUBCONJUNTO de lo que el rol ya autorizaba, así que no abre
+ * nada: `&area=uf3` con forzadas ['tierras','odt','odl'] da intersección vacía y se ignora el parámetro
+ * (se usan las forzadas) — nunca cae en "todas", que es el error que convertiría un filtro en un hueco.
+ * Desde D109 esto es un cerrojo real: la identidad llega firmada y el backend la sobrescribe (doGet/
+ * doPost), así que no depende de qué mande el cliente.
+ *
+ * REGRESIÓN CERO. Para `admin` (forzadas []) el camino es idéntico al de D116. Para los roles con área
+ * forzada el resultado solo cambiaría si alguien les mandara `&area=`, y ninguno lo hace: el selector
+ * se dibuja solo para el admin y para el rol nuevo (resumen-asistencia.html), y el resto de las
+ * pantallas manda el parámetro vacío. Y si llegara, el efecto sería acotar dentro de su propia área,
+ * nunca ver algo ajeno. */
 function areasEfectivas(e){
-  let areas=areasDeUsuario((e.parameter&&e.parameter.usuario)||'');
-  if(!areas.length){
-    const pedidas=String((e.parameter&&e.parameter.area)||'').split(',')
-      .map(function(s){ return norm(s); })
-      .filter(function(a,i,arr){ return AREAS_VALIDAS.indexOf(a)>=0 && arr.indexOf(a)===i; });
-    if(pedidas.length) areas=pedidas;
-  }
-  return areas;
+  const forzadas=areasDeUsuario((e.parameter&&e.parameter.usuario)||'');
+  const pedidas=String((e.parameter&&e.parameter.area)||'').split(',')
+    .map(function(s){ return norm(s); })
+    .filter(function(a,i,arr){ return AREAS_VALIDAS.indexOf(a)>=0 && arr.indexOf(a)===i; });
+  if(!pedidas.length) return forzadas;          // sin filtro pedido: manda el rol ([] = admin, todas)
+  if(!forzadas.length) return pedidas;          // admin: el filtro manda, exactamente como en D116
+  const inter=pedidas.filter(function(a){ return forzadas.indexOf(a)>=0; });
+  return inter.length ? inter : forzadas;       // intersección vacía = el parámetro se ignora
 }
 // ¿La cuadrilla `c` cae dentro de las áreas dadas? [] = sin filtro (todas). Compat con === anterior.
 function cuadrillaEnAreas(c, areas, cuadArea){ return !areas.length || areas.indexOf(cuadArea[c]||'tierras')>=0; }
@@ -1107,7 +1132,11 @@ function cuadrillasDeUsuario(usuario){
   // ninguna cuadrilla de UF3 tiene capataz con login, así que ella reporta por todas. El día que los
   // haya, se agregan a `responsables` y los dos canales coexisten (el envío pisa fecha+cuadrilla, D03)
   // sin tocar una línea de código.
-  if(u==='duvan' || u==='residente_uf3'){
+  // D119: `angie` entra en ESTA MISMA rama con sus tres áreas (tierras+ODT+ODL). Es el primer usuario
+  // que mezcla tierras y drenajes en un solo selector; el `norm(r.area)||'tierras'` de aquí abajo ya
+  // resuelve el caso de las cuadrillas de tierras cargadas con la columna `area` VACÍA (ANGEL,
+  // ROBINSON, OPERADORES…), que sin esa normalización no le aparecerían ninguna.
+  if(u==='duvan' || u==='residente_uf3' || u==='angie'){
     const suyas=areasDeUsuario(u);
     return todas.filter(r=> suyas.indexOf(norm(r.area)||'tierras')>=0).map(r=>r.cuadrilla);
   }
@@ -1166,7 +1195,13 @@ function roster(e){
   // chequeadoras, mairy, admin). El formulario la necesita para NO caer al catálogo global `catCC`
   // —que es de tierras— cuando el área todavía no tiene sus CC cargados en CC_USADOS. Sin esto, la
   // residente de UF3 veía el selector con UF1/UF2 y a sus capataces les salía el CC con prefijo 3701.
-  return json({ ok:true, cuadrillas, personas, config:cfg, festivos, jornada, catCC, catCCUsados, catMotivos, recientesCC, turnos,
+  // D119: área de CADA cuadrilla ofrecida, para que el `<select>` del formulario pueda etiquetarlas
+  // (`ANGEL — Tierras` / `JAIRO — ODL`). Hasta ahora nadie mezclaba tierras y drenajes, así que la lista
+  // plana bastaba; `angie` ve ~10 cuadrillas con nombre de persona de tres áreas distintas y sin la
+  // etiqueta un error de tecleo es cuestión de tiempo. Campo ADITIVO: quien no lo lea sigue igual.
+  const cuadArea=areaDeCuadrillaMap(), cuadrillasArea={};
+  cuadrillas.forEach(function(c){ cuadrillasArea[c]=cuadArea[c]||'tierras'; });
+  return json({ ok:true, cuadrillas, cuadrillasArea, personas, config:cfg, festivos, jornada, catCC, catCCUsados, catMotivos, recientesCC, turnos,
     areas:areasDeUsuario(usuario) });
 }
 
@@ -1292,7 +1327,9 @@ function guardarIndividual(body){
   // D72/D84: los residentes de área (odt/odl) y el unificado (residente_dren) también completan faltantes.
   // D88: `duvan` (asistencias de drenajes) igual, acotado a ODT+ODL por areasDeUsuario.
   // D101: `residente_uf3` completa los faltantes de UF3 (acotado a ['uf3'] por areasDeUsuario).
-  if(['residente','admin','jeisson','duvan','residente_uf3','residente_odt','residente_odl','residente_dren'].indexOf(usuario)<0)
+  // D119: `angie` igual, acotada a tierras+ODT+ODL. El cerrojo de área de más abajo
+  // (`cuadrillaPermitidaPara`) es el que le impide tocar una cuadrilla de UF3.
+  if(['residente','admin','jeisson','duvan','residente_uf3','angie','residente_odt','residente_odl','residente_dren'].indexOf(usuario)<0)
     return json({ok:false, error:'No autorizado para completar faltantes.'});
   // D106: portero de fecha ANTES de tocar la hoja. Con la fecha vacía este upsert no solo escribía
   // filas huérfanas: su filtro de abajo (`fdate(r[2])===fecha`) borraba las huérfanas que ya hubiera.
@@ -1701,7 +1738,10 @@ function gestionPersonal(body){
   // D88: `duvan` gestiona el personal de ODT+ODL (mismo alcance que residente_dren en asistencias).
   // D101: `residente_uf3` gestiona el personal de UF3 y NADA más — `areasDeUsuario` le devuelve ['uf3'],
   // así que `okArea` le rechaza cualquier alta/mover hacia (o desde) tierras, ODT u ODL.
-  if(['residente','admin','jeisson','duvan','residente_uf3','residente_odt','residente_odl','residente_dren'].indexOf(usuario)<0)
+  // D119: `angie` gestiona el personal de tierras+ODT+ODL — incluido MOVER a alguien de tierras a ODL
+  // y viceversa, que `okArea` acepta porque valida contra el ARRAY de áreas. Lo que le rechaza, por la
+  // misma vía, es cualquier alta o movimiento hacia (o desde) una cuadrilla de UF3.
+  if(['residente','admin','jeisson','duvan','residente_uf3','angie','residente_odt','residente_odl','residente_dren'].indexOf(usuario)<0)
     return json({ok:false, error:'No autorizado: solo residente o admin.'});
   const areasUsr=areasDeUsuario(usuario);            // [] = todas (residente general/admin)
   const cuadArea=areaDeCuadrillaMap();

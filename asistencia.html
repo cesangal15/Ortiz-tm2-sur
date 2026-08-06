@@ -207,6 +207,9 @@ async function cargarRoster(){
     const data=rc.data;
     STATE.rosterViejo=!rc.fresco; STATE.rosterGuardado=rc.guardado;
     STATE.cuadrillas=data.cuadrillas||[];
+    // D119: área de cada cuadrilla, para etiquetarlas en el selector. Un backend anterior al redespliegue
+    // no manda el campo: se queda vacío y el selector sale plano, como hasta ahora.
+    STATE.cuadrillasArea=data.cuadrillasArea||{};
     STATE.cuadrillaActual=STATE.cuadrillas[0]||'';
     STATE.config=data.config||{}; STATE.festivos=data.festivos||[]; STATE.jornada=data.jornada||{};
     // D77: domingo/festivo con horario típico pre-llenado (07:00–15:00; 8h − 1h almuerzo = 7h Dom/Fest,
@@ -476,6 +479,24 @@ function calcularAvisos(){
   return avisos;
 }
 
+/* D119 — etiqueta de área en el selector de cuadrilla. Solo se activa cuando las cuadrillas ofrecidas
+ * son de MÁS DE UN área, que hoy solo le pasa a `angie` (tierras+ODT+ODL): para todos los demás
+ * usuarios el selector queda exactamente igual que antes. `area` vacía en la hoja CUADRILLAS = tierras,
+ * la misma normalización que aplica el backend. */
+function mezclaAreas(){
+  const m=STATE.cuadrillasArea||{};
+  const vistas={};
+  STATE.cuadrillas.forEach(function(c){ vistas[m[c]||'tierras']=true; });
+  return Object.keys(vistas).length>1;
+}
+function nombreArea(a){
+  if(a==='tierras') return 'Tierras';
+  return String(a||'').toUpperCase();
+}
+function etiquetaCuadrilla(c){
+  if(!mezclaAreas()) return c;
+  return c+' — '+nombreArea((STATE.cuadrillasArea||{})[c]||'tierras');
+}
 function render(){
   const cont=document.getElementById('container');
   if(!STATE.cuadrillas.length){
@@ -493,11 +514,20 @@ function render(){
     html+='<div class="avisos">📡 Sin señal al cargar: usando el roster guardado del '+esc(TM2Offline.fechaCorta(STATE.rosterGuardado))+'. Si hubo cambios de personal, el residente los corrige después.</div>';
   }
   // ---- fecha + cuadrilla + jornada ----
+  // (helpers de etiqueta de cuadrilla más abajo: `mezclaAreas` / `etiquetaCuadrilla`, D119)
   html+='<div class="card"><div class="row">';
   html+=`<div class="field"><label>Fecha</label><input type="date" value="${STATE.fecha}" onchange="onFechaChange(this.value)"></div>`;
   if(STATE.cuadrillas.length>1){
+    // D119: cuando el selector mezcla ÁREAS se etiqueta cada cuadrilla con la suya (`ANGEL — Tierras`,
+    // `JAIRO — ODL`). Hasta ahora nadie veía tierras y drenajes a la vez, así que la lista plana bastaba;
+    // con ~10 cuadrillas que se llaman como su capataz, elegir la equivocada es un error de un solo clic
+    // y el envío PISA fecha+cuadrilla (D03/D107), así que borraría el reporte legítimo de esa cuadrilla.
+    // Si todas son de la misma área (todos los demás usuarios) no se etiqueta nada: la vista no cambia.
     html+='<div class="field"><label>Cuadrilla</label><select onchange="onCuadrillaChange(this.value)">'
-      + STATE.cuadrillas.map(c=>`<option value="${esc(c)}" ${c===STATE.cuadrillaActual?'selected':''}>${esc(c)}</option>`).join('')
+      + STATE.cuadrillas.map(c=>{
+          const et=etiquetaCuadrilla(c);
+          return `<option value="${esc(c)}" ${c===STATE.cuadrillaActual?'selected':''}>${esc(et)}</option>`;
+        }).join('')
       + '</select></div>';
   } else {
     html+=`<div class="field"><label>Cuadrilla</label><input type="text" value="${esc(STATE.cuadrillaActual)}" disabled></div>`;

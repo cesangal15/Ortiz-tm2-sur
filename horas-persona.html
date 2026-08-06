@@ -173,7 +173,9 @@ window.onload = function(){
   // (asistencia_plus_dren), residente_uf3 (asistencia_plus_uf3) y los residentes de drenajes—, cada uno
   // acotado a su área POR EL BACKEND. Los trabajadores no tienen login: consultan a través de quien
   // revisa el resumen.
-  const rolesOk=['residente','admin','asistencia_plus','asistencia_plus_dren','asistencia_plus_uf3','residente_odt','residente_odl','residente_dren'];
+  // D119: `asistencia_plus_tm2` (angie) entra por la misma puerta — no estrena rol aquí, entra quien
+  // entra al resumen; el backend acota la consulta a sus áreas (tierras+ODT+ODL).
+  const rolesOk=['residente','admin','asistencia_plus','asistencia_plus_dren','asistencia_plus_uf3','asistencia_plus_tm2','residente_odt','residente_odl','residente_dren'];
   if(!rol || rolesOk.indexOf(rol)<0){ window.location.href='index.html'; return; }
   STATE.usuario=usuario; STATE.rol=rol;
   document.getElementById('userDisplay').textContent=usuario;
