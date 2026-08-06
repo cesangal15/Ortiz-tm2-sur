@@ -1341,27 +1341,62 @@ function guardarIndividual(body){
     .filter(function(c){ return !cuadrillaPermitidaPara(usuario, c); });
   if(ajena.length) return json({ok:false, error:'Esa cuadrilla no es de tu área: '+ajena.join(', ')});
   const sh=getSheet('ASISTENCIA', ASISTENCIA_HEADERS), need=ASISTENCIA_HEADERS.length;
-  function keyOf(codigo,cedula){
-    const c=String(codigo||'').trim();
-    return c ? ('COD:'+c) : ('CED:'+String(cedula||'').trim());
+  /* D119 — LA EDICIÓN NUNCA DEBE AÑADIR UNA FILA NUEVA. Este upsert borraba la fila vieja buscándola con
+   * una clave de precedencia EXCLUSIVA (código; y solo si no había código, cédula). Si el mismo humano
+   * estaba guardado con el código vacío y la edición traía el código —o al revés, o con un cero a la
+   * izquierda—, las dos claves no coincidían: el borrado no encontraba nada y `anexarFilas_` agregaba la
+   * fila igual. Resultado: corregirle la hora a alguien lo DUPLICABA en vez de reemplazarlo, y de ahí
+   * salían las horas repetidas en el Parte de Navision. Reproducido en `backend/pruebas/`.
+   *
+   * Por qué las dos partes pueden no coincidir: la fila guardada trae el código que tenía PERSONAL
+   * cuando el capataz reportó, mientras que "Completar faltantes" manda el que tiene PERSONAL AHORA. Si
+   * entre medias se le llenó o corrigió el código a esa persona, la vieja y la nueva dejan de casar.
+   *
+   * Ahora se borra por CUALQUIERA de los dos identificadores: una fila del día se va si su código o su
+   * cédula está entre los entrantes. Los valores VACÍOS nunca emparejan (si no, una fila sin código ni
+   * cédula arrastraría a todas las demás). Es deliberadamente más ancho que antes: ante dos filas que
+   * puedan ser la misma persona, la operación correcta es dejar UNA — que es lo que el usuario pidió al
+   * darle a Guardar. */
+  const incoming=body.filas||[], codsIn={}, cedsIn={}, nomsIn={};
+  // Respaldo para quien no tenga NI código NI cédula: nombre+cuadrilla. Antes esas filas emparejaban
+  // todas entre sí (la clave les quedaba en el literal 'CED:'), así que corregir a una de ellas borraba
+  // a TODAS las demás sin identificador — pérdida silenciosa, peor que el duplicado.
+  function claveNombre_(o){
+    const n=norm(o&&o.nombre), c=norm(o&&o.cuadrilla);
+    return n ? (n+'|'+c) : '';
   }
-  const incoming=body.filas||[], keys={};
-  incoming.forEach(f=>{ keys[keyOf(f.codigo,f.cedula)]=true; });
+  incoming.forEach(function(f){
+    const c=String(f.codigo||'').trim(), d=String(f.cedula||'').trim();
+    if(c) codsIn[c]=true;
+    if(d) cedsIn[d]=true;
+    if(!c && !d){ const n=claveNombre_(f); if(n) nomsIn[n]=true; }
+  });
+  function esDeLosEntrantes(o){
+    const c=String(o.codigo||'').trim(), d=String(o.cedula||'').trim();
+    if((!!c && !!codsIn[c]) || (!!d && !!cedsIn[d])) return true;
+    if(!c && !d){ const n=claveNombre_(o); return !!n && !!nomsIn[n]; }
+    return false;
+  }
   const nuevas=incoming.map(f=>[
     Utilities.getUuid(), ts, fecha, body.reporta||usuario, f.cuadrilla||'', f.codigo||'', f.cedula||'', f.nombre||'', f.cargo||'',
     f.cc||'', f.proyecto||'', f.hora_entrada||'', f.hora_salida||'',
     (f.presente===false||f.presente==='No')?'No':'Si', f.motivo_ausencia||'', f.observacion||'', f.turno||''
   ]);
   // D107: se borra la fila de ESE día SOLO de las personas entrantes y se anexan las nuevas al final.
-  // Predicado idéntico al `filter` que tenía antes (fecha + clave de persona); lo único que cambia es
-  // que se decide leyendo 5 columnas (fecha·codigo·cedula caen en el bloque 3–7) en vez de las 17.
-  const aBorrar=localizarFilas_(sh, ASISTENCIA_HEADERS, ['fecha','codigo','cedula'], function(o){
-    return fdate(o.fecha)===fecha && !!keys[keyOf(o.codigo, o.cedula)];
+  // Se decide leyendo 5 columnas (fecha·codigo·cedula caen en el bloque 3–7) en vez de las 17.
+  // D119: el predicado ahora empareja por código O por cédula (ver arriba), no por una clave única.
+  // `nombre` y `cuadrilla` entran al bloque leído (cols 3–8 en vez de 3–7) para el respaldo de arriba:
+  // una columna más, muy lejos de las 17 que se leían antes de D107.
+  const aBorrar=localizarFilas_(sh, ASISTENCIA_HEADERS, ['fecha','cuadrilla','codigo','cedula','nombre'], function(o){
+    return fdate(o.fecha)===fecha && esDeLosEntrantes(o);
   });
   borrarFilas_(sh, aBorrar);
   anexarFilas_(sh, nuevas, need);
   invalidarHoja_('ASISTENCIA');   // D99: la memoria de esta ejecución ya no refleja la hoja
-  return json({ok:true, filas:nuevas.length});
+  // D119: `reemplazadas` deja ver que la edición SUSTITUYÓ y no añadió. Con 1 fila entrante, un 0 aquí
+  // significa que la persona no estaba en el día (alta legítima desde "Completar faltantes"); un 2+
+  // significa que venía duplicada de antes y esta operación la dejó en una sola.
+  return json({ok:true, filas:nuevas.length, reemplazadas:aBorrar.length});
 }
 
 /* ---------- GET personal: gestión (residente general/admin ven todo; residente_odt/odl SOLO su área — D72) ---------- */
@@ -1688,7 +1723,13 @@ function guardarAsistencia(body){
     return json({ok:false, error:'Esa cuadrilla no es de tu área.'});
   const sh=getSheet('ASISTENCIA', ASISTENCIA_HEADERS);
   const need=ASISTENCIA_HEADERS.length;
-  const nuevas=(body.filas||[]).map(f=>[
+  // D119: red de seguridad — si el envío trae DOS renglones de la misma persona, se guarda uno. D118 ya
+  // deduplica el roster (que es de donde salía el renglón repetido), pero un teléfono con la pantalla
+  // vieja en caché, o un reporte que pasó el fin de semana en la cola offline (D82), puede seguir
+  // mandando el payload duplicado. Ese día terminaba con las horas repetidas en el Parte, así que el
+  // cerrojo va también aquí, en el punto de escritura.
+  const entrantes=unicasPorPersona_(body.filas||[]);
+  const nuevas=entrantes.map(f=>[
     Utilities.getUuid(), ts, fecha, reporta, cuadrilla, f.codigo||'', f.cedula||'', f.nombre||'', f.cargo||'',
     f.cc||'', f.proyecto||'', f.hora_entrada||'', f.hora_salida||'',
     f.presente===false||f.presente==='No' ? 'No':'Si', f.motivo_ausencia||'', f.observacion||'', f.turno||''
