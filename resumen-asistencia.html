@@ -226,7 +226,7 @@ window.onload = function(){
   // D88: `asistencia_plus_dren` (duvan) = jeisson pero de drenajes (ODT+ODL, solo asistencias).
   // D101: `asistencia_plus_uf3` (residente_uf3) = lo mismo para UF3 (área `uf3`, proyecto 3703). El
   // backend le fuerza el área e ignora `&area=`, así que desde aquí no puede ampliar su alcance.
-  const rolesOk=['residente','admin','asistencia_plus','asistencia_plus_dren','asistencia_plus_uf3','residente_odt','residente_odl','residente_dren'];
+  const rolesOk=['residente','admin','asistencia_plus','asistencia_plus_dren','asistencia_plus_uf3','asistencia_plus_tm2','residente_odt','residente_odl','residente_dren'];
   if(!rol || rolesOk.indexOf(rol)<0){ window.location.href='index.html'; return; }
   STATE.usuario=usuario; STATE.rol=rol;
   document.getElementById('userDisplay').textContent=usuario;
@@ -290,9 +290,19 @@ async function cargarResumen(){
 // CC son de tierras. El flujo de dom/fest ya NO cuelga de aquí — ver `usaFlujoDomFest()` (D115).
 // El caso del admin se escribe en POSITIVO (antes era "todo lo que no sea odt/odl"): con la lista
 // negra, elegir "Ver como UF3" habría caído por descarte en el flujo de tierras.
+// D119 — pasa de "la vista ES tierras" a "la vista INCLUYE tierras". El matiz importa por el Parte de
+// Navision: si `angie` lo descarga en vista "Todas" y esta función diera falso, la fila de extras del
+// admin (`buildAdminExtraRow`, D73) NO se inyectaría y el archivo saldría INCOMPLETO — y eso llega a
+// Navision. Para los roles actuales el valor no cambia: `residente`/`asistencia_plus` siguen dando
+// true siempre, y para el admin `!as.length || as.indexOf('tierras')>=0` da exactamente lo mismo que
+// el `areaFiltro==='' || areaFiltro==='tierras'` de antes en las seis opciones de su selector.
 function esVistaTierras(){
-  return STATE.rol==='residente' || STATE.rol==='asistencia_plus'
-    || (STATE.rol==='admin' && (STATE.areaFiltro==='' || STATE.areaFiltro==='tierras'));
+  if(STATE.rol==='residente' || STATE.rol==='asistencia_plus') return true;
+  if(STATE.rol==='admin' || STATE.rol==='asistencia_plus_tm2'){
+    const as=areasFiltro();
+    return !as.length || as.indexOf('tierras')>=0;   // sin filtro = "Todas", que incluye tierras
+  }
+  return false;
 }
 // D115: ¿esta vista usa el flujo CENTRALIZADO de dom/fest (D81c: se marca SOLO a quienes trabajaron
 // desde "Completar faltantes"; a los demás no se les espera)? Tierras lo tiene desde D81. DRENAJES
@@ -304,18 +314,29 @@ function esVistaTierras(){
 // D101 (P3, decisión del usuario jul-2026): UF3 sigue con la regla CONSERVADORA — el aviso de "gente
 // sin reportar" se conserva TODOS los días, también dom/fest. Por eso `asistencia_plus_uf3` NO entra
 // aquí. Si más adelante se confirma que va con la regla de tierras, es una línea.
+// D119: `asistencia_plus_tm2` (angie) entra en la lista de roles, NO por la vista: sus tres áreas
+// (tierras, ODT y ODL) usan ya el flujo centralizado tras D115, así que le da `true` mire lo que mire
+// — también en "Todas", donde `esVistaTierras()` ya la habría cubierto, y en ODT/ODL, donde no.
 function usaFlujoDomFest(){
   return esVistaTierras()
-    || ['asistencia_plus_dren','residente_dren','residente_odt','residente_odl'].indexOf(STATE.rol)>=0
+    || ['asistencia_plus_dren','residente_dren','residente_odt','residente_odl','asistencia_plus_tm2'].indexOf(STATE.rol)>=0
     || (STATE.rol==='admin' && filtroEsDrenajes());
 }
 // D115: ¿la vista es de DRENAJES? En dom/fest hay un riesgo que tierras no tiene: allá los capataces
 // NO reportan ese día, pero en ODT/ODL sí reportan por cuadrilla todos los días, y el envío de cuadrilla
 // PISA fecha+cuadrilla (D03/D107) — un reporte del capataz posterior borra lo que se marcó aquí por
 // persona. De ahí el aviso extra en la guía; el orden seguro es que el resumen vaya de último.
+// D119: a `angie` el aviso le aplica igual —reporta y completa faltantes en ODT/ODL, donde los capataces
+// sí reportan por cuadrilla en dom/fest—, así que se le muestra siempre que su vista INCLUYA drenajes:
+// en "Todas", en ODT y en ODL. Solo se le calla en la vista "Tierras", donde el riesgo no existe.
 function esVistaDrenajes(){
-  return ['asistencia_plus_dren','residente_dren','residente_odt','residente_odl'].indexOf(STATE.rol)>=0
-    || (STATE.rol==='admin' && filtroEsDrenajes());
+  if(['asistencia_plus_dren','residente_dren','residente_odt','residente_odl'].indexOf(STATE.rol)>=0) return true;
+  if(STATE.rol==='admin') return filtroEsDrenajes();
+  if(STATE.rol==='asistencia_plus_tm2'){
+    const as=areasFiltro();
+    return !as.length || as.some(function(a){ return a==='odt' || a==='odl'; });
+  }
+  return false;
 }
 /* D116 — el "Ver como" del admin admite VARIAS áreas separadas por coma (`odt,odl` = drenajes completo,
  * la misma vista que tiene `residente_dren` por su rol, D84). Estos tres helpers son todo lo que hacía
@@ -328,6 +349,18 @@ function areasFiltro(){
 function filtroEsDrenajes(){
   const as=areasFiltro();
   return as.length>0 && as.every(function(a){ return a==='odt' || a==='odl'; });
+}
+/* D119 — quién ve el selector "Ver como" y con qué opciones. Devuelve `null` = no se dibuja.
+ * El admin conserva EXACTAMENTE la lista de D116 (incluida `uf3` y el combinado `odt,odl`). El rol
+ * nuevo ve solo sus tres áreas + "Todas": ni `uf3` ni el combinado de drenajes, que para ella sería
+ * un cuarto camino a lo mismo. La lista corta es COMODIDAD, no seguridad — quien teclee `&area=uf3`
+ * en la URL se topa con la intersección de `areasEfectivas` en el backend, que la ignora y le devuelve
+ * sus tres áreas. Los demás roles (residente_dren, duvan, jeisson, residentes de un área) siguen sin
+ * selector: vienen acotados por su rol y una sola área no tiene nada que filtrar. */
+function opcionesVerComo(){
+  if(STATE.rol==='admin')               return ['','tierras','odt','odl','odt,odl','uf3'];
+  if(STATE.rol==='asistencia_plus_tm2') return ['','tierras','odt','odl'];
+  return null;
 }
 function etiquetaArea(a){
   if(a==='')        return 'Todas las áreas';
@@ -470,13 +503,19 @@ function render(){
     + `<div class="field"><label>Fecha</label><input type="date" value="${STATE.fecha}" onchange="onFechaChange(this.value)"></div>`
     // D74b: solo el admin puede ver TODO o filtrar por área ("ver como" tierras/ODT/ODL). Los residentes
     // ya vienen acotados por el backend a su área, así que no necesitan el selector.
-    + (STATE.rol==='admin' ? `<div class="field" style="max-width:200px;"><label>Ver como</label><select onchange="onAreaFiltro(this.value)">`
-        // D101: `uf3` entra en la lista (el backend la acepta en areasEfectivas).
-        // D116: `odt,odl` = DRENAJES completo en una sola vista (el backend acepta varias áreas separadas
-        // por coma). Es lo que ya veía `residente_dren` por su rol (D84); el admin solo podía mirarlas
-        // por separado. Se ofrece ADEMÁS de ODT y ODL sueltas, que siguen igual.
-        + ['','tierras','odt','odl','odt,odl','uf3'].map(a=>`<option value="${a}" ${STATE.areaFiltro===a?'selected':''}>${esc(etiquetaArea(a))}</option>`).join('')
-        + '</select></div>' : '')
+    // D101: `uf3` entra en la lista del admin (el backend la acepta en areasEfectivas).
+    // D116: `odt,odl` = DRENAJES completo en una sola vista (el backend acepta varias áreas separadas
+    // por coma). Es lo que ya veía `residente_dren` por su rol (D84); el admin solo podía mirarlas
+    // por separado. Se ofrece ADEMÁS de ODT y ODL sueltas, que siguen igual.
+    // D119: el MISMO componente lo usa ahora `asistencia_plus_tm2` con sus tres áreas — quién lo ve y
+    // con qué opciones lo decide `opcionesVerComo()`, para no duplicar el selector.
+    + ((function(){
+        const ops=opcionesVerComo();
+        if(!ops) return '';
+        return `<div class="field" style="max-width:200px;"><label>Ver como</label><select onchange="onAreaFiltro(this.value)">`
+          + ops.map(a=>`<option value="${a}" ${STATE.areaFiltro===a?'selected':''}>${esc(etiquetaArea(a))}</option>`).join('')
+          + '</select></div>';
+      })())
     + '</div></div>';
 
   html+='<div class="section-title">Totales del día</div>';
@@ -602,7 +641,7 @@ function render(){
   // D72/D74b: gestión de personal para residente(tierras), admin, jeisson y residentes de área; el backend
   // la limita a su área (jeisson = tierras, mismos permisos que el residente de tierras).
   // D88: duvan (asistencia_plus_dren) igual pero acotado por el backend a ODT+ODL.
-  if(['residente','admin','asistencia_plus','asistencia_plus_dren','asistencia_plus_uf3','residente_odt','residente_odl','residente_dren'].indexOf(STATE.rol)>=0){
+  if(['residente','admin','asistencia_plus','asistencia_plus_dren','asistencia_plus_uf3','asistencia_plus_tm2','residente_odt','residente_odl','residente_dren'].indexOf(STATE.rol)>=0){
     html+='<div class="section-title">Gestión de personal</div>';
     html+='<div class="card" id="gestionCard"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">'
       + '<button class="btn-ghost" onclick="cargarPersonal()">Cargar personal ↻</button>'
@@ -807,7 +846,7 @@ async function guardarDetalle(idx){
  * responsable de la cuadrilla. */
 function proyectoFromCC(cc){ const m=String(cc||'').match(/^(\d{4})/); return m?m[1]:''; }
 function seccionCompletar(d){
-  if(['residente','admin','asistencia_plus','asistencia_plus_dren','asistencia_plus_uf3','residente_odt','residente_odl','residente_dren'].indexOf(STATE.rol)<0) return '';
+  if(['residente','admin','asistencia_plus','asistencia_plus_dren','asistencia_plus_uf3','asistencia_plus_tm2','residente_odt','residente_odl','residente_dren'].indexOf(STATE.rol)<0) return '';
   const faltantes=d.faltantes||[];
   const comp=[];
   // Los "presente sin CC" ya vienen en faltantes como sin_reportar (incompleto=true), así que basta
