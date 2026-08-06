@@ -384,6 +384,28 @@ function unicasPorPersona(lista){
   (lista||[]).forEach(function(f){ const k=clavePersona(f); if(!vistos[k]){ vistos[k]=true; out.push(f); } });
   return out;
 }
+/* D119 — agrupa las filas del día por PERSONA uniendo las que comparten CUALQUIER identificador.
+ * `clavePersona` sola no basta aquí: el duplicado que genera una edición mal emparejada deja justamente
+ * dos filas con identificadores DISTINTOS (p. ej. la del capataz sin código y la de la edición con él),
+ * así que agrupando por una clave única se veían como dos personas y el aviso no las delataba — que es
+ * como estos duplicados llegaron hasta el Parte. Se agrupa por código, por cédula, o —si no hay ninguno—
+ * por nombre+cuadrilla, igual que el emparejamiento del backend. */
+function agruparPorPersona(filas){
+  const grupos=[], grupoDe={};
+  (filas||[]).forEach(function(f){
+    const c=String(f.codigo||'').trim(), d=String(f.cedula||'').trim();
+    const ids=[];
+    if(c) ids.push('COD:'+c);
+    if(d) ids.push('CED:'+d);
+    if(!ids.length) ids.push('NOM:'+String(f.nombre||'').trim().toLowerCase()+'|'+String(f.cuadrilla||'').trim().toLowerCase());
+    let g=null;
+    ids.forEach(function(k){ if(g===null && grupoDe[k]!==undefined) g=grupoDe[k]; });
+    if(g===null){ g=grupos.length; grupos.push([]); }
+    grupos[g].push(f);
+    ids.forEach(function(k){ grupoDe[k]=g; });   // el grupo queda alcanzable por TODOS sus identificadores
+  });
+  return grupos;
+}
 /* D117/D118 — aviso de personas con MÁS DE UNA fila el mismo día. No es un detalle de presentación: el
  * Parte de Navision se arma con una línea por FILA (`generarExcel`), así que una persona duplicada se va
  * al archivo dos veces y cobra doble.
@@ -454,14 +476,14 @@ function render(){
    * MÁS DE UNA fila el mismo día — el envío de cuadrilla pisa fecha+cuadrilla (D03/D107), no fecha+persona,
    * así que la misma persona reportada en DOS cuadrillas (típico al poblar la cuadrilla DUVAN de D105 sin
    * MOVER a la gente en PERSONAL, o el caso 76775 de MAURICIO/ODL ya advertido en D72) deja dos filas
-   * vivas. Agrupar por persona hace que los tres KPI vuelvan a sumar. La misma clave que usa el backend
-   * (`guardarIndividual.keyOf`): código si lo tiene, si no la cédula. */
-  const porPersona={};
-  filas.forEach(f=>{ const k=clavePersona(f); (porPersona[k]=porPersona[k]||[]).push(f); });
-  const presentes=unicasPorPersona(presentesFilas);   // una fila por PERSONA presente (la primera)
+   * vivas. Agrupar por persona hace que los tres KPI vuelvan a sumar.
+   * D119: se agrupa uniendo identificadores COMPARTIDOS (`agruparPorPersona`), no por una clave única —
+   * el duplicado que dejaba una edición mal emparejada tiene los identificadores distintos en cada fila
+   * (una con código y otra sin él), así que con clave única pasaban por dos personas y no se detectaban. */
+  const presentes=agruparPorPersona(presentesFilas).map(g=>g[0]);   // una fila por PERSONA presente
   // Personas con más de una fila ese día: el síntoma que descuadraba los KPI y —lo importante— lo que
   // duplicaría sus horas en el Parte de Navision, que se arma con UNA línea por fila (ver generarExcel).
-  const duplicadas=Object.keys(porPersona).filter(k=>porPersona[k].length>1).map(k=>porPersona[k]);
+  const duplicadas=agruparPorPersona(filas).filter(g=>g.length>1);
   const porProyecto={};
   presentes.forEach(f=>{ const p=f.proyecto||'(sin proyecto)'; porProyecto[p]=(porProyecto[p]||0)+1; });
 
