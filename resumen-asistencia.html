@@ -449,9 +449,16 @@ function duplicadasHtml(dups){
     const detalle=filas.map(function(f){
       const est = f.presente==='No' ? 'ausente' : (String(f.cc||'').trim() ? 'presente' : 'presente sin CC');
       const proy=String(f.proyecto||'').trim();
-      return esc(f.cuadrilla||'(sin cuadrilla)')+' → '+est+(f.reporta?' ('+esc(f.reporta)+')':'')
+      // D122: el número de FILA en la hoja ASISTENCIA. Es lo único que zanja un "en el Sheet solo sale
+      // una vez": buscar por código falla si una de las filas lo tiene vacío o guardado como número, y
+      // un filtro por fecha en texto no ve las filas cuya celda es Date. Con el número se va directo
+      // (en Sheets: cuadro de nombre → A<fila> → Enter).
+      return (f._row?'<b>fila '+esc(f._row)+'</b> · ':'')
+        + esc(f.cuadrilla||'(sin cuadrilla)')+' → '+est+(f.reporta?' ('+esc(f.reporta)+')':'')
         + (proy?' · proy. <b>'+esc(proy)+'</b>':'')
-        + (String(f.cc||'').trim()?' · <small>'+esc(f.cc)+'</small>':'');
+        + ' · cód. <b>'+esc(String(f.codigo||'').trim()||'(vacío)')+'</b>'
+        + ' · céd. <b>'+esc(String(f.cedula||'').trim()||'(vacío)')+'</b>'
+        + (String(f.cc||'').trim()?'<br><small style="opacity:.8">'+esc(f.cc)+'</small>':'');
     }).join('<br>')
       + (unaCuad ? '<br>— <b>misma cuadrilla</b>: revisa PERSONAL' : '')
       + (contradice ? '<br>— <b>se contradicen</b>: cuenta como presente Y como ausente' : '')
