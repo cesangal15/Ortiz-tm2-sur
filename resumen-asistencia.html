@@ -442,12 +442,21 @@ function duplicadasHtml(dups){
     // por eso "Total personas" cuenta gente distinta y no la suma de los tres.
     const contradice = filas.some(function(f){ return f.presente==='No'; }) && filas.some(function(f){ return f.presente!=='No'; });
     const unaCuad = unicos(filas.map(function(f){ return f.cuadrilla||''; })).length===1;
+    // D121: se muestra el PROYECTO (y el CC) de cada fila. Sin eso, el caso más engañoso era invisible:
+    // con las dos filas en proyectos distintos la persona sale UNA vez en cada Excel, así que al abrir un
+    // archivo no se ve nada raro y el aviso parecía equivocado. Con el proyecto delante se entiende sola.
+    const proysDup=unicos(filas.map(function(f){ return String(f.proyecto||'').trim(); }).filter(Boolean));
     const detalle=filas.map(function(f){
       const est = f.presente==='No' ? 'ausente' : (String(f.cc||'').trim() ? 'presente' : 'presente sin CC');
-      return esc(f.cuadrilla||'(sin cuadrilla)')+' → '+est+(f.reporta?' ('+esc(f.reporta)+')':'');
-    }).join(' · ')
-      + (unaCuad ? ' — <b>misma cuadrilla</b>: revisa PERSONAL' : '')
-      + (contradice ? ' — <b>se contradicen</b>: cuenta como presente Y como ausente' : '');
+      const proy=String(f.proyecto||'').trim();
+      return esc(f.cuadrilla||'(sin cuadrilla)')+' → '+est+(f.reporta?' ('+esc(f.reporta)+')':'')
+        + (proy?' · proy. <b>'+esc(proy)+'</b>':'')
+        + (String(f.cc||'').trim()?' · <small>'+esc(f.cc)+'</small>':'');
+    }).join('<br>')
+      + (unaCuad ? '<br>— <b>misma cuadrilla</b>: revisa PERSONAL' : '')
+      + (contradice ? '<br>— <b>se contradicen</b>: cuenta como presente Y como ausente' : '')
+      + (proysDup.length>1 ? '<br>— ⚠️ <b>proyectos distintos ('+esc(proysDup.join(' y '))+')</b>: sale UNA vez en CADA Excel, '
+          + 'por eso abriendo un solo archivo no se nota. Entre los dos Partes se le pagan las horas dos veces.' : '');
     h+='<div style="padding:4px 0;"><b>'+esc(f0.nombre||'(sin nombre)')+'</b> '
       + '<small style="color:var(--muted)">'+esc(f0.codigo||f0.cedula||'')+'</small><br>'
       + '<small style="color:var(--muted)">'+detalle+'</small></div>';
@@ -1468,24 +1477,39 @@ async function generarExcel(proyecto){
     // mandaba a los ausentes de UF3 (o de cualquier área futura) al Parte de tierras—: se usa el
     // proyecto mayoritario de las filas del propio día y, si tampoco hay, el que se está generando.
     const proyRespaldo=proyectoMayoritario(data.filas||[]) || proyecto;
+    // Proyecto al que va una fila del Parte: el suyo si está presente; si está ausente no lleva CC, así
+    // que sale del histórico de su cuadrilla (mismo criterio que usa `filasProyecto` abajo).
+    const proyectoDeFila=function(f){
+      if(f.presente==='Si') return String(f.proyecto||'');
+      return data.proyectoDefecto[f.cuadrilla] || proyRespaldo;
+    };
     const filasProyecto=(data.filas||[]).filter(f=>{
-      if(f.presente==='Si') return String(f.proyecto||'')===proyecto;
-      const def=data.proyectoDefecto[f.cuadrilla] || proyRespaldo;
-      if(!data.proyectoDefecto[f.cuadrilla]) avisosProyDefecto.push(f.nombre);
-      return def===proyecto;
+      if(f.presente!=='Si' && !data.proyectoDefecto[f.cuadrilla]) avisosProyDefecto.push(f.nombre);
+      return proyectoDeFila(f)===proyecto;
     });
-    // D117: última barrera antes de generar el archivo. El Parte lleva UNA línea por fila reportada, así
-    // que una persona con dos filas ese día (dos cuadrillas la reportaron — el envío pisa fecha+cuadrilla,
-    // D03/D107) cobra DOBLE. El resumen ya lo avisa arriba, pero este es el punto donde el error sale del
-    // sistema hacia Navision, así que se pregunta explícitamente antes de descargar.
-    const dupExp={};
-    filasProyecto.forEach(function(f){ const k=clavePersona(f); (dupExp[k]=dupExp[k]||[]).push(f); });
-    const repetidas=Object.keys(dupExp).filter(function(k){ return dupExp[k].length>1; }).map(function(k){ return dupExp[k]; });
+    /* D117 — última barrera antes de generar el archivo. El Parte lleva UNA línea por fila reportada, así
+     * que una persona con dos filas ese día cobra DOBLE.
+     *
+     * D121 — la guarda se calcula sobre TODAS las filas del día, no sobre las de este proyecto. Antes se
+     * agrupaba `filasProyecto`, que ya viene filtrado, y eso dejaba pasar justo el caso más engañoso: si
+     * las dos filas de la persona tienen PROYECTO distinto (p. ej. la cuadrilla del capataz en 3701 y
+     * OPERADORES en 3702), cada archivo la lleva UNA vez y el aviso no saltaba en ninguno de los dos —
+     * revisando un solo Excel no se nota nada, pero entre los dos Partes se le pagan las horas dos veces.
+     * Es exactamente lo que reportó el dueño (ago-2026): «el aviso lo marca duplicado pero no me aparece
+     * en el Excel». Se agrupa además uniendo identificadores compartidos (D119), no por clave única. */
+    const repetidas=agruparPorPersona(data.filas||[])
+      .filter(function(g){ return g.length>1; })
+      .filter(function(g){ return g.some(function(f){ return proyectoDeFila(f)===proyecto; }); });
     if(repetidas.length){
-      const lista=repetidas.slice(0,12).map(function(fs){
-        return '  • '+(fs[0].nombre||'(sin nombre)')+' — '+fs.length+' filas ('+fs.map(function(f){ return f.cuadrilla||'?'; }).join(', ')+')';
+      const cruzadas=repetidas.filter(function(g){ return unicos(g.map(proyectoDeFila)).length>1; });
+      const lista=repetidas.slice(0,12).map(function(g){
+        return '  • '+(g[0].nombre||'(sin nombre)')+' — '+g.length+' filas: '
+          + g.map(function(f){ return (f.cuadrilla||'?')+' / proy. '+(proyectoDeFila(f)||'?'); }).join('  |  ');
       }).join('\n')+(repetidas.length>12?`\n  …y ${repetidas.length-12} más`:'');
-      if(!confirm(`⚠️ ${repetidas.length} persona(s) tienen MÁS DE UNA fila este día en el proyecto ${proyecto}:\n\n${lista}\n\nEl Parte lleva una línea por fila, así que sus horas quedarían REPETIDAS en Navision.\nLo correcto es dejar a cada persona en una sola cuadrilla y volver a enviar ese reporte.\n\n¿Descargar de todas formas?`)) { msg.innerHTML=''; return; }
+      const nota = cruzadas.length
+        ? `\n\n⚠️ OJO: ${cruzadas.length} de ellas tienen sus filas en PROYECTOS DISTINTOS, así que salen UNA vez en cada archivo.\nRevisando un solo Excel no se nota, pero entre los dos Partes se le pagan las horas dos veces.`
+        : '';
+      if(!confirm(`⚠️ ${repetidas.length} persona(s) tienen MÁS DE UNA fila este día y alguna cae en el proyecto ${proyecto}:\n\n${lista}${nota}\n\nEl Parte lleva una línea por fila, así que sus horas quedarían REPETIDAS en Navision.\nLo correcto es dejar a cada persona en una sola cuadrilla y volver a enviar ese reporte.\n\n¿Descargar de todas formas?`)) { msg.innerHTML=''; return; }
     }
     // Gancho D73: extras del admin de este día×proyecto (canal aparte, no está en `filas`). Se inyectan
     // como filas extra del Parte. `admin_recurso` (CONFIG) es parámetro abierto: si viene vacío, no se
