@@ -1226,7 +1226,13 @@ function asistenciaDia(e){
   // El helper cae solo a la lectura completa de siempre si la hoja es chica o el día quedó demasiado
   // fragmentado, así que el filtro por fecha ya viene aplicado y este `filter` solo mira el área.
   const filas=leerFilasPorFecha_('ASISTENCIA', fecha, fecha).filter(r=> enArea(r.cuadrilla))
-    .map(r=>({ id_registro:r.id_registro, timestamp:r.timestamp, fecha:fdate(r.fecha), reporta:r.reporta,
+    // D122: `_row` (número de fila REAL en la hoja) viaja al frontend. No es decorativo: cuando el
+    // resumen marca a alguien duplicado y en la hoja "solo aparece una vez", la discusión se resuelve
+    // yendo a la fila exacta — buscar por código falla si una de las dos filas lo tiene vacío, guardado
+    // como número, o si un filtro de fecha la deja escondida (la columna `fecha` puede ser texto en unas
+    // filas y Date en otras, y un filtro por texto no las ve todas). Los dos lectores ya lo calculan
+    // (`readSheet` y `leerFilasPorFecha_`); solo faltaba no perderlo en este `map`.
+    .map(r=>({ _row:r._row, id_registro:r.id_registro, timestamp:r.timestamp, fecha:fdate(r.fecha), reporta:r.reporta,
       cuadrilla:r.cuadrilla, codigo:r.codigo, cedula:r.cedula, nombre:r.nombre, cargo:r.cargo, cc:r.cc,
       proyecto:r.proyecto, hora_entrada:ftime(r.hora_entrada), hora_salida:ftime(r.hora_salida),
       presente:r.presente, motivo_ausencia:r.motivo_ausencia, observacion:r.observacion, turno:String(r.turno||'') }));
