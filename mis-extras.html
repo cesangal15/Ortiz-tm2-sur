@@ -76,7 +76,8 @@ window.onload = function(){
   // Guard de sesión (§6): SOLO admin. El resto se redirige a index.html.
   const rol=localStorage.getItem('rol'), usuario=localStorage.getItem('usuario');
   if(rol!=='admin'){ window.location.href='index.html'; return; }
-  STATE.usuario=usuario||'admin';
+  // D121: el admin se llama `cesar`; el respaldo solo aplica si la sesión no guardó el nombre.
+  STATE.usuario=usuario||'cesar';
   document.getElementById('userDisplay').textContent=STATE.usuario;
   STATE.fecha=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});   // D50 zona Colombia
   cargar();

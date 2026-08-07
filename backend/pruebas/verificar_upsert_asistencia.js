@@ -119,7 +119,8 @@ function caso(titulo, filasPrevias, filasEdicion, esperadas){
   const cuad = new HojaFalsa('CUADRILLAS', ['cuadrilla','responsables','area','estado'],
                              [['ENRIQUE','enrique','odt','activa'], ['MAURICIO','mauricio','odt','activa']]);
   const ctx = sandbox({ ASISTENCIA: asis, CUADRILLAS: cuad });
-  ctx.guardarIndividual({ usuario:'admin', fecha:'2026-08-01', reporta:'admin', filas: filasEdicion });
+  // D121: el admin es `cesar`; `guardarIndividual` lo autoriza por `esAdmin_`, no por el nombre viejo.
+  ctx.guardarIndividual({ usuario:'cesar', fecha:'2026-08-01', reporta:'cesar', filas: filasEdicion });
   const n = asis.data.length - 1;
   const ok = n === esperadas;
   if(!ok) fallos++;

@@ -826,12 +826,25 @@ function leerColumnasDeHoja_(nombreHoja, colIni, colFin){
 }
 
 /* ---------- área (D72 / D84) ---------- */
+/* D121 — el administrador se llama `cesar`, no `admin`.
+ * `admin` era a la vez NOMBRE DE USUARIO y ROL, y este módulo decide por NOMBRE (D119, §4.2 de
+ * arquitectura). Al renombrar la fila de la hoja `USUARIOS` a `cesar`, cada `usuario==='admin'` de
+ * aquí habría dejado de reconocerlo en silencio: seguiría entrando (el guard de pantalla mira el ROL,
+ * que NO cambia) pero se quedaría sin cuadrillas que elegir y sin permiso para completar faltantes ni
+ * gestionar personal. Por eso el nombre pasa por esta lista y no por un `===` suelto.
+ * Se acepta TAMBIÉN `admin` a propósito, como con `alejo`/`alejandro` (§ `usuarioAliases`): el código y
+ * la hoja privada `USUARIOS` se cambian por separado, así que la app funciona igual antes y después de
+ * renombrar la fila. Cuando la fila ya diga `cesar`, `admin` deja de existir como login y el alias no
+ * abre nada — para retirarlo basta borrarlo de este array. */
+const ADMIN_USUARIOS = ['cesar','admin'];
+function esAdmin_(usuario){ return ADMIN_USUARIOS.indexOf(norm(usuario)) >= 0; }
+
 // Helper único de áreas por usuario (mismo criterio que el frontend, D84): devuelve el ARRAY de áreas
 // que revisa un usuario. residente_odt/odl ven SOLO su área; residente_dren y duvan ven ['odt','odl'];
 // el residente "general"/jeisson son de TIERRAS (D74b); admin devuelve [] = SIN filtro (ve todas).
 //   residente_odt  -> ['odt']              residente_odl  -> ['odl']
 //   residente_dren -> ['odt','odl']        duvan -> ['odt','odl']  (D88: solo asistencias)
-//   residente/jeisson -> ['tierras']       admin (u otro) -> []
+//   residente/jeisson -> ['tierras']       admin `cesar` (u otro) -> []   (D121)
 function areasDeUsuario(usuario){
   const u=norm(usuario);
   if(u==='residente_odt')  return ['odt'];
@@ -851,7 +864,7 @@ function areasDeUsuario(usuario){
   // agregar `'uf3'` a este array y nada más.
   if(u==='angie')          return ['tierras','odt','odl'];
   if(u==='residente' || u==='jeisson') return ['tierras'];
-  return [];   // admin: sin filtro (puede filtrar por &area=)
+  return [];   // admin (`cesar`, D121): sin filtro (puede filtrar por &area=)
 }
 // Áreas efectivas de una petición: las forzadas por el usuario; si NO tiene (admin), respeta un &area=
 // de filtro. [] = sin filtro (admin sin &area). Los usuarios con área forzada no la pueden burlar.
@@ -1120,7 +1133,7 @@ function cuadrillasDeUsuario(usuario){
   const u=norm(usuario);
   // D84: las cuadrillas inactivas salen de circulación (no se ofrecen para reportar/seleccionar).
   const todas=readSheet('CUADRILLAS', CUADRILLAS_HEADERS).filter(cuadrillaActiva);
-  if(u==='admin') return todas.map(r=>r.cuadrilla); // admin elige cuadrilla (§3)
+  if(esAdmin_(u)) return todas.map(r=>r.cuadrilla); // admin (`cesar`, D121) elige cuadrilla (§3)
   // D88: `duvan` reporta la asistencia de TODA su área — igual que el admin (elige la cuadrilla en el
   // formulario), pero acotado a ODT+ODL por `areasDeUsuario`. No va por la columna `responsables`:
   // reporta por todos los capataces de drenajes, sea o no responsable de la cuadrilla.
@@ -1329,7 +1342,8 @@ function guardarIndividual(body){
   // D101: `residente_uf3` completa los faltantes de UF3 (acotado a ['uf3'] por areasDeUsuario).
   // D119: `angie` igual, acotada a tierras+ODT+ODL. El cerrojo de área de más abajo
   // (`cuadrillaPermitidaPara`) es el que le impide tocar una cuadrilla de UF3.
-  if(['residente','admin','jeisson','duvan','residente_uf3','angie','residente_odt','residente_odl','residente_dren'].indexOf(usuario)<0)
+  // D121: el admin entra por `esAdmin_` (su usuario pasó de `admin` a `cesar`).
+  if(!esAdmin_(usuario) && ['residente','jeisson','duvan','residente_uf3','angie','residente_odt','residente_odl','residente_dren'].indexOf(usuario)<0)
     return json({ok:false, error:'No autorizado para completar faltantes.'});
   // D106: portero de fecha ANTES de tocar la hoja. Con la fecha vacía este upsert no solo escribía
   // filas huérfanas: su filtro de abajo (`fdate(r[2])===fecha`) borraba las huérfanas que ya hubiera.
@@ -1677,7 +1691,7 @@ function guardarExtrasAdmin(body){
   const sh=getSheet('EXTRAS_ADMIN', EXTRAS_ADMIN_HEADERS), need=EXTRAS_ADMIN_HEADERS.length, last=sh.getLastRow();
   let rows = last>1 ? leerRango_(sh,2,1,last-1,need) : [];
   rows = rows.filter(r=> fdate(r[0])!==fecha);         // clave lógica = fecha: re-guardar pisa el día
-  rows.push([fecha, cc, proyecto, horas, tipo, new Date(), body.reporta||'admin']);
+  rows.push([fecha, cc, proyecto, horas, tipo, new Date(), body.reporta||ADMIN_USUARIOS[0]]);   // D121
   sh.clearContents();
   sh.getRange(1,1,1,need).setValues([EXTRAS_ADMIN_HEADERS]);
   if(rows.length){ ensureRows_(sh, rows.length);   // D93
@@ -1782,7 +1796,8 @@ function gestionPersonal(body){
   // D119: `angie` gestiona el personal de tierras+ODT+ODL — incluido MOVER a alguien de tierras a ODL
   // y viceversa, que `okArea` acepta porque valida contra el ARRAY de áreas. Lo que le rechaza, por la
   // misma vía, es cualquier alta o movimiento hacia (o desde) una cuadrilla de UF3.
-  if(['residente','admin','jeisson','duvan','residente_uf3','angie','residente_odt','residente_odl','residente_dren'].indexOf(usuario)<0)
+  // D121: el admin entra por `esAdmin_` (su usuario pasó de `admin` a `cesar`).
+  if(!esAdmin_(usuario) && ['residente','jeisson','duvan','residente_uf3','angie','residente_odt','residente_odl','residente_dren'].indexOf(usuario)<0)
     return json({ok:false, error:'No autorizado: solo residente o admin.'});
   const areasUsr=areasDeUsuario(usuario);            // [] = todas (residente general/admin)
   const cuadArea=areaDeCuadrillaMap();

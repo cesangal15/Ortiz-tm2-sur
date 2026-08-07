@@ -1914,7 +1914,9 @@ function setupUsuarios(){
   const sh=getSheet('USUARIOS', USUARIOS_HEADERS);
   if(sh.getLastRow()>1){ Logger.log('USUARIOS ya tiene datos: no se toca nada.'); return; }
   const filas=[
-    ['admin','','admin','','menu.html','activo'],
+    // D121: el administrador entra con su NOMBRE (`cesar`), no con `admin`. El ROL sigue llamándose
+    // `admin` — es lo que miran todos los guards de pantalla y no cambia.
+    ['cesar','','admin','','menu.html','activo'],
     ['encargado','','encargado','','encargado.html','activo'],
     ['residente','','residente','','residente.html','activo'],
     ['jefe','','jefe','','jefe.html','activo'],

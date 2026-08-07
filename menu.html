@@ -131,7 +131,7 @@
   // D82: sesión en localStorage (sobrevive cierre del navegador en zona muerta)
   const rol=localStorage.getItem('rol');
   if(!rol || rol!=='admin'){ window.location.href='index.html'; }
-  document.getElementById('userDisplay').textContent=localStorage.getItem('usuario')||'admin';
+  document.getElementById('userDisplay').textContent=localStorage.getItem('usuario')||'cesar';   // D121
   // solo la sesión: la cola de envíos pendientes NO se borra al cerrar sesión (D82)
   function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); localStorage.removeItem('tm2_token'); window.location.href='index.html'; }
 </script>
