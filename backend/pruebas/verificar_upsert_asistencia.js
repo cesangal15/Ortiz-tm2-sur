@@ -159,6 +159,22 @@ caso('persona duplicada de antes → queda UNA',
      [fila({}), fila({}), fila({})],
      [edicion({})], 1);
 
+/* D123 — dos PERSONAS distintas que comparten cédula (error de digitación real en PERSONAL:
+ * 74270 FREDY MACHACON y 76358 ALEIXER LIZARAZO con la 91515627). La regla de D119 («código O
+ * cédula») borraba a una al editar a la otra: pérdida silenciosa de una asistencia real. */
+console.log('\n=== D123 · cédula compartida por personas DISTINTAS ===');
+caso('editar a FREDY no toca a ALEIXER (misma cédula, código distinto)',
+     [fila({ codigo:'74270', cedula:'91515627', nombre:'FREDY',   cuadrilla:'ROBINSON' }),
+      fila({ codigo:'76358', cedula:'91515627', nombre:'ALEIXER', cuadrilla:'OPERADORES' })],
+     [edicion({ codigo:'74270', cedula:'91515627', nombre:'FREDY', cuadrilla:'ROBINSON' })], 2);
+caso('editar a ALEIXER no toca a FREDY',
+     [fila({ codigo:'74270', cedula:'91515627', nombre:'FREDY',   cuadrilla:'ROBINSON' }),
+      fila({ codigo:'76358', cedula:'91515627', nombre:'ALEIXER', cuadrilla:'OPERADORES' })],
+     [edicion({ codigo:'76358', cedula:'91515627', nombre:'ALEIXER', cuadrilla:'OPERADORES' })], 2);
+caso('cero a la izquierda sigue casando sin recurrir a la cédula',
+     [fila({ codigo:'076333', cedula:'123' })],
+     [edicion({ codigo:'76333', cedula:'999' })], 1);
+
 console.log('\n=== alta legítima desde "Completar faltantes" ===');
 caso('persona que no estaba en el día → se agrega',
      [fila({ codigo:'77929', cedula:'999', nombre:'JANER' })],

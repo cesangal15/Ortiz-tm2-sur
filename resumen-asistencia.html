@@ -423,21 +423,53 @@ function unicasPorPersona(lista){
  * así que agrupando por una clave única se veían como dos personas y el aviso no las delataba — que es
  * como estos duplicados llegaron hasta el Parte. Se agrupa por código, por cédula, o —si no hay ninguno—
  * por nombre+cuadrilla, igual que el emparejamiento del backend. */
-function agruparPorPersona(filas){
-  const grupos=[], grupoDe={};
+function normCod(v){ return String(v==null?'':v).trim().replace(/^0+/, ''); }
+/* D123 — corrige el agrupamiento de D119, que unía por «código O cédula». En la obra hay DOS PERSONAS
+ * DISTINTAS con la misma cédula (74270 FREDY MACHACON y 76358 ALEIXER LIZARAZO comparten la 91515627:
+ * error de digitación en PERSONAL), y ese criterio las fusionaba en una sola, marcándolas como
+ * duplicado cuando el Excel —correctamente— las lleva como dos. Ahora manda el CÓDIGO, que es el
+ * identificador de Navision y el que las distingue; la cédula solo decide cuando falta el código.
+ * Una cédula que aparece con DOS códigos distintos ya no arrastra a nadie: `cedulaDeCodigo` solo la
+ * usa de puente si esa cédula lleva a un único código. */
+function cedulaACodigo(filas){
+  const m={};
   (filas||[]).forEach(function(f){
-    const c=String(f.codigo||'').trim(), d=String(f.cedula||'').trim();
-    const ids=[];
-    if(c) ids.push('COD:'+c);
-    if(d) ids.push('CED:'+d);
-    if(!ids.length) ids.push('NOM:'+String(f.nombre||'').trim().toLowerCase()+'|'+String(f.cuadrilla||'').trim().toLowerCase());
-    let g=null;
-    ids.forEach(function(k){ if(g===null && grupoDe[k]!==undefined) g=grupoDe[k]; });
-    if(g===null){ g=grupos.length; grupos.push([]); }
-    grupos[g].push(f);
-    ids.forEach(function(k){ grupoDe[k]=g; });   // el grupo queda alcanzable por TODOS sus identificadores
+    const c=normCod(f.codigo), d=String(f.cedula||'').trim();
+    if(!c || !d) return;
+    (m[d]=m[d]||[]).indexOf(c)<0 && m[d].push(c);
   });
-  return grupos;
+  return m;
+}
+function agruparPorPersona(filas){
+  const puente=cedulaACodigo(filas), grupos={}, orden=[];
+  (filas||[]).forEach(function(f){
+    const c=normCod(f.codigo), d=String(f.cedula||'').trim();
+    let k;
+    if(c) k='COD:'+c;                                        // el código manda siempre
+    else if(d && puente[d] && puente[d].length===1) k='COD:'+puente[d][0];   // sin código: hereda el único que lleva esa cédula
+    else if(d) k='CED:'+d;                                   // cédula ambigua o sin pareja: va sola
+    else k='NOM:'+String(f.nombre||'').trim().toLowerCase()+'|'+String(f.cuadrilla||'').trim().toLowerCase();
+    if(!grupos[k]){ grupos[k]=[]; orden.push(k); }
+    grupos[k].push(f);
+  });
+  return orden.map(function(k){ return grupos[k]; });
+}
+/* D123 — una cédula compartida por códigos distintos NO es un duplicado, pero sí es un error de datos
+ * que hay que corregir: son dos personas y una tiene la cédula de la otra en PERSONAL. Se avisa aparte,
+ * porque el arreglo es distinto (corregir la cédula, no unificar filas) y porque en Navision esas dos
+ * personas también van a chocar. */
+function cedulasCompartidas(filas){
+  const m=cedulaACodigo(filas), out=[];
+  Object.keys(m).forEach(function(d){
+    if(m[d].length>1){
+      const quienes={};
+      (filas||[]).forEach(function(f){
+        if(String(f.cedula||'').trim()===d && normCod(f.codigo)) quienes[normCod(f.codigo)]=f;
+      });
+      out.push({ cedula:d, personas:Object.keys(quienes).map(function(c){ return quienes[c]; }) });
+    }
+  });
+  return out;
 }
 /* D117/D118 — aviso de personas con MÁS DE UNA fila el mismo día. No es un detalle de presentación: el
  * Parte de Navision se arma con una línea por FILA (`generarExcel`), así que una persona duplicada se va
@@ -504,6 +536,21 @@ function duplicadasHtml(dups){
   return h+'</div></div>';
 }
 function unicos(arr){ return (arr||[]).filter(function(v,i,a){ return a.indexOf(v)===i; }); }
+// D123 — aviso de cédulas repetidas entre personas DISTINTAS. No es un duplicado (cada una lleva su
+// propia fila al Parte, y eso está bien): es un error de digitación en PERSONAL que hay que corregir.
+function cedulasCompartidasHtml(lista){
+  if(!lista.length) return '';
+  let h='<div class="aviso" style="margin-top:10px;"><b>🪪 '+lista.length+' cédula(s) repetida(s) en personas distintas.</b> '
+    + '<b>No es un duplicado</b> —cada una es una persona real y va con su propia fila al Parte, correctamente— '
+    + 'pero una de las dos tiene la cédula de la otra en la hoja <b>PERSONAL</b>. Conviene corregirlo: en Navision esas dos '
+    + 'personas también chocan, y cualquier búsqueda por cédula devuelve a quien no es.<div style="margin-top:8px;">';
+  lista.forEach(function(g){
+    h+='<div style="padding:4px 0;">céd. <b>'+esc(g.cedula)+'</b> → '
+      + g.personas.map(function(f){ return esc(f.nombre||'(sin nombre)')+' <small style="color:var(--muted)">(cód. '+esc(f.codigo)+' · '+esc(f.cuadrilla||'')+')</small>'; }).join(' &nbsp;·&nbsp; ')
+      + '</div>';
+  });
+  return h+'</div></div>';
+}
 
 function render(){
   const _t0=ahora();
@@ -577,6 +624,7 @@ function render(){
     + '</div>';
   html+='<div class="card">'+Object.keys(porProyecto).sort().map(p=>`<div class="cuad-row"><span>Proyecto ${esc(p)}</span><b>${porProyecto[p]}</b></div>`).join('')+'</div>';
   html+=duplicadasHtml(duplicadas);
+  html+=cedulasCompartidasHtml(cedulasCompartidas(filas));   // D123
 
   // Indicador de extras del admin (D73): solo lectura, para el residente de tierras/jeisson/admin (las
   // extras son CC de tierras). D74b: se oculta si el admin está viendo ODT/ODL (no aplican allá).

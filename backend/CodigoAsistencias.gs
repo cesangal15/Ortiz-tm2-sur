@@ -1358,12 +1358,21 @@ function guardarIndividual(body){
    * cuando el capataz reportó, mientras que "Completar faltantes" manda el que tiene PERSONAL AHORA. Si
    * entre medias se le llenó o corrigió el código a esa persona, la vieja y la nueva dejan de casar.
    *
-   * Ahora se borra por CUALQUIERA de los dos identificadores: una fila del día se va si su código o su
-   * cédula está entre los entrantes. Los valores VACÍOS nunca emparejan (si no, una fila sin código ni
-   * cédula arrastraría a todas las demás). Es deliberadamente más ancho que antes: ante dos filas que
-   * puedan ser la misma persona, la operación correcta es dejar UNA — que es lo que el usuario pidió al
-   * darle a Guardar. */
-  const incoming=body.filas||[], codsIn={}, cedsIn={}, nomsIn={};
+   * D123 — CORRIGE LA REGLA DE D119, que emparejaba por «código O cédula» y era demasiado ancha.
+   * En la obra hay DOS PERSONAS DISTINTAS con la misma cédula (error de digitación en PERSONAL:
+   * 74270 FREDY MACHACON y 76358 ALEIXER LIZARAZO comparten la 91515627, ago-2026). Con la regla de
+   * D119, editar a una de ellas BORRABA la fila de la otra: pérdida silenciosa de una asistencia real.
+   *
+   * La regla correcta respeta la jerarquía de los identificadores. El CÓDIGO manda: es el que usa
+   * Navision (CAT_TRABAJADORES está indexado por él) y el que distingue a estas dos personas. La cédula
+   * es solo un respaldo para cuando falta el código:
+   *   · los dos tienen código  -> son la misma persona SOLO si el código coincide (la cédula no opina);
+   *   · a uno le falta el código -> se cae a la cédula (el caso que D119 vino a arreglar);
+   *   · no hay ninguno de los dos -> nombre+cuadrilla.
+   * El código se compara NORMALIZADO (sin espacios ni ceros a la izquierda), así '076333' sigue casando
+   * con '76333' sin necesidad de mirar la cédula. */
+  const incoming=body.filas||[], codsIn={}, cedsSinCod={}, cedsConCod={}, nomsIn={};
+  function normCod_(v){ return String(v==null?'':v).trim().replace(/^0+/, ''); }
   // Respaldo para quien no tenga NI código NI cédula: nombre+cuadrilla. Antes esas filas emparejaban
   // todas entre sí (la clave les quedaba en el literal 'CED:'), así que corregir a una de ellas borraba
   // a TODAS las demás sin identificador — pérdida silenciosa, peor que el duplicado.
@@ -1372,16 +1381,21 @@ function guardarIndividual(body){
     return n ? (n+'|'+c) : '';
   }
   incoming.forEach(function(f){
-    const c=String(f.codigo||'').trim(), d=String(f.cedula||'').trim();
-    if(c) codsIn[c]=true;
-    if(d) cedsIn[d]=true;
-    if(!c && !d){ const n=claveNombre_(f); if(n) nomsIn[n]=true; }
+    const c=normCod_(f.codigo), d=String(f.cedula||'').trim();
+    if(c){ codsIn[c]=true; if(d) cedsConCod[d]=true; }
+    else if(d) cedsSinCod[d]=true;
+    else { const n=claveNombre_(f); if(n) nomsIn[n]=true; }
   });
   function esDeLosEntrantes(o){
-    const c=String(o.codigo||'').trim(), d=String(o.cedula||'').trim();
-    if((!!c && !!codsIn[c]) || (!!d && !!cedsIn[d])) return true;
-    if(!c && !d){ const n=claveNombre_(o); return !!n && !!nomsIn[n]; }
-    return false;
+    const c=normCod_(o.codigo), d=String(o.cedula||'').trim();
+    // Fila guardada CON código: manda el código. La cédula solo la rescata si el ENTRANTE viene sin
+    // código (misma persona editada desde una fuente que no lo tiene). Un entrante CON código nunca
+    // arrastra a una fila de OTRO código aunque compartan cédula — es lo que protege a ALEIXER de que
+    // un Guardar sobre FREDY se lo lleve por delante.
+    if(c) return !!codsIn[c] || (!!d && !!cedsSinCod[d]);
+    // Fila guardada SIN código: se identifica por la cédula, venga el entrante con código o sin él.
+    if(d) return !!cedsSinCod[d] || !!cedsConCod[d];
+    const n=claveNombre_(o); return !!n && !!nomsIn[n];
   }
   const nuevas=incoming.map(f=>[
     Utilities.getUuid(), ts, fecha, body.reporta||usuario, f.cuadrilla||'', f.codigo||'', f.cedula||'', f.nombre||'', f.cargo||'',
