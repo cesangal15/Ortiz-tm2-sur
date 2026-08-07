@@ -1652,9 +1652,19 @@ function guardarExtrasAdmin(body){
   if(!fecha) return json({ok:false, error:'Falta la fecha.'});
   if(!cc)    return json({ok:false, error:'Falta el centro de costo.'});
   if(['diurna','nocturna','domfest'].indexOf(tipo)<0) return json({ok:false, error:'Tipo inválido (usa diurna, nocturna o domfest).'});
-  // Tope según el tipo: día normal (diurna/nocturna) máx 2h extra; domingo/festivo máx 7h (van a las
-  // ordinarias dom/fest, no a extras — aclaración del dueño, D73).
-  const maxH = (tipo==='domfest') ? 7 : 2;
+  /* Tope según el tipo: día normal (diurna/nocturna) máx `max_extras_dia`; domingo/festivo
+   * `domfest_tope` + `max_extras_dia`.
+   *
+   * D124 — este tope estaba CABLEADO en `(tipo==='domfest') ? 7 : 2` y se quedó fuera de D120, que solo
+   * tocó el frontend. Resultado: la pantalla dejaba teclear 9h en un festivo y mostraba el reparto
+   * correcto (7 a col D + 2 a col H), pero al Guardar el servidor lo rechazaba con "máximo 7". Ahora los
+   * dos topes salen de CONFIG, igual que en `mis-extras.html` y que en `clasificarHoras`, así que las
+   * tres partes no pueden volver a divergir. El reparto a col D / col H lo sigue haciendo el generador
+   * del Parte (`buildAdminExtraRow`); aquí solo se guarda el TOTAL de horas del día. */
+  const cfgTopes=getConfigMap();
+  const _tD=parseFloat(cfgTopes.domfest_tope),   topeD=isNaN(_tD)?7:_tD;
+  const _tE=parseFloat(cfgTopes.max_extras_dia), topeE=isNaN(_tE)?2:_tE;
+  const maxH = (tipo==='domfest') ? (topeD+topeE) : topeE;
   if(isNaN(horas) || !(horas>0 && horas<=maxH)) return json({ok:false, error:'Las horas deben ser un número mayor que 0 y máximo '+maxH+' ('+(tipo==='domfest'?'domingo/festivo':'día normal')+').'});
   const proyecto=proyectoFromCC(cc);
   const sh=getSheet('EXTRAS_ADMIN', EXTRAS_ADMIN_HEADERS), need=EXTRAS_ADMIN_HEADERS.length, last=sh.getLastRow();

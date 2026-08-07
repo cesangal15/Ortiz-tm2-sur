@@ -117,7 +117,11 @@ function render(){
   const ccOrden = defaults.concat(resto.filter(cc=>defaults.indexOf(cc)<0));
   const recursoVacio = !String(STATE.config.admin_recurso||'').trim();
   let h='';
-  h+='<p class="intro">Registra tus horas de un día puntual. En <b>día normal</b>: solo la extra (máx <b>2h</b>, columna E/F, sin ordinarias). En <b>domingo/festivo</b>: van a <b>ordinarias dom/fest</b> (columna D, máx <b>7h</b>). Con tu centro de costo; tu jornada normal va por fuera del sistema. Los días sin registro no apareces. Guardar dos veces el mismo día <b>reemplaza</b> lo anterior.</p>';
+  // D120/D124: los topes salen de CONFIG (los mismos que usa el backend y `clasificarHoras`), no de
+  // números escritos en el texto — que era justo por donde el 7h se quedó desactualizado.
+  h+='<p class="intro">Registra tus horas de un día puntual. En <b>día normal</b>: solo la extra (máx <b>'+topeExtraDia()+'h</b>, columna E/F, sin ordinarias). '
+    + 'En <b>domingo/festivo</b>: las primeras <b>'+topeDomFest()+'h</b> a <b>ordinarias dom/fest</b> (columna D) y lo que pase, hasta <b>'+topeExtraDia()+'h</b>, a <b>extras dom/fest</b> (columna H). '
+    + 'Con tu centro de costo; tu jornada normal va por fuera del sistema. Los días sin registro no apareces. Guardar dos veces el mismo día <b>reemplaza</b> lo anterior.</p>';
 
   if(recursoVacio){
     h+='<div class="aviso">⚠️ Falta configurar <b>admin_recurso</b> en la hoja CONFIG (tu «No. Recurso» de Navision, formato <code>código| NOMBRE</code>). Puedes guardar tus extras igual, pero <b>no se exportarán</b> al Parte hasta que lo configures.</div>';
