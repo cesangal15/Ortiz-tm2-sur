@@ -193,8 +193,18 @@ async function cargarFecha(fecha){
 
 function onFechaChange(v){ STATE.fecha=v; cargarFecha(v); }
 
-// Tope de horas según el tipo: día normal (diurna/nocturna) 2h; domingo/festivo 7h.
-function maxHorasDeTipo(tipo){ return tipo==='domfest' ? 7 : 2; }
+/* Tope de horas según el tipo: día normal (diurna/nocturna) 2h; domingo/festivo 7h + 2h de extra.
+ *
+ * D120 — el canal del admin se había quedado atrás de D81. Cuando D73 lo creó, dom/fest era "todo a
+ * ordinarias dom/fest (col D), tope 7h". Después D81 estableció para CUALQUIER trabajador que lo que
+ * pase de 7h va a **Horas extras diurnas Dom/Fest (col H)** hasta `max_extras_dia`, pero esta pantalla
+ * siguió con el tope de 7 — así que un festivo de 9h ni siquiera se podía registrar (el validador lo
+ * rechazaba) y, de haber pasado, las 2h sobrantes se habrían perdido al generar el Parte.
+ * Ahora el tope es el mismo que el de todos y el reparto lo hace `buildAdminExtraRow` igual que
+ * `clasificarHoras` hace con el resto de la gente. */
+function topeDomFest(){ const v=parseFloat((STATE.config||{}).domfest_tope); return isNaN(v)?7:v; }
+function topeExtraDia(){ const v=parseFloat((STATE.config||{}).max_extras_dia); return isNaN(v)?2:v; }
+function maxHorasDeTipo(tipo){ return tipo==='domfest' ? (topeDomFest()+topeExtraDia()) : topeExtraDia(); }
 
 function onTipoChange(){
   const tipo=document.getElementById('f_tipo').value;
@@ -207,7 +217,10 @@ function onTipoChange(){
   if(parseFloat(horasInp.value)>maxH) horasInp.value=maxH;
   document.getElementById('horasLabel').textContent='Horas (máx '+maxH+')';
   if(tipo==='domfest'){
-    nota.innerHTML='ℹ️ Domingo/festivo: las horas van a <b>ordinarias dom/fest</b> (columna D del Parte), no a extras. Tope <b>7h</b> ese día.';
+    // D120: mismo reparto que cualquier trabajador (D81) — las primeras `domfest_tope` horas a col D y
+    // lo que pase, hasta `max_extras_dia`, a col H.
+    nota.innerHTML='ℹ️ Domingo/festivo: las primeras <b>'+topeDomFest()+'h</b> van a <b>ordinarias dom/fest</b> (columna D del Parte); '
+      + 'lo que pase de ahí va a <b>extras dom/fest</b> (columna H), máximo <b>'+topeExtraDia()+'h</b>. Igual que al resto del personal.';
     nota.style.color='var(--muted)';
   } else if(sug==='domfest'){
     nota.innerHTML='ℹ️ Este día es domingo/festivo: quizá quieras marcarlo como «Dom-Fest».';
@@ -233,7 +246,16 @@ function actualizarPreview(){
   const tipo=document.getElementById('f_tipo').value;
   const hTxt=(!isNaN(horas)&&horas>0)?horas:'—';
   if(tipo==='domfest'){
-    prev.innerHTML=`Se reportará: <b>${hTxt}h</b> en <b>ordinarias dom/fest</b> (columna D, tope 7h)${proj?` (proyecto <b>${esc(proj)}</b>)`:''}.`;
+    // D120: la vista previa muestra el REPARTO real (col D + col H), no un total capado a 7h.
+    const capD=topeDomFest(), capE=topeExtraDia();
+    if(!isNaN(horas) && horas>0){
+      const enD=Math.min(horas, capD), enH=Math.min(Math.max(0, horas-capD), capE);
+      prev.innerHTML=`Se reportará: <b>${enD}h</b> en <b>ordinarias dom/fest</b> (columna D)`
+        + (enH?` y <b>${enH}h</b> en <b>extras dom/fest</b> (columna H)`:'')
+        + `${proj?` (proyecto <b>${esc(proj)}</b>)`:''}.`;
+    } else {
+      prev.innerHTML=`Se reportará: <b>—</b> en <b>ordinarias dom/fest</b> (columna D; lo que pase de ${capD}h va a la columna H, máx ${capE}h)${proj?` (proyecto <b>${esc(proj)}</b>)`:''}.`;
+    }
   } else {
     const etq = tipo==='nocturna' ? 'extra nocturna' : 'extra diurna';
     prev.innerHTML=`Se reportará: <b>${hTxt}h</b> ${etq}, sin ordinarias${proj?` (proyecto <b>${esc(proj)}</b>)`:''}.`;

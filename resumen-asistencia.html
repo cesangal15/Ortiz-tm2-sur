@@ -1392,7 +1392,7 @@ const MAX_HORAS_DOMFEST = 7;   // tope de horas en domingo/festivo (van a ordina
 // Fila A–R (18 columnas) de la extra del admin. Día normal: todas las horas en 0 (o vacío según el flag)
 // salvo la columna del tipo (E diurna / F nocturna), sin ordinarias. Dom/Fest: las horas van a D (Horas
 // ordinarias dom/fest), topadas a 7h. Ausente=No, sin motivo.
-function buildAdminExtraRow(ex, proyectoStr, adminRecurso){
+function buildAdminExtraRow(ex, proyectoStr, adminRecurso, cfg){
   const row=new Array(18).fill('');
   const cero = EXTRAS_ORDINARIAS_EN_CERO ? 0 : '';
   row[0]=adminRecurso;                 // A No. Recurso (de CONFIG.admin_recurso, string exacto)
@@ -1400,7 +1400,20 @@ function buildAdminExtraRow(ex, proyectoStr, adminRecurso){
   row[2]=cero; row[3]=cero; row[4]=cero; row[5]=cero;   // C–F horas: 0 (o vacío) salvo la que aplique
   if(ex.tipo==='diurna')        row[4]=Math.min(ex.horas, MAX_HORAS_EXTRA);   // E Horas extras diurnas
   else if(ex.tipo==='nocturna') row[5]=Math.min(ex.horas, MAX_HORAS_EXTRA);   // F Horas extras nocturnas
-  else if(ex.tipo==='domfest')  row[3]=Math.min(ex.horas, MAX_HORAS_DOMFEST); // D Horas ordinarias dom/fest (tope 7h)
+  else if(ex.tipo==='domfest'){
+    /* D120 — el festivo del admin se reparte igual que el de cualquier trabajador (D81): las primeras
+     * `domfest_tope` horas a **D Horas ordinarias Dom/Fest** y lo que pase, hasta `max_extras_dia`, a
+     * **H Horas extras diurnas Dom/Fest** — las mismas dos celdas que llena `buildParteRow` con lo que
+     * devuelve `clasificarHoras`. Antes solo se escribía la col D con un `Math.min(horas, 7)`: un
+     * festivo de 9h perdía 2h en silencio (y de hecho ni se podía registrar, `mis-extras` topaba en 7).
+     * Los topes salen de CONFIG, no de las constantes, para no volver a divergir del resto del cálculo. */
+    const capT=parseFloat((cfg||{}).domfest_tope), capD=isNaN(capT)?MAX_HORAS_DOMFEST:capT;
+    const capX=parseFloat((cfg||{}).max_extras_dia), capE=isNaN(capX)?MAX_HORAS_EXTRA:capX;
+    const h=Math.max(0, parseFloat(ex.horas)||0);
+    row[3]=Math.min(h, capD);                                  // D Horas ordinarias Dom/Fest
+    const extraDF=Math.min(Math.max(0, h-capD), capE);
+    if(extraDF) row[7]=extraDF;                                // H Horas extras diurnas Dom/Fest
+  }
   row[14]=proyectoStr;                 // O No. Proyecto (string de CONFIG, igual que el resto)
   row[15]=ex.cc;                       // P Centro de coste (exacto, el guardado)
   row[16]='No';                        // Q Ausente
@@ -1502,7 +1515,7 @@ async function generarExcel(proyecto){
       if(!adminRecurso){ avisoAdminSinRecurso=true; }
       else {
         extrasDia.forEach(ex=>{
-          aoa.push(buildAdminExtraRow(ex, proyectoStr, adminRecurso));
+          aoa.push(buildAdminExtraRow(ex, proyectoStr, adminRecurso, cfg));   // D120: cfg trae los topes dom/fest
           adminAgregadas++;
           if(ex.tipo==='domfest') adminDomFest.push(ex.fecha);
         });
