@@ -1008,6 +1008,46 @@ function clavePersona_(p){
   const c=String((p&&p.codigo)||'').trim();
   return c ? ('COD:'+c) : ('CED:'+String((p&&p.cedula)||'').trim());
 }
+/* Devuelve un predicado «¿esta fila guardada es de alguna de las personas que llegan?».
+ *
+ * La regla (D123) respeta la jerarquía de los identificadores. El CÓDIGO manda: es el que usa Navision
+ * (CAT_TRABAJADORES está indexado por él) y el único fiable — en la obra hay DOS PERSONAS con la misma
+ * cédula (74270 FREDY MACHACON y 76358 ALEIXER LIZARAZO comparten la 91515627, error de digitación en
+ * PERSONAL), así que emparejar por «código O cédula» borraba a una al editar a la otra.
+ *   · los dos tienen código      -> misma persona SOLO si el código coincide (la cédula no opina);
+ *   · a uno le falta el código   -> se cae a la cédula (el caso que D119 vino a arreglar);
+ *   · no hay ninguno de los dos  -> nombre+cuadrilla.
+ * El código se compara NORMALIZADO (sin espacios ni ceros a la izquierda): '076333' casa con '76333'
+ * sin necesidad de mirar la cédula.
+ *
+ * D126 — vive fuera de `guardarIndividual` porque ahora lo usan LOS DOS caminos de escritura: el upsert
+ * por persona y el envío de cuadrilla. Una sola definición de «es la misma persona» para todo el módulo. */
+function emparejadorDePersonas_(incoming){
+  const cods={}, cedsSinCod={}, cedsConCod={}, noms={};
+  function normCod(v){ return String(v==null?'':v).trim().replace(/^0+/, ''); }
+  // Respaldo para quien no tenga NI código NI cédula: nombre+cuadrilla. Sin él, esas filas emparejaban
+  // todas entre sí y corregir a una borraba a las demás — pérdida silenciosa, peor que el duplicado.
+  function claveNombre(o){
+    const n=norm(o&&o.nombre), c=norm(o&&o.cuadrilla);
+    return n ? (n+'|'+c) : '';
+  }
+  (incoming||[]).forEach(function(f){
+    const c=normCod(f.codigo), d=String(f.cedula||'').trim();
+    if(c){ cods[c]=true; if(d) cedsConCod[d]=true; }
+    else if(d) cedsSinCod[d]=true;
+    else { const n=claveNombre(f); if(n) noms[n]=true; }
+  });
+  return function(o){
+    const c=normCod(o.codigo), d=String(o.cedula||'').trim();
+    // Fila guardada CON código: manda el código. La cédula solo la rescata si el ENTRANTE viene sin
+    // código (misma persona guardada desde una fuente que no lo tenía). Un entrante CON código nunca
+    // arrastra a una fila de OTRO código aunque compartan cédula — es lo que protege a ALEIXER.
+    if(c) return !!cods[c] || (!!d && !!cedsSinCod[d]);
+    // Fila guardada SIN código: se identifica por la cédula, venga el entrante con código o sin él.
+    if(d) return !!cedsSinCod[d] || !!cedsConCod[d];
+    const n=claveNombre(o); return !!n && !!noms[n];
+  };
+}
 // Primera fila de cada persona, conservando el orden de la hoja. Sin duplicados devuelve la misma lista.
 function unicasPorPersona_(lista){
   const vistos={}, out=[];
@@ -1099,12 +1139,43 @@ function doPost(e){
     const ses=sesion_(e, body);
     if(!ses.ok) return json({ok:false, auth:false, error:ses.error});
     if(ses.usuario){ body.usuario = ses.usuario; body.reporta = ses.usuario; }
-    if(body.action==='reporte_asistencia')  return guardarAsistencia(body);
-    if(body.action==='asistencia_individual') return guardarIndividual(body);
-    if(body.action==='personal')            return gestionPersonal(body);
-    if(body.action==='extras_admin')        return guardarExtrasAdmin(body);    // D73: upsert por fecha
-    if(body.action==='extras_admin_delete') return borrarExtrasAdmin(body);     // D73: borra el día
-    return json({ok:false, error:'acción no reconocida'});
+    /* D125 — TODA escritura se serializa. Cada uno de estos endpoints es un LEE-MODIFICA-ESCRIBE sobre
+     * la misma hoja (localiza las filas a pisar, las borra y anexa las nuevas). Sin bloqueo, dos
+     * peticiones simultáneas leen la hoja ANTES de que la otra borre, así que ninguna de las dos
+     * encuentra nada que pisar y las dos anexan: el día queda con la persona repetida en filas
+     * CONSECUTIVAS. Es la firma exacta de lo reportado (OSMEL 77676, filas 3165-3166-3167, misma
+     * cuadrilla, mismo reportante, mismo CC) y explica los duplicados que aparecían sin que nadie
+     * hubiera reportado dos veces: basta con que el responsable toque "Guardar" dos veces porque la
+     * primera parece no responder, o que la cola offline (D82) reintente mientras él vuelve a enviar.
+     *
+     * Apps Script NO serializa las llamadas a `doPost` por su cuenta. El bloqueo va aquí, en el
+     * despachador, y no dentro de cada función: es un solo sitio, cubre los cinco endpoints y no puede
+     * olvidarse en el siguiente que se agregue. Las LECTURAS (`doGet`) no se bloquean.
+     *
+     * 30 s de espera: más que de sobra para una escritura de estas (decenas de ms) y suficiente para
+     * absorber una ráfaga de varios capataces enviando a la vez. Si se agota, se contesta un error
+     * explícito en vez de escribir a ciegas — y con `ok:false` la cola offline conserva el reporte en
+     * el teléfono (D82) para reintentarlo, que es justo lo que se quiere. */
+    const esEscritura = ['reporte_asistencia','asistencia_individual','personal','extras_admin','extras_admin_delete']
+      .indexOf(body.action) >= 0;
+    if(!esEscritura) return json({ok:false, error:'acción no reconocida'});
+    const cerrojo = LockService.getScriptLock();
+    try{
+      cerrojo.waitLock(30000);
+    }catch(errLock){
+      return json({ok:false, error:'El sistema está guardando otro reporte en este momento. Espera unos segundos y vuelve a intentarlo (no se guardó nada).'});
+    }
+    try{
+      if(body.action==='reporte_asistencia')    return guardarAsistencia(body);
+      if(body.action==='asistencia_individual') return guardarIndividual(body);
+      if(body.action==='personal')              return gestionPersonal(body);
+      if(body.action==='extras_admin')          return guardarExtrasAdmin(body);    // D73: upsert por fecha
+      if(body.action==='extras_admin_delete')   return borrarExtrasAdmin(body);     // D73: borra el día
+    } finally {
+      // Siempre se suelta: si una excepción se lleva la ejecución por delante, sin esto el cerrojo
+      // quedaría tomado hasta que Apps Script lo recicle y las escrituras siguientes se irían al error.
+      cerrojo.releaseLock();
+    }
   }catch(err){ return json({ok:false, error:String(err)}); }
 }
 
@@ -1371,32 +1442,12 @@ function guardarIndividual(body){
    *   · no hay ninguno de los dos -> nombre+cuadrilla.
    * El código se compara NORMALIZADO (sin espacios ni ceros a la izquierda), así '076333' sigue casando
    * con '76333' sin necesidad de mirar la cédula. */
-  const incoming=body.filas||[], codsIn={}, cedsSinCod={}, cedsConCod={}, nomsIn={};
-  function normCod_(v){ return String(v==null?'':v).trim().replace(/^0+/, ''); }
-  // Respaldo para quien no tenga NI código NI cédula: nombre+cuadrilla. Antes esas filas emparejaban
-  // todas entre sí (la clave les quedaba en el literal 'CED:'), así que corregir a una de ellas borraba
-  // a TODAS las demás sin identificador — pérdida silenciosa, peor que el duplicado.
-  function claveNombre_(o){
-    const n=norm(o&&o.nombre), c=norm(o&&o.cuadrilla);
-    return n ? (n+'|'+c) : '';
-  }
-  incoming.forEach(function(f){
-    const c=normCod_(f.codigo), d=String(f.cedula||'').trim();
-    if(c){ codsIn[c]=true; if(d) cedsConCod[d]=true; }
-    else if(d) cedsSinCod[d]=true;
-    else { const n=claveNombre_(f); if(n) nomsIn[n]=true; }
-  });
-  function esDeLosEntrantes(o){
-    const c=normCod_(o.codigo), d=String(o.cedula||'').trim();
-    // Fila guardada CON código: manda el código. La cédula solo la rescata si el ENTRANTE viene sin
-    // código (misma persona editada desde una fuente que no lo tiene). Un entrante CON código nunca
-    // arrastra a una fila de OTRO código aunque compartan cédula — es lo que protege a ALEIXER de que
-    // un Guardar sobre FREDY se lo lleve por delante.
-    if(c) return !!codsIn[c] || (!!d && !!cedsSinCod[d]);
-    // Fila guardada SIN código: se identifica por la cédula, venga el entrante con código o sin él.
-    if(d) return !!cedsSinCod[d] || !!cedsConCod[d];
-    const n=claveNombre_(o); return !!n && !!nomsIn[n];
-  }
+  /* D125 — el propio payload se deduplica antes de escribir. `guardarAsistencia` ya lo hacía (D119) y
+   * este no: si "Completar faltantes" mandaba la misma persona dos veces (una pantalla vieja en caché,
+   * un roster que aún venía duplicado, un doble toque), se escribían dos filas. El cerrojo del `doPost`
+   * cubre las peticiones SIMULTÁNEAS; esto cubre la repetición DENTRO de una misma petición. */
+  const incoming=unicasPorPersona_(body.filas||[]);
+  const esDeLosEntrantes=emparejadorDePersonas_(incoming);
   const nuevas=incoming.map(f=>[
     Utilities.getUuid(), ts, fecha, body.reporta||usuario, f.cuadrilla||'', f.codigo||'', f.cedula||'', f.nombre||'', f.cargo||'',
     f.cc||'', f.proyecto||'', f.hora_entrada||'', f.hora_salida||'',
@@ -1764,11 +1815,27 @@ function guardarAsistencia(body){
     f.cc||'', f.proyecto||'', f.hora_entrada||'', f.hora_salida||'',
     f.presente===false||f.presente==='No' ? 'No':'Si', f.motivo_ausencia||'', f.observacion||'', f.turno||''
   ]);
-  // D107: borrado quirúrgico del bloque fecha+cuadrilla + anexo al final, en vez de reescribir la hoja
-  // entera. Mismo predicado que el `keep` de antes (col C fecha, col E cuadrilla), decidido leyendo
-  // solo el bloque de columnas 3–5 (fecha·reporta·cuadrilla) en vez de las 17.
-  const aBorrar=localizarFilas_(sh, ASISTENCIA_HEADERS, ['fecha','cuadrilla'], function(o){
-    return fdate(o.fecha)===fecha && String(o.cuadrilla)===cuadrilla;
+  /* D107: borrado quirúrgico del bloque fecha+cuadrilla + anexo al final, en vez de reescribir la hoja.
+   *
+   * D126 — ADEMÁS se borra la fila de ese día de CUALQUIER persona que venga en el envío, esté en la
+   * cuadrilla que esté. Pisar solo `fecha+cuadrilla` dejaba un agujero estructural en cuanto alguien
+   * CAMBIA DE CUADRILLA, que en drenajes pasa a menudo: OSMEL se reportó el 27-jul con JAIRO; el 4-ago
+   * lo movieron a MAURICIO; al volver a subir ese 27-jul —ahora desde MAURICIO, porque es donde está
+   * hoy— el envío pisaba el bloque de MAURICIO y la fila vieja de JAIRO seguía viva. Resultado: la
+   * persona duplicada ese día en dos cuadrillas, que es justo lo que el aviso del resumen venía
+   * marcando. Nadie hizo nada mal: la clave de pisado era la equivocada.
+   *
+   * Con esto, "volver a subir el día" queda cerrado de verdad — la persona termina UNA sola vez, en la
+   * cuadrilla desde la que se reportó de último. Se usa el mismo emparejador que el upsert por persona,
+   * así que el código manda y dos personas con la misma cédula no se pisan entre sí (D123).
+   *
+   * Coste: el escaneo pasa de leer las columnas 3–5 a las 3–8 (tres columnas más de las 17 de la hoja,
+   * y ninguna lectura completa extra). Es la misma pasada, así que en la práctica no se nota — muy
+   * lejos de la lectura íntegra que hacía este endpoint antes de D107. */
+  const esDeLosEntrantes=emparejadorDePersonas_(entrantes);
+  const aBorrar=localizarFilas_(sh, ASISTENCIA_HEADERS, ['fecha','cuadrilla','codigo','cedula','nombre'], function(o){
+    if(fdate(o.fecha)!==fecha) return false;
+    return String(o.cuadrilla)===cuadrilla || esDeLosEntrantes(o);
   });
   borrarFilas_(sh, aBorrar);
   anexarFilas_(sh, nuevas, need);

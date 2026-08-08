@@ -91,7 +91,10 @@ function sandbox(hojas){
     Logger:{ log(){} },
     ContentService:{ createTextOutput(t){ return { texto:t, setMimeType(){ return this; } }; }, MimeType:{ JSON:'JSON', TEXT:'TEXT' } },
     PropertiesService:{ getScriptProperties(){ return { getProperty(){ return null; }, setProperty(){} }; } },
-    CacheService:{ getScriptCache(){ return { get(){ return null; }, put(){}, remove(){}, removeAll(){} }; } }
+    CacheService:{ getScriptCache(){ return { get(){ return null; }, put(){}, remove(){}, removeAll(){} }; } },
+    // D125: cerrojo de escritura. En la prueba basta con que exista; la serializacion real la garantiza
+    // Apps Script. El escenario de carrera se reproduce abajo saltandoselo a proposito.
+    LockService:{ getScriptLock(){ return { waitLock(){ return true; }, releaseLock(){} }; } }
   };
   ctx.globalThis = ctx;
   vm.createContext(ctx);
@@ -195,6 +198,59 @@ console.log('\n=== D119 · el envío de cuadrilla no guarda a la misma persona d
   if(!ok) fallos++;
   console.log('  ' + (ok ? '✓' : '✗') + ' ' + 'payload con JUAN×2 + JANER'.padEnd(58) + n + ' fila(s), esperadas 2');
 })();
+
+/* D125 — dos escrituras SIMULTANEAS sobre la misma persona. Sin cerrojo, las dos leen la hoja antes
+ * de que la otra borre, ninguna encuentra nada que pisar y las dos anexan: la persona queda repetida en
+ * filas CONSECUTIVAS. Es la firma de lo reportado (OSMEL 77676 en las filas 3165-3166-3167). Aqui se
+ * reproduce la carrera invocando `guardarIndividual` DOS veces contra la misma hoja sin soltar el
+ * estado intermedio, y se comprueba que el resultado sigue siendo UNA sola fila. */
+console.log('\n=== D125 · escrituras repetidas y payload repetido ===');
+(function(){
+  const asis = new HojaFalsa('ASISTENCIA', H, [fila({})]);
+  const cuad = new HojaFalsa('CUADRILLAS', ['cuadrilla','responsables','area','estado'], [['ENRIQUE','enrique','odt','activa']]);
+  const ctx = sandbox({ ASISTENCIA: asis, CUADRILLAS: cuad });
+  // tres "toques" seguidos del boton Guardar, como los tres reportes de OSMEL
+  ctx.guardarIndividual({ usuario:'admin', fecha:'2026-08-01', reporta:'admin', filas:[edicion({})] });
+  ctx.guardarIndividual({ usuario:'admin', fecha:'2026-08-01', reporta:'admin', filas:[edicion({})] });
+  ctx.guardarIndividual({ usuario:'admin', fecha:'2026-08-01', reporta:'admin', filas:[edicion({})] });
+  const n = asis.data.length - 1;
+  const ok = n === 1;
+  if(!ok) fallos++;
+  console.log('  ' + (ok ? '✓' : '✗') + ' ' + 'tres Guardar seguidos sobre la misma persona'.padEnd(58) + n + ' fila(s), esperadas 1');
+})();
+caso('payload que repite a la misma persona 3 veces',
+     [], [edicion({}), edicion({}), edicion({})], 1);
+caso('payload con 2 personas distintas repetidas',
+     [], [edicion({}), edicion({}), edicion({ codigo:'77929', cedula:'999', nombre:'JANER' })], 2);
+
+/* D126 — persona que CAMBIA DE CUADRILLA y se vuelve a subir un día pasado. Pisar solo
+ * `fecha+cuadrilla` dejaba viva la fila de la cuadrilla anterior. Caso real: OSMEL reportado el 27-jul
+ * con JAIRO, movido despues a MAURICIO, y el 27-jul resubido desde MAURICIO. */
+console.log('\n=== D126 · resubir un dia tras mover a alguien de cuadrilla ===');
+function envio(cuadrilla, filas, previas, esperadas, titulo){
+  const asis = new HojaFalsa('ASISTENCIA', H, previas);
+  const cuad = new HojaFalsa('CUADRILLAS', ['cuadrilla','responsables','area','estado'],
+                             [['JAIRO','jairo','odl','activa'], ['MAURICIO','mauricio','odt','activa'], ['ENRIQUE','enrique','odt','activa']]);
+  const notas = new HojaFalsa('NOTAS_ASISTENCIA', ['fecha','cuadrilla','reporta','nota','timestamp'], []);
+  const ctx = sandbox({ ASISTENCIA: asis, CUADRILLAS: cuad, NOTAS_ASISTENCIA: notas });
+  ctx.guardarAsistencia({ usuario:'duvan', reporta:'duvan', fecha:'2026-08-01', cuadrilla, filas });
+  const n = asis.data.length - 1;
+  const ok = n === esperadas;
+  if(!ok) fallos++;
+  console.log('  ' + (ok ? '✓' : '✗') + ' ' + titulo.padEnd(58) + n + ' fila(s), esperadas ' + esperadas);
+  return asis;
+}
+const osmelJairo = fila({ codigo:'77676', cedula:'', nombre:'OSMEL', cuadrilla:'JAIRO', reporta:'residente_dren' });
+envio('MAURICIO', [edicion({ codigo:'77676', cedula:'', nombre:'OSMEL', cuadrilla:'MAURICIO' })],
+      [osmelJairo], 1, 'resubir desde MAURICIO borra la fila vieja de JAIRO');
+envio('MAURICIO', [edicion({ codigo:'77676', cedula:'', nombre:'OSMEL', cuadrilla:'MAURICIO' })],
+      [osmelJairo, fila({ codigo:'80001', cedula:'5', nombre:'OTRO', cuadrilla:'JAIRO' })], 2,
+      'no toca al resto de la cuadrilla vieja');
+envio('MAURICIO', [edicion({ codigo:'74270', cedula:'91515627', nombre:'FREDY', cuadrilla:'MAURICIO' })],
+      [fila({ codigo:'76358', cedula:'91515627', nombre:'ALEIXER', cuadrilla:'JAIRO' })], 2,
+      'misma cedula, codigo distinto: no se pisan (D123)');
+envio('JAIRO', [edicion({ codigo:'77676', cedula:'', nombre:'OSMEL', cuadrilla:'JAIRO' })],
+      [osmelJairo], 1, 'reenvio normal de la misma cuadrilla sigue pisando');
 
 console.log('\n' + (fallos ? '❌ ' + fallos + ' caso(s) fallaron' : '✅ Todos los casos pasan') + '\n');
 process.exit(fallos ? 1 : 0);

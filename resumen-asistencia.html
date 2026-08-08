@@ -536,6 +536,21 @@ function duplicadasHtml(dups){
   return h+'</div></div>';
 }
 function unicos(arr){ return (arr||[]).filter(function(v,i,a){ return a.indexOf(v)===i; }); }
+/* D125 — candado anti DOBLE TOQUE. El envío tarda unos segundos y el botón no daba señal de estar
+ * trabajando, así que se volvía a pulsar: dos peticiones idénticas en vuelo a la vez, cada una leyendo
+ * la hoja antes de que la otra borrara, y la persona terminaba repetida en filas consecutivas. El
+ * cerrojo del backend (LockService) ya impide la corrupción; esto evita además la petición de más y
+ * le dice al usuario que sí está pasando algo. */
+function bloquearBoton(id, texto){
+  const b=document.getElementById(id); if(!b) return null;
+  if(b.disabled) return null;                      // ya hay un envío en vuelo: no se manda otro
+  b.dataset.txt=b.textContent; b.disabled=true; b.style.opacity='.6'; b.textContent=texto||'Guardando…';
+  return b;
+}
+function liberarBoton(b){
+  if(!b) return;
+  b.disabled=false; b.style.opacity=''; if(b.dataset.txt) b.textContent=b.dataset.txt;
+}
 // D123 — aviso de cédulas repetidas entre personas DISTINTAS. No es un duplicado (cada una lleva su
 // propia fila al Parte, y eso está bien): es un error de digitación en PERSONAL que hay que corregir.
 function cedulasCompartidasHtml(lista){
@@ -873,7 +888,7 @@ function detEditorHtml(idx, f, turnos){
     +   `</div></div>`
     + `<div id="det-aus-${idx}" style="display:${est==='No'?'block':'none'};margin-top:8px;"><select id="det-mot-${idx}"><option value="">Motivo de ausencia…</option>`
     +   catMotivos.map(m=>`<option value="${esc(m)}" ${f.motivo_ausencia===m?'selected':''}>${esc(m)}</option>`).join('')+`</select></div>`
-    + `<div style="display:flex;gap:8px;margin-top:10px;"><button class="btn" onclick="guardarDetalle(${idx})">Guardar cambios →</button>`
+    + `<div style="display:flex;gap:8px;margin-top:10px;"><button class="btn" id="det-save-${idx}" onclick="guardarDetalle(${idx})">Guardar cambios →</button>`
     +   `<button class="btn-ghost" onclick="detEditar(${idx})">Cancelar</button></div><div id="det-msg-${idx}" style="margin-top:8px;"></div></div>`;
 }
 function detEditar(idx){
@@ -915,15 +930,17 @@ async function guardarDetalle(idx){
   // D106: no se escribe una fila sin fecha (el backend también lo rechaza; aquí se avisa mejor).
   if(!fechaValida(STATE.fecha)){ alert('⚠️ No se puede guardar sin fecha. Elige el día en el campo "Fecha".'); return; }
   const msg=document.getElementById('det-msg-'+idx); msg.innerHTML='<div class="aviso">⏳ Guardando…</div>';
+  const btn=bloquearBoton('det-save-'+idx);   // D125: sin esto, el segundo toque manda otra petición
+  if(!btn && document.getElementById('det-save-'+idx)) return;   // ya había un envío en vuelo
   try{
     perfReset();
     const data=await perfFetch('asistencia_individual (detalle)', APPS_SCRIPT_URL, { method:'POST',
       headers:{'Content-Type':'text/plain;charset=utf-8'},
       body: JSON.stringify({ action:'asistencia_individual', fecha:STATE.fecha, reporta:STATE.usuario, usuario:STATE.usuario, filas:[fila] }) });
     perfTabla('guardar detalle');
-    if(data.ok){ STATE.exportCache={}; cargarResumen(); }
-    else msg.innerHTML='<div class="aviso">⚠️ '+esc(data.error||'error')+'</div>';
-  }catch(err){ msg.innerHTML='<div class="aviso">⚠️ '+esc(err.message||err)+'</div>'; }
+    if(data.ok){ STATE.exportCache={}; cargarResumen(); }   // re-render: el botón se rehace solo
+    else { liberarBoton(btn); msg.innerHTML='<div class="aviso">⚠️ '+esc(data.error||'error')+'</div>'; }
+  }catch(err){ liberarBoton(btn); msg.innerHTML='<div class="aviso">⚠️ '+esc(err.message||err)+'</div>'; }
 }
 
 /* ================= COMPLETAR FALTANTES (residente / admin / jeisson) =================
@@ -1017,7 +1034,7 @@ function completarListaHtml(d, comp){
      + `</div>`;
   });
   h+='</div>'; // /#compPendientes
-  h+='<button class="btn" style="margin-top:12px;" onclick="guardarCompletar()">Guardar faltantes →</button><div id="compMsg" style="margin-top:8px;"></div>';
+  h+='<button class="btn" style="margin-top:12px;" id="compSave" onclick="guardarCompletar()">Guardar faltantes →</button><div id="compMsg" style="margin-top:8px;"></div>';
   return h;
 }
 function compToggle(i){
@@ -1077,15 +1094,17 @@ async function guardarCompletar(){
   // D106: ídem — "Completar faltantes" escribe por persona y también quedaba sin fecha.
   if(!fechaValida(STATE.fecha)){ alert('⚠️ No se puede guardar sin fecha. Elige el día en el campo "Fecha".'); return; }
   const msg=document.getElementById('compMsg'); msg.innerHTML='<div class="aviso">⏳ Guardando…</div>';
+  const btn=bloquearBoton('compSave');   // D125: anti doble toque
+  if(!btn && document.getElementById('compSave')) return;   // ya había un envío en vuelo
   try{
     perfReset();
     const data=await perfFetch('asistencia_individual (faltantes)', APPS_SCRIPT_URL, { method:'POST',
       headers:{'Content-Type':'text/plain;charset=utf-8'},
       body: JSON.stringify({ action:'asistencia_individual', fecha:STATE.fecha, reporta:STATE.usuario, usuario:STATE.usuario, filas }) });
     perfTabla('guardar faltantes');
-    if(data.ok){ STATE.exportCache={}; cargarResumen(); }
-    else msg.innerHTML='<div class="aviso">⚠️ '+esc(data.error||'error')+'</div>';
-  }catch(err){ msg.innerHTML='<div class="aviso">⚠️ '+esc(err.message||err)+'</div>'; }
+    if(data.ok){ STATE.exportCache={}; cargarResumen(); }   // re-render: el botón se rehace solo
+    else { liberarBoton(btn); msg.innerHTML='<div class="aviso">⚠️ '+esc(data.error||'error')+'</div>'; }
+  }catch(err){ liberarBoton(btn); msg.innerHTML='<div class="aviso">⚠️ '+esc(err.message||err)+'</div>'; }
 }
 
 /* ================= SEGUIMIENTO DE AUSENCIAS POR RANGO (D94) =================
