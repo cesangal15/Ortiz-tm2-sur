@@ -223,5 +223,34 @@ caso('payload que repite a la misma persona 3 veces',
 caso('payload con 2 personas distintas repetidas',
      [], [edicion({}), edicion({}), edicion({ codigo:'77929', cedula:'999', nombre:'JANER' })], 2);
 
+/* D126 — persona que CAMBIA DE CUADRILLA y se vuelve a subir un día pasado. Pisar solo
+ * `fecha+cuadrilla` dejaba viva la fila de la cuadrilla anterior. Caso real: OSMEL reportado el 27-jul
+ * con JAIRO, movido despues a MAURICIO, y el 27-jul resubido desde MAURICIO. */
+console.log('\n=== D126 · resubir un dia tras mover a alguien de cuadrilla ===');
+function envio(cuadrilla, filas, previas, esperadas, titulo){
+  const asis = new HojaFalsa('ASISTENCIA', H, previas);
+  const cuad = new HojaFalsa('CUADRILLAS', ['cuadrilla','responsables','area','estado'],
+                             [['JAIRO','jairo','odl','activa'], ['MAURICIO','mauricio','odt','activa'], ['ENRIQUE','enrique','odt','activa']]);
+  const notas = new HojaFalsa('NOTAS_ASISTENCIA', ['fecha','cuadrilla','reporta','nota','timestamp'], []);
+  const ctx = sandbox({ ASISTENCIA: asis, CUADRILLAS: cuad, NOTAS_ASISTENCIA: notas });
+  ctx.guardarAsistencia({ usuario:'duvan', reporta:'duvan', fecha:'2026-08-01', cuadrilla, filas });
+  const n = asis.data.length - 1;
+  const ok = n === esperadas;
+  if(!ok) fallos++;
+  console.log('  ' + (ok ? '✓' : '✗') + ' ' + titulo.padEnd(58) + n + ' fila(s), esperadas ' + esperadas);
+  return asis;
+}
+const osmelJairo = fila({ codigo:'77676', cedula:'', nombre:'OSMEL', cuadrilla:'JAIRO', reporta:'residente_dren' });
+envio('MAURICIO', [edicion({ codigo:'77676', cedula:'', nombre:'OSMEL', cuadrilla:'MAURICIO' })],
+      [osmelJairo], 1, 'resubir desde MAURICIO borra la fila vieja de JAIRO');
+envio('MAURICIO', [edicion({ codigo:'77676', cedula:'', nombre:'OSMEL', cuadrilla:'MAURICIO' })],
+      [osmelJairo, fila({ codigo:'80001', cedula:'5', nombre:'OTRO', cuadrilla:'JAIRO' })], 2,
+      'no toca al resto de la cuadrilla vieja');
+envio('MAURICIO', [edicion({ codigo:'74270', cedula:'91515627', nombre:'FREDY', cuadrilla:'MAURICIO' })],
+      [fila({ codigo:'76358', cedula:'91515627', nombre:'ALEIXER', cuadrilla:'JAIRO' })], 2,
+      'misma cedula, codigo distinto: no se pisan (D123)');
+envio('JAIRO', [edicion({ codigo:'77676', cedula:'', nombre:'OSMEL', cuadrilla:'JAIRO' })],
+      [osmelJairo], 1, 'reenvio normal de la misma cuadrilla sigue pisando');
+
 console.log('\n' + (fallos ? '❌ ' + fallos + ' caso(s) fallaron' : '✅ Todos los casos pasan') + '\n');
 process.exit(fallos ? 1 : 0);
