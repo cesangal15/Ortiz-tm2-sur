@@ -1074,12 +1074,43 @@ function doPost(e){
     const ses=sesion_(e, body);
     if(!ses.ok) return json({ok:false, auth:false, error:ses.error});
     if(ses.usuario){ body.usuario = ses.usuario; body.reporta = ses.usuario; }
-    if(body.action==='reporte_asistencia')  return guardarAsistencia(body);
-    if(body.action==='asistencia_individual') return guardarIndividual(body);
-    if(body.action==='personal')            return gestionPersonal(body);
-    if(body.action==='extras_admin')        return guardarExtrasAdmin(body);    // D73: upsert por fecha
-    if(body.action==='extras_admin_delete') return borrarExtrasAdmin(body);     // D73: borra el día
-    return json({ok:false, error:'acción no reconocida'});
+    /* D125 — TODA escritura se serializa. Cada uno de estos endpoints es un LEE-MODIFICA-ESCRIBE sobre
+     * la misma hoja (localiza las filas a pisar, las borra y anexa las nuevas). Sin bloqueo, dos
+     * peticiones simultáneas leen la hoja ANTES de que la otra borre, así que ninguna de las dos
+     * encuentra nada que pisar y las dos anexan: el día queda con la persona repetida en filas
+     * CONSECUTIVAS. Es la firma exacta de lo reportado (OSMEL 77676, filas 3165-3166-3167, misma
+     * cuadrilla, mismo reportante, mismo CC) y explica los duplicados que aparecían sin que nadie
+     * hubiera reportado dos veces: basta con que el responsable toque "Guardar" dos veces porque la
+     * primera parece no responder, o que la cola offline (D82) reintente mientras él vuelve a enviar.
+     *
+     * Apps Script NO serializa las llamadas a `doPost` por su cuenta. El bloqueo va aquí, en el
+     * despachador, y no dentro de cada función: es un solo sitio, cubre los cinco endpoints y no puede
+     * olvidarse en el siguiente que se agregue. Las LECTURAS (`doGet`) no se bloquean.
+     *
+     * 30 s de espera: más que de sobra para una escritura de estas (decenas de ms) y suficiente para
+     * absorber una ráfaga de varios capataces enviando a la vez. Si se agota, se contesta un error
+     * explícito en vez de escribir a ciegas — y con `ok:false` la cola offline conserva el reporte en
+     * el teléfono (D82) para reintentarlo, que es justo lo que se quiere. */
+    const esEscritura = ['reporte_asistencia','asistencia_individual','personal','extras_admin','extras_admin_delete']
+      .indexOf(body.action) >= 0;
+    if(!esEscritura) return json({ok:false, error:'acción no reconocida'});
+    const cerrojo = LockService.getScriptLock();
+    try{
+      cerrojo.waitLock(30000);
+    }catch(errLock){
+      return json({ok:false, error:'El sistema está guardando otro reporte en este momento. Espera unos segundos y vuelve a intentarlo (no se guardó nada).'});
+    }
+    try{
+      if(body.action==='reporte_asistencia')    return guardarAsistencia(body);
+      if(body.action==='asistencia_individual') return guardarIndividual(body);
+      if(body.action==='personal')              return gestionPersonal(body);
+      if(body.action==='extras_admin')          return guardarExtrasAdmin(body);    // D73: upsert por fecha
+      if(body.action==='extras_admin_delete')   return borrarExtrasAdmin(body);     // D73: borra el día
+    } finally {
+      // Siempre se suelta: si una excepción se lleva la ejecución por delante, sin esto el cerrojo
+      // quedaría tomado hasta que Apps Script lo recicle y las escrituras siguientes se irían al error.
+      cerrojo.releaseLock();
+    }
   }catch(err){ return json({ok:false, error:String(err)}); }
 }
 
@@ -1334,7 +1365,11 @@ function guardarIndividual(body){
    *   · no hay ninguno de los dos -> nombre+cuadrilla.
    * El código se compara NORMALIZADO (sin espacios ni ceros a la izquierda), así '076333' sigue casando
    * con '76333' sin necesidad de mirar la cédula. */
-  const incoming=body.filas||[], codsIn={}, cedsSinCod={}, cedsConCod={}, nomsIn={};
+  /* D125 — el propio payload se deduplica antes de escribir. `guardarAsistencia` ya lo hacía (D119) y
+   * este no: si "Completar faltantes" mandaba la misma persona dos veces (una pantalla vieja en caché,
+   * un roster que aún venía duplicado, un doble toque), se escribían dos filas. El cerrojo del `doPost`
+   * cubre las peticiones SIMULTÁNEAS; esto cubre la repetición DENTRO de una misma petición. */
+  const incoming=unicasPorPersona_(body.filas||[]), codsIn={}, cedsSinCod={}, cedsConCod={}, nomsIn={};
   function normCod_(v){ return String(v==null?'':v).trim().replace(/^0+/, ''); }
   // Respaldo para quien no tenga NI código NI cédula: nombre+cuadrilla. Antes esas filas emparejaban
   // todas entre sí (la clave les quedaba en el literal 'CED:'), así que corregir a una de ellas borraba
