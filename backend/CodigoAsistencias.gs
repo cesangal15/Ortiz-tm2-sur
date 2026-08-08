@@ -1424,13 +1424,39 @@ function guardarIndividual(body){
   const aBorrar=localizarFilas_(sh, ASISTENCIA_HEADERS, ['fecha','cuadrilla','codigo','cedula','nombre'], function(o){
     return fdate(o.fecha)===fecha && esDeLosEntrantes(o);
   });
-  borrarFilas_(sh, aBorrar);
-  anexarFilas_(sh, nuevas, need);
+  /* D129 — SE SOBRESCRIBE EN SITIO; anexar es solo el último recurso.
+   *
+   * El dueño reportó (ago-2026) que editar seguía AÑADIENDO aunque la respuesta dijera
+   * `reemplazadas: 8`. Ese número sale de `aBorrar`, o sea de las filas ENCONTRADAS: prueba que el
+   * emparejamiento acierta y que lo que no surte efecto es el `deleteRows` sobre esa hoja (que en el
+   * Sheet real es una TABLA de Google, no un rango suelto). Con la secuencia anterior —borrar y luego
+   * anexar— un borrado que no se aplica deja las filas viejas Y añade la nueva: el error crece con cada
+   * intento de arreglarlo, que es exactamente lo que estaba pasando.
+   *
+   * La secuencia nueva no puede crecer aunque el borrado falle:
+   *   1. las filas nuevas se ESCRIBEN ENCIMA de las que ya ocupaban esas posiciones (`setValues`);
+   *   2. solo se borran las posiciones SOBRANTES (las que no recibieron fila);
+   *   3. y solo se anexa lo que no cupo, cuando llegan más filas de las que había.
+   * En el caso corriente —una persona, una fila previa— no se borra ni se anexa nada: se pisa la fila
+   * y punto. Con 8 filas previas y 1 entrante, la 1 se escribe en la primera posición y las otras 7 se
+   * borran; si ese borrado volviera a fallar, el peor resultado es que queden las 7 viejas, nunca 9.
+   *
+   * Las posiciones se recorren de menor a mayor para que el orden de la hoja no cambie. */
+  const posiciones=aBorrar.slice().sort(function(a,b){ return a-b; });
+  const enSitio=Math.min(posiciones.length, nuevas.length);
+  for(let i=0;i<enSitio;i++) sh.getRange(posiciones[i], 1, 1, need).setValues([nuevas[i]]);
+  const sobrantes=posiciones.slice(enSitio);          // filas viejas que ya no hacen falta
+  if(sobrantes.length) borrarFilas_(sh, sobrantes);
+  const porAnexar=nuevas.slice(enSitio);              // filas nuevas que no encontraron sitio
+  if(porAnexar.length) anexarFilas_(sh, porAnexar, need);
   invalidarHoja_('ASISTENCIA');   // D99: la memoria de esta ejecución ya no refleja la hoja
-  // D119: `reemplazadas` deja ver que la edición SUSTITUYÓ y no añadió. Con 1 fila entrante, un 0 aquí
-  // significa que la persona no estaba en el día (alta legítima desde "Completar faltantes"); un 2+
-  // significa que venía duplicada de antes y esta operación la dejó en una sola.
-  return json({ok:true, filas:nuevas.length, reemplazadas:aBorrar.length});
+  /* `reemplazadas` deja ver que la edición SUSTITUYÓ y no añadió. Con 1 fila entrante, un 0 aquí
+   * significa que la persona no estaba en el día (alta legítima desde "Completar faltantes"); un 2+
+   * significa que venía duplicada de antes y esta operación la dejó en una sola.
+   * D129 desglosa además qué se hizo con cada fila, para no volver a depender de conjeturas cuando algo
+   * no cuadre: `pisadas` + `borradas` + `anexadas` explican el resultado entero. */
+  return json({ok:true, filas:nuevas.length, reemplazadas:aBorrar.length,
+    pisadas:enSitio, borradas:sobrantes.length, anexadas:porAnexar.length});
 }
 
 /* ---------- GET personal: gestión (residente general/admin ven todo; residente_odt/odl SOLO su área — D72) ---------- */
@@ -1800,8 +1826,15 @@ function guardarAsistencia(body){
     if(fdate(o.fecha)!==fecha) return false;
     return String(o.cuadrilla)===cuadrilla || esDeLosEntrantes(o);
   });
-  borrarFilas_(sh, aBorrar);
-  anexarFilas_(sh, nuevas, need);
+  // D129: misma estrategia que el upsert por persona — se pisa en sitio, se borra solo lo sobrante y se
+  // anexa únicamente lo que no cupo. Un `deleteRows` que no surta efecto ya no puede duplicar el día.
+  const posiciones=aBorrar.slice().sort(function(a,b){ return a-b; });
+  const enSitio=Math.min(posiciones.length, nuevas.length);
+  for(let i=0;i<enSitio;i++) sh.getRange(posiciones[i], 1, 1, need).setValues([nuevas[i]]);
+  const sobrantes=posiciones.slice(enSitio);
+  if(sobrantes.length) borrarFilas_(sh, sobrantes);
+  const porAnexar=nuevas.slice(enSitio);
+  if(porAnexar.length) anexarFilas_(sh, porAnexar, need);
   invalidarHoja_('ASISTENCIA');   // D99
   // D74: nota libre del día por cuadrilla (pisa fecha+cuadrilla, igual que las filas).
   upsertNotaDia(fecha, cuadrilla, reporta, body.nota, ts);
