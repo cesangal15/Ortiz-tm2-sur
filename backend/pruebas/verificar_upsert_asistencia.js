@@ -252,5 +252,41 @@ envio('MAURICIO', [edicion({ codigo:'74270', cedula:'91515627', nombre:'FREDY', 
 envio('JAIRO', [edicion({ codigo:'77676', cedula:'', nombre:'OSMEL', cuadrilla:'JAIRO' })],
       [osmelJairo], 1, 'reenvio normal de la misma cuadrilla sigue pisando');
 
+/* D129 — LA PRUEBA QUE IMPORTA: una hoja cuyo `deleteRows` NO SURTE EFECTO, que es lo que el dueno
+ * estaba viendo (`reemplazadas: 8` y las 8 filas seguian ahi). Con la secuencia vieja —borrar y luego
+ * anexar— cada intento de arreglarlo AÑADIA una fila mas. Con la nueva se pisa en sitio, asi que el
+ * numero de filas no puede crecer aunque el borrado sea un no-op, y los datos quedan actualizados. */
+console.log('\n=== D129 · si deleteRows no surte efecto, editar NO puede crecer ===');
+function HojaSorda(nombre, cabecera, filas){ HojaFalsa.call(this, nombre, cabecera, filas); }
+HojaSorda.prototype = Object.create(HojaFalsa.prototype);
+HojaSorda.prototype.deleteRows = function(){ /* no-op deliberado */ };
+(function(){
+  const asis = new HojaSorda('ASISTENCIA', H, [fila({}), fila({}), fila({})]);   // 3 filas duplicadas
+  const cuad = new HojaFalsa('CUADRILLAS', ['cuadrilla','responsables','area','estado'], [['ENRIQUE','enrique','odt','activa']]);
+  const ctx = sandbox({ ASISTENCIA: asis, CUADRILLAS: cuad });
+  const antes = asis.data.length - 1;
+  ctx.guardarIndividual({ usuario:'admin', fecha:'2026-08-01', reporta:'admin', filas:[edicion({ salida:'18:00' })] });
+  ctx.guardarIndividual({ usuario:'admin', fecha:'2026-08-01', reporta:'admin', filas:[edicion({ salida:'18:00' })] });
+  const despues = asis.data.length - 1;
+  const ok = despues <= antes;
+  if(!ok) fallos++;
+  console.log('  ' + (ok ? '✓' : '✗') + ' ' + 'dos ediciones con borrado sordo'.padEnd(58) + antes + ' -> ' + despues + ' fila(s), no debe crecer');
+  // y la fila pisada tiene los datos NUEVOS
+  const salidas = asis.data.slice(1).map(function(r){ return r[12]; });
+  const ok2 = salidas.indexOf('18:00') >= 0;
+  if(!ok2) fallos++;
+  console.log('  ' + (ok2 ? '✓' : '✗') + ' ' + 'la fila pisada quedo con la hora nueva'.padEnd(58) + JSON.stringify(salidas));
+})();
+(function(){
+  const asis = new HojaSorda('ASISTENCIA', H, []);
+  const cuad = new HojaFalsa('CUADRILLAS', ['cuadrilla','responsables','area','estado'], [['ENRIQUE','enrique','odt','activa']]);
+  const ctx = sandbox({ ASISTENCIA: asis, CUADRILLAS: cuad });
+  ctx.guardarIndividual({ usuario:'admin', fecha:'2026-08-01', reporta:'admin', filas:[edicion({})] });
+  const n = asis.data.length - 1;
+  const ok = n === 1;
+  if(!ok) fallos++;
+  console.log('  ' + (ok ? '✓' : '✗') + ' ' + 'alta nueva sigue anexando normalmente'.padEnd(58) + n + ' fila(s), esperada 1');
+})();
+
 console.log('\n' + (fallos ? '❌ ' + fallos + ' caso(s) fallaron' : '✅ Todos los casos pasan') + '\n');
 process.exit(fallos ? 1 : 0);

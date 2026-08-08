@@ -1461,13 +1461,39 @@ function guardarIndividual(body){
   const aBorrar=localizarFilas_(sh, ASISTENCIA_HEADERS, ['fecha','cuadrilla','codigo','cedula','nombre'], function(o){
     return fdate(o.fecha)===fecha && esDeLosEntrantes(o);
   });
-  borrarFilas_(sh, aBorrar);
-  anexarFilas_(sh, nuevas, need);
+  /* D129 — SE SOBRESCRIBE EN SITIO; anexar es solo el último recurso.
+   *
+   * El dueño reportó (ago-2026) que editar seguía AÑADIENDO aunque la respuesta dijera
+   * `reemplazadas: 8`. Ese número sale de `aBorrar`, o sea de las filas ENCONTRADAS: prueba que el
+   * emparejamiento acierta y que lo que no surte efecto es el `deleteRows` sobre esa hoja (que en el
+   * Sheet real es una TABLA de Google, no un rango suelto). Con la secuencia anterior —borrar y luego
+   * anexar— un borrado que no se aplica deja las filas viejas Y añade la nueva: el error crece con cada
+   * intento de arreglarlo, que es exactamente lo que estaba pasando.
+   *
+   * La secuencia nueva no puede crecer aunque el borrado falle:
+   *   1. las filas nuevas se ESCRIBEN ENCIMA de las que ya ocupaban esas posiciones (`setValues`);
+   *   2. solo se borran las posiciones SOBRANTES (las que no recibieron fila);
+   *   3. y solo se anexa lo que no cupo, cuando llegan más filas de las que había.
+   * En el caso corriente —una persona, una fila previa— no se borra ni se anexa nada: se pisa la fila
+   * y punto. Con 8 filas previas y 1 entrante, la 1 se escribe en la primera posición y las otras 7 se
+   * borran; si ese borrado volviera a fallar, el peor resultado es que queden las 7 viejas, nunca 9.
+   *
+   * Las posiciones se recorren de menor a mayor para que el orden de la hoja no cambie. */
+  const posiciones=aBorrar.slice().sort(function(a,b){ return a-b; });
+  const enSitio=Math.min(posiciones.length, nuevas.length);
+  for(let i=0;i<enSitio;i++) sh.getRange(posiciones[i], 1, 1, need).setValues([nuevas[i]]);
+  const sobrantes=posiciones.slice(enSitio);          // filas viejas que ya no hacen falta
+  if(sobrantes.length) borrarFilas_(sh, sobrantes);
+  const porAnexar=nuevas.slice(enSitio);              // filas nuevas que no encontraron sitio
+  if(porAnexar.length) anexarFilas_(sh, porAnexar, need);
   invalidarHoja_('ASISTENCIA');   // D99: la memoria de esta ejecución ya no refleja la hoja
-  // D119: `reemplazadas` deja ver que la edición SUSTITUYÓ y no añadió. Con 1 fila entrante, un 0 aquí
-  // significa que la persona no estaba en el día (alta legítima desde "Completar faltantes"); un 2+
-  // significa que venía duplicada de antes y esta operación la dejó en una sola.
-  return json({ok:true, filas:nuevas.length, reemplazadas:aBorrar.length});
+  /* `reemplazadas` deja ver que la edición SUSTITUYÓ y no añadió. Con 1 fila entrante, un 0 aquí
+   * significa que la persona no estaba en el día (alta legítima desde "Completar faltantes"); un 2+
+   * significa que venía duplicada de antes y esta operación la dejó en una sola.
+   * D129 desglosa además qué se hizo con cada fila, para no volver a depender de conjeturas cuando algo
+   * no cuadre: `pisadas` + `borradas` + `anexadas` explican el resultado entero. */
+  return json({ok:true, filas:nuevas.length, reemplazadas:aBorrar.length,
+    pisadas:enSitio, borradas:sobrantes.length, anexadas:porAnexar.length});
 }
 
 /* ---------- GET personal: gestión (residente general/admin ven todo; residente_odt/odl SOLO su área — D72) ---------- */
@@ -1837,8 +1863,15 @@ function guardarAsistencia(body){
     if(fdate(o.fecha)!==fecha) return false;
     return String(o.cuadrilla)===cuadrilla || esDeLosEntrantes(o);
   });
-  borrarFilas_(sh, aBorrar);
-  anexarFilas_(sh, nuevas, need);
+  // D129: misma estrategia que el upsert por persona — se pisa en sitio, se borra solo lo sobrante y se
+  // anexa únicamente lo que no cupo. Un `deleteRows` que no surta efecto ya no puede duplicar el día.
+  const posiciones=aBorrar.slice().sort(function(a,b){ return a-b; });
+  const enSitio=Math.min(posiciones.length, nuevas.length);
+  for(let i=0;i<enSitio;i++) sh.getRange(posiciones[i], 1, 1, need).setValues([nuevas[i]]);
+  const sobrantes=posiciones.slice(enSitio);
+  if(sobrantes.length) borrarFilas_(sh, sobrantes);
+  const porAnexar=nuevas.slice(enSitio);
+  if(porAnexar.length) anexarFilas_(sh, porAnexar, need);
   invalidarHoja_('ASISTENCIA');   // D99
   // D74: nota libre del día por cuadrilla (pisa fecha+cuadrilla, igual que las filas).
   upsertNotaDia(fecha, cuadrilla, reporta, body.nota, ts);
@@ -2185,4 +2218,152 @@ function diagnosticoPersonalDuplicado(){
       : '\nSin duplicados.');
   Logger.log(msg);
   return { total:dups.length, detalle:lineas };
+}
+
+/* ---------- D127 — mantenimiento a mano: duplicados de ASISTENCIA en un día ----------
+ * Se ejecuta DESDE EL EDITOR de Apps Script, igual que `diagnosticoFechasAsistencia` (D106) y
+ * `diagnosticoPersonalDuplicado` (D118). Eso importa aquí más que en los otros dos: el editor corre el
+ * código GUARDADO, no la versión desplegada del web app, así que sirve para limpiar la hoja aunque el
+ * redespliegue aún no se haya hecho o haya quedado a medias.
+ *
+ * Qué hace: agrupa las filas de UN día por persona y, de cada grupo con más de una fila, conserva la
+ * MÁS RECIENTE (por timestamp; a igualdad, la de más abajo en la hoja) y borra las demás. Es la regla
+ * que ya aplica el resto del módulo: la última edición manda.
+ *
+ * Clave de persona: código si lo tiene, si no la cédula (`clavePersona_`, la misma de todo el módulo).
+ * Dos personas con códigos distintos NUNCA se mezclan aunque compartan cédula (D123).
+ *
+ * USO — primero en seco, que solo LISTA:
+ *     diagnosticoDuplicadosAsistencia('2026-08-06')
+ * y cuando el listado cuadre, aplicando de verdad:
+ *     limpiarDuplicadosAsistencia('2026-08-06', true)
+ * Sin el `true` no borra nada. Revisa el resultado en Ver > Registro de ejecución. */
+function _duplicadosDia_(fechaISO, aplicar){
+  const fecha=fdateValida_(fechaISO);
+  if(!fecha){ Logger.log('Fecha inválida. Usa el formato 2026-08-06.'); return {error:'fecha'}; }
+  const sh=getSheet('ASISTENCIA', ASISTENCIA_HEADERS);
+  const filas=leerFilasPorFecha_('ASISTENCIA', fecha, fecha);
+  const grupos={};
+  filas.forEach(function(r){
+    const k=clavePersona_(r);
+    if(k==='COD:' || k==='CED:') return;          // sin ningún identificador: no se toca
+    (grupos[k]=grupos[k]||[]).push(r);
+  });
+  const aBorrar=[], lineas=[];
+  Object.keys(grupos).forEach(function(k){
+    const g=grupos[k];
+    if(g.length<2) return;
+    // La más reciente se queda. `timestamp` puede ser Date o texto: se ordena por su valor de tiempo
+    // cuando lo tiene, y si no, por el número de fila (más abajo = escrita después).
+    const conOrden=g.map(function(r){
+      const t=r.timestamp;
+      const ms=(t && typeof t.getTime==='function') ? t.getTime() : Date.parse(String(t||'')) ;
+      return { r:r, ms:isNaN(ms)?null:ms };
+    });
+    conOrden.sort(function(a,b){
+      if(a.ms!==null && b.ms!==null && a.ms!==b.ms) return a.ms-b.ms;
+      return a.r._row-b.r._row;
+    });
+    const queda=conOrden[conOrden.length-1].r;
+    conOrden.slice(0, -1).forEach(function(x){ aBorrar.push(x.r._row); });
+    lineas.push('  · '+(queda.nombre||'(sin nombre)')+' ['+k+'] — '+g.length+' filas: se queda la '+queda._row
+      +' ('+(queda.cuadrilla||'?')+'), se borran '+conOrden.slice(0,-1).map(function(x){ return x.r._row+' ('+(x.r.cuadrilla||'?')+')'; }).join(', '));
+  });
+  let msg='ASISTENCIA '+fecha+' — filas del día: '+filas.length+' · personas con más de una fila: '+lineas.length
+    + ' · filas sobrantes: '+aBorrar.length;
+  msg += lineas.length ? ('\n'+lineas.join('\n')) : '\nSin duplicados.';
+  if(!aplicar){
+    msg += '\n\n(SIMULACIÓN: no se borró nada. Para aplicarlo: limpiarDuplicadosAsistencia("'+fecha+'", true))';
+    Logger.log(msg); return { fecha:fecha, personas:lineas.length, sobrantes:aBorrar.length, aplicado:false };
+  }
+  borrarFilas_(sh, aBorrar);                 // agrupa en tramos y borra de abajo hacia arriba
+  invalidarHoja_('ASISTENCIA');
+  msg += '\n\nAPLICADO: '+aBorrar.length+' fila(s) borrada(s).';
+  Logger.log(msg);
+  return { fecha:fecha, personas:lineas.length, sobrantes:aBorrar.length, aplicado:true };
+}
+function diagnosticoDuplicadosAsistencia(fechaISO){ return _duplicadosDia_(fechaISO, false); }
+function limpiarDuplicadosAsistencia(fechaISO, aplicar){ return _duplicadosDia_(fechaISO, aplicar===true); }
+
+/* ---------- D128 — la misma limpieza, pero por RANGO de fechas ----------
+ * La versión por día no bastaba: al mirar la hoja aparecieron duplicados de la MISMA persona repartidos
+ * por varios días seguidos (CESAR 77938 el 29, 30 y 31 de julio). Limpiar de uno en uno obliga a saber
+ * de antemano qué días están sucios, y justamente no se sabe: el aviso del resumen solo mira el día que
+ * se está viendo.
+ *
+ * Lee la hoja UNA vez y resuelve todos los días del rango de una pasada — no una lectura por día. El
+ * criterio es idéntico al de `_duplicadosDia_`: agrupa por FECHA + persona (`clavePersona_`: código, o
+ * cédula si no hay código) y de cada grupo conserva la fila MÁS RECIENTE. Dos personas con códigos
+ * distintos nunca se mezclan aunque compartan cédula (D123).
+ *
+ * USO — primero en seco, que solo LISTA:
+ *     diagnosticoDuplicadosRango('2026-07-01', '2026-08-07')
+ * y cuando el listado cuadre:
+ *     limpiarDuplicadosRango('2026-07-01', '2026-08-07', true)
+ * Sin el `true` no borra nada. El resultado sale en Ver > Registro de ejecución. */
+function _duplicadosRango_(desdeISO, hastaISO, aplicar){
+  const desde=fdateValida_(desdeISO), hasta=fdateValida_(hastaISO);
+  if(!desde || !hasta){ Logger.log('Fechas inválidas. Usa el formato 2026-07-01.'); return {error:'fecha'}; }
+  if(hasta < desde){ Logger.log('El rango está al revés: "desde" tiene que ser anterior a "hasta".'); return {error:'rango'}; }
+  const sh=getSheet('ASISTENCIA', ASISTENCIA_HEADERS);
+  // Lectura ÚNICA de la hoja: para un rango sale más barato que un escaneo acotado por cada día.
+  const filas=readSheet('ASISTENCIA', ASISTENCIA_HEADERS).filter(function(r){
+    const f=fdate(r.fecha); return f>=desde && f<=hasta;
+  });
+  const grupos={}, dias={};
+  filas.forEach(function(r){
+    const k=clavePersona_(r);
+    if(k==='COD:' || k==='CED:') return;              // sin ningún identificador: no se toca
+    const f=fdate(r.fecha);
+    dias[f]=true;
+    (grupos[f+'|'+k]=grupos[f+'|'+k]||[]).push(r);
+  });
+  const aBorrar=[], lineas=[], porDia={};
+  Object.keys(grupos).sort().forEach(function(gk){
+    const g=grupos[gk];
+    if(g.length<2) return;
+    const sobra=_sobrantesDelGrupo_(g);
+    sobra.borrar.forEach(function(row){ aBorrar.push(row); });
+    const f=gk.split('|')[0];
+    porDia[f]=(porDia[f]||0)+sobra.borrar.length;
+    lineas.push('  · '+f+'  '+(sobra.queda.nombre||'(sin nombre)')+' ['+gk.split('|').slice(1).join('|')+'] — '
+      + g.length+' filas: se queda la '+sobra.queda._row+' ('+(sobra.queda.cuadrilla||'?')+'), se borran '+sobra.borrar.join(', '));
+  });
+  let msg='ASISTENCIA '+desde+' → '+hasta+' — días con datos: '+Object.keys(dias).length
+    + ' · filas en el rango: '+filas.length
+    + ' · personas-día con más de una fila: '+lineas.length
+    + ' · filas sobrantes: '+aBorrar.length;
+  msg += lineas.length ? ('\n'+lineas.join('\n')) : '\nSin duplicados en el rango.';
+  if(lineas.length){
+    msg += '\n\nResumen por día: '+Object.keys(porDia).sort().map(function(f){ return f+'='+porDia[f]; }).join(' · ');
+  }
+  if(!aplicar){
+    msg += '\n\n(SIMULACIÓN: no se borró nada. Para aplicarlo: limpiarDuplicadosRango("'+desde+'", "'+hasta+'", true))';
+    Logger.log(msg);
+    return { desde:desde, hasta:hasta, personasDia:lineas.length, sobrantes:aBorrar.length, porDia:porDia, aplicado:false };
+  }
+  borrarFilas_(sh, aBorrar);                 // agrupa en tramos y borra de abajo hacia arriba
+  invalidarHoja_('ASISTENCIA');
+  msg += '\n\nAPLICADO: '+aBorrar.length+' fila(s) borrada(s).';
+  Logger.log(msg);
+  return { desde:desde, hasta:hasta, personasDia:lineas.length, sobrantes:aBorrar.length, porDia:porDia, aplicado:true };
+}
+function diagnosticoDuplicadosRango(desdeISO, hastaISO){ return _duplicadosRango_(desdeISO, hastaISO, false); }
+function limpiarDuplicadosRango(desdeISO, hastaISO, aplicar){ return _duplicadosRango_(desdeISO, hastaISO, aplicar===true); }
+
+/* De un grupo de filas de la MISMA persona en el MISMO día: cuál se queda y cuáles sobran.
+ * Se queda la más reciente por `timestamp` (Date o texto); a igualdad, la de más abajo en la hoja —
+ * que es la escrita después. Es la regla del resto del módulo: la última edición manda. */
+function _sobrantesDelGrupo_(g){
+  const orden=g.map(function(r){
+    const t=r.timestamp;
+    const ms=(t && typeof t.getTime==='function') ? t.getTime() : Date.parse(String(t||''));
+    return { r:r, ms:isNaN(ms)?null:ms };
+  });
+  orden.sort(function(a,b){
+    if(a.ms!==null && b.ms!==null && a.ms!==b.ms) return a.ms-b.ms;
+    return a.r._row-b.r._row;
+  });
+  return { queda: orden[orden.length-1].r,
+           borrar: orden.slice(0,-1).map(function(x){ return x.r._row; }) };
 }
