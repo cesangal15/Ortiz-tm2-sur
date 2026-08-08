@@ -2146,3 +2146,68 @@ function diagnosticoPersonalDuplicado(){
   Logger.log(msg);
   return { total:dups.length, detalle:lineas };
 }
+
+/* ---------- D127 — mantenimiento a mano: duplicados de ASISTENCIA en un día ----------
+ * Se ejecuta DESDE EL EDITOR de Apps Script, igual que `diagnosticoFechasAsistencia` (D106) y
+ * `diagnosticoPersonalDuplicado` (D118). Eso importa aquí más que en los otros dos: el editor corre el
+ * código GUARDADO, no la versión desplegada del web app, así que sirve para limpiar la hoja aunque el
+ * redespliegue aún no se haya hecho o haya quedado a medias.
+ *
+ * Qué hace: agrupa las filas de UN día por persona y, de cada grupo con más de una fila, conserva la
+ * MÁS RECIENTE (por timestamp; a igualdad, la de más abajo en la hoja) y borra las demás. Es la regla
+ * que ya aplica el resto del módulo: la última edición manda.
+ *
+ * Clave de persona: código si lo tiene, si no la cédula (`clavePersona_`, la misma de todo el módulo).
+ * Dos personas con códigos distintos NUNCA se mezclan aunque compartan cédula (D123).
+ *
+ * USO — primero en seco, que solo LISTA:
+ *     diagnosticoDuplicadosAsistencia('2026-08-06')
+ * y cuando el listado cuadre, aplicando de verdad:
+ *     limpiarDuplicadosAsistencia('2026-08-06', true)
+ * Sin el `true` no borra nada. Revisa el resultado en Ver > Registro de ejecución. */
+function _duplicadosDia_(fechaISO, aplicar){
+  const fecha=fdateValida_(fechaISO);
+  if(!fecha){ Logger.log('Fecha inválida. Usa el formato 2026-08-06.'); return {error:'fecha'}; }
+  const sh=getSheet('ASISTENCIA', ASISTENCIA_HEADERS);
+  const filas=leerFilasPorFecha_('ASISTENCIA', fecha, fecha);
+  const grupos={};
+  filas.forEach(function(r){
+    const k=clavePersona_(r);
+    if(k==='COD:' || k==='CED:') return;          // sin ningún identificador: no se toca
+    (grupos[k]=grupos[k]||[]).push(r);
+  });
+  const aBorrar=[], lineas=[];
+  Object.keys(grupos).forEach(function(k){
+    const g=grupos[k];
+    if(g.length<2) return;
+    // La más reciente se queda. `timestamp` puede ser Date o texto: se ordena por su valor de tiempo
+    // cuando lo tiene, y si no, por el número de fila (más abajo = escrita después).
+    const conOrden=g.map(function(r){
+      const t=r.timestamp;
+      const ms=(t && typeof t.getTime==='function') ? t.getTime() : Date.parse(String(t||'')) ;
+      return { r:r, ms:isNaN(ms)?null:ms };
+    });
+    conOrden.sort(function(a,b){
+      if(a.ms!==null && b.ms!==null && a.ms!==b.ms) return a.ms-b.ms;
+      return a.r._row-b.r._row;
+    });
+    const queda=conOrden[conOrden.length-1].r;
+    conOrden.slice(0, -1).forEach(function(x){ aBorrar.push(x.r._row); });
+    lineas.push('  · '+(queda.nombre||'(sin nombre)')+' ['+k+'] — '+g.length+' filas: se queda la '+queda._row
+      +' ('+(queda.cuadrilla||'?')+'), se borran '+conOrden.slice(0,-1).map(function(x){ return x.r._row+' ('+(x.r.cuadrilla||'?')+')'; }).join(', '));
+  });
+  let msg='ASISTENCIA '+fecha+' — filas del día: '+filas.length+' · personas con más de una fila: '+lineas.length
+    + ' · filas sobrantes: '+aBorrar.length;
+  msg += lineas.length ? ('\n'+lineas.join('\n')) : '\nSin duplicados.';
+  if(!aplicar){
+    msg += '\n\n(SIMULACIÓN: no se borró nada. Para aplicarlo: limpiarDuplicadosAsistencia("'+fecha+'", true))';
+    Logger.log(msg); return { fecha:fecha, personas:lineas.length, sobrantes:aBorrar.length, aplicado:false };
+  }
+  borrarFilas_(sh, aBorrar);                 // agrupa en tramos y borra de abajo hacia arriba
+  invalidarHoja_('ASISTENCIA');
+  msg += '\n\nAPLICADO: '+aBorrar.length+' fila(s) borrada(s).';
+  Logger.log(msg);
+  return { fecha:fecha, personas:lineas.length, sobrantes:aBorrar.length, aplicado:true };
+}
+function diagnosticoDuplicadosAsistencia(fechaISO){ return _duplicadosDia_(fechaISO, false); }
+function limpiarDuplicadosAsistencia(fechaISO, aplicar){ return _duplicadosDia_(fechaISO, aplicar===true); }
