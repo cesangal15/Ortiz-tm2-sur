@@ -111,6 +111,20 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbymgvQX03ZqS_Yz
  * console.table al final de cada ciclo. Si el backend llega a devolver `_ms` (tiempo de servidor,
  * Fase 2), la tabla lo muestra en su propia columna para separar Apps Script de red/arranque. */
 const DEBUG_PERF = true;
+/* D132 — SONDAS DE RED. `red_ms` (= total − `_ms` del servidor) mete en un solo número tres cosas muy
+ * distintas: el ARRANQUE del contenedor de Apps Script (que ocurre ANTES de que `doGet` siembre `_t0`,
+ * así que es invisible para `_ms`), la REDIRECCIÓN de `/exec` a `script.googleusercontent.com` (una
+ * segunda conexión completa: DNS + TCP + TLS) y la DESCARGA de la respuesta. Con 18,9 s medidos en
+ * campo —2,1 de servidor y 16,8 de "red" para 99 KB— hay que saber cuál de las tres manda antes de
+ * tocar nada.
+ * Cómo se separan: dos idas y vueltas VACÍAS (una acción que el backend no reconoce contesta
+ * `{ok:true,msg:'API Asistencias viva'}` sin leer una sola celda), una ANTES de la petición real —que
+ * paga el arranque si el contenedor estaba frío— y otra DESPUÉS —con el contenedor ya caliente—.
+ *     arranque      ≈ sonda 1 − sonda 2
+ *     ida y vuelta  ≈ sonda 2            (redirección + latencia, con carga útil ~0)
+ *     transferencia ≈ red_ms − sonda 2   (lo que de verdad cuestan los 99 KB)
+ * Cuesta dos peticiones vacías por carga: se APAGA (false) en cuanto la medición esté hecha. */
+const DEBUG_SONDA = true;
 const PERF = [];
 function ahora(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
 function perfReset(){ PERF.length=0; }
@@ -132,18 +146,54 @@ async function perfFetch(label, url, opts){
       // descarga). Se acota a 0: si los dos relojes discrepan podría salir negativo y confundir.
       if(data && data._ms!=null){ reg.servidor_ms=Number(data._ms); reg.red_ms=Math.max(0, ms-Number(data._ms)); }
       PERF.push(reg);
+      perfPayload(label, txt, data);
     }
     if(err) throw new Error('Respuesta no-JSON del Apps Script (¿implementación caída o sesión de Google?).');
     return data;
   }catch(e){ cerrar(); throw e; }
 }
 function perfMarca(label, ms){ if(DEBUG_PERF) PERF.push({ peticion:label, ms:Math.round(ms) }); }
+/* D132 — QUÉ pesa dentro de la respuesta, no solo cuánto. Los KB totales no dicen si el problema son
+ * las filas del día (crecen con la gente) o los CATÁLOGOS (`catCC`, `catMotivos`, `turnos`, `festivos`,
+ * `config`), que son casi estáticos y viajan enteros en CADA cambio de fecha. Solo se imprime por
+ * encima de 20 KB, que es donde la diferencia empieza a notarse en una conexión de obra. */
+const PERF_DESGLOSE_MIN_KB = 20;
+function perfPayload(label, txt, data){
+  if(!data || typeof data!=='object' || txt.length < PERF_DESGLOSE_MIN_KB*1024) return;
+  const filas=Object.keys(data).map(k=>{
+    let n=0; try{ n=JSON.stringify(data[k]).length; }catch(err){ n=0; }
+    return { clave:k, kb:Math.round(n/102.4)/10, pct:Math.round(n*100/txt.length)+'%',
+             elementos: Array.isArray(data[k]) ? data[k].length : '' };
+  }).filter(r=>r.kb>=0.5).sort((a,b)=>b.kb-a.kb);
+  console.log('%c   ↳ desglose de «'+label+'» ('+Math.round(txt.length/102.4)/10+' KB)', 'color:#8aa');
+  console.table(filas);
+}
+/* D132 — reparto del tiempo entre arranque del contenedor, ida y vuelta y transferencia (ver DEBUG_SONDA). */
+function perfSondas(){
+  const buscar=t=>PERF.filter(r=>r.peticion.indexOf(t)===0)[0];
+  const fria=buscar('sonda 1'), caliente=buscar('sonda 2'), real=buscar('asistencia (día)');
+  if(!caliente || !real || real.red_ms==null) return;
+  const arranque = fria ? Math.max(0, fria.ms - caliente.ms) : null;
+  const transfer = Math.max(0, real.red_ms - caliente.ms);
+  console.log('%c   ↳ reparto del tiempo fuera de Apps Script: '
+    + (arranque!=null ? 'arranque del contenedor ~'+arranque+' ms · ' : '')
+    + 'ida y vuelta vacía '+caliente.ms+' ms · transferencia de los '+(real.kb||'?')+' KB ~'+transfer+' ms',
+    'color:#8aa');
+}
 function perfTabla(ctx){
   if(!DEBUG_PERF || !PERF.length) return;
   const total=PERF.reduce((a,r)=>a+(r.ms||0),0);
   console.log('%c⏱ resumen-asistencia · '+ctx+' · '+PERF.filter(r=>r.kb!=null).length+' petición(es) · '+Math.round(total)+' ms',
     'color:#f5a623;font-weight:700');
   console.table(PERF.slice());
+  perfSondas();
+}
+/* Ida y vuelta VACÍA: `action=ping` no es una acción reconocida, así que `doGet` contesta el mensaje de
+ * "API viva" sin abrir el Spreadsheet ni leer una celda. Nunca puede romper la carga del resumen. */
+async function sondaRed(label){
+  if(!DEBUG_PERF || !DEBUG_SONDA) return;
+  try{ await perfFetch(label, `${APPS_SCRIPT_URL}?action=ping&usuario=${encodeURIComponent(STATE.usuario||'')}`); }
+  catch(err){ /* una sonda que falla no es un error de la pantalla */ }
 }
 
 /* SheetJS bajo demanda: solo hace falta para generar el Excel Navision. Cargarlo en el <head>
@@ -270,11 +320,13 @@ async function cargarResumen(){
   if(!STATE.data) cont.innerHTML='<div class="loading">⏳ Consultando…</div>';
   loadBar(true); perfReset();
   try{
+    await sondaRed('sonda 1 (contenedor frío)');    // D132 — ver DEBUG_SONDA
     const data=await perfFetch('asistencia (día)',
       `${APPS_SCRIPT_URL}?action=asistencia&fecha=${STATE.fecha}&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`);
     if(!data.ok) throw new Error(data.error||'asistencia');
     STATE.data=data;
     render();
+    await sondaRed('sonda 2 (contenedor caliente)');   // después de pintar: no retrasa la pantalla
     perfTabla('carga del día '+STATE.fecha);
   }catch(err){
     // Con error se BORRA el contenido a propósito: dejar a la vista los números del día anterior con un
