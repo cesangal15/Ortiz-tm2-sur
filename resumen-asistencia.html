@@ -145,6 +145,11 @@ async function perfFetch(label, url, opts){
       // `red_ms` = lo que NO fue Apps Script (arranque del contenedor, redirección de /exec, red y
       // descarga). Se acota a 0: si los dos relojes discrepan podría salir negativo y confundir.
       if(data && data._ms!=null){ reg.servidor_ms=Number(data._ms); reg.red_ms=Math.max(0, ms-Number(data._ms)); }
+      // D132 — `_celdas` (D102) ya viaja en toda respuesta y nadie lo miraba. Es lo que separa un
+      // `servidor_ms` alto por LEER el Sheet de uno alto por procesar/servir catálogos desde el caché:
+      // una lectura servida por CacheService suma 0 celdas. Con la hoja inflada, el escaneo de la
+      // columna `fecha` (1 celda por fila del histórico) se ve aquí y en ningún otro sitio.
+      if(data && data._celdas!=null) reg.celdas=Number(data._celdas);
       PERF.push(reg);
       perfPayload(label, txt, data);
     }
@@ -172,12 +177,15 @@ function perfPayload(label, txt, data){
 function perfSondas(){
   const buscar=t=>PERF.filter(r=>r.peticion.indexOf(t)===0)[0];
   const fria=buscar('sonda 1'), caliente=buscar('sonda 2'), real=buscar('asistencia (día)');
-  if(!caliente || !real || real.red_ms==null) return;
-  const arranque = fria ? Math.max(0, fria.ms - caliente.ms) : null;
-  const transfer = Math.max(0, real.red_ms - caliente.ms);
-  console.log('%c   ↳ reparto del tiempo fuera de Apps Script: '
-    + (arranque!=null ? 'arranque del contenedor ~'+arranque+' ms · ' : '')
-    + 'ida y vuelta vacía '+caliente.ms+' ms · transferencia de los '+(real.kb||'?')+' KB ~'+transfer+' ms',
+  if(!caliente || !real || real.red_ms==null || caliente.red_ms==null) return;
+  // Las tres restas van sobre `red_ms`, NUNCA sobre el total: el total de una sonda incluye su propio
+  // `servidor_ms` (~100-230 ms solo por arrancar el script y verificar el token), así que restarlo
+  // contra el `red_ms` de la petición real mezclaba dos magnitudes y subestimaba la transferencia.
+  const arranque = fria && fria.red_ms!=null ? Math.max(0, fria.red_ms - caliente.red_ms) : null;
+  const transfer = Math.max(0, real.red_ms - caliente.red_ms);
+  console.log('%c   ↳ reparto de los '+real.ms+' ms: servidor '+real.servidor_ms+' ms · ida y vuelta vacía '
+    + caliente.red_ms+' ms (redirección de /exec + latencia) · transferencia de los '+(real.kb||'?')+' KB ~'+transfer+' ms'
+    + (arranque!=null ? '   [arranque extra del contenedor frío: ~'+arranque+' ms]' : ''),
     'color:#8aa');
 }
 function perfTabla(ctx){
