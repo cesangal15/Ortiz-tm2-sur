@@ -177,12 +177,15 @@ function perfPayload(label, txt, data){
 function perfSondas(){
   const buscar=t=>PERF.filter(r=>r.peticion.indexOf(t)===0)[0];
   const fria=buscar('sonda 1'), caliente=buscar('sonda 2'), real=buscar('asistencia (día)');
-  if(!caliente || !real || real.red_ms==null) return;
-  const arranque = fria ? Math.max(0, fria.ms - caliente.ms) : null;
-  const transfer = Math.max(0, real.red_ms - caliente.ms);
-  console.log('%c   ↳ reparto del tiempo fuera de Apps Script: '
-    + (arranque!=null ? 'arranque del contenedor ~'+arranque+' ms · ' : '')
-    + 'ida y vuelta vacía '+caliente.ms+' ms · transferencia de los '+(real.kb||'?')+' KB ~'+transfer+' ms',
+  if(!caliente || !real || real.red_ms==null || caliente.red_ms==null) return;
+  // Las tres restas van sobre `red_ms`, NUNCA sobre el total: el total de una sonda incluye su propio
+  // `servidor_ms` (~100-230 ms solo por arrancar el script y verificar el token), así que restarlo
+  // contra el `red_ms` de la petición real mezclaba dos magnitudes y subestimaba la transferencia.
+  const arranque = fria && fria.red_ms!=null ? Math.max(0, fria.red_ms - caliente.red_ms) : null;
+  const transfer = Math.max(0, real.red_ms - caliente.red_ms);
+  console.log('%c   ↳ reparto de los '+real.ms+' ms: servidor '+real.servidor_ms+' ms · ida y vuelta vacía '
+    + caliente.red_ms+' ms (redirección de /exec + latencia) · transferencia de los '+(real.kb||'?')+' KB ~'+transfer+' ms'
+    + (arranque!=null ? '   [arranque extra del contenedor frío: ~'+arranque+' ms]' : ''),
     'color:#8aa');
 }
 function perfTabla(ctx){
