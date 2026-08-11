@@ -107,6 +107,8 @@
   <div class="header-user">
     <span id="userDisplay">—</span>
     <button class="logout-btn" id="btnMenu" onclick="location.href='menu.html'" style="display:none;border-color:var(--accent);color:var(--accent);margin-right:6px;">← Menú</button>
+    <!-- D131: acceso al resumen post-DATA (jefe.html). Solo lectura; llega con el filtro en ODT+ODL. -->
+    <button class="logout-btn" id="btnResumen" onclick="location.href='jefe.html'" style="display:none;border-color:var(--accent);color:var(--accent);margin-right:6px;">📊 Resumen</button>
     <button class="logout-btn" onclick="logout()">Salir</button>
   </div>
 </div>
@@ -173,6 +175,10 @@ window.onload = async function(){
   // D84: el admin ve las dos áreas combinadas (los chips filtran la vista); el selector de área de una
   // sola área ya no aplica y queda oculto. Solo se muestra el botón de menú del admin.
   if(rol==='admin'){ var _bm=document.getElementById('btnMenu'); if(_bm) _bm.style.display='inline-block'; }
+  /* D131 — el residente de drenajes entra al panel del jefe (`jefe.html`): el resumen post-DATA por
+   * rango que ya tenía tierras. Es SOLO LECTURA sobre lo ya enviado, así que no le da ninguna capacidad
+   * nueva sobre la bandeja; le da la vista de lo que quedó en el maestro. El admin llega por el menú. */
+  var _br=document.getElementById('btnResumen'); if(_br && rol!=='admin') _br.style.display='inline-block';
   pintarTitulo();
   document.getElementById('fecha').value=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'}); // D50
   cargarCatalogo();

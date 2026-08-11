@@ -1664,6 +1664,45 @@ function maquinariaProduccionGuardar(body){
   return json({ok:true, actualizadas:upd, creadas:maqRows.length});
 }
 
+/* ---------- D130 — el clima viaja al maestro por la OBSERVACION ----------
+ * EL PROBLEMA. D37 guardó el clima en una columna INTERNA de DATA (`clima`, tras `area`) porque el
+ * maestro TM2 no tiene columna de clima y el paste es A:S. Perfecto para el WhatsApp y para el resumen
+ * del jefe... e inútil para el Excel: lo que se pega termina en A:S, así que el clima se quedaba en el
+ * Sheet y el maestro nunca se enteraba. El dueño necesita justo eso: que otra tabla del Excel lea el
+ * clima del día y se actualice sola.
+ *
+ * LA SOLUCIÓN. No se inventa una columna nueva en el maestro (rompería el paste A:S y las dinámicas):
+ * el clima se estampa dentro de la OBSERVACION (col S) de UNA fila del día — la primera del envío —
+ * con un sello ACOTADO Y LITERAL, `[Clima: X]`, al principio del texto:
+ *
+ *     [Clima: Lluvias parciales] · origen Masivo 2 · 18 viajes → Terraplén 252 m³
+ *
+ * Por qué así:
+ *   · **Delimitado** (`[` … `]`) para que la fórmula del Excel extraiga el valor sin depender de dónde
+ *     esté ni de qué venga detrás: entre `[Clima: ` y el `]`. Un sello sin cierre obligaría a adivinar
+ *     dónde termina el clima y dónde empieza la observación del capataz.
+ *   · **Al principio**, no al final: la observación de la chequeadora ya es larga (origen · viajes ·
+ *     destinos, D67/D80) y el sello quedaría fuera de la vista en la celda.
+ *   · **Una sola fila**, no todas: es un dato POR DÍA, no por línea. Repetirlo en 40 filas ensucia la
+ *     observación de cada actividad y no aporta nada — a la tabla del Excel le basta con encontrarlo
+ *     una vez en el día (BUSCAR/FILTRO sobre las filas de la fecha).
+ *   · **No sustituye la columna interna** `clima`: esa se sigue escribiendo igual y es la que leen el
+ *     WhatsApp y `jefe.html`. Aquí solo se AÑADE el camino hacia el maestro.
+ *   · **Idempotente**: si la observación ya trae un sello (reenvío del día, copiar-pegar manual), se
+ *     quita antes de poner el nuevo. Nunca se acumulan dos.
+ * La observación original del capataz NO se pierde: queda tras el sello, separada por " · " como el
+ * resto de los tramos que ya concatena la observación (mismo separador de D67/D80).
+ *
+ * ATENCIÓN: `CLIMA_SELLO_PREFIJO` y los tres valores de `CLIMA_OPS` (encargado.html) son el contrato
+ * con la fórmula del Excel. Cambiar cualquiera de los dos obliga a cambiar la fórmula del maestro. */
+const CLIMA_SELLO_PREFIJO = '[Clima: ';
+const CLIMA_SELLO_RE = /\[Clima:\s*[^\]]*\]\s*(?:·\s*)?/gi;   // sello previo (reenvío) — se reemplaza
+function sellarClimaEnObservacion_(rows, clima){
+  if(!rows || !rows.length || !clima) return;
+  const previa = String(rows[0][C.OBS]==null ? '' : rows[0][C.OBS]).replace(CLIMA_SELLO_RE, '').trim();
+  rows[0][C.OBS] = CLIMA_SELLO_PREFIJO + clima + ']' + (previa ? ' · ' + previa : '');
+}
+
 /* ---------- enviar lo aprobado a DATA ---------- */
 // D69 (enmienda operativa de D03): pisa el día POR ÁREA, no completo. Al enviar el área X se
 // borran/reescriben en DATA solo las filas de esa FECHA cuyo deriveArea(CENTRO DE COSTO, col D)
@@ -1678,6 +1717,22 @@ function enviarData(body){
   if(!fecha) return json({ok:false, error:ERROR_FECHA});
   const aB=String(body.area||'').trim().toLowerCase();
   const area=(aB==='odt'||aB==='odl'||aB==='tierras') ? aB : 'tierras';
+  // D37 → D130: clima del día que elige el encargado (mismo string en todas las filas del envío). Se
+  // sella en la columna interna `clima` de DATA (no viaja al maestro) y ADEMÁS se estampa en la
+  // OBSERVACION de la primera fila del día, que sí viaja (col S del paste A:S).
+  const clima=String(body.clima||'').trim();
+  /* D130 — el clima es OBLIGATORIO en tierras. Deja de ser un adorno del WhatsApp: una tabla del Excel
+   * maestro lo lee del sello de la observación, así que un día sin clima llega incompleto al maestro y
+   * hay que rehacer el envío. `encargado.html` ya no deja pulsar el botón sin él; esta guarda es la que
+   * hace que la regla sea REAL (un teléfono con la pantalla vieja en caché seguiría enviando sin clima,
+   * y ese es justo el caso que rompe el maestro en silencio). No se toca la fecha ni se borra nada: se
+   * rechaza ANTES del pisado de D03, así que un envío rechazado deja el día tal como estaba.
+   * DRENAJES queda fuera: `residente-drenajes.html` no captura clima (D70) y exigírselo bloquearía
+   * ODT/ODL sin que nadie pueda cumplirlo. */
+  if(area==='tierras' && !clima){
+    return json({ok:false, error:'Falta el clima del día. No se envió nada a DATA (el día quedó como estaba). '
+      + 'Elige el clima en el panel y vuelve a enviar; si no ves el selector, recarga la pantalla.'});
+  }
   // 1) DATA: borrar el día SOLO en el área que envía, y reescribir. El área de una fila de DATA la
   // fija su columna interna `area` (D71); las filas viejas (col vacía) caen a deriveArea(CC) vía
   // areaDeFila, así que su clasificación no cambia. Esto permite que la demolición (CC 01.02, que
@@ -1703,11 +1758,9 @@ function enviarData(body){
   // Guard: solo se escriben filas del área que envía (una fila de otra área colada en el payload
   // duplicaría datos que este envío NO borró). El área de la línea manda por su columna `area`
   // (D71); si falta, se deriva del CC. Las de otra área se ignoran sin error.
-  // D37: clima del día que elige el encargado (mismo string en todas las filas del envío). Se sella
-  // en la columna interna `clima` de DATA (no viaja al maestro); alimenta el resumen del jefe.
-  const clima=String(body.clima||'').trim();
   const rows=incluidas.filter(c=>c.estado!=='no_data' && areaDeFila(c.area, c.centro_costo)===area)
     .map(c=> buildDataRow(Object.assign(c,{clima:clima}), fecha, ts, c.reporta||'(encargado)', c.rol||'encargado', Utilities.getUuid()));
+  sellarClimaEnObservacion_(rows, clima);   // D130: el clima viaja al maestro por la col S
   // D93: el borrado de arriba usa deleteRow, que además REDUCE getMaxRows(); validar la capacidad
   // antes de reescribir el día es justo lo que evitaba que DATA dejara de recibir al llenarse.
   if(rows.length){ ensureRows_(sh, rows.length);
