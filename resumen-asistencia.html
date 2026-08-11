@@ -123,8 +123,12 @@ const DEBUG_PERF = true;
  *     arranque      ≈ sonda 1 − sonda 2
  *     ida y vuelta  ≈ sonda 2            (redirección + latencia, con carga útil ~0)
  *     transferencia ≈ red_ms − sonda 2   (lo que de verdad cuestan los 99 KB)
- * Cuesta dos peticiones vacías por carga: se APAGA (false) en cuanto la medición esté hecha. */
-const DEBUG_SONDA = true;
+ * Cuesta dos peticiones vacías por carga: se APAGA (false) en cuanto la medición esté hecha.
+ * MEDIDO ya (ago-2026, dos capturas en campo): la ida y vuelta VACÍA cuesta 1,2–2,6 s en la conexión de
+ * obra, el arranque del contenedor es despreciable (~0–430 ms) y el resto es transferencia — 99,2 KB a
+ * ~8,6 KB/s = 11,5 s. Con eso respondido, las sondas se apagan: en esa red cuestan 5 s por carga y dos
+ * oportunidades más de que la petición se caiga. Se vuelven a encender si hay que remedir. */
+const DEBUG_SONDA = false;
 const PERF = [];
 function ahora(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
 function perfReset(){ PERF.length=0; }
@@ -329,15 +333,60 @@ function loadBar(on){
   const b=document.getElementById('loadBar'); if(b) b.classList.toggle('on', !!on);
   const c=document.getElementById('container'); if(c) c.classList.toggle('cargando', !!on && !!STATE.data);
 }
+/* ============ D132 — "No se pudo consultar. Revisa el Apps Script." ============
+ * Ese mensaje era el MISMO para cuatro causas que no tienen nada que ver entre sí, y encima señalaba
+ * a la equivocada: en tres de los cuatro casos el Apps Script no tiene ninguna culpa. Las cuatro, con
+ * lo que de verdad hay que hacer en cada una:
+ *   · SESIÓN CADUCADA — el backend contesta `{ok:false, auth:false}` cuando el token falta, viene
+ *     alterado o quedó fuera por `AUTH_V` (D109). Se arregla volviendo a entrar, y nada más. `auth.js`
+ *     expone `TM2Auth.caducada(data)` justo para esto desde D109, con un comentario que dice que «las
+ *     pantallas de consolidación lo usan para mandar al login en vez de mostrar un error críptico»…
+ *     y resulta que NINGUNA pantalla lo llamaba. Este es el primer sitio donde se usa.
+ *   · CONEXIÓN CORTADA — `fetch` rechaza con TypeError cuando la petición no llega a completarse. A
+ *     los ~8,6 KB/s medidos en obra, los ~100 KB de esta pantalla tardan más de 10 s y que el enlace
+ *     se caiga a mitad es rutina, no una avería. Un GET es idempotente, así que se REINTENTA una vez
+ *     sola antes de rendirse, y el mensaje ofrece reintentar a mano.
+ *   · RESPUESTA NO-JSON — implementación caída o Google pidiendo iniciar sesión. Aquí sí se mira el
+ *     Apps Script.
+ *   · RECHAZO DEL BACKEND (`ok:false` con motivo) — se muestra el motivo tal cual, que ya viene
+ *     escrito para que lo lea el usuario (fecha inválida de D106, cerrojo ocupado de D125…).
+ */
+function esFalloDeRed(e){
+  // Un `ok:false` del backend NO pasa por aquí: eso es una respuesta, no un fallo de red.
+  return !!e && (e instanceof TypeError
+    || /failed to fetch|load failed|networkerror|network request/i.test(String((e && e.message) || '')));
+}
+async function fetchResumen(label, url){
+  let ultimo=null;
+  for(let i=0;i<2;i++){
+    try{ return await perfFetch(i ? label+' · reintento' : label, url); }
+    catch(e){
+      ultimo=e;
+      if(!esFalloDeRed(e)) break;     // un rechazo del backend no mejora repitiéndolo
+    }
+  }
+  const err=new Error((ultimo && ultimo.message) || 'sin respuesta');
+  err.tipo = esFalloDeRed(ultimo) ? 'red'
+           : (/no-JSON/.test(String((ultimo && ultimo.message) || '')) ? 'formato' : 'backend');
+  throw err;
+}
 async function cargarResumen(){
   const cont=document.getElementById('container');
   if(!STATE.data) cont.innerHTML='<div class="loading">⏳ Consultando…</div>';
   loadBar(true); perfReset();
   try{
     await sondaRed('sonda 1 (contenedor frío)');    // D132 — ver DEBUG_SONDA
-    const data=await perfFetch('asistencia (día)',
+    const data=await fetchResumen('asistencia (día)',
       `${APPS_SCRIPT_URL}?action=asistencia&fecha=${STATE.fecha}&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`);
-    if(!data.ok) throw new Error(data.error||'asistencia');
+    // OJO con `caducada`: `doGet` sella `auth:false` en TODO lo que devuelve `sesion_`, y ahí dentro va
+    // también el caso "este script no tiene AUTH_SECRETO configurado" (D109: el secreto se copia A MANO
+    // del Apps Script de obra al de asistencias, porque las Propiedades del Script son por proyecto).
+    // Eso NO es una sesión caducada y mandar al usuario al login no lo arreglaría — daría vueltas para
+    // siempre. Su propio mensaje ya dice qué ejecutar, así que se muestra tal cual.
+    if(window.TM2Auth && TM2Auth.caducada(data) && !/AUTH_SECRETO/i.test(String(data.error||''))){
+      const e=new Error(data.error||'Sesión no válida.'); e.tipo='sesion'; throw e;
+    }
+    if(!data.ok){ const e=new Error(data.error||'asistencia'); e.tipo='backend'; throw e; }
     STATE.data=data;
     render();
     await sondaRed('sonda 2 (contenedor caliente)');   // después de pintar: no retrasa la pantalla
@@ -346,10 +395,28 @@ async function cargarResumen(){
     // Con error se BORRA el contenido a propósito: dejar a la vista los números del día anterior con un
     // aviso encima sería peor (se leerían como los del día pedido).
     STATE.data=null;
-    document.getElementById('container').innerHTML='<div class="empty-state">⚠️ No se pudo consultar. Revisa el Apps Script.<br><small>'+esc(err.message||err)+'</small></div>';
+    document.getElementById('container').innerHTML='<div class="empty-state">'+mensajeDeFallo(err)+'</div>';
   }finally{
     loadBar(false);
   }
+}
+function mensajeDeFallo(err){
+  const t=err && err.tipo, detalle=esc((err && err.message) || err);
+  if(t==='sesion')
+    return '🔒 <b>Tu sesión caducó.</b><br><small>'+detalle+' No es un problema del Sheet ni de los datos: '
+      + 'vuelve a entrar y sigue donde ibas.</small>'
+      + '<br><button class="btn" style="margin-top:12px;" onclick="logout()">Ir al login →</button>';
+  if(t==='red')
+    return '📡 <b>La consulta no llegó a completarse.</b><br><small>La conexión se cortó antes de recibir '
+      + 'la respuesta (ya se reintentó una vez). El Sheet y el Apps Script están bien: esta pantalla trae '
+      + '~100 KB y con señal débil no alcanzan a bajar.</small>'
+      + '<br><button class="btn" style="margin-top:12px;" onclick="cargarResumen()">Reintentar</button>';
+  if(t==='formato')
+    return '⚠️ <b>El Apps Script no contestó en JSON.</b><br><small>Suele ser la implementación caída o una '
+      + 'sesión de Google que pide iniciar sesión desde el navegador. '+detalle+'</small>'
+      + '<br><button class="btn" style="margin-top:12px;" onclick="cargarResumen()">Reintentar</button>';
+  return '⚠️ <b>El servidor rechazó la consulta.</b><br><small>'+detalle+'</small>'
+      + '<br><button class="btn" style="margin-top:12px;" onclick="cargarResumen()">Reintentar</button>';
 }
 // ¿La vista actual es de TIERRAS? (residente de tierras, jeisson, o admin sin filtrar ODT/ODL).
 // Se usa para lo que es de tierras POR NATURALEZA: hoy, el indicador de extras del admin (D73), cuyos
