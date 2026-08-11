@@ -163,6 +163,7 @@ function perfMarca(label, ms){ if(DEBUG_PERF) PERF.push({ peticion:label, ms:Mat
  * `config`), que son casi estáticos y viajan enteros en CADA cambio de fecha. Solo se imprime por
  * encima de 20 KB, que es donde la diferencia empieza a notarse en una conexión de obra. */
 const PERF_DESGLOSE_MIN_KB = 20;
+let PERF_DESGLOSE = null;   // se imprime al final, junto a la tabla grande, para poder capturarlo todo de una
 function perfPayload(label, txt, data){
   if(!data || typeof data!=='object' || txt.length < PERF_DESGLOSE_MIN_KB*1024) return;
   const filas=Object.keys(data).map(k=>{
@@ -170,8 +171,7 @@ function perfPayload(label, txt, data){
     return { clave:k, kb:Math.round(n/102.4)/10, pct:Math.round(n*100/txt.length)+'%',
              elementos: Array.isArray(data[k]) ? data[k].length : '' };
   }).filter(r=>r.kb>=0.5).sort((a,b)=>b.kb-a.kb);
-  console.log('%c   ↳ desglose de «'+label+'» ('+Math.round(txt.length/102.4)/10+' KB)', 'color:#8aa');
-  console.table(filas);
+  PERF_DESGLOSE={ label:label, kb:Math.round(txt.length/102.4)/10, filas:filas };
 }
 /* D132 — reparto del tiempo entre arranque del contenedor, ida y vuelta y transferencia (ver DEBUG_SONDA). */
 function perfSondas(){
@@ -195,6 +195,12 @@ function perfTabla(ctx){
     'color:#f5a623;font-weight:700');
   console.table(PERF.slice());
   perfSondas();
+  if(PERF_DESGLOSE){
+    console.log('%c   ↳ desglose de «'+PERF_DESGLOSE.label+'» ('+PERF_DESGLOSE.kb+' KB) — qué se lleva los bytes',
+      'color:#8aa');
+    console.table(PERF_DESGLOSE.filas);
+    PERF_DESGLOSE=null;
+  }
 }
 /* Ida y vuelta VACÍA: `action=ping` no es una acción reconocida, así que `doGet` contesta el mensaje de
  * "API viva" sin abrir el Spreadsheet ni leer una celda. Nunca puede romper la carga del resumen. */
