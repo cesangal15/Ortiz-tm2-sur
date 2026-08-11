@@ -2367,3 +2367,269 @@ function _sobrantesDelGrupo_(g){
   return { queda: orden[orden.length-1].r,
            borrar: orden.slice(0,-1).map(function(x){ return x.r._row; }) };
 }
+
+/* ============ D132 — "LA HOJA NO ABRE": PESO DE LA GRILLA, CENSO POR DÍA Y RESCATE ============
+ *
+ * EL SÍNTOMA. El Sheet de asistencias se queda cargando y no abre — ni en el navegador ni, por
+ * consiguiente, en el aplicativo. Cuando pasa eso NO se puede diagnosticar mirando la hoja, que es
+ * justo lo que no abre. Pero el **editor de Apps Script sí abre siempre** (script.google.com es otro
+ * producto y habla con Sheets por API, no renderiza la grilla), así que todo lo de aquí se ejecuta
+ * desde ahí, igual que `diagnosticoFechasAsistencia` (D106) o `limpiarDuplicadosRango` (D128).
+ *
+ * LAS TRES CAUSAS POSIBLES, y cómo se distinguen sin abrir el archivo:
+ *   1) **Demasiadas celdas.** Un Sheet aguanta 10.000.000 de celdas sumando TODAS las hojas, y mucho
+ *      antes de ese techo la interfaz web se arrastra. `ASISTENCIA` crece 1 fila por persona y día
+ *      (~7.800 filas/mes con 300 personas, ~94.000 al año × 17 columnas ≈ 1,6 M celdas al año): eso
+ *      solo NO tumba el archivo. Lo que sí lo tumba es que crezca de más — y este módulo viene de una
+ *      racha de duplicación (D118 → D129) en la que las filas se anexaban sin borrar las viejas.
+ *   2) **Grilla inflada de celdas VACÍAS.** `ensureRows_` (D93) crece en bloques de 1.000 filas y la
+ *      grilla nunca se encoge sola: una hoja puede tener 200.000 filas de rejilla con 8.000 de datos.
+ *      Las celdas vacías consumen cupo y peso igual que las llenas.
+ *   3) **Nada de lo anterior** — el archivo pesa lo normal y el problema está del lado del navegador
+ *      (sesión, extensión, caché, red). Descartar 1 y 2 con números es lo que permite dejar de
+ *      buscar en el sitio equivocado.
+ *
+ * ORDEN DE USO (los dos primeros SOLO LEEN, no tocan nada):
+ *   1. `diagnosticoPeso()`                 → cuánto pesa cada hoja y el archivo entero. Es lo primero
+ *                                            SIEMPRE: no lee ni una celda de datos, así que responde
+ *                                            en segundos por gigante que esté el archivo.
+ *   2. `diagnosticoVolumenAsistencia()`    → filas de ASISTENCIA por día. Un día con 3× la mediana es
+ *                                            duplicación; el histórico completo en un solo vistazo.
+ *   3. `limpiarDuplicadosTodo(false)`      → simula la limpieza de TODO el histórico (la de D128 pero
+ *                                            leyendo 6 de las 17 columnas, para que no reviente en una
+ *                                            hoja enorme).       `limpiarDuplicadosTodo(true)` aplica.
+ *   4. `compactarGrilla(false)`            → simula el recorte de la rejilla sobrante de cada hoja.
+ *                                            `compactarGrilla(true)` aplica. Va AL FINAL: primero se
+ *                                            borran las filas que sobran, después se recorta la
+ *                                            rejilla que quedó libre.
+ *
+ * NADA DE ESTO CAMBIA EL COMPORTAMIENTO DEL WEB APP: son funciones de mantenimiento, no endpoints, y
+ * no las llama `doGet`/`doPost`. Basta con GUARDAR el archivo en el editor — no hace falta redesplegar.
+ */
+
+// Techo duro de Google Sheets, sumando todas las hojas del archivo.
+const LIMITE_CELDAS_ARCHIVO = 10000000;
+// Colchón de filas libres que deja `compactarGrilla` al final de cada hoja. No hace falta que sea
+// grande: `ensureRows_` (D93) crece sola en bloques de BLOQUE_FILAS cuando se agota.
+const MARGEN_FILAS_LIBRES = 200;
+// Presupuesto de tiempo para el borrado de una pasada. El tope de Apps Script son 6 minutos; se corta
+// antes y se informa cuántas filas quedaron, para volver a ejecutar. Como se borra de abajo hacia
+// arriba, lo que queda pendiente conserva su número de fila: la segunda pasada sigue donde iba.
+const MS_PRESUPUESTO_BORRADO = 240000;
+
+/**
+ * Peso de la grilla, hoja por hoja. SOLO LEE metadatos (`getMaxRows`/`getLastRow`/…): cero celdas de
+ * datos, así que corre igual de rápido con la hoja vacía o con dos millones de filas.
+ */
+function diagnosticoPeso(){
+  const hojas=ss_().getSheets().map(function(sh){
+    const maxR=sh.getMaxRows(), maxC=sh.getMaxColumns();
+    const lastR=sh.getLastRow(), lastC=sh.getLastColumn();
+    let reglas=0;
+    try{ reglas=sh.getConditionalFormatRules().length; }catch(err){}
+    return { nombre:sh.getName(), lastR:lastR, maxR:maxR, lastC:lastC, maxC:maxC,
+             celdas:maxR*maxC, usadas:lastR*lastC, reglas:reglas };
+  });
+  hojas.sort(function(a,b){ return b.celdas-a.celdas; });
+  const total=hojas.reduce(function(s,h){ return s+h.celdas; }, 0);
+  const usadas=hojas.reduce(function(s,h){ return s+h.usadas; }, 0);
+  const pct=function(n){ return (n*100/LIMITE_CELDAS_ARCHIVO).toFixed(1)+'%'; };
+
+  const lineas=hojas.map(function(h){
+    return '  · '+h.nombre+' — rejilla '+h.maxR+'×'+h.maxC+' = '+h.celdas+' celdas ('+pct(h.celdas)+' del techo)'
+      + ' · con datos '+h.lastR+'×'+h.lastC+' = '+h.usadas
+      + ' · vacías '+(h.celdas-h.usadas)
+      + (h.reglas ? ' · '+h.reglas+' reglas de formato condicional' : '');
+  });
+
+  const asis=hojas.filter(function(h){ return h.nombre==='ASISTENCIA'; })[0];
+  const veredicto=[];
+  if(total > LIMITE_CELDAS_ARCHIVO)
+    veredicto.push('🔴 El archivo SUPERA el techo de '+LIMITE_CELDAS_ARCHIVO+' celdas. Eso explica que no abra.');
+  else if(total > LIMITE_CELDAS_ARCHIVO*0.6)
+    veredicto.push('🟠 El archivo va por el '+pct(total)+' del techo. A partir de aquí la interfaz web se arrastra.');
+  else
+    veredicto.push('🟢 El archivo va por el '+pct(total)+' del techo: el TAMAÑO no explica que no abra.');
+  if(total-usadas > 500000)
+    veredicto.push('· Hay '+(total-usadas)+' celdas de rejilla VACÍA. Recórtalas con compactarGrilla(false) y luego (true).');
+  if(asis && asis.lastR > 120000)
+    veredicto.push('· ASISTENCIA tiene '+asis.lastR+' filas — más de lo que da un año normal (~94.000). '
+      +'Revisa el reparto por día con diagnosticoVolumenAsistencia().');
+
+  Logger.log('PESO DEL ARCHIVO — '+hojas.length+' hojas · rejilla total '+total+' celdas ('+pct(total)+' del techo)'
+    + ' · con datos '+usadas+' · vacías '+(total-usadas)
+    + '\n'+lineas.join('\n')
+    + '\n\n'+veredicto.join('\n'));
+  return { hojas:hojas, total:total, usadas:usadas, vacias:total-usadas, limite:LIMITE_CELDAS_ARCHIVO };
+}
+
+/**
+ * Censo de `ASISTENCIA` por día. Lee UNA sola columna (la de `fecha`, por nombre, nunca un 3 cableado),
+ * que es lo más barato que se puede leer de la hoja: con 200.000 filas son 200.000 celdas, no 3,4 M.
+ * Muestra la mediana de filas/día y marca los días que la triplican — la firma de la duplicación.
+ */
+function diagnosticoVolumenAsistencia(){
+  const sh=ss_().getSheetByName('ASISTENCIA');
+  if(!sh || sh.getLastRow()<2){ Logger.log('ASISTENCIA vacía: nada que contar.'); return { filas:0 }; }
+  const n=sh.getLastRow()-1, colFecha=ASISTENCIA_HEADERS.indexOf('fecha')+1;
+  const v=leerRango_(sh, 2, colFecha, n, 1);
+  const porDia={}; let sinFecha=0;
+  for(let i=0;i<n;i++){
+    const f=fdateValida_(fdate(v[i][0]));
+    if(!f){ sinFecha++; continue; }
+    porDia[f]=(porDia[f]||0)+1;
+  }
+  const dias=Object.keys(porDia).sort();
+  if(!dias.length){
+    Logger.log('ASISTENCIA — '+n+' filas y NINGUNA con fecha válida ('+sinFecha+' sin fecha). Mira diagnosticoFechasAsistencia() (D106).');
+    return { filas:n, dias:0, sinFecha:sinFecha };
+  }
+  const ordenadas=dias.map(function(d){ return porDia[d]; }).sort(function(a,b){ return a-b; });
+  const mediana=ordenadas[Math.floor(ordenadas.length/2)];
+  const sospechosos=dias.filter(function(d){ return porDia[d] > mediana*3; });
+  const top=dias.slice().sort(function(a,b){ return porDia[b]-porDia[a]; }).slice(0,20);
+
+  Logger.log('ASISTENCIA — '+n+' filas de datos · '+dias.length+' días ('+dias[0]+' → '+dias[dias.length-1]+')'
+    + ' · sin fecha válida: '+sinFecha
+    + '\nFilas por día: mediana '+mediana+' · mínimo '+ordenadas[0]+' · máximo '+ordenadas[ordenadas.length-1]
+    + '\nLos 20 días con más filas:\n'
+    + top.map(function(d){ return '  · '+d+' — '+porDia[d]+' filas'+(porDia[d]>mediana*3?'   ⟵ '+(porDia[d]/mediana).toFixed(1)+'× la mediana':''); }).join('\n')
+    + (sospechosos.length
+        ? '\n\n🔴 '+sospechosos.length+' día(s) triplican la mediana: eso es duplicación, no gente de más.'
+          +'\n   Simula la limpieza con limpiarDuplicadosTodo(false).'
+        : '\n\n🟢 Ningún día se sale de lo normal: el volumen de ASISTENCIA no es el problema.'));
+  return { filas:n, dias:dias.length, sinFecha:sinFecha, mediana:mediana, porDia:porDia, sospechosos:sospechosos };
+}
+
+/**
+ * D128 aplicado a TODO el histórico, sin límite de fechas y sin leer la hoja entera.
+ * Diferencia con `limpiarDuplicadosRango`: aquel usa `readSheet`, que trae las 17 columnas — en una
+ * hoja desbocada eso son millones de celdas y revienta el tope de 6 minutos antes de borrar nada.
+ * Este lee el bloque 2–7 (`timestamp`…`cedula`), las 6 columnas que deciden, con el mismo lector
+ * acotado por columnas de D102. El CRITERIO es idéntico: agrupa por fecha + persona (`clavePersona_`:
+ * código, o cédula si no hay código) y de cada grupo conserva la fila MÁS RECIENTE (`_sobrantesDelGrupo_`).
+ * Dos personas con códigos distintos nunca se mezclan aunque compartan cédula (D123).
+ *
+ * Las filas SIN fecha válida no se tocan: son las huérfanas de D106 y se arreglan con
+ * `repararFechasAsistencia`, no borrándolas.
+ */
+function _duplicadosTodo_(aplicar){
+  const sh=getSheet('ASISTENCIA', ASISTENCIA_HEADERS);
+  if(sh.getLastRow()<2){ Logger.log('ASISTENCIA vacía: nada que limpiar.'); return { sobrantes:0 }; }
+  const colFin=ASISTENCIA_HEADERS.indexOf('cedula')+1;          // por NOMBRE: 2..7 hoy, se mueve solo si cambia el layout
+  const filas=leerColumnasDeHoja_('ASISTENCIA', 2, colFin);
+  const grupos={}; let sinFecha=0, sinId=0;
+  filas.forEach(function(r){
+    const f=fdateValida_(fdate(r.fecha));
+    if(!f){ sinFecha++; return; }                                // huérfanas de D106: no son duplicados
+    const k=clavePersona_(r);
+    if(k==='COD:' || k==='CED:'){ sinId++; return; }              // sin ningún identificador: no se toca
+    (grupos[f+'|'+k]=grupos[f+'|'+k]||[]).push(r);
+  });
+  const aBorrar=[], porDia={};
+  let personasDia=0;
+  Object.keys(grupos).forEach(function(gk){
+    const g=grupos[gk];
+    if(g.length<2) return;
+    personasDia++;
+    const f=gk.split('|')[0], sobra=_sobrantesDelGrupo_(g);
+    sobra.borrar.forEach(function(row){ aBorrar.push(row); });
+    porDia[f]=(porDia[f]||0)+sobra.borrar.length;
+  });
+  const resumenDias=Object.keys(porDia).sort().map(function(f){ return f+'='+porDia[f]; });
+  let msg='ASISTENCIA (histórico completo) — filas leídas: '+filas.length
+    + ' · sin fecha válida (intactas): '+sinFecha
+    + ' · sin código ni cédula (intactas): '+sinId
+    + ' · personas-día con más de una fila: '+personasDia
+    + ' · filas sobrantes: '+aBorrar.length
+    + (resumenDias.length ? '\nSobrantes por día: '+resumenDias.join(' · ') : '\nSin duplicados.');
+
+  if(!aplicar){
+    msg += '\n\n(SIMULACIÓN: no se borró nada. Para aplicarlo: limpiarDuplicadosTodo(true))';
+    Logger.log(msg);
+    return { filas:filas.length, personasDia:personasDia, sobrantes:aBorrar.length, porDia:porDia, aplicado:false };
+  }
+  const r=_borrarConPresupuesto_(sh, aBorrar, MS_PRESUPUESTO_BORRADO);
+  invalidarHoja_('ASISTENCIA');
+  msg += '\n\nAPLICADO: '+r.borradas+' fila(s) borrada(s).'
+    + (r.pendientes ? '\n⏳ Quedaron '+r.pendientes+' por borrar (se agotó el presupuesto de tiempo). '
+                      +'Vuelve a ejecutar limpiarDuplicadosTodo(true): sigue donde iba.' : '');
+  Logger.log(msg);
+  return { filas:filas.length, personasDia:personasDia, sobrantes:aBorrar.length, porDia:porDia,
+           borradas:r.borradas, pendientes:r.pendientes, aplicado:true };
+}
+function diagnosticoDuplicadosTodo(){ return _duplicadosTodo_(false); }
+function limpiarDuplicadosTodo(aplicar){ return _duplicadosTodo_(aplicar===true); }
+
+/**
+ * `borrarFilas_` con presupuesto de tiempo. Mismos tramos contiguos y mismo orden (de abajo hacia
+ * arriba, si no cada borrado correría los números de las siguientes); lo único que añade es que corta
+ * al agotarse `ms` y devuelve cuántas quedaron. Cortar es SEGURO precisamente por el orden: lo que
+ * queda pendiente está por ENCIMA de lo ya borrado, así que conserva su número de fila.
+ */
+function _borrarConPresupuesto_(sh, filas, ms){
+  if(!filas || !filas.length) return { borradas:0, pendientes:0 };
+  const orden=filas.slice().sort(function(a,b){ return a-b; });
+  const tramos=[]; let ini=orden[0], prev=orden[0];
+  for(let i=1;i<orden.length;i++){
+    if(orden[i]!==prev+1){ tramos.push([ini,prev]); ini=orden[i]; }
+    prev=orden[i];
+  }
+  tramos.push([ini,prev]);
+  const t0=Date.now();
+  let borradas=0, t=tramos.length-1;
+  for(; t>=0; t--){
+    if(Date.now()-t0 > ms) break;
+    sh.deleteRows(tramos[t][0], tramos[t][1]-tramos[t][0]+1);
+    borradas += tramos[t][1]-tramos[t][0]+1;
+  }
+  let pendientes=0;
+  for(let k=0;k<=t;k++) pendientes += tramos[k][1]-tramos[k][0]+1;
+  return { borradas:borradas, pendientes:pendientes };
+}
+
+/**
+ * Recorta la rejilla SOBRANTE de cada hoja: las filas por debajo de la última con datos (dejando
+ * MARGEN_FILAS_LIBRES de colchón) y las columnas a la derecha de la última con datos. La grilla nunca
+ * se encoge sola —`ensureRows_` solo crece, en bloques de 1.000— y esas celdas vacías cuentan para el
+ * techo de 10 M y para lo que el navegador tiene que cargar.
+ *
+ * DOS GUARDAS, porque esto sí borra:
+ *   · Nunca por debajo de `getLastRow()`/`getLastColumn()`: se borra únicamente rejilla VACÍA.
+ *   · Nunca por debajo de los encabezados que el código define para esa hoja (`HEADERS_DE_HOJA`),
+ *     aunque hoy estén vacíos — si no, la siguiente escritura tendría que volver a crear las columnas.
+ * Se ejecuta al FINAL, después de borrar las filas que sobren: si no, se recorta un hueco que la
+ * limpieza va a dejar libre un minuto después.
+ *
+ * LO ÚNICO QUE HAY QUE MIRAR ANTES DE APLICAR: si alguien ancló a mano un gráfico, un rango con nombre
+ * o una nota MUY por debajo/a la derecha de los datos, se va con el recorte. En este archivo no hay
+ * nada de eso (lo escribe todo el script), pero la simulación imprime hoja por hoja lo que dejaría.
+ */
+function _compactarGrilla_(aplicar){
+  const lineas=[]; let ganadas=0;
+  ss_().getSheets().forEach(function(sh){
+    const nombre=sh.getName();
+    const headers=HEADERS_DE_HOJA[nombre];
+    const maxR=sh.getMaxRows(), maxC=sh.getMaxColumns();
+    const baseR=Math.max(sh.getLastRow(), 1), baseC=Math.max(sh.getLastColumn(), headers?headers.length:1, 1);
+    const sobranR=maxR-baseR-MARGEN_FILAS_LIBRES, sobranC=maxC-baseC;
+    if(sobranR<=0 && sobranC<=0) return;
+    const antes=maxR*maxC;
+    const despues=(sobranR>0 ? baseR+MARGEN_FILAS_LIBRES : maxR) * (sobranC>0 ? baseC : maxC);
+    ganadas += antes-despues;
+    lineas.push('  · '+nombre+' — '+maxR+'×'+maxC+' → '+(sobranR>0?baseR+MARGEN_FILAS_LIBRES:maxR)+'×'+(sobranC>0?baseC:maxC)
+      + '  (libera '+(antes-despues)+' celdas)');
+    if(!aplicar) return;
+    // Columnas primero: borrar filas no cambia la numeración de las columnas, y al revés tampoco,
+    // pero hacerlo en este orden deja el `deleteRows` sobre una hoja ya más angosta.
+    if(sobranC>0) sh.deleteColumns(baseC+1, sobranC);
+    if(sobranR>0) sh.deleteRows(baseR+MARGEN_FILAS_LIBRES+1, sobranR);
+  });
+  const msg='COMPACTAR GRILLA — '+(lineas.length?lineas.length+' hoja(s) con rejilla sobrante:':'no hay rejilla sobrante que recortar.')
+    + (lineas.length ? '\n'+lineas.join('\n')+'\n\nTotal a liberar: '+ganadas+' celdas.' : '')
+    + (lineas.length && !aplicar ? '\n\n(SIMULACIÓN: no se borró nada. Para aplicarlo: compactarGrilla(true))' : '')
+    + (lineas.length && aplicar ? '\n\nAPLICADO.' : '');
+  Logger.log(msg);
+  return { hojas:lineas.length, celdas:ganadas, aplicado:!!aplicar };
+}
+function compactarGrilla(aplicar){ return _compactarGrilla_(aplicar===true); }
