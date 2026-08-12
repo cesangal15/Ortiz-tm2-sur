@@ -173,7 +173,22 @@ hasta editarlo):
   TERRAPLEN — todo→`.02.11` (transporte explanaciones; el `.02.10` es por
   distancia ≤1 km y queda a corrección manual). El material sale de la
   columna `material` de la proforma (alias configurables) y, si no existe,
-  de destino/origen/obs/nombre de hoja. Las variaciones `06.*`/`07.*` de
+  de destino/origen/obs/nombre de hoja. **El MATERIAL manda sobre el ámbito
+  de la hoja (corrección ago-2026):** el ámbito dice en qué BASE buscar la
+  remisión, no qué ítem se paga. Antes la regla se buscaba solo en la lista
+  del ámbito propio y, como la de TERRAPLEN tiene una sola regla COMODÍN
+  (patrón vacío, matchea cualquier texto), toda hoja que no fuera GRANULARES
+  —incluidas las **AMBAS**, las de nombre de mes, que por definición mezclan
+  los dos— proponía `.02.11` para cualquier material: una remisión de SUB BASE
+  de Putana salía `3702.02.11` en vez de `3702.03.02` y la col. G quedaba con
+  el texto crudo de la proforma en vez de "Sub base". Ahora la columna
+  `material` se contrasta contra las reglas específicas de los DOS ámbitos y
+  el comodín queda siempre de última; el respaldo por texto libre
+  (destino/origen/obs/**nombre de hoja**) sigue acotado al ámbito propio salvo
+  en AMBAS, para que una hoja de terraplén llamada "…BASE…" no mande sus filas
+  sin material a `.03.04`. El **ámbito efectivo** de la fila (el que elige el
+  catálogo de CC de respaldo y la unidad de la col. R) pasa a GRANULARES
+  cuando la regla que aplicó es de granulares. Las variaciones `06.*`/`07.*` de
   ODT/ODL son puntuales y raras → corrección manual. Con material pero sin
   PK se propone el CC más frecuente de la base cargada que cierre con ese
   sufijo; sin señal → vacío, lo pone César. La UF (col. F) se deriva del
