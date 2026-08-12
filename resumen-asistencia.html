@@ -92,6 +92,11 @@
     <button class="logout-btn" onclick="logout()">Salir</button>
   </div>
 </div>
+<!-- D133 — la barra de consulta vive FUERA de #container: el contenedor lo reconstruye `render()` con
+     cada respuesta, y la barra tiene que estar en pantalla antes de que haya ninguna (y seguir estando
+     si la consulta falla). Antes el campo de fecha se pintaba dentro del resumen, así que para cambiar
+     de día había que esperar primero a que cargara el día que no querías ver. -->
+<div class="container" id="barraConsulta" style="padding-bottom:0;"></div>
 <div class="container" id="container">
   <div class="loading">⏳ Cargando…</div>
 </div>
@@ -236,7 +241,12 @@ function ensureXLSX(){
 // Trabajo diferido a cuando el navegador esté ocioso (con respaldo por si no hay requestIdleCallback).
 function alOcioso(fn, ms){ if(window.requestIdleCallback) requestIdleCallback(fn,{timeout:ms||2000}); else setTimeout(fn, ms||600); }
 
-let STATE = { usuario:'', rol:'', fecha:'', data:null, exportCache:{}, tplBuf:null, tplName:'', tplRecordada:false, tplBundle:false, filaInicio:2, personal:null, completar:{}, persQuery:'', areaFiltro:'',
+let STATE = { usuario:'', rol:'', fecha:'', data:null, exportCache:{}, tplBuf:null, tplName:'', tplRecordada:false, tplBundle:false, filaInicio:2, personal:null, completar:{}, persQuery:'', areaFiltro:'', precargado:false,
+  // D133 — qué día y qué área están PINTADOS ahora mismo, que ya no tiene por qué coincidir con lo que
+  // hay elegido en la barra: desde el botón "Consultar", elegir no es consultar. Sirven para dos cosas:
+  // avisar de que lo que se ve es de otro día ("cambios sin consultar") y no relanzar la petición si se
+  // pulsa el botón dos veces con lo mismo.
+  fechaCargada:'', areaCargada:null,
   // D94 — seguimiento de ausencias por rango (independiente del día del resumen): se conserva entre
   // re-renders (render() reconstruye el contenedor completo) para no perder la consulta ni los filtros.
   aus:{ abierto:false, desde:'', hasta:'', data:null, cargando:false, error:'', motivo:'', cuadrilla:'', q:'', incluirSinRep:false, vista:'persona' },
@@ -303,14 +313,31 @@ window.onload = function(){
   if(rol==='admin'){ bm.onclick=function(){location.href='menu.html';}; bm.textContent='← Menú'; }
   else if(rol==='residente'){ bm.onclick=function(){location.href='residente.html';}; }
   else { bm.onclick=function(){location.href='seleccion-reporte.html';}; }  // jeisson/duvan + residentes de área
+  // D50: SIEMPRE hora de Bogotá (UTC−5), nunca toISOString() — de noche daba el día siguiente.
   STATE.fecha=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
   restaurarPlantilla();
-  cargarResumen();
-  // La plantilla del repo (~90 KB) y SheetJS (~900 KB) solo hacen falta al EXPORTAR: se bajan cuando el
-  // navegador queda ocioso, para no competir con la petición del resumen (que es lo que el usuario mira).
+  // D133: ya NO se consulta al abrir. Se pinta la barra con el día de hoy puesto (que es lo que se
+  // quiere ver la mayoría de las veces) y se espera al botón. Quien entra a mirar otro día ya no paga
+  // la consulta de hoy para poder pedir la que le interesa.
+  renderBarra();
+  document.getElementById('container').innerHTML='<div class="empty-state">📅 Elige el día'
+    + (opcionesVerComo() ? ' y el área' : '')
+    + ' y pulsa <b>Consultar</b>.<br><small>Hoy es el '+esc(STATE.fecha)+'.</small></div>';
+  // La descarga anticipada de la plantilla (~90 KB) y SheetJS (~900 KB) ya NO arranca aquí — ver
+  // `precargarExportables`, que la mueve a después de la primera consulta.
+};
+/* D133 — la plantilla del repo (~90 KB) y SheetJS (~900 KB) solo hacen falta al EXPORTAR, y se bajaban
+ * "cuando el navegador quedara ocioso" para no competir con la petición del resumen. Con el botón de
+ * Consultar el navegador queda ocioso NADA MÁS ABRIR, así que ese millón de bytes empezaría a bajar
+ * justo antes de la consulta y competiría con ella — exactamente lo que la precarga quería evitar. Y a
+ * los ~6,5 KB/s medidos en obra (D132) 1 MB son más de dos minutos de línea ocupada.
+ * Se mueve a después de la PRIMERA consulta con éxito, y una sola vez por visita. */
+function precargarExportables(){
+  if(STATE.precargado) return;
+  STATE.precargado=true;
   alOcioso(function(){ cargarPlantillaBundle(); });
   alOcioso(function(){ ensureXLSX().catch(function(){}); }, 4000);
-};
+}
 function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); localStorage.removeItem('tm2_token'); window.location.href='index.html'; }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 // Mostrar/ocultar una lista larga por su id (puro DOM, sin re-render → no borra nada que se esté llenando).
@@ -370,6 +397,46 @@ async function fetchResumen(label, url){
            : (/no-JSON/.test(String((ultimo && ultimo.message) || '')) ? 'formato' : 'backend');
   throw err;
 }
+/* ============ D133 — CATÁLOGO DE CC: ni repetido ni en cada carga ============
+ * Contrapartida en el cliente de los puntos 1 y 2 del backend. Todo se resuelve AQUÍ, nada más llegar
+ * la respuesta, para que el resto de la pantalla siga leyendo `d.catCC` y `d.catCCUsados` como listas
+ * de strings — no hay un solo sitio más que se entere del cambio.
+ * ACEPTA LAS DOS FORMAS a propósito: la página se despliega sola al mezclar (GitHub Pages) y el Apps
+ * Script se redespliega a mano, así que hay una ventana en la que uno está nuevo y el otro viejo. Con
+ * esto, esa ventana da igual: si llegan strings se usan tal cual, si llegan índices se resuelven.
+ * Si `localStorage` está lleno (esta pantalla también guarda ahí la plantilla .xlsx en base64), el
+ * guardado falla en silencio, no se manda `ccv` y el servidor sigue mandando el catálogo entero: se
+ * pierde la optimización, nunca la lista. */
+const CC_CACHE_KEY='asis_catcc_v1', CC_FIRMA_KEY='asis_catcc_firma_v1';
+function ccCacheLeer(){
+  try{ const t=localStorage.getItem(CC_CACHE_KEY); const a=t?JSON.parse(t):null; return Array.isArray(a)&&a.length?a:null; }
+  catch(e){ return null; }
+}
+// Solo se declara tener el catálogo si de verdad está guardado: si no, el servidor lo omitiría y la
+// pantalla se quedaría sin buscador de CC.
+function ccFirmaQueTengo(){
+  try{ return ccCacheLeer() ? String(localStorage.getItem(CC_FIRMA_KEY)||'') : ''; }catch(e){ return ''; }
+}
+function normalizarCatalogos(d){
+  if(!d || typeof d!=='object') return d;
+  if(Array.isArray(d.catCC) && d.catCC.length){
+    try{
+      localStorage.setItem(CC_CACHE_KEY, JSON.stringify(d.catCC));
+      localStorage.setItem(CC_FIRMA_KEY, String(d.catCCv||''));
+    }catch(e){
+      // No cupo: se borra lo que hubiera para no declarar una firma sin lista detrás.
+      try{ localStorage.removeItem(CC_CACHE_KEY); localStorage.removeItem(CC_FIRMA_KEY); }catch(e2){}
+    }
+  } else if(!Array.isArray(d.catCC)){
+    d.catCC = ccCacheLeer() || [];      // no vino porque ya lo teníamos
+  }
+  if(Array.isArray(d.catCCUsados)){
+    d.catCCUsados = d.catCCUsados
+      .map(v => (typeof v==='number' && typeof d.catCC[v]==='string') ? d.catCC[v] : v)
+      .filter(v => typeof v==='string' && v);   // un índice que no resuelve se descarta, no ensucia la lista
+  }
+  return d;
+}
 async function cargarResumen(){
   const cont=document.getElementById('container');
   if(!STATE.data) cont.innerHTML='<div class="loading">⏳ Consultando…</div>';
@@ -377,7 +444,8 @@ async function cargarResumen(){
   try{
     await sondaRed('sonda 1 (contenedor frío)');    // D132 — ver DEBUG_SONDA
     const data=await fetchResumen('asistencia (día)',
-      `${APPS_SCRIPT_URL}?action=asistencia&fecha=${STATE.fecha}&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`);
+      `${APPS_SCRIPT_URL}?action=asistencia&fecha=${STATE.fecha}&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`
+      + `&ccv=${encodeURIComponent(ccFirmaQueTengo())}`);   // D133: "este catálogo de CC ya lo tengo"
     // OJO con `caducada`: `doGet` sella `auth:false` en TODO lo que devuelve `sesion_`, y ahí dentro va
     // también el caso "este script no tiene AUTH_SECRETO configurado" (D109: el secreto se copia A MANO
     // del Apps Script de obra al de asistencias, porque las Propiedades del Script son por proyecto).
@@ -387,15 +455,20 @@ async function cargarResumen(){
       const e=new Error(data.error||'Sesión no válida.'); e.tipo='sesion'; throw e;
     }
     if(!data.ok){ const e=new Error(data.error||'asistencia'); e.tipo='backend'; throw e; }
-    STATE.data=data;
+    STATE.data=normalizarCatalogos(data);   // D133: catCC del caché e índices resueltos, antes de pintar
+    // D133: se sella QUÉ quedó pintado, para que la barra sepa si lo elegido ya está a la vista.
+    STATE.fechaCargada=STATE.fecha; STATE.areaCargada=STATE.areaFiltro;
     render();
+    renderBarra();
+    precargarExportables();   // D133: la precarga del exportador, después de la consulta y no antes
     await sondaRed('sonda 2 (contenedor caliente)');   // después de pintar: no retrasa la pantalla
     perfTabla('carga del día '+STATE.fecha);
   }catch(err){
     // Con error se BORRA el contenido a propósito: dejar a la vista los números del día anterior con un
     // aviso encima sería peor (se leerían como los del día pedido).
-    STATE.data=null;
+    STATE.data=null; STATE.fechaCargada=''; STATE.areaCargada=null;
     document.getElementById('container').innerHTML='<div class="empty-state">'+mensajeDeFallo(err)+'</div>';
+    renderBarra();   // D133: la barra sobrevive al error — se puede cambiar de día y reintentar
   }finally{
     loadBar(false);
   }
@@ -519,21 +592,60 @@ function fechaValida(v){
   const p=String(v).split('-'), dt=new Date(Number(p[0]), Number(p[1])-1, Number(p[2]));
   return dt.getFullYear()===Number(p[0]) && dt.getMonth()===Number(p[1])-1 && dt.getDate()===Number(p[2]);
 }
+/* ============ D133 — ELEGIR YA NO ES CONSULTAR: botón "Consultar" ============
+ * Hasta ahora la pantalla consultaba SOLA al abrirse (el día de hoy) y otra vez con cada toque al
+ * calendario o al selector de área. Quien entraba a mirar otro día pagaba DOS consultas para ver una,
+ * y la primera —la que no quería— era además la que le hacía esperar antes de poder tocar la fecha,
+ * porque el campo se pintaba dentro del resumen. Con los 17 s medidos en la red de obra (D132) eso son
+ * más de 30 s para llegar a lo que se venía a ver.
+ * Ahora la barra (fecha · ver como · Consultar) está en pantalla desde el primer momento, elegir no
+ * dispara nada, y la petición sale al pulsar el botón. Es el mismo patrón que ya usan las pantallas de
+ * consulta por rango (el panel del jefe, el seguimiento de ausencias de D94).
+ * Lo que NO cambia: guardar el detalle o completar faltantes siguen recargando solos (ahí el usuario
+ * acaba de escribir y espera ver el resultado), y el botón "Reintentar" de los errores también. */
 function onFechaChange(v){
   if(!fechaValida(v)){
     alert('⚠️ La fecha quedó vacía o incompleta.\n\nSe mantiene el ' + STATE.fecha + '. Elige el día en el calendario.');
-    render();   // el campo vuelve solo al día que estaba puesto
+    renderBarra();   // el campo vuelve solo al día que estaba puesto
     return;
   }
-  STATE.fecha=v; STATE.exportCache={}; cargarResumen();
+  STATE.fecha=v; STATE.exportCache={};
+  renderBarra();     // sin consultar: el botón se enciende para avisar de que hay algo sin traer
 }
-// D74b: admin cambia la vista de área (Todas/Tierras/ODT/ODL); recarga resumen y limpia caché de export.
+// D74b: admin cambia la vista de área (Todas/Tierras/ODT/ODL); limpia caché de export.
 function onAreaFiltro(v){
   STATE.areaFiltro=v; STATE.exportCache={}; STATE.personal=null;
   // D101: si la plantilla a la vista es la INCLUIDA en la app, se recarga la del área elegida (tierras
   // ↔ UF3). Una plantilla subida o recordada por el usuario NO se toca: manda la suya.
   if(STATE.tplBundle){ STATE.tplBuf=null; STATE.tplBundle=false; cargarPlantillaBundle(); }
+  renderBarra();     // D133: igual que la fecha — se elige ahora, se consulta al pulsar
+}
+// ¿Lo elegido en la barra es distinto de lo que está pintado?
+function hayCambioSinConsultar(){
+  return !!STATE.data && (STATE.fecha!==STATE.fechaCargada || STATE.areaFiltro!==STATE.areaCargada);
+}
+function consultar(){
+  if(!fechaValida(STATE.fecha)){ alert('⚠️ Elige primero el día en el calendario.'); return; }
   cargarResumen();
+}
+function renderBarra(){
+  const el=document.getElementById('barraConsulta'); if(!el) return;
+  const pendiente=hayCambioSinConsultar();
+  const ops=opcionesVerComo();
+  el.innerHTML='<div class="card" style="margin-bottom:12px;"><div class="row">'
+    + `<div class="field"><label>Fecha</label><input type="date" id="fechaConsulta" value="${esc(STATE.fecha)}" onchange="onFechaChange(this.value)"></div>`
+    // D74b/D101/D116/D119: quién ve el selector y con qué opciones lo decide `opcionesVerComo()`.
+    + (ops ? `<div class="field" style="max-width:200px;"><label>Ver como</label><select onchange="onAreaFiltro(this.value)">`
+        + ops.map(a=>`<option value="${a}" ${STATE.areaFiltro===a?'selected':''}>${esc(etiquetaArea(a))}</option>`).join('')
+        + '</select></div>' : '')
+    + `<div class="field" style="flex:0 0 auto;min-width:0;"><button class="btn" id="btnConsultar" onclick="consultar()">🔍 Consultar</button></div>`
+    + '</div>'
+    + (pendiente
+        ? `<div class="aviso" style="margin:12px 0 0;">👁️ Estás viendo el <b>${esc(STATE.fechaCargada)}</b>`
+          + (STATE.areaCargada!==STATE.areaFiltro ? ` (${esc(etiquetaArea(STATE.areaCargada||''))})` : '')
+          + `. Pulsa <b>Consultar</b> para traer lo que acabas de elegir.</div>`
+        : '')
+    + '</div>';
 }
 
 /* D117 — clave de PERSONA: código si lo tiene, si no la cédula. Misma regla que `guardarIndividual.keyOf`
@@ -731,27 +843,10 @@ function render(){
   const porProyecto={};
   presentes.forEach(f=>{ const p=f.proyecto||'(sin proyecto)'; porProyecto[p]=(porProyecto[p]||0)+1; });
 
+  // D133: la card de fecha / "ver como" ya no se pinta aquí — vive en la barra de consulta, fuera del
+  // contenedor, para poder elegir el día ANTES de que haya nada cargado. Ver `renderBarra`.
   let html='';
-  html+='<div class="card"><div class="row">'
-    + `<div class="field"><label>Fecha</label><input type="date" value="${STATE.fecha}" onchange="onFechaChange(this.value)"></div>`
-    // D74b: solo el admin puede ver TODO o filtrar por área ("ver como" tierras/ODT/ODL). Los residentes
-    // ya vienen acotados por el backend a su área, así que no necesitan el selector.
-    // D101: `uf3` entra en la lista del admin (el backend la acepta en areasEfectivas).
-    // D116: `odt,odl` = DRENAJES completo en una sola vista (el backend acepta varias áreas separadas
-    // por coma). Es lo que ya veía `residente_dren` por su rol (D84); el admin solo podía mirarlas
-    // por separado. Se ofrece ADEMÁS de ODT y ODL sueltas, que siguen igual.
-    // D119: el MISMO componente lo usa ahora `asistencia_plus_tm2` con sus tres áreas — quién lo ve y
-    // con qué opciones lo decide `opcionesVerComo()`, para no duplicar el selector.
-    + ((function(){
-        const ops=opcionesVerComo();
-        if(!ops) return '';
-        return `<div class="field" style="max-width:200px;"><label>Ver como</label><select onchange="onAreaFiltro(this.value)">`
-          + ops.map(a=>`<option value="${a}" ${STATE.areaFiltro===a?'selected':''}>${esc(etiquetaArea(a))}</option>`).join('')
-          + '</select></div>';
-      })())
-    + '</div></div>';
-
-  html+='<div class="section-title">Totales del día</div>';
+  html+='<div class="section-title">Totales del día '+esc(STATE.fechaCargada||STATE.fecha)+'</div>';
   /* D117 — el cuarto tile responde la duda del dueño (ago-2026): "¿los presentes ya incluyen a los
    * ausentes?". No: son excluyentes. Pero el total NO se calcula sumando los tres, sino contando
    * PERSONAS DISTINTAS entre los tres grupos, porque la suma falla en un caso real: si a alguien lo

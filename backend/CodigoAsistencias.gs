@@ -1374,9 +1374,26 @@ function asistenciaDia(e){
   // y todos los motivos de ausencia (CAT_MOTIVOS completo) — para poder registrar uno especial.
   // catCCUsados sigue siendo el subconjunto frecuente del área revisada: el frontend lo muestra primero.
   const catCC=readSheet('CAT_CC', CAT_CC_HEADERS).map(r=>String(r.string_cc||'')).filter(Boolean);
+  /* D133 (1 y 2) — EL CATÁLOGO DE CC ERA EL 56 % DE LA RESPUESTA. Medido en campo con la consola:
+   * de 112,5 KB, `catCC` pesaba 33,4 (751 ítems) y `catCCUsados` 30,0 (495) — y los 495 eran los MISMOS
+   * strings largos que ya iban en `catCC`, repetidos literalmente en la misma respuesta. A los ~6,5 KB/s
+   * de la red de obra eso son ~10 s por carga tirados en mandar dos veces algo que además no cambia.
+   *   (1) `catCCUsados` viaja como ÍNDICES dentro de `catCC` (números). 495 números ≈ 2 KB en vez de 30.
+   *       Un CC de CC_USADOS que no esté en CAT_CC (typo al pegarlo) viaja como string, así que la lista
+   *       nunca pierde elementos por esto.
+   *   (2) `catCC` deja de viajar cuando el cliente ya lo tiene. Cada respuesta lleva `catCCv`, la firma
+   *       del catálogo; el cliente la devuelve en `&ccv=` y, si coincide, la clave `catCC` NO se manda.
+   *       Se corrige solo: basta con editar CAT_CC en el Sheet para que la firma cambie y se reenvíe.
+   * Compatibilidad: un frontend viejo que no mande `&ccv=` recibe `catCC` entero, como siempre. Lo que
+   * NO tolera un frontend viejo son los índices de (1) — por eso el orden de despliegue es primero la
+   * página (que acepta las dos formas) y después el Apps Script. */
+  const catCCv=firmaLista_(catCC);
+  const posCC={}; catCC.forEach(function(s,i){ posCC[s]=i; });
   // D72/D84: CC frecuentes del área revisada. D88: con varias áreas (residente_dren/duvan) se pasan
   // TODAS las suyas (antes caía en '' y mezclaba tierras); sin filtro (admin) sigue mostrando todos.
-  const catCCUsados=ccUsadosParaArea(areas);
+  const catCCUsados=ccUsadosParaArea(areas).map(function(s){
+    return posCC.hasOwnProperty(s) ? posCC[s] : s;
+  });
   const catMotivos=motivosCatalogo();
   const turnos=readSheet('TURNOS', TURNOS_HEADERS).map(t=>({ turno:String(t.turno||''), tipo_dia:norm(t.tipo_dia),
     entrada:ftime(t.entrada), salida:ftime(t.salida), descanso_ini:ftime(t.descanso_ini), descanso_fin:ftime(t.descanso_fin),
@@ -1390,8 +1407,38 @@ function asistenciaDia(e){
   // extras EXACTO como el Parte de Navision (mismo clasificarHoras que el export), sin otra llamada.
   // D101: `areas` (las forzadas por el rol; [] = admin sin filtro) para que el resumen no ofrezca los
   // proyectos ni los CC de otra área cuando CC_USADOS del área revisada aún está vacía.
-  return json({ ok:true, fecha, filas, cuadrillas:cuadrillasEstado, faltantes, eventuales, jornada, catCC, catCCUsados, catMotivos, turnos, extrasAdmin, notas, config:cfg, festivos,
-    areas });
+  /* D133 (3a) — tres campos que NADIE lee. `id_registro`, `timestamp` y `observacion` no aparecen ni
+   * una sola vez en `resumen-asistencia.html` (es la única pantalla que consume este endpoint), y
+   * `guardarDetalle` arma su envío campo por campo en vez de reenviar la fila, así que quitarlos no
+   * puede cambiar lo que se guarda. Son ~106 bytes por persona —un UUID de 36 caracteres y una fecha
+   * ISO completa— = el 25 % de lo que pesa `filas`: ~5 KB en un día flojo y ~26 KB en uno completo.
+   * `timestamp` se sigue usando AQUÍ (la hora del reporte de cada cuadrilla, más arriba); lo que se
+   * quita es mandarlo repetido en cada fila. */
+  const filasLigeras=filas.map(function(f){
+    return { _row:f._row, fecha:f.fecha, reporta:f.reporta, cuadrilla:f.cuadrilla, codigo:f.codigo,
+      cedula:f.cedula, nombre:f.nombre, cargo:f.cargo, cc:f.cc, proyecto:f.proyecto,
+      hora_entrada:f.hora_entrada, hora_salida:f.hora_salida, presente:f.presente,
+      motivo_ausencia:f.motivo_ausencia, turno:f.turno };
+  });
+  const resp={ ok:true, fecha, filas:filasLigeras, cuadrillas:cuadrillasEstado, faltantes, eventuales, jornada, catCC, catCCv, catCCUsados, catMotivos, turnos, extrasAdmin, notas, config:cfg, festivos,
+    areas };
+  // D133 (2): el cliente ya tiene esta misma versión del catálogo -> no se manda.
+  if(String(e.parameter.ccv||'') === catCCv) delete resp.catCC;
+  return json(resp);
+}
+/* D133 — firma barata y ESTABLE de una lista de strings, para saber si el catálogo que tiene el cliente
+ * sigue siendo el del Sheet. No es criptográfica y no lo necesita: solo tiene que cambiar cuando cambie
+ * el contenido. Se incluyen el nº de elementos y la longitud total además del hash porque son gratis y
+ * hacen inverosímil la colisión; el hash posicional (×31) distingue además el REORDEN, que con solo
+ * contar y sumar longitudes pasaría desapercibido. Coste medido a ojo: ~50.000 iteraciones con 751 CC,
+ * despreciable frente a lo que cuesta leer el Sheet. */
+function firmaLista_(arr){
+  var n=arr.length, len=0, h=0;
+  for(var i=0;i<n;i++){
+    var s=String(arr[i]); len+=s.length;
+    for(var j=0;j<s.length;j++) h=(h*31 + s.charCodeAt(j)) % 2147483647;
+  }
+  return n+'-'+len+'-'+h;
 }
 
 /* ---------- POST asistencia_individual: upsert por PERSONA (residente/jeisson completan faltantes) ----------

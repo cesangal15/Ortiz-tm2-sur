@@ -111,7 +111,14 @@ function nuevoContexto(fuenteGs){
       getProperty(k){ return Object.prototype.hasOwnProperty.call(props,k) ? props[k] : null; },
       setProperty(k,v){ props[k]=String(v); } }; } },
     SpreadsheetApp:{ openById(){ throw new Error('la prueba no debe abrir el Sheet'); } },
-    CacheService:{ getScriptCache(){ return { get(){ return null; }, put(){}, remove(){} }; } }
+    CacheService:{ getScriptCache(){ return { get(){ return null; }, put(){}, remove(){} }; } },
+    /* D125 metió `LockService.getScriptLock()` en `doPost` (serializar las escrituras) y este sandbox se
+     * quedó sin él: TODO POST moría en el `catch` general y devolvía `ok:false`. Las cuatro
+     * comprobaciones de escritura que deben SALIR BIEN llevaban desde entonces en rojo — y las que
+     * esperan un rechazo pasaban por el motivo equivocado, que es lo de verdad peligroso: un guard de
+     * permisos que se cree cumplido porque la petición falla por otra cosa.
+     * Aquí basta con que exista; la serialización real la garantiza Apps Script. */
+    LockService:{ getScriptLock(){ return { waitLock(){ return true; }, releaseLock(){} }; } }
   };
   ctx.globalThis = ctx;
   vm.createContext(ctx);
@@ -376,10 +383,23 @@ if(!fuenteVieja){
   const viejo = nuevoContexto(fuenteVieja);
   // `cuadrillasArea` es el ÚNICO campo nuevo del roster (aditivo, D119): se quita antes de comparar y
   // se comprueba aparte que no cambió nada más.
+  /* D133 — `?action=asistencia` adelgazó su respuesta A PROPÓSITO: `catCCUsados` viaja como índices
+   * dentro de `catCC`, se sumó la firma `catCCv` y `filas` dejó de llevar `id_registro`, `timestamp` y
+   * `observacion` (ninguna pantalla los lee). Se deshace ese formato en LAS DOS respuestas antes de
+   * comparar: así este guard sigue detectando cualquier OTRA diferencia, que es para lo que está.
+   * Si algún día se revierte D133, esta función deja de hacer nada por sí sola — no hay que tocarla. */
+  function deshacerD133(o){
+    if(Array.isArray(o.catCCUsados) && Array.isArray(o.catCC))
+      o.catCCUsados = o.catCCUsados.map(v => typeof v === 'number' ? o.catCC[v] : v);
+    delete o.catCCv;
+    if(Array.isArray(o.filas))
+      o.filas.forEach(f => { delete f.id_registro; delete f.timestamp; delete f.observacion; });
+    return o;
+  }
   function normaliza(txt){
     const o = JSON.parse(txt);
     delete o._ms; delete o._celdas; delete o.cuadrillasArea;
-    return JSON.stringify(o);
+    return JSON.stringify(deshacerD133(o));
   }
   const ROLES = ['residente','jeisson','duvan','residente_dren','residente_uf3','residente_odt','residente_odl',
                  'admin','mairy','angel','eduardo','jairo'];
