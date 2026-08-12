@@ -163,6 +163,15 @@ function post(body){
   return JSON.parse(ctx.doPost({ postData:{ contents: JSON.stringify(body) }, parameter:{} }).texto);
 }
 function ordenar(a){ return (a||[]).slice().sort(); }
+/* D133d — `?action=asistencia` manda `filas` y `faltantes` como {cols, datos} (cabecera una vez). Los
+ * demás endpoints las siguen mandando como array de objetos. Este helper devuelve siempre una lista de
+ * objetos, así que las comprobaciones de abajo se escriben igual sea cual sea la forma. */
+function lista(v){
+  if(Array.isArray(v)) return v;
+  if(v && Array.isArray(v.cols) && Array.isArray(v.datos))
+    return v.datos.map(f => { const o={}; v.cols.forEach((c,j)=>{ o[c] = (f[j]==null ? '' : f[j]); }); return o; });
+  return [];
+}
 
 console.log('\n=== D119 — usuario de asistencias TM2 Sur (tierras + ODT + ODL) ===');
 
@@ -278,31 +287,31 @@ console.log('\n7) Lecturas acotadas por areasEfectivas — una por una');
 r = get(ctx, { action:'asistencia', token:TOK_ANGIE(), fecha:HOY });
 const cuadResumen = (r.cuadrillas||[]).map(c => c.cuadrilla || c);
 ok(r.ok === true, 'asistencia (resumen del día) responde');
-ok((r.filas||[]).every(f => f.cuadrilla !== 'UF3'), 'ninguna fila de UF3 en el resumen');
-ok((r.filas||[]).some(f => f.cuadrilla === 'ANGEL'), 'sí las de tierras');
-ok((r.filas||[]).some(f => f.cuadrilla === 'JAIRO'), 'sí las de ODL');
+ok(lista(r.filas).every(f => f.cuadrilla !== 'UF3'), 'ninguna fila de UF3 en el resumen');
+ok(lista(r.filas).some(f => f.cuadrilla === 'ANGEL'), 'sí las de tierras');
+ok(lista(r.filas).some(f => f.cuadrilla === 'JAIRO'), 'sí las de ODL');
 ok(cuadResumen.indexOf('UF3') < 0, 'la lista de cuadrillas del resumen tampoco trae UF3');
-ok((r.faltantes||[]).every(f => f.cuadrilla !== 'UF3'), 'ni los faltantes');
+ok(lista(r.faltantes).every(f => f.cuadrilla !== 'UF3'), 'ni los faltantes');
 
 r = get(ctx, { action:'asistencia', token:TOK_ANGIE(), fecha:HOY, area:'uf3' });
-ok(r.ok === true && (r.filas||[]).every(f => f.cuadrilla !== 'UF3'),
+ok(r.ok === true && lista(r.filas).every(f => f.cuadrilla !== 'UF3'),
   'y con &area=uf3 tecleado a mano en la URL sigue SIN ver gente de UF3');
-ok((r.filas||[]).some(f => f.cuadrilla === 'ANGEL'), 'el parámetro se ignoró: ve sus tres áreas');
+ok(lista(r.filas).some(f => f.cuadrilla === 'ANGEL'), 'el parámetro se ignoró: ve sus tres áreas');
 
 r = get(ctx, { action:'asistencia', token:TOK_ANGIE(), fecha:HOY, area:'odl' });
-ok(r.ok === true && (r.filas||[]).every(f => f.cuadrilla === 'JAIRO'), '&area=odl la deja solo con ODL');
+ok(r.ok === true && lista(r.filas).every(f => f.cuadrilla === 'JAIRO'), '&area=odl la deja solo con ODL');
 
 r = get(ctx, { action:'personal', token:TOK_ANGIE() });
-ok(r.ok === true && (r.personal||r.filas||[]).every(p => p.cuadrilla !== 'UF3'),
+ok(r.ok === true && lista(r.personal||r.filas).every(p => p.cuadrilla !== 'UF3'),
   'personalCompleto: sin nadie de UF3');
 r = get(ctx, { action:'ausencias', token:TOK_ANGIE(), desde:'2026-08-01', hasta:'2026-08-31' });
 ok(r.ok === true, 'ausencias por rango (D94) responde para sus tres áreas');
 ok(JSON.stringify(r).indexOf('SARA UF3') < 0, 'y no menciona a nadie de UF3');
 r = get(ctx, { action:'export', token:TOK_ANGIE(), fecha:HOY });
 ok(r.ok === true, 'export (Parte Navision) responde');
-ok((r.filas||[]).every(f => f.proyecto !== '3703'), 'ninguna fila del Parte es del proyecto 3703');
-ok((r.filas||[]).every(f => f.cuadrilla !== 'UF3'), 'ni de la cuadrilla UF3');
-ok(JSON.stringify(r.filas||[]).indexOf('SARA UF3') < 0, 'ni aparece su gente');
+ok(lista(r.filas).every(f => f.proyecto !== '3703'), 'ninguna fila del Parte es del proyecto 3703');
+ok(lista(r.filas).every(f => f.cuadrilla !== 'UF3'), 'ni de la cuadrilla UF3');
+ok(JSON.stringify(lista(r.filas)).indexOf('SARA UF3') < 0, 'ni aparece su gente');
 // NOTA: `proyectoDefecto` (mapa cuadrilla -> proyecto más frecuente) NO se acota por área, y no se
 // acota desde D94: es un agregado global e igual para TODOS los roles (residente_dren, residente_uf3,
 // jeisson…). Expone el par 'UF3'->'3703' y nada más: ni personas, ni horas, ni CC. Acotarlo cambiaría
@@ -316,7 +325,7 @@ ok(r.cuadrillasArea && r.cuadrillasArea.ANGEL === 'tierras' && r.cuadrillasArea.
 console.log('\n8) Dom/fest — el 02-ago-2026 es domingo');
 r = get(ctx, { action:'export', token:TOK_ANGIE(), fecha:'2026-08-02' });
 ok(r.ok === true, 'el export del domingo responde');
-ok((r.filas||[]).every(f => f.cuadrilla !== 'UF3'), 'y sigue sin UF3');
+ok(lista(r.filas).every(f => f.cuadrilla !== 'UF3'), 'y sigue sin UF3');
 console.log('   (el flujo de dom/fest lo decide el frontend, `usaFlujoDomFest()`: ver el bloque 8b)');
 
 /* ---------------------------------------------------------------- 8b: frontend */
@@ -392,15 +401,41 @@ if(!fuenteVieja){
     if(Array.isArray(o.catCCUsados) && Array.isArray(o.catCC))
       o.catCCUsados = o.catCCUsados.map(v => typeof v === 'number' ? o.catCC[v] : v);
     delete o.catCCv;
+    // D133d: `filas` y `faltantes` viajan como {cols, datos}. Se reconstruyen, y en el lado VIEJO se
+    // rellenan las claves que no traía cada objeto (`faltantes` mezcla dos formas) para que las dos
+    // salidas sean comparables clave a clave.
+    ['filas','faltantes'].forEach(function(k){
+      const v=o[k];
+      if(v && !Array.isArray(v) && Array.isArray(v.cols) && Array.isArray(v.datos)){
+        o[k]=v.datos.map(function(f){
+          const x={}; v.cols.forEach(function(c,j){ x[c] = (f[j]==null ? '' : f[j]); }); return x;
+        });
+        o['_cols_'+k]=v.cols;
+      }
+    });
     if(Array.isArray(o.filas))
       o.filas.forEach(f => { delete f.id_registro; delete f.timestamp; delete f.observacion; });
     return o;
   }
-  function normaliza(txt){
+  // Rellena en el lado viejo las claves que la cabecera común de D133d hace explícitas.
+  function alinear(a, b){
+    ['filas','faltantes'].forEach(function(k){
+      const cols=b['_cols_'+k]; if(!cols || !Array.isArray(a[k])) return;
+      a[k]=a[k].map(function(o){ const x={}; cols.forEach(function(c){ x[c]=(o[c]===undefined?'':o[c]); }); return x; });
+    });
+    // De LOS DOS lados: cuando la referencia de git ya trae D133d, `deshacerD133` también le pone estas
+    // claves auxiliares, y borrarlas solo de `b` hacía que las respuestas difirieran por su culpa.
+    [a,b].forEach(function(o){ delete o._cols_filas; delete o._cols_faltantes; });
+    return a;
+  }
+  // Devuelve el OBJETO (lo necesita `alinear`, que compara los dos lados entre sí).
+  function normalizaObj(txt){
     const o = JSON.parse(txt);
     delete o._ms; delete o._celdas; delete o.cuadrillasArea;
-    return JSON.stringify(deshacerD133(o));
+    return deshacerD133(o);
   }
+  // Y la versión de siempre, en texto, para las comparaciones que no necesitan alinear nada (POST).
+  function normaliza(txt){ return JSON.stringify(normalizaObj(txt)); }
   const ROLES = ['residente','jeisson','duvan','residente_dren','residente_uf3','residente_odt','residente_odl',
                  'admin','mairy','angel','eduardo','jairo'];
   const PETICIONES = [
@@ -417,10 +452,12 @@ if(!fuenteVieja){
   ROLES.forEach(function(u){
     PETICIONES.forEach(function(p){
       const t = token(viejo, u, 'x', []);
-      const a = normaliza(viejo.doGet({ parameter: Object.assign({ token:t }, p) }).texto);
-      const b = normaliza(ctx.doGet({ parameter: Object.assign({ token:t }, p) }).texto);
+      const a = normalizaObj(viejo.doGet({ parameter: Object.assign({ token:t }, p) }).texto);
+      const b = normalizaObj(ctx.doGet({ parameter: Object.assign({ token:t }, p) }).texto);
       comparadas++;
-      if(a !== b){ distintas++; console.error('  ✗ DIFIERE — usuario=' + u + ' ' + JSON.stringify(p)); }
+      if(JSON.stringify(alinear(a, b)) !== JSON.stringify(b)){
+        distintas++; console.error('  ✗ DIFIERE — usuario=' + u + ' ' + JSON.stringify(p));
+      }
     });
   });
   ok(distintas === 0, comparadas + ' respuestas GET comparadas carácter a carácter: ' +

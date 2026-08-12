@@ -1420,8 +1420,24 @@ function asistenciaDia(e){
       hora_entrada:f.hora_entrada, hora_salida:f.hora_salida, presente:f.presente,
       motivo_ausencia:f.motivo_ausencia, turno:f.turno };
   });
-  const resp={ ok:true, fecha, filas:filasLigeras, cuadrillas:cuadrillasEstado, faltantes, eventuales, jornada, catCC, catCCv, catCCUsados, catMotivos, turnos, extrasAdmin, notas, config:cfg, festivos,
-    areas };
+  /* D133d (3b) — LAS ETIQUETAS PESABAN MÁS QUE LOS DATOS. Medido en un día bien reportado (6-ago, 153
+   * personas): `filas` = 50,2 KB de los 66,7 totales, a 336 bytes por fila… de los cuales ~168 son los
+   * NOMBRES de los campos (`"hora_entrada":`, `"motivo_ausencia":`…) repetidos en cada persona. La
+   * mitad de la carga útil más pesada de la pantalla eran etiquetas.
+   * Se manda la cabecera UNA vez y las filas como listas de valores. Ahorro: ~26 KB en un día completo
+   * (66,7 → ~40), que a los 2,4 KB/s que llegó a marcar esa red son 11 segundos.
+   * Se aplica solo a las dos listas largas (`filas`, `faltantes`). El resto se queda como está: en una
+   * lista de 10 turnos esto no ahorra nada y solo la haría más difícil de leer.
+   * EL RIESGO, y cómo se cierra: si la reconstrucción fallara devolvería campos VACÍOS, que se leen
+   * como "no lo reportaron" y acabarían en el Parte de Navision. Por eso viaja `cols` y el cliente
+   * COMPARA su longitud contra cada fila: si no cuadran, la pantalla falla a la vista en vez de pintar
+   * huecos. Un fallo ruidoso se arregla; uno silencioso se paga en la nómina. */
+  const COLS_FILAS=['_row','fecha','reporta','cuadrilla','codigo','cedula','nombre','cargo','cc','proyecto',
+    'hora_entrada','hora_salida','presente','motivo_ausencia','turno'];
+  const COLS_FALTANTES=['codigo','cedula','nombre','cargo','cuadrilla','responsable','tipo','motivo','incompleto'];
+  const resp={ ok:true, fecha, filas:compactar_(filasLigeras, COLS_FILAS), cuadrillas:cuadrillasEstado,
+    faltantes:compactar_(faltantes, COLS_FALTANTES), eventuales, jornada, catCC, catCCv, catCCUsados,
+    catMotivos, turnos, extrasAdmin, notas, config:cfg, festivos, areas };
   // D133 (2): el cliente ya tiene esta misma versión del catálogo -> no se manda.
   if(String(e.parameter.ccv||'') === catCCv) delete resp.catCC;
   return json(resp);
@@ -1432,6 +1448,15 @@ function asistenciaDia(e){
  * hacen inverosímil la colisión; el hash posicional (×31) distingue además el REORDEN, que con solo
  * contar y sumar longitudes pasaría desapercibido. Coste medido a ojo: ~50.000 iteraciones con 751 CC,
  * despreciable frente a lo que cuesta leer el Sheet. */
+/* D133d — lista de objetos -> cabecera + filas de valores. Las columnas se pasan explícitas (no se
+ * deducen del primer objeto): `faltantes` mezcla dos formas —los ausentes traen `motivo` y los
+ * sin-reportar `incompleto`—, así que deducirlas de una fila cualquiera perdería la columna de la otra.
+ * Lo ausente en un objeto viaja como `null` y el cliente lo devuelve a `''`. */
+function compactar_(lista, cols){
+  return { cols: cols, datos: lista.map(function(o){
+    return cols.map(function(c){ const v=o[c]; return v===undefined ? null : v; });
+  }) };
+}
 function firmaLista_(arr){
   var n=arr.length, len=0, h=0;
   for(var i=0;i<n;i++){

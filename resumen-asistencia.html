@@ -209,8 +209,11 @@ function perfPayload(label, txt, data){
   };
   const filas=Object.keys(data).map(k=>{
     let n=0; try{ n=JSON.stringify(data[k]).length; }catch(err){ n=0; }
-    return { clave:k, kb:Math.round(n/102.4)/10, pct:Math.round(n*100/txt.length)+'%',
-             elementos: Array.isArray(data[k]) ? cuantos(data[k]) : '' };
+    const v=data[k];
+    // D133d: `filas`/`faltantes` llegan como {cols, datos} — se cuentan las filas, no las dos claves.
+    const elems = Array.isArray(v) ? cuantos(v)
+                : (v && Array.isArray(v.datos) ? v.datos.length+' × '+(v.cols||[]).length+' col' : '');
+    return { clave:k, kb:Math.round(n/102.4)/10, pct:Math.round(n*100/txt.length)+'%', elementos:elems };
   }).filter(r=>r.kb>=0.5).sort((a,b)=>b.kb-a.kb);
   PERF_DESGLOSE={ label:label, kb:Math.round(txt.length/102.4)/10, filas:filas };
 }
@@ -479,8 +482,36 @@ function ccFirmaQueTengo(){
  * viaja ENTERO en cada carga y el ahorro no aparece nunca — sin este aviso, eso se vería como "la
  * optimización no sirvió" en vez de como "no cupo". */
 let PERF_CC = '';
+/* D133d — reconstruye una lista mandada como cabecera + filas de valores (`{cols, datos}`). El resto de
+ * la pantalla sigue recibiendo objetos con sus nombres de campo: nadie más se entera.
+ * TOLERA LAS DOS FORMAS: si llega un array (backend anterior) se devuelve tal cual, así que la página
+ * nueva funciona con el Apps Script viejo mientras se despliega uno y otro.
+ * LA GUARDA, que es el motivo de que esto sea aceptable: se compara `cols.length` contra CADA fila. Si
+ * no cuadran, se LANZA. Sin ella, una fila corta daría campos vacíos y un `hora_salida` en blanco se
+ * lee igual que "no lo reportaron" — un error que no se ve hasta que sale en el Parte de Navision.
+ * Nulo y ausente vuelven a `''`, que es lo que había antes en esos campos. */
+function expandirLista(v, nombre){
+  if(Array.isArray(v)) return v;                    // forma antigua: objetos con sus claves
+  if(!v || typeof v!=='object') return [];
+  if(!Array.isArray(v.cols) || !Array.isArray(v.datos)) return [];
+  const cols=v.cols, n=cols.length;
+  return v.datos.map(function(fila, i){
+    if(!Array.isArray(fila) || fila.length!==n){
+      const e=new Error('La respuesta llegó mal formada en «'+nombre+'»: la fila '+(i+1)+' trae '
+        + (Array.isArray(fila) ? fila.length : '?') + ' valores para ' + n + ' columnas. '
+        + 'No se muestra nada, a propósito: con datos incompletos, una hora o un centro de costo en '
+        + 'blanco se leerían como "no lo reportaron" y acabarían así en el Parte.');
+      e.tipo='malformada'; throw e;
+    }
+    const o={};
+    for(let j=0;j<n;j++){ const x=fila[j]; o[cols[j]] = (x===null || x===undefined) ? '' : x; }
+    return o;
+  });
+}
 function normalizarCatalogos(d){
   if(!d || typeof d!=='object') return d;
+  d.filas     = expandirLista(d.filas, 'filas');            // D133d
+  d.faltantes = expandirLista(d.faltantes, 'faltantes');
   if(Array.isArray(d.catCC) && d.catCC.length){
     try{
       localStorage.setItem(CC_CACHE_KEY, JSON.stringify(d.catCC));
@@ -541,6 +572,10 @@ async function cargarResumen(){
 }
 function mensajeDeFallo(err){
   const t=err && err.tipo, detalle=esc((err && err.message) || err);
+  if(t==='malformada')
+    // D133d: la guarda de `expandirLista` saltó. Es un fallo RUIDOSO a propósito — ver su comentario.
+    return '⚠️ <b>Los datos llegaron incompletos.</b><br><small>'+detalle+'</small>'
+      + '<br><button class="btn" style="margin-top:12px;" onclick="cargarResumen()">Reintentar</button>';
   if(t==='sesion')
     return '🔒 <b>Tu sesión caducó.</b><br><small>'+detalle+' No es un problema del Sheet ni de los datos: '
       + 'vuelve a entrar y sigue donde ibas.</small>'
