@@ -486,7 +486,21 @@ const HEADERS_DE_HOJA = {
  * INSTALACIÓN (una vez, desde el editor de Apps Script): ejecutar `instalarCalentador`. Para quitarlo,
  * `quitarCalentador`. Coste: ~10 lecturas cada 30 min = 48 ejecuciones/día, muy por debajo de la cuota.
  */
+/* D134 — el calentador NO trabaja de madrugada. Las cuotas de Apps Script se cuentan POR CUENTA, no
+ * por proyecto: este script, el de obra y todos sus disparadores comen del MISMO presupuesto diario de
+ * ejecución (90 min en una cuenta gratuita, 6 h en Workspace). Calentar el caché a las 3 de la mañana
+ * no le sirve a nadie y gasta de esa bolsa; 48 ejecuciones al día pasan a ~16.
+ * La ventana va de las 5:00 a las 20:00 de Bogotá — antes del primer reporte del día y hasta después
+ * del último. Fuera de ella el disparador se despierta y vuelve a dormirse sin tocar el Sheet.
+ * Es un cambio de una función que solo corre por DISPARADOR, así que basta con GUARDAR el archivo: no
+ * necesita redespliegue (los disparadores ejecutan el código guardado, no la versión desplegada). */
+const CALENTADOR_DESDE = 5, CALENTADOR_HASTA = 20;
 function calentarCache(){
+  const hora = Number(Utilities.formatDate(new Date(), 'America/Bogota', 'H'));   // D31: nunca getHours() crudo
+  if(hora < CALENTADOR_DESDE || hora >= CALENTADOR_HASTA){
+    Logger.log('calentarCache: fuera de horario ('+hora+'h Bogotá) — no se toca el Sheet.');
+    return 0;
+  }
   const t0=Date.now(); let n=0;
   Object.keys(HOJAS_CACHEABLES).forEach(function(nombre){
     try{ invalidarHoja_(nombre); readSheet(nombre, HEADERS_DE_HOJA[nombre]); n++; }catch(err){}
