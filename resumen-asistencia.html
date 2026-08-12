@@ -233,6 +233,7 @@ function perfTabla(ctx){
     console.table(PERF_DESGLOSE.filas);
     PERF_DESGLOSE=null;
   }
+  if(PERF_CC){ console.log('%c   ↳ '+PERF_CC, 'color:#8aa'); PERF_CC=''; }
 }
 /* Ida y vuelta VACÍA: `action=ping` no es una acción reconocida, así que `doGet` contesta el mensaje de
  * "API viva" sin abrir el Spreadsheet ni leer una celda. Nunca puede romper la carga del resumen. */
@@ -407,10 +408,24 @@ function esFalloDeRed(e){
   return !!e && (e instanceof TypeError || e.cortada === true
     || /failed to fetch|load failed|networkerror|network request/i.test(String((e && e.message) || '')));
 }
+/* D133b — TRES intentos, no dos. El `?action=ping` del despliegue contesta en 48 ms con JSON perfecto:
+ * el servidor está sano y la conexión se establece bien. Lo que a veces no aguanta es mantener abierta
+ * una descarga de 6-16 s. Contra eso, insistir es lo que funciona — el GET es idempotente y cada
+ * intento es independiente, así que basta con que UNO llegue entero.
+ * La espera entre intentos es corta y creciente (no es un servidor saturado al que haya que dar tregua;
+ * es una señal que va y viene), y se avisa en pantalla para que no parezca colgado. */
+const REINTENTOS = 3, ESPERA_MS = [0, 800, 2000];
+function esperar(ms){ return new Promise(r=>setTimeout(r, ms)); }
 async function fetchResumen(label, url){
   let ultimo=null;
-  for(let i=0;i<2;i++){
-    try{ return await perfFetch(i ? label+' · reintento' : label, url); }
+  for(let i=0;i<REINTENTOS;i++){
+    if(i){
+      const cont=document.getElementById('container');
+      if(cont && !STATE.data) cont.innerHTML='<div class="loading">📡 La señal se cortó. Reintentando ('
+        + (i+1) + ' de ' + REINTENTOS + ')…</div>';
+      await esperar(ESPERA_MS[i] || 2000);
+    }
+    try{ return await perfFetch(i ? label+' · reintento '+i : label, url); }
     catch(e){
       ultimo=e;
       if(!esFalloDeRed(e)) break;     // un rechazo del backend no mejora repitiéndolo
@@ -441,18 +456,27 @@ function ccCacheLeer(){
 function ccFirmaQueTengo(){
   try{ return ccCacheLeer() ? String(localStorage.getItem(CC_FIRMA_KEY)||'') : ''; }catch(e){ return ''; }
 }
+/* Estado del caché de CC, para el `console` de DEBUG_PERF. No es un adorno: si `localStorage` está
+ * lleno (esta pantalla también guarda ahí la plantilla .xlsx en base64), el guardado falla, el catálogo
+ * viaja ENTERO en cada carga y el ahorro no aparece nunca — sin este aviso, eso se vería como "la
+ * optimización no sirvió" en vez de como "no cupo". */
+let PERF_CC = '';
 function normalizarCatalogos(d){
   if(!d || typeof d!=='object') return d;
   if(Array.isArray(d.catCC) && d.catCC.length){
     try{
       localStorage.setItem(CC_CACHE_KEY, JSON.stringify(d.catCC));
       localStorage.setItem(CC_FIRMA_KEY, String(d.catCCv||''));
+      PERF_CC='catCC llegó entero ('+d.catCC.length+') y quedó guardado: la próxima carga ya no lo trae';
     }catch(e){
       // No cupo: se borra lo que hubiera para no declarar una firma sin lista detrás.
       try{ localStorage.removeItem(CC_CACHE_KEY); localStorage.removeItem(CC_FIRMA_KEY); }catch(e2){}
+      PERF_CC='⚠️ catCC NO se pudo guardar (localStorage lleno, ¿la plantilla .xlsx recordada?): '
+             +'seguirá viajando entero en cada carga';
     }
   } else if(!Array.isArray(d.catCC)){
     d.catCC = ccCacheLeer() || [];      // no vino porque ya lo teníamos
+    PERF_CC='catCC servido del caché del navegador ('+d.catCC.length+' ítems): no viajó por la red';
   }
   if(Array.isArray(d.catCCUsados)){
     d.catCCUsados = d.catCCUsados
@@ -505,7 +529,7 @@ function mensajeDeFallo(err){
       + '<br><button class="btn" style="margin-top:12px;" onclick="logout()">Ir al login →</button>';
   if(t==='red')
     return '📡 <b>La consulta no llegó a completarse.</b><br><small>La conexión se cortó antes de recibir '
-      + 'la respuesta entera (ya se reintentó una vez). El Sheet y el Apps Script están bien: esta pantalla '
+      + 'la respuesta entera (se intentó ' + REINTENTOS + ' veces). El Sheet y el Apps Script están bien: esta pantalla '
       + 'trae ~100 KB y con señal débil no alcanzan a bajar.</small>'
       + '<br><button class="btn" style="margin-top:12px;" onclick="cargarResumen()">Reintentar</button>';
   if(t==='formato')
