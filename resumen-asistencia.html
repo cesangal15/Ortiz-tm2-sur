@@ -171,11 +171,20 @@ async function perfFetch(label, url, opts){
      *     medio redesplegar, o la sesión pidiendo iniciar sesión. Ahí sí hay que mirar el Apps Script.
      * El principio del cuerpo viaja en el error para no tener que adivinar cuál de los dos fue. */
     if(err){
-      const cabeza=String(txt||'').replace(/\s+/g,' ').trim().slice(0,120);
-      const e2=new Error(cabeza ? 'La respuesta no se pudo leer como JSON. Empieza así: '+cabeza
-                                : 'El servidor contestó vacío.');
-      e2.cuerpo=cabeza;
-      e2.cortada=/^[\[{]/.test(cabeza);      // era JSON y se quedó a medias
+      const crudo=String(txt||'').replace(/\s+/g,' ').trim();
+      const e2=new Error(crudo ? 'La respuesta no se pudo leer como JSON.' : 'El servidor contestó vacío.');
+      e2.cortada=/^[\[{]/.test(crudo);       // era JSON y se quedó a medias
+      // D133c — de una página de Google, el markup crudo no dice NADA: los primeros 120 caracteres son
+      // siempre `<!DOCTYPE html><html><head><script nonce=…`, igual para un error temporal, una cuota
+      // agotada o una pantalla de permisos. Lo que distingue un caso de otro es el TEXTO VISIBLE, que
+      // está más abajo. Se quitan script/style/tags y se enseña eso, que es el diagnóstico de verdad.
+      e2.cuerpo = e2.cortada ? crudo.slice(0,120) : (function(){
+        const texto=crudo.replace(/<script[\s\S]*?<\/script>/gi,' ')
+                         .replace(/<style[\s\S]*?<\/style>/gi,' ')
+                         .replace(/<[^>]+>/g,' ')
+                         .replace(/&nbsp;/g,' ').replace(/\s+/g,' ').trim();
+        return texto ? texto.slice(0,240) : crudo.slice(0,120);
+      })();
       throw e2;
     }
     return data;
@@ -416,19 +425,28 @@ function esFalloDeRed(e){
  * es una señal que va y viene), y se avisa en pantalla para que no parezca colgado. */
 const REINTENTOS = 3, ESPERA_MS = [0, 800, 2000];
 function esperar(ms){ return new Promise(r=>setTimeout(r, ms)); }
+/* D133c — una página de Google TAMBIÉN se reintenta, pero una sola vez. Los errores temporales del
+ * servicio ("se ha producido un error", el contenedor que no arranca) son frecuentes en Apps Script y
+ * se van solos al segundo intento. Lo que NO se insiste es más: si es una cuota agotada o una pantalla
+ * de permisos, repetir no arregla nada y encima empuja contra la cuota. */
 async function fetchResumen(label, url){
   let ultimo=null;
   for(let i=0;i<REINTENTOS;i++){
     if(i){
+      const paginaGoogle = ultimo && ultimo.cuerpo!=null && !ultimo.cortada;
       const cont=document.getElementById('container');
-      if(cont && !STATE.data) cont.innerHTML='<div class="loading">📡 La señal se cortó. Reintentando ('
-        + (i+1) + ' de ' + REINTENTOS + ')…</div>';
+      if(cont && !STATE.data) cont.innerHTML='<div class="loading">'
+        + (paginaGoogle ? '⚠️ Google devolvió un error. Reintentando' : '📡 La señal se cortó. Reintentando')
+        + ' (' + (i+1) + ' de ' + REINTENTOS + ')…</div>';
       await esperar(ESPERA_MS[i] || 2000);
     }
     try{ return await perfFetch(i ? label+' · reintento '+i : label, url); }
     catch(e){
       ultimo=e;
-      if(!esFalloDeRed(e)) break;     // un rechazo del backend no mejora repitiéndolo
+      // Fallo de red: hasta 3 intentos. Página de Google: 2. Rechazo del backend: ninguno (no mejora).
+      if(esFalloDeRed(e)) continue;
+      if(e && e.cuerpo!=null && i===0) continue;
+      break;
     }
   }
   const err=new Error((ultimo && ultimo.message) || 'sin respuesta');
