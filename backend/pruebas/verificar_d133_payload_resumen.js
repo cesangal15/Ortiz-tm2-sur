@@ -179,10 +179,15 @@ ok(cuadAngel && cuadAngel.reporto === true && cuadAngel.total === 1, 'el resto d
 
 /* ---------------------------------------------------------------- 4 */
 console.log('\n=== D133 · 4) lo demás de la respuesta no cambió ===');
+/* Referencia FIJA: el último commit SIN D133 (mismo patrón que `verificar_refactor_horas`). Con `HEAD`
+ * la prueba se muerde la cola en cuanto se comitea el cambio — el "antes" pasaría a ser el "después" y
+ * la comparación dejaría de comprobar nada (peor: fallaría por comparar índices contra índices ya
+ * resueltos). No se actualiza este SHA: es el estado contra el que D133 promete ser neutro. */
+const REF_PRE_D133 = 'a7a5c8f';
 const { execSync } = require('child_process');
 let previo = null;
-try{ previo = execSync('git show HEAD:backend/CodigoAsistencias.gs', { cwd:RAIZ, maxBuffer:32*1024*1024 }).toString(); }
-catch(err){ console.log('  · (no se pudo leer la versión anterior desde git: se omite la comparación)'); }
+try{ previo = execSync('git show '+REF_PRE_D133+':backend/CodigoAsistencias.gs', { cwd:RAIZ, maxBuffer:32*1024*1024 }).toString(); }
+catch(err){ console.log('  · (no se pudo leer '+REF_PRE_D133+' desde git: se omite la comparación)'); }
 if(previo){
   const ctxViejo = nuevoContexto(previo, HOJAS);
   const antes = JSON.parse(ctxViejo.doGet({ parameter:{ action:'asistencia', fecha:HOY, usuario:'admin',
