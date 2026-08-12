@@ -437,10 +437,14 @@ async function fetchResumen(label, url){
   for(let i=0;i<REINTENTOS;i++){
     if(i){
       const paginaGoogle = ultimo && ultimo.cuerpo!=null && !ultimo.cortada;
+      // El tope no es el mismo en los dos casos (una página de Google se reintenta UNA vez), así que el
+      // contador tiene que decir el de su caso: un "2 de 3" que se rinde en el 2 mina la confianza en
+      // todo lo demás que dice esta pantalla.
+      const tope = paginaGoogle ? 2 : REINTENTOS;
       const cont=document.getElementById('container');
       if(cont && !STATE.data) cont.innerHTML='<div class="loading">'
         + (paginaGoogle ? '⚠️ Google devolvió un error. Reintentando' : '📡 La señal se cortó. Reintentando')
-        + ' (' + (i+1) + ' de ' + REINTENTOS + ')…</div>';
+        + ' (' + (i+1) + ' de ' + tope + ')…</div>';
       await esperar(ESPERA_MS[i] || 2000);
     }
     try{ return await perfFetch(i ? label+' · reintento '+i : label, url); }
