@@ -89,6 +89,35 @@ a lo ya reportado).
    (editar la celda `responsables` de ALBERT y dejar solo `maleja`). Renombrar la cuadrilla dejaría el
    histórico apuntando a una cuadrilla inexistente. `maleja` ya tiene doble deber (D75) → cero código.
 
+## D134 — `maria` reporta ALBERT mientras `maleja` está de vacaciones (TEMPORAL)
+
+Relevo temporal, **sin usuario nuevo y sin lógica nueva**: `maria` ya existe como chequeadora (rol
+`chequeadora`, sin área forzada) y la columna `responsables` de `CUADRILLAS` admite **varios logins
+separados por coma**, que es exactamente el mecanismo por el que `cuadrillasDeUsuario` reparte el
+formulario. Dos celdas a mano en el Sheet de OBRA y el de ASISTENCIAS:
+
+1. Hoja **`CUADRILLAS`** (Sheet de asistencias) → fila `ALBERT`, celda `responsables`:
+   `maleja` → **`maleja,maria`**. Los dos canales coexisten; el envío pisa `fecha+cuadrilla`
+   (D03/D107), así que **manda el último que reporte ese día** (no se duplica, se sobrescribe).
+   Que `maleja` siga en la celda es a propósito: al volver de vacaciones no hay nada que rehacer.
+2. Hoja **`USUARIOS`** (Sheet de obra) → fila `maria`, celda `redirige`:
+   `reporte-chequeadora.html` → **`seleccion-reporte.html`**. Sin esto entra directo a su reporte de
+   chequeadora y nunca ve el tile de asistencia. En el repo va la entrada `'maria'` de
+   `seleccion-reporte.html` (el tile de asistencia se agrega solo, como a `maleja`/`luzdary`).
+
+**`maria` tiene que volver a entrar CON SEÑAL una vez**: el `redirige` viaja en la sesión guardada del
+teléfono (D82/D108) y solo se refresca con un login contra el servidor.
+
+**Para revertir cuando vuelva `maleja`:** dejar `responsables` de ALBERT en `maleja` y `redirige` de
+`maria` en `reporte-chequeadora.html`. No hay que tocar el código ni redesplegar el Apps Script (los
+cambios en `Codigo.gs`/`CodigoAsistencias.gs` son de las semillas `setup*`, que solo corren en una
+instalación nueva), ni borrar nada del histórico: lo ya reportado queda con `reporta=maria`.
+
+**Alternativa que NO se usó:** `angie` (D119, `asistencia_plus_tm2`) ya puede reportar cualquier
+cuadrilla activa de tierras/ODT/ODL, ALBERT incluida, sin tocar una sola celda. Si el relevo se alarga
+o se repite, ese es el canal permanente; D134 es el atajo para que la gente de ALBERT la siga
+reportando quien la ve todos los días.
+
 ## Cuadrilla propia de `duvan` — asistencias de drenajes (D105)
 
 `duvan` (rol `asistencia_plus_dren`, D88) ya podía reportar CUALQUIER cuadrilla de ODT/ODL, pero no

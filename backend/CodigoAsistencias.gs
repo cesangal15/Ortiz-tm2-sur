@@ -2123,9 +2123,13 @@ function setupHojas(){
     // D84 (post-salida a UF3): ALBERT queda con `maleja` como ÚNICA responsable (albert salió a UF3;
     // maleja ya la reportaba, D75). ARIEL queda INACTIVA y sin responsable (ariel salió a UF3; su gente
     // se movió a ROBINSON). Ambas conservan su nombre para no dejar huérfano el histórico de ASISTENCIA.
+    // D134 (TEMPORAL, vacaciones de `maleja`): `maria` se suma como segunda responsable de ALBERT. La
+    // columna admite varios logins separados por coma y los dos canales COEXISTEN (el envío pisa
+    // fecha+cuadrilla, D03/D107: manda el último que reporte ese día). Al volver `maleja`, quitar
+    // `maria` de la celda — es un dato, no código.
     ensureRows_(cuadSh, 7);   // D93
     cuadSh.getRange(2,1,7,4).setValues([
-      ['ANGEL','angel','tierras',''], ['ROBINSON','robinson','tierras',''], ['ALBERT','maleja','tierras',''],
+      ['ANGEL','angel','tierras',''], ['ROBINSON','robinson','tierras',''], ['ALBERT','maleja,maria','tierras',''],
       ['ARIEL','','tierras','inactiva'], ['ALEJANDRO','alejandro','tierras',''], ['OPERADORES','jeisson','tierras',''],
       ['VOLQUETEROS','mairy','tierras','']
     ]);
