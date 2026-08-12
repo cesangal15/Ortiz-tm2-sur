@@ -162,7 +162,22 @@ async function perfFetch(label, url, opts){
       PERF.push(reg);
       perfPayload(label, txt, data);
     }
-    if(err) throw new Error('Respuesta no-JSON del Apps Script (¿implementación caída o sesión de Google?).');
+    /* D133b — UNA respuesta que no es JSON puede ser DOS cosas muy distintas, y hasta aquí las dos
+     * salían como "el Apps Script no contestó en JSON", que en una de ellas es falso:
+     *   · Empieza por `{` o `[` -> era JSON y llegó CORTADO. El servidor contestó bien; lo que falló
+     *     fue la descarga. Con ~100 KB a 6–16 KB/s eso son 6–16 s de línea abierta, y cortarse a mitad
+     *     es lo más normal del mundo en esa red. Se trata como fallo de RED: se reintenta.
+     *   · Empieza por `<` (o llega vacía) -> es una página HTML de Google: implementación caída, a
+     *     medio redesplegar, o la sesión pidiendo iniciar sesión. Ahí sí hay que mirar el Apps Script.
+     * El principio del cuerpo viaja en el error para no tener que adivinar cuál de los dos fue. */
+    if(err){
+      const cabeza=String(txt||'').replace(/\s+/g,' ').trim().slice(0,120);
+      const e2=new Error(cabeza ? 'La respuesta no se pudo leer como JSON. Empieza así: '+cabeza
+                                : 'El servidor contestó vacío.');
+      e2.cuerpo=cabeza;
+      e2.cortada=/^[\[{]/.test(cabeza);      // era JSON y se quedó a medias
+      throw e2;
+    }
     return data;
   }catch(e){ cerrar(); throw e; }
 }
@@ -388,7 +403,8 @@ function loadBar(on){
  */
 function esFalloDeRed(e){
   // Un `ok:false` del backend NO pasa por aquí: eso es una respuesta, no un fallo de red.
-  return !!e && (e instanceof TypeError
+  // D133b: una respuesta JSON que llegó cortada es un fallo de red aunque el servidor contestara bien.
+  return !!e && (e instanceof TypeError || e.cortada === true
     || /failed to fetch|load failed|networkerror|network request/i.test(String((e && e.message) || '')));
 }
 async function fetchResumen(label, url){
@@ -401,8 +417,8 @@ async function fetchResumen(label, url){
     }
   }
   const err=new Error((ultimo && ultimo.message) || 'sin respuesta');
-  err.tipo = esFalloDeRed(ultimo) ? 'red'
-           : (/no-JSON/.test(String((ultimo && ultimo.message) || '')) ? 'formato' : 'backend');
+  err.tipo = esFalloDeRed(ultimo) ? 'red' : (ultimo && ultimo.cuerpo != null ? 'formato' : 'backend');
+  err.cuerpo = ultimo && ultimo.cuerpo;
   throw err;
 }
 /* ============ D133 — CATÁLOGO DE CC: ni repetido ni en cada carga ============
@@ -489,12 +505,17 @@ function mensajeDeFallo(err){
       + '<br><button class="btn" style="margin-top:12px;" onclick="logout()">Ir al login →</button>';
   if(t==='red')
     return '📡 <b>La consulta no llegó a completarse.</b><br><small>La conexión se cortó antes de recibir '
-      + 'la respuesta (ya se reintentó una vez). El Sheet y el Apps Script están bien: esta pantalla trae '
-      + '~100 KB y con señal débil no alcanzan a bajar.</small>'
+      + 'la respuesta entera (ya se reintentó una vez). El Sheet y el Apps Script están bien: esta pantalla '
+      + 'trae ~100 KB y con señal débil no alcanzan a bajar.</small>'
       + '<br><button class="btn" style="margin-top:12px;" onclick="cargarResumen()">Reintentar</button>';
   if(t==='formato')
-    return '⚠️ <b>El Apps Script no contestó en JSON.</b><br><small>Suele ser la implementación caída o una '
-      + 'sesión de Google que pide iniciar sesión desde el navegador. '+detalle+'</small>'
+    // D133b: aquí ya solo llega lo que NO empieza por `{`/`[` — o sea, una página de Google, no un JSON
+    // a medias. Se enseña el principio del cuerpo: es lo que distingue "implementación caída" de
+    // "Google pidiendo iniciar sesión" sin tener que abrir la consola.
+    return '⚠️ <b>Google contestó una página, no datos.</b><br><small>La implementación del Apps Script '
+      + 'está caída, a medio redesplegar, o la sesión de Google pide iniciar sesión desde el navegador. '
+      + 'Abre la URL del Apps Script en una pestaña para ver qué dice.<br><br>Respuesta recibida: <code>'
+      + esc(String((err && err.cuerpo) || '(vacía)')) + '</code></small>'
       + '<br><button class="btn" style="margin-top:12px;" onclick="cargarResumen()">Reintentar</button>';
   return '⚠️ <b>El servidor rechazó la consulta.</b><br><small>'+detalle+'</small>'
       + '<br><button class="btn" style="margin-top:12px;" onclick="cargarResumen()">Reintentar</button>';
