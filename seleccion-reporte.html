@@ -63,6 +63,13 @@ const TILES = {
   // su cuadrilla (maleja -> ALBERT, luzdary -> ALEJANDRO; el ASISTENCIA_TILE se agrega abajo automático).
   'maleja':     [{href:'reporte-chequeadora.html', ico:'🚛', t:'Reporte de Chequeadora', p:'Viajes por PK destino con origen del material'}],
   'luzdary':    [{href:'reporte-chequeadora.html', ico:'🚛', t:'Reporte de Chequeadora', p:'Viajes por PK destino con origen del material'}],
+  // D134 (TEMPORAL, vacaciones de `maleja`): `maria` entra al doble deber con el mismo par de tiles que
+  // las otras chequeadoras. La cuadrilla que reporta NO se decide aquí sino en la hoja CUADRILLAS
+  // (`responsables` de ALBERT = `maleja,maria`): esta entrada solo le abre la puerta a asistencia.html.
+  // Para revertir: quitar `maria` de esa celda y devolverle `redirige=reporte-chequeadora.html` en
+  // USUARIOS — con eso vuelve a entrar directo a su reporte y ya no pasa por aquí (esta línea puede
+  // quedarse: sin cuadrillas a cargo el formulario de asistencia no le traería a nadie).
+  'maria':      [{href:'reporte-chequeadora.html', ico:'🚛', t:'Reporte de Chequeadora', p:'Viajes por PK destino con origen del material'}],
   // Drenajes (D72): capataces ODT/ODL con doble deber — su reporte de drenajes + asistencia de su
   // cuadrilla (el ASISTENCIA_TILE se agrega abajo automáticamente por no ser jeisson).
   'mauricio':   [{href:'reporte-drenajes.html', ico:'🌧️', t:'Reporte de Drenajes', p:'Actividades ODT con personal y maquinaria'}],

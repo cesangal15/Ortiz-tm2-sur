@@ -1981,7 +1981,9 @@ function setupUsuarios(){
     ['residente_dren','','residente_dren','','seleccion-reporte.html','activo'],
     ['maleja','','chequeadora','','seleccion-reporte.html','activo'],
     ['mairy','','chequeadora','','seleccion-reporte.html','activo'],
-    ['maria','','chequeadora','','reporte-chequeadora.html','activo'],
+    // D134 (TEMPORAL, vacaciones de `maleja`): `maria` pasa a `seleccion-reporte.html` para poder entrar
+    // también a la asistencia de la cuadrilla ALBERT. Al volver `maleja`: `reporte-chequeadora.html`.
+    ['maria','','chequeadora','','seleccion-reporte.html','activo'],
     ['luzdary','','chequeadora','','seleccion-reporte.html','activo'],
     ['jeisson','','asistencia_plus','','seleccion-reporte.html','activo'],
     ['duvan','','asistencia_plus_dren','odt,odl','seleccion-reporte.html','activo'],
