@@ -2272,7 +2272,7 @@ function propuestaPendiente(rc){
   const rg=reglaMaterialPendiente(rc);
   const suf=rg?rg.suf:null;
   if(pref&&suf) return {area:'',cc:pref+suf};
-  const tipo=rc.ambito==='GRANULARES'?'GRANULARES':'TERRAPLEN';
+  const tipo=ambitoPendiente(rc);
   const cat=ccCatalogo(tipo);
   if(suf) return {area:'',cc:cat.find(c=>String(c).slice(-suf.length)===suf)||''};
   if(pref) return {area:'',cc:cat.find(c=>String(c).indexOf(pref)===0)||''};
@@ -2281,15 +2281,42 @@ function propuestaPendiente(rc){
 
 // Regla de material que aplica al pendiente (config.ccPorMaterial): la columna material
 // de la proforma manda; solo si no existe o no matchea se busca en destino/origen/obs/hoja.
+//
+// El ámbito de la HOJA dice en qué BASE buscar la remisión, NO qué ítem se paga
+// (corrección ago-2026). Mirar solo las reglas del ámbito propio dejaba sin leer el
+// material de toda hoja que no fuera GRANULARES: las de nombre de mes (AMBAS, que por
+// definición mezclan los dos) caían en la lista de TERRAPLEN, cuya única regla es el
+// COMODÍN (patrón vacío, matchea cualquier texto) → una remisión de SUB BASE salía con
+// el sufijo del terraplén .02.11 en vez de .03.02, y sin el nombre de la BASE en la
+// col. G ("Sub base"). Por eso la columna MATERIAL se contrasta contra las reglas
+// específicas de los DOS ámbitos, con el comodín SIEMPRE de última.
 function reglaMaterialPendiente(rc){
   const s=rc.secundarios||{};
+  const cc=S.config.ccPorMaterial||{};
   const tipo=rc.ambito==='GRANULARES'?'GRANULARES':'TERRAPLEN';
-  const reglas=((S.config.ccPorMaterial||{})[tipo]||[]);
-  const buscar=t=>{ if(!t) return null;
+  const esp=rg=>String(rg.patron||'').trim()!=='';       // específica (el comodín no lo es)
+  const propias=cc[tipo]||[];
+  const otras=((tipo==='GRANULARES'?cc.TERRAPLEN:cc.GRANULARES)||[]).filter(esp);
+  const porMaterial=propias.filter(esp).concat(otras).concat(propias.filter(rg=>!esp(rg)));
+  // Texto libre (destino/origen/obs/NOMBRE de la hoja): solo las reglas del ámbito propio,
+  // salvo en AMBAS, que no tiene ámbito que respetar. Si no, una hoja de terraplén cuyo
+  // nombre llevara la palabra "base" mandaría a .03.04 todas sus filas sin material.
+  const porTexto=rc.ambito==='AMBAS'?porMaterial:propias;
+  const buscar=(reglas,t)=>{ if(!t) return null;
     for(const rg of reglas){ try{ if(new RegExp(rg.patron,'i').test(t)) return rg; }catch(_){} }
     return null; };
-  return buscar(normTexto(s.material||''))
-    || buscar(normTexto([s.destino,s.origen,rc.obs,rc.hoja].filter(Boolean).join(' ')));
+  return buscar(porMaterial,normTexto(s.material||''))
+    || buscar(porTexto,normTexto([s.destino,s.origen,rc.obs,rc.hoja].filter(Boolean).join(' ')));
+}
+
+// Ámbito EFECTIVO de un pendiente: el de la hoja, salvo que su MATERIAL lo delate. Una
+// hoja AMBAS (nombre de mes) mezcla granulares y terraplén, así que su ámbito no alcanza
+// para elegir el catálogo de CC de respaldo ni la unidad de la col. R; la regla de
+// material sí. Sin regla o con regla del terraplén, se comporta como antes.
+function ambitoPendiente(rc){
+  if(rc.ambito==='GRANULARES') return 'GRANULARES';
+  const rg=reglaMaterialPendiente(rc);
+  return (rg&&((S.config.ccPorMaterial||{}).GRANULARES||[]).indexOf(rg)>=0)?'GRANULARES':'TERRAPLEN';
 }
 
 // Material "traducido" a como lo escribe la BASE (col. actividad): SUBBASE→Sub base,
@@ -2316,7 +2343,7 @@ function pendientesConComprobante(){ return pendientesOrdenadas().filter(r=>r.ev
 function derivadosProforma(rc){
   const s=rc.secundarios||{};
   const v=valoresActaPendiente(rc);
-  const tipo=rc.ambito==='GRANULARES'?'GRANULARES':'TERRAPLEN';
+  const tipo=ambitoPendiente(rc);
   const iniM=pkMetros(s.origen), finM=pkMetros(s.destino);
   const kmIni=tipo==='GRANULARES'?(s.origen||''):(iniM!=null?iniM:(s.origen||''));
   const kmFin=finM!=null?finM:'';
@@ -2533,7 +2560,8 @@ function cardActaPendientes(cab){
     sitio de cargue (planta de Putana, Avensa…) y nunca marca área, así que por defecto la fila sale <b>nuestra</b> y tú marcas
     a mano las de puente/planta. Área ajena → fijo ${CC_AREA_AJENA};
     nuestros → sufijo por MATERIAL (sub base .03.02 · BTC/base .03.04 · crudo .02.11 · terraplén .02.11; mapeo
-    editable en ⚙️ Config → ccPorMaterial) y prefijo 3701/3702 según PK ≤ 30 del destino. Las variaciones
+    editable en ⚙️ Config → ccPorMaterial; el material manda aunque la hoja sea de terraplén o mixta) y
+    prefijo 3701/3702 según PK ≤ 30 del destino. Las variaciones
     06.*/07.* de ODT/ODL son puntuales: corrígelas aquí. Revisa todo antes de copiar.
     ⚠️ Cuando la digitadora los digite y recargues bases pasarán a ENCONTRADA y saldrán también en el bloque 1: no los pegues dos veces.</div>
     <datalist id="dlAreasPend">${dlAreas}</datalist><datalist id="dlCCPend">${dlCC}</datalist>
@@ -2893,7 +2921,7 @@ if(typeof module!=='undefined'&&module.exports){
     obsReclamo,filasActa,resumenCorte,cmpRemision,faltantes,pendientesOrdenadas,
     ambitoPdfDe,ambitoPdfPorNombre,ambitoCompatible,etiquetaAmbito,sugerirAmbitoPdf,clasificarPaginas,
     pkDeTexto,ccCatalogo,propuestaPendiente,valoresActaPendiente,pendientesConComprobante,filasActaPendientes,CC_AREA_AJENA,
-    pkMetros,kmTotalesPendiente,unidadDominante,reglaMaterialPendiente,materialBasePendiente,numProforma,
+    pkMetros,kmTotalesPendiente,unidadDominante,reglaMaterialPendiente,ambitoPendiente,materialBasePendiente,numProforma,
     derivadosProforma,completarDesdeProforma,reclamosCompletados,huecosSinDato,reclamosConHuecos,CAMPOS_COMPLETABLES,LBL_CAMPO,
     Paso5,S,ESTADOS,ESTADOS_ACTA
   };
