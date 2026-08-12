@@ -175,10 +175,18 @@ const PERF_DESGLOSE_MIN_KB = 20;
 let PERF_DESGLOSE = null;   // se imprime al final, junto a la tabla grande, para poder capturarlo todo de una
 function perfPayload(label, txt, data){
   if(!data || typeof data!=='object' || txt.length < PERF_DESGLOSE_MIN_KB*1024) return;
+  // D133 — en una lista MIXTA se dice cuántos vinieron como índice y cuántos como texto. Es lo que
+  // permite ver de un vistazo cuántos CC de CC_USADOS no están en CAT_CC (los que no casan viajan como
+  // string y son los únicos que siguen pesando).
+  const cuantos=a=>{
+    if(!a.length) return 0;
+    const n=a.filter(v=>typeof v==='number').length;
+    return (n && n<a.length) ? a.length+' ('+n+' índices, '+(a.length-n)+' texto)' : a.length;
+  };
   const filas=Object.keys(data).map(k=>{
     let n=0; try{ n=JSON.stringify(data[k]).length; }catch(err){ n=0; }
     return { clave:k, kb:Math.round(n/102.4)/10, pct:Math.round(n*100/txt.length)+'%',
-             elementos: Array.isArray(data[k]) ? data[k].length : '' };
+             elementos: Array.isArray(data[k]) ? cuantos(data[k]) : '' };
   }).filter(r=>r.kb>=0.5).sort((a,b)=>b.kb-a.kb);
   PERF_DESGLOSE={ label:label, kb:Math.round(txt.length/102.4)/10, filas:filas };
 }
