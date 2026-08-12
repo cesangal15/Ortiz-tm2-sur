@@ -124,6 +124,16 @@ function get(c, extra){
 let fallos = 0;
 function ok(cond, msg, extra){ if(cond) console.log('  ✓ '+msg+(extra?'   '+extra:''));
                                else { fallos++; console.error('  ✗ '+msg+(extra?'   '+extra:'')); } }
+/* La reconstrucción del cliente (D133d), replicada tal cual está en `resumen-asistencia.html` — guarda
+ * de longitud incluida, que es lo que convierte un dato incompleto en un error visible. */
+function expandir(v){
+  if(Array.isArray(v)) return v;
+  const cols=v.cols, n=cols.length;
+  return v.datos.map(function(fila){
+    if(fila.length!==n) throw new Error('longitud');
+    const o={}; for(let j=0;j<n;j++){ const x=fila[j]; o[cols[j]] = (x==null) ? '' : x; } return o;
+  });
+}
 
 /* ---------------------------------------------------------------- 1 */
 console.log('\n=== D133 · 1) catCCUsados como índices dentro de catCC ===');
@@ -164,7 +174,7 @@ ok(ctx.firmaLista_(CAT_CC.map(r=>r.string_cc)) === ctx.firmaLista_(CAT_CC.map(r=
 
 /* ---------------------------------------------------------------- 3 */
 console.log('\n=== D133 · 3a) filas sin los tres campos que nadie lee ===');
-const f0 = r1.filas[0];
+const f0 = expandir(r1.filas)[0];
 ok(!('id_registro' in f0) && !('timestamp' in f0) && !('observacion' in f0),
    'id_registro, timestamp y observacion ya no viajan en cada fila');
 ['_row','fecha','reporta','cuadrilla','codigo','cedula','nombre','cargo','cc','proyecto',
@@ -176,6 +186,29 @@ const cuadAngel = r1.cuadrillas.filter(c=>c.cuadrilla==='ANGEL')[0];
 ok(cuadAngel && cuadAngel.hora === '2026-08-11T13:02:11.000Z',
    'cuadrillas[].hora sigue saliendo del timestamp (se usa dentro, ya no se reenvía por fila)');
 ok(cuadAngel && cuadAngel.reporto === true && cuadAngel.total === 1, 'el resto del bloque de cuadrilla, intacto');
+
+/* ---------------------------------------------------------------- 3b */
+console.log('\n=== D133d · 3b) filas y faltantes como cabecera + valores ===');
+const COLS_F=['_row','fecha','reporta','cuadrilla','codigo','cedula','nombre','cargo','cc','proyecto',
+  'hora_entrada','hora_salida','presente','motivo_ausencia','turno'];
+ok(r1.filas && Array.isArray(r1.filas.cols) && Array.isArray(r1.filas.datos),
+   'filas viaja como {cols, datos}');
+ok(JSON.stringify(r1.filas.cols) === JSON.stringify(COLS_F), 'la cabecera son las 15 columnas de siempre');
+ok(r1.filas.datos.length === 2 && r1.filas.datos.every(f=>f.length===15),
+   'cada fila trae exactamente tantos valores como columnas');
+ok(r1.faltantes.cols.indexOf('motivo')>=0 && r1.faltantes.cols.indexOf('incompleto')>=0,
+   'faltantes declara las columnas de SUS DOS formas (ausente trae motivo, sin_reportar trae incompleto)');
+const reconstruidas=expandir(r1.filas);
+ok(reconstruidas[0].nombre==='JUAN TIERRAS' && reconstruidas[0].hora_entrada==='07:00'
+   && reconstruidas[0]._row===2 && reconstruidas[0].cc==='3701.02.05| EXCAVACION',
+   'al reconstruir vuelven los mismos valores en los mismos campos');
+const faltRec=expandir(r1.faltantes);
+ok(faltRec.length===1 && faltRec[0].nombre==='LUIS ODT' && faltRec[0].tipo==='sin_reportar',
+   'lo mismo con faltantes');
+ok(faltRec[0].motivo==='', 'el campo que ese tipo de fila no tiene vuelve como cadena vacía, no como null');
+let saltoLaGuarda=false;
+try{ expandir({ cols:['a','b','c'], datos:[['1','2']] }); }catch(e){ saltoLaGuarda=true; }
+ok(saltoLaGuarda, 'una fila con menos valores que columnas LANZA en vez de dejar campos vacíos');
 
 /* ---------------------------------------------------------------- 4 */
 console.log('\n=== D133 · 4) lo demás de la respuesta no cambió ===');
@@ -193,17 +226,37 @@ if(previo){
   const antes = JSON.parse(ctxViejo.doGet({ parameter:{ action:'asistencia', fecha:HOY, usuario:'admin',
     token: ctxViejo.emitirToken_('admin','admin',[]) } }).texto);
   const ahora = r1;
-  const iguales = ['ok','fecha','faltantes','eventuales','jornada','catMotivos','turnos','extrasAdmin',
+  const iguales = ['ok','fecha','eventuales','jornada','catMotivos','turnos','extrasAdmin',
                    'notas','config','festivos','areas','cuadrillas'];
   iguales.forEach(function(k){
     const a=JSON.stringify(antes[k]), b=JSON.stringify(ahora[k]);
     if(a!==b){ fallos++; console.error('  ✗ `'+k+'` cambió y no debía'); }
   });
   ok(true, 'idénticos campo por campo: '+iguales.join(', '));
-  // Y el catálogo, ya resuelto en el cliente, tiene que dar la MISMA lista que antes.
+  // Lo que SÍ cambió de forma tiene que dar lo mismo una vez deshecha la codificación del cliente.
   const resueltos = ahora.catCCUsados.map(v => typeof v==='number' ? ahora.catCC[v] : v);
   ok(JSON.stringify(resueltos) === JSON.stringify(antes.catCCUsados),
      'catCCUsados, tras resolver los índices, es exactamente la lista de antes');
+  /* `faltantes` mezcla dos formas: el ausente trae `motivo` y el sin-reportar `incompleto`. Antes cada
+   * objeto llevaba SOLO sus claves; con la cabecera común, todos llevan las nueve y la que no aplica
+   * llega vacía. La diferencia es inofensiva —la pantalla lee esos dos campos como verdadero/falso o
+   * con `||''`, y `''` se comporta igual que ausente— pero hay que comprobarlo, no suponerlo: se
+   * rellena el "antes" con las claves que le faltaban y se exige igualdad EXACTA de ahí en adelante. */
+  const antesFalt = antes.faltantes.map(function(f){
+    const o={}; ahora.faltantes.cols.forEach(function(c){ o[c] = (f[c]===undefined ? '' : f[c]); }); return o;
+  });
+  ok(JSON.stringify(expandir(ahora.faltantes)) === JSON.stringify(antesFalt),
+     'faltantes, tras reconstruirlo, es el de antes (con la clave que no aplica vacía en vez de ausente)');
+  const soloVacias = antes.faltantes.every(function(f, i){
+    return ahora.faltantes.cols.every(function(c){ return f[c]!==undefined || antesFalt[i][c]===''; });
+  });
+  ok(soloVacias, 'y lo único que se añadió son cadenas vacías: ningún valor real cambió');
+  // En `filas`, además de la forma, D133 quitó tres campos (3a): se quitan también del "antes".
+  const antesFilas = antes.filas.map(function(f){
+    const o=Object.assign({}, f); delete o.id_registro; delete o.timestamp; delete o.observacion; return o;
+  });
+  ok(JSON.stringify(expandir(ahora.filas)) === JSON.stringify(antesFilas),
+     'filas, tras reconstruirla y descontar los 3 campos muertos, es exactamente la de antes');
   const kb = t => Math.round(t.length/102.4)/10;
   const antesTxt = ctxViejo.doGet({ parameter:{ action:'asistencia', fecha:HOY, usuario:'admin',
     token: ctxViejo.emitirToken_('admin','admin',[]) } }).texto;
