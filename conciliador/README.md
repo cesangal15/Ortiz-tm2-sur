@@ -28,7 +28,7 @@ navegador las descarga; después quedan en caché del navegador.
 |---|---|---|
 | 1 · Cargar bases | Seleccionas `GRANULARES.xlsx` y `TERRAPLEN.xlsx` (copias locales) | Lee SOLO la hoja `BASE 2026` (si no existe, te pide señalarla), corta en la última fila con remisión, muestra filas útiles y rango de fechas. Quedan en memoria para todos los contratistas de la sesión. |
 | 2 · Abrir corte | Eliges contratista + quincena | Rechaza empresas vetadas (ORTIZ, VOLKETSA, Betulia). Un contratista a la vez. |
-| 3 · Cargar proforma | 1..N `.xlsx` del contratista | Auto-detecta encabezado (títulos arriba, alias de columna), enruta hojas por patrones (PUTANA→GRANULARES, INTERNO→interno, Hoja1→ignorar…), explota celdas multi-remisión, detecta pares sospechosos "¿lista o rango?" y concilia al instante. Hoja no reconocida → tú la señalas (y guardas la regla). |
+| 3 · Cargar proforma | 1..N `.xlsx` del contratista | Auto-detecta encabezado (títulos arriba, alias de columna), enruta hojas por patrones (PUTANA→GRANULARES, INTERNO→interno, Hoja1→ignorar…), explota celdas multi-remisión, detecta pares sospechosos "¿lista o rango?" y concilia al instante. Hoja no reconocida → tú la señalas (y guardas la regla). El botón "cambiar" de cada hoja reasigna la base **o la saca del corte con IGNORAR** (reversible mientras no recargues la página). |
 | 4 · Conciliación | Revisas el tablero por estados | Llave cerrada: remisión exacta (texto, ceros incluidos) + empresa ∈ alias + fecha ≥ mínima. 0 candidatos → NO_ENCONTRADA (con sugerencias: "existe con otra empresa" y "existe en la otra base"); 1 → clasificador (solo UF3 excluye; áreas PLANTA/PUENTE/TM1/ODT… van al acta con observación); >1 → eliges tú. Si una hoja entera parece estar en la base equivocada, sale un aviso con un botón para cambiarla de ámbito y re-conciliar. |
 | 5 · Investigación PDF | Cargas los PDFs de partes, marcas el **ámbito** de cada uno y corres el OCR | Cada PDF lleva un ámbito **"Partes de…"** (Granulares / Terraplén / Mezclado; sugerido por el nombre del archivo con las mismas reglas de hojas del contratista, marca *auto* hasta que lo confirmes): sus páginas se cruzan ÚNICAMENTE con las faltantes de esa base — un número parecido de la otra base ya no genera candidatos falsos ni vuelve la página "candidata" en la cobertura; "Mezclado (ambas)" busca contra todas (comportamiento anterior, y el default cuando el nombre no da señal). Cambiar el ámbito poda los candidatos incompatibles y re-cruza al instante (los comprobantes ya confirmados no se tocan). En la revisión guiada las faltantes de la otra base quedan plegadas ("N faltantes de la otra base ocultas"), a un clic por si el ámbito estaba mal. Búsqueda dirigida SOLO de las no-encontradas (listadas de menor a mayor por número de remisión, en la lista lateral y en los botones del modal de revisión): pasada roja por franjas (número impreso arriba-derecha, 1–3 partes/página) + pasada gris de respaldo (AVENSA). Verde = exacto, naranja = 1 dígito. NUNCA auto-confirma: tú ves la página y decides (Confirmar / Es ASFALTO / No es). Además, el panel "Cobertura del OCR por página" muestra la vista inversa: páginas SIN lectura o cuyo número no coincide con nada reclamado. El botón **"▶ Revisar contra las faltantes"** las recorre una por una: ves el parte, la lista de faltantes sin confirmar como botones (≈ marca las que están a 1 dígito de lo leído) y con UN clic confirmas el comprobante; o pulsas **"✕ No es ninguna faltante"** y la página se descarta de la lista (es reproceso: remisión que ya está en la base). Las descartadas se pueden ver y restaurar con ↩ (y corregir su lectura las re-abre). El ✏️ para corregir la lectura del OCR sigue disponible (si el número corregido es una faltante pasa a candidato; si es de una remisión ya conciliada, la página sale de la revisión). Por revisar y descartadas salen en el resumen del Paso 7. Navegador manual de miniaturas siempre disponible. **Un renglón por PÁGINA (ago-2026):** si el OCR leía en la misma hoja el número exacto y otro a un dígito, la página salía dos veces; ahora se fusionan en un solo candidato (mejor nivel, con las lecturas de la página a la vista) y el contador verde/naranja de la lista de faltantes cuadra con lo que se pinta. |
 | 6 · Resolución manual | Decides las dudosas | Cola de revisión manual, múltiples, duplicadas y alertas de internos >3 km. Cada transición queda auditada (estado anterior/nuevo, fecha-hora, nota). |
@@ -69,6 +69,29 @@ auto-corrige (filosofía: nunca asumir), pero te lo hace evidente por tres vías
    la regla en la config del contratista).
 3. En el detalle de cada NO_ENCONTRADA: bloque "existe en la otra base" con el
    candidato listo para usar con un clic.
+
+### ¿Y si la hoja no va al corte? — IGNORAR (corrección ago-2026)
+
+El mismo botón **"cambiar"** ofrece **IGNORAR (fuera del corte)** además de las
+dos bases. Antes, IGNORAR solo aparecía en el selector de una hoja **no
+reconocida**, así que una hoja que el patrón sí enrutó —caso real: `FRESADO`
+enrutada a GRANULARES porque el archivo trae de todo— no se podía sacar: había
+que ignorarla a mano fila por fila. Ahora:
+
+- IGNORAR **quita del corte TODAS las reclamaciones de esa hoja**, incluidas las
+  decididas a mano (por eso pide confirmación diciendo cuántas son y cuántas
+  tenían decisión manual). Una hoja fuera del corte no puede dejar filas sueltas
+  en el acta.
+- Con "guardar regla" marcado, la hoja queda en la config del contratista como
+  `IGNORAR` y las próximas proformas la saltan solas. La regla **reemplaza** la
+  anterior de esa misma hoja, no se apila encima.
+- Es **reversible**: una hoja IGNORADA conserva su botón "cambiar" y al
+  asignarle una base se **re-extrae del archivo** y se re-concilia. El contenido
+  del .xlsx vive solo en memoria (no se guarda en localStorage), así que tras
+  recargar la página hay que volver a cargar ese archivo — la herramienta lo
+  avisa en vez de dejar la hoja vacía.
+
+Verificación: `node backend/pruebas/verificar_conciliador_ignorar_hoja.js`.
 
 ### Filas ENCONTRADAS a medias (completar con la proforma)
 

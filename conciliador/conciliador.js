@@ -962,7 +962,8 @@ function vistaPaso3(){
         amb=`<b>${h.ambito}</b>${h.modo?' <span class="marca">interno</span>':''}
           <button class="btn sec mini" onclick="Paso3.cambiarAmbitoUI(${pf.idx},${i})" title="reasignar la base de esta hoja y re-conciliar">cambiar</button>`;
       } else if(h.estado==='ignorada'){
-        amb='<span class="note">IGNORADA</span>';
+        amb=`<span class="note">IGNORADA</span>
+          <button class="btn sec mini" onclick="Paso3.cambiarAmbitoUI(${pf.idx},${i})" title="devolverla al corte asignándole una base">cambiar</button>`;
       } else if(h.estado==='sin_ambito'){
         amb=`<select id="selAmb_${pf.idx}_${i}">
           <option value="GRANULARES">GRANULARES</option><option value="TERRAPLEN">TERRAPLEN</option>
@@ -1062,18 +1063,21 @@ const Paso3={
       const res=resolverAmbitoHoja(sn,c);
       const meta={nombre:sn,estado:null,ambito:null,modo:null,enc:null,n:null,notas:[]};
       pf.hojas.push(meta);
+      // _ws se conserva SIEMPRE en memoria (clave transitoria, no se serializa): sin él
+      // una hoja ignorada no se podría devolver al corte sin recargar el archivo.
+      meta._ws=ws;
       if(res&&res.ambito==='IGNORAR'){ meta.estado='ignorada'; continue; }
-      if(!res){ meta.estado='sin_ambito'; meta._ws=ws; continue; } // NO adivinar: lo resuelve el usuario
+      if(!res){ meta.estado='sin_ambito'; continue; } // NO adivinar: lo resuelve el usuario
       Paso3._extraer(ws,pf,meta,res.ambito,res.modo);
     }
   },
   _extraer(ws,pf,meta,ambito,modo){
+    meta._ws=ws;
     meta.ambito=ambito; meta.modo=modo||null;
     const out=extraerReclamosHoja(ws,pf.archivo,meta.nombre,ambito,modo||null,S.config);
-    if(out.error==='sin_columna'){ meta.estado='sin_columna'; meta._ws=ws; return; }
+    if(out.error==='sin_columna'){ meta.estado='sin_columna'; return; }
     meta.estado='ok'; meta.enc=out.enc; meta.n=out.reclamos.length; meta.notas=out.notas;
     for(const rc of out.reclamos) S.corte.reclamos.push(rc);
-    delete meta._ws;
   },
   _finCarga(){
     conciliarPendientes();
@@ -1088,15 +1092,19 @@ const Paso3={
     const guardar=$('chkRegla_'+pfIdx+'_'+hIdx).checked;
     const ambito=v==='TERRAPLEN_INTERNO'?'TERRAPLEN':v;
     const modo=v==='TERRAPLEN_INTERNO'?'interno':null;
-    if(guardar){
-      const c=getContratista(S.corte.contratistaId);
-      const pat='^'+normTexto(meta.nombre).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$';
-      c.hojas.unshift(Object.assign({patron:pat,ambito:v==='TERRAPLEN_INTERNO'?'TERRAPLEN':v},modo?{modo:'interno'}:{}));
-      guardarConfig();
-    }
-    if(v==='IGNORAR'){ meta.estado='ignorada'; delete meta._ws; autosave(); render(); return; }
+    if(guardar) this._guardarRegla(meta.nombre,ambito,modo);
+    if(ambito==='IGNORAR'){ meta.estado='ignorada'; autosave(); render(); return; }
     Paso3._extraer(meta._ws,pf,meta,ambito,modo);
     Paso3._finCarga();
+  },
+  // Regla por nombre exacto de hoja en la config del contratista (IGNORAR incluido).
+  // Reemplaza la regla previa de esa misma hoja en vez de apilar duplicados.
+  _guardarRegla(nombreHoja,ambito,modo){
+    const c=getContratista(S.corte.contratistaId); if(!c) return;
+    const pat='^'+normTexto(nombreHoja).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$';
+    c.hojas=(c.hojas||[]).filter(h=>h.patron!==pat);
+    c.hojas.unshift(Object.assign({patron:pat,ambito},modo?{modo:'interno'}:{}));
+    guardarConfig();
   },
   elegirColumna(pfIdx,hIdx){
     const pf=S.corte.proformas[pfIdx]; const meta=pf.hojas[hIdx]; const ws=meta._ws;
@@ -1149,18 +1157,20 @@ const Paso3={
       if(esParSospechoso(tokens)){ out.reclamos.push(mkReclamo(Object.assign({raw,obs:raw,tokensPendientes:tokens,motivo:'¿lista o rango? confirmar'},base))); continue; }
       for(const t of tokens) out.reclamos.push(mkReclamo(Object.assign({remision:normRem(t),raw,multi:tokens.length>1,obs:(normRem(raw)!==normRem(t))?raw:''},base)));
     }
-    meta.estado='ok'; meta.enc=out.enc; meta.n=out.reclamos.length; meta.notas=out.notas; delete meta._ws;
+    meta.estado='ok'; meta.enc=out.enc; meta.n=out.reclamos.length; meta.notas=out.notas;
     for(const rc of out.reclamos) S.corte.reclamos.push(rc);
     Paso3._finCarga();
   },
   cambiarAmbitoUI(pfIdx,hIdx){
     const pf=S.corte.proformas[pfIdx]; const meta=pf.hojas[hIdx];
-    const cur=meta.modo==='interno'?'TERRAPLEN_INTERNO':meta.ambito;
+    const cur=meta.estado==='ignorada'?'IGNORAR':(meta.modo==='interno'?'TERRAPLEN_INTERNO':meta.ambito);
     const op=(v,l)=>`<option value="${v}" ${cur===v?'selected':''}>${l}</option>`;
     abrirModal(`<h3>Cambiar ámbito — ${escapeHtml(meta.nombre)}</h3>
       <div class="note" style="margin-bottom:10px">Las reclamaciones de esta hoja que NO tengan decisión manual vuelven a
-      PENDIENTE y se re-concilian contra la base elegida. Las decididas a mano no se tocan.</div>
-      <select id="selNuevoAmb">${op('GRANULARES','GRANULARES')}${op('TERRAPLEN','TERRAPLEN')}${op('TERRAPLEN_INTERNO','TERRAPLEN (interno)')}${op('AMBAS','AMBAS')}</select>
+      PENDIENTE y se re-concilian contra la base elegida. Las decididas a mano no se tocan.<br>
+      <b>IGNORAR</b> saca la hoja del corte: se quitan TODAS sus reclamaciones (también las decididas a mano, con
+      confirmación). Puedes volver a asignarle una base mientras no recargues la página.</div>
+      <select id="selNuevoAmb">${op('GRANULARES','GRANULARES')}${op('TERRAPLEN','TERRAPLEN')}${op('TERRAPLEN_INTERNO','TERRAPLEN (interno)')}${op('AMBAS','AMBAS')}${op('IGNORAR','IGNORAR (fuera del corte)')}</select>
       <div style="margin-top:10px"><label style="font-size:12px"><input type="checkbox" id="chkReglaAmb" checked> guardar regla para esta hoja en la config del contratista</label></div>
       <div class="flexrow" style="margin-top:14px">
         <button class="btn" onclick="Paso3.aplicarAmbitoDesdeModal(${pfIdx},${hIdx})">Aplicar y re-conciliar</button>
@@ -1175,16 +1185,13 @@ const Paso3={
     this.aplicarAmbito(pfIdx,hIdx,ambito,modo,guardar);
   },
   aplicarAmbito(pfIdx,hIdx,ambito,modo,guardarRegla){
-    const pf=S.corte.proformas[pfIdx]; const meta=pf.hojas[hIdx]; if(!pf||!meta) return;
+    const pf=S.corte.proformas[pfIdx]; const meta=pf&&pf.hojas[hIdx]; if(!pf||!meta) return;
+    if(ambito==='IGNORAR') return this._ignorarHoja(pf,meta,guardarRegla);
+    if(guardarRegla) this._guardarRegla(meta.nombre,ambito,modo);
+    // Hoja que estaba fuera del corte: no hay reclamaciones que re-conciliar, hay que extraerla de nuevo.
+    if(meta.estado==='ignorada') return this._reactivarHoja(pf,meta,ambito,modo);
     const de=meta.ambito+(meta.modo?' interno':'');
     meta.ambito=ambito; meta.modo=modo||null;
-    if(guardarRegla){
-      const c=getContratista(S.corte.contratistaId);
-      const pat='^'+normTexto(meta.nombre).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$';
-      c.hojas=c.hojas.filter(h=>h.patron!==pat);
-      c.hojas.unshift(Object.assign({patron:pat,ambito},modo?{modo:'interno'}:{}));
-      guardarConfig();
-    }
     let n=0;
     for(const rc of S.corte.reclamos){
       if(rc.archivo!==pf.archivo||rc.hoja!==meta.nombre) continue;
@@ -1197,6 +1204,32 @@ const Paso3={
     autosave(); render();
     const cnt=conteoEstados();
     toast('✅ Hoja "'+meta.nombre+'" → '+ambito+(modo?' (interno)':'')+': '+n+' reclamaciones re-conciliadas · '+cnt.ENCONTRADA+' encontradas · '+cnt.NO_ENCONTRADA+' no encontradas');
+  },
+  // La hoja sale del corte: sus reclamaciones se quitan (no quedan "huérfanas" en el acta).
+  _ignorarHoja(pf,meta,guardarRegla){
+    const esMia=r=>r.archivo===pf.archivo&&r.hoja===meta.nombre;
+    const mias=S.corte.reclamos.filter(esMia);
+    const manuales=mias.filter(r=>r.decisionManual).length;
+    if(mias.length&&!confirm('Ignorar la hoja "'+meta.nombre+'": se quitan del corte sus '+mias.length+
+      ' reclamacion(es)'+(manuales?', incluidas '+manuales+' con decisión manual':'')+'. ¿Continuar?')) return;
+    if(guardarRegla) this._guardarRegla(meta.nombre,'IGNORAR',null);
+    S.corte.reclamos=S.corte.reclamos.filter(r=>!esMia(r));
+    meta.estado='ignorada'; meta.ambito=null; meta.modo=null; meta.enc=null; meta.n=null; meta.notas=[];
+    autosave(); render();
+    const cnt=conteoEstados();
+    toast('✅ Hoja "'+meta.nombre+'" ignorada: '+mias.length+' reclamacion(es) fuera del corte · '+
+      cnt.ENCONTRADA+' encontradas · '+cnt.NO_ENCONTRADA+' no encontradas');
+  },
+  // Devuelve al corte una hoja ignorada: hay que re-extraerla del archivo original.
+  _reactivarHoja(pf,meta,ambito,modo){
+    if(!meta._ws){
+      toast('⚠️ Para devolver al corte la hoja "'+meta.nombre+'" hay que volver a cargar el archivo '+
+        pf.archivo+' (la sesión guardada no conserva su contenido).',7000);
+      return;
+    }
+    Paso3._extraer(meta._ws,pf,meta,ambito,modo);
+    if(meta.estado==='sin_columna'){ autosave(); render(); toast('⚠️ Hoja "'+meta.nombre+'" → '+ambito+': sin columna de remisión reconocible, señálala en el Paso 3.',6000); return; }
+    Paso3._finCarga();
   },
   reemplazarClick(){
     if(!S.corte.reclamos.length){ toast('No hay proforma que reemplazar; carga archivos normalmente.'); return; }
@@ -2923,7 +2956,7 @@ if(typeof module!=='undefined'&&module.exports){
     pkDeTexto,ccCatalogo,propuestaPendiente,valoresActaPendiente,pendientesConComprobante,filasActaPendientes,CC_AREA_AJENA,
     pkMetros,kmTotalesPendiente,unidadDominante,reglaMaterialPendiente,ambitoPendiente,materialBasePendiente,numProforma,
     derivadosProforma,completarDesdeProforma,reclamosCompletados,huecosSinDato,reclamosConHuecos,CAMPOS_COMPLETABLES,LBL_CAMPO,
-    Paso5,S,ESTADOS,ESTADOS_ACTA
+    Paso3,Paso5,S,ESTADOS,ESTADOS_ACTA
   };
 }
 if(typeof document!=='undefined'){ init(); }
