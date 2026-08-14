@@ -249,6 +249,43 @@ Notas del seed de reglas de hojas (además de las 4 del ejemplo de la spec):
   Los binarios NO viajan: al importar, re-selecciona las bases (Paso 1) y los
   PDFs (Paso 5) con los MISMOS archivos — si el nombre difiere, avisa.
 
+### Tinta roja apagada — umbral adaptativo del OCR (corrección ago-2026)
+
+Caso real: `SOPORTES ORTIZ TRAMO 2 DEL 01 AL 15 DE AGOSTO DE 2026.pdf`
+(25 págs., CamScanner, 2 partes por hoja) salió con **21 de 25 páginas "sin
+lectura"**. No era límite del lector: el número de recibo está impreso en rojo y
+grande, pero **ese escaneo trae el color apagado**. La pasada A recortaba la
+tinta con un umbral **fijo** (`r > 1,3·max(g,b)` y `r−max > 20`), calibrado para
+tinta viva. Medido sobre ese PDF, en los píxeles del propio número:
+
+| escaneo | píxel típico del número | rojez `r−max(g,b)` | ¿pasaba el filtro viejo? |
+|---|---|---|---|
+| vivo (pág. 1) | r 129 · g 89 · b 94 | 36 (ratio 1,46) | sí, pero **a jirones** |
+| apagado (pág. 10) | r 154 · g 130 · b 130 | 24 (ratio 1,19) | **no: 0 píxeles** |
+
+Con 0 píxeles rojos la franja se descartaba y **el OCR ni se llamaba** (en las
+páginas 8–22 la hoja ENTERA daba entre 0 y 13 píxeles). Correcciones:
+
+1. **Umbral adaptativo**: lo pone la propia franja — pico = percentil 99,9 del
+   canal de rojez (`r − max(g,b)`, que es la tinta) y corte al **45%** de ese
+   pico. Portero `hayTinta`: si el pico se queda en el ruido del papel (<10) la
+   franja no tiene número rojo y se descarta, porque si no el suelo del umbral
+   marcaría decenas de miles de píxeles de fondo y el OCR leería basura.
+2. **5 bandas solapadas** (de un tercio de alto, cada media banda) en vez de tres
+   tercios secos: el número que caía justo en la costura ya no sale partido.
+3. **`OCR_V`**: las lecturas quedan en caché por página; al cambiar el lector esa
+   caché es de la versión vieja, así que la primera corrida tras el cambio
+   **relee** (avisa en pantalla). Las decisiones humanas —páginas descartadas,
+   lecturas corregidas, revisadas— se conservan.
+
+Medido con tesseract 5.3.4 sobre las 25 páginas de ese PDF: lecturas en **24 de
+25 páginas** (antes 4), la mayoría exactas contra el número impreso y el resto a
+un dígito, que es justo lo que la pantalla ofrece como candidato naranja. El
+criterio no cambia: **el OCR propone, tú confirmas viendo la página.**
+
+Si un escaneo llega tan lavado que ni así lo lee (en ese PDF quedó 1 página),
+sigue estando la revisión guiada "▶ Revisar las N contra las faltantes".
+
 ## Limitaciones V1 (fuera de alcance)
 
 - No genera el acta completa (tarifas, totales, firmas): solo el bloque de pegado.
@@ -273,3 +310,13 @@ mal clasificada con cambio de ámbito, y rendimiento (25k filas ≈ 0,6 s de
 indexado; 800 reclamaciones ≈ 6 ms). La pasada roja del OCR se validó offline
 contra partes escaneados reales de PUTANA (misma fórmula de filtro, tesseract
 nativo): encontró todos los números de recibo de las páginas de prueba.
+
+Verificaciones sueltas (Node, sin navegador):
+
+```
+node backend/pruebas/verificar_conciliador_pendientes_material.js   # CC por MATERIAL
+node backend/pruebas/verificar_conciliador_pendientes_area.js       # áreas del bloque 1b
+node backend/pruebas/verificar_conciliador_paso5_candidatos.js      # un renglón por página
+node backend/pruebas/verificar_conciliador_ignorar_hoja.js          # IGNORAR una hoja del corte
+node backend/pruebas/verificar_conciliador_ocr_umbral_rojo.js       # umbral rojo adaptativo
+```
