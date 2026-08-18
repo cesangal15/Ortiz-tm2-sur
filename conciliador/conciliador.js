@@ -299,6 +299,13 @@ function getContratista(id){ return (S.config.contratistas||[]).find(c=>c.id===i
 
 /* ============================ 2. ESTADO GLOBAL ============================ */
 
+// Versión del lector de páginas. Las lecturas quedan en caché por página (S.ocr.paginas) y se
+// re-cruzan solas; si el lector CAMBIA, esa caché es de la versión vieja y hay que releer, si no
+// una corrección del OCR no se nota hasta borrar la sesión. Subirla invalida solo las lecturas
+// (las decisiones humanas —páginas descartadas, lecturas corregidas, revisadas— se conservan).
+// v2 (ago-2026): umbral rojo adaptativo + 5 bandas solapadas.
+const OCR_V=2;
+
 const S={
   config:null,
   bases:{GRANULARES:null,TERRAPLEN:null},
@@ -306,7 +313,7 @@ const S={
   basePendiente:{},           // tipo -> {wb, archivo, hojas:[]}
   corte:null,                 // ver abrirCorte()
   pdfs:[],                    // {name, kind:'pdf'|'img', bytes:Uint8Array, numPages, ambito, ambitoAuto, doc?, url?, error?}
-  ocr:{running:false,cancel:false,hecho:0,total:0,paginas:{},candidatos:{},descartados:{},editadas:{},revisadas:{}},
+  ocr:{running:false,cancel:false,hecho:0,total:0,v:OCR_V,paginas:{},candidatos:{},descartados:{},editadas:{},revisadas:{}},
   ui:{paso:1,filtroEstado:null,faltanteSel:null,detalle:null,soloRevision:false,tsvHeader:false,avisoLS:false}
 };
 
@@ -936,7 +943,7 @@ const Paso2={
     if(S.corte&&S.corte.reclamos.length&&!confirm('Hay un corte abierto con '+S.corte.reclamos.length+' reclamadas. ¿Descartarlo y abrir uno nuevo?')) return;
     S.corte={contratistaId:id,quincena:{inicio:ini,fin:fin},abiertoEn:nowISO(),
       proformas:[],reclamos:[],yaNoReclamadas:[],secuencia:0};
-    S.ocr={running:false,cancel:false,hecho:0,total:0,paginas:{},candidatos:{},descartados:{},editadas:{},revisadas:{}};
+    S.ocr={running:false,cancel:false,hecho:0,total:0,v:OCR_V,paginas:{},candidatos:{},descartados:{},editadas:{},revisadas:{}};
     S.pdfs=[];
     S.config.quincenaActual={inicio:ini,fin:fin}; guardarConfig();
     autosave();
@@ -962,7 +969,8 @@ function vistaPaso3(){
         amb=`<b>${h.ambito}</b>${h.modo?' <span class="marca">interno</span>':''}
           <button class="btn sec mini" onclick="Paso3.cambiarAmbitoUI(${pf.idx},${i})" title="reasignar la base de esta hoja y re-conciliar">cambiar</button>`;
       } else if(h.estado==='ignorada'){
-        amb='<span class="note">IGNORADA</span>';
+        amb=`<span class="note">IGNORADA</span>
+          <button class="btn sec mini" onclick="Paso3.cambiarAmbitoUI(${pf.idx},${i})" title="devolverla al corte asignándole una base">cambiar</button>`;
       } else if(h.estado==='sin_ambito'){
         amb=`<select id="selAmb_${pf.idx}_${i}">
           <option value="GRANULARES">GRANULARES</option><option value="TERRAPLEN">TERRAPLEN</option>
@@ -1062,18 +1070,21 @@ const Paso3={
       const res=resolverAmbitoHoja(sn,c);
       const meta={nombre:sn,estado:null,ambito:null,modo:null,enc:null,n:null,notas:[]};
       pf.hojas.push(meta);
+      // _ws se conserva SIEMPRE en memoria (clave transitoria, no se serializa): sin él
+      // una hoja ignorada no se podría devolver al corte sin recargar el archivo.
+      meta._ws=ws;
       if(res&&res.ambito==='IGNORAR'){ meta.estado='ignorada'; continue; }
-      if(!res){ meta.estado='sin_ambito'; meta._ws=ws; continue; } // NO adivinar: lo resuelve el usuario
+      if(!res){ meta.estado='sin_ambito'; continue; } // NO adivinar: lo resuelve el usuario
       Paso3._extraer(ws,pf,meta,res.ambito,res.modo);
     }
   },
   _extraer(ws,pf,meta,ambito,modo){
+    meta._ws=ws;
     meta.ambito=ambito; meta.modo=modo||null;
     const out=extraerReclamosHoja(ws,pf.archivo,meta.nombre,ambito,modo||null,S.config);
-    if(out.error==='sin_columna'){ meta.estado='sin_columna'; meta._ws=ws; return; }
+    if(out.error==='sin_columna'){ meta.estado='sin_columna'; return; }
     meta.estado='ok'; meta.enc=out.enc; meta.n=out.reclamos.length; meta.notas=out.notas;
     for(const rc of out.reclamos) S.corte.reclamos.push(rc);
-    delete meta._ws;
   },
   _finCarga(){
     conciliarPendientes();
@@ -1088,15 +1099,19 @@ const Paso3={
     const guardar=$('chkRegla_'+pfIdx+'_'+hIdx).checked;
     const ambito=v==='TERRAPLEN_INTERNO'?'TERRAPLEN':v;
     const modo=v==='TERRAPLEN_INTERNO'?'interno':null;
-    if(guardar){
-      const c=getContratista(S.corte.contratistaId);
-      const pat='^'+normTexto(meta.nombre).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$';
-      c.hojas.unshift(Object.assign({patron:pat,ambito:v==='TERRAPLEN_INTERNO'?'TERRAPLEN':v},modo?{modo:'interno'}:{}));
-      guardarConfig();
-    }
-    if(v==='IGNORAR'){ meta.estado='ignorada'; delete meta._ws; autosave(); render(); return; }
+    if(guardar) this._guardarRegla(meta.nombre,ambito,modo);
+    if(ambito==='IGNORAR'){ meta.estado='ignorada'; autosave(); render(); return; }
     Paso3._extraer(meta._ws,pf,meta,ambito,modo);
     Paso3._finCarga();
+  },
+  // Regla por nombre exacto de hoja en la config del contratista (IGNORAR incluido).
+  // Reemplaza la regla previa de esa misma hoja en vez de apilar duplicados.
+  _guardarRegla(nombreHoja,ambito,modo){
+    const c=getContratista(S.corte.contratistaId); if(!c) return;
+    const pat='^'+normTexto(nombreHoja).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$';
+    c.hojas=(c.hojas||[]).filter(h=>h.patron!==pat);
+    c.hojas.unshift(Object.assign({patron:pat,ambito},modo?{modo:'interno'}:{}));
+    guardarConfig();
   },
   elegirColumna(pfIdx,hIdx){
     const pf=S.corte.proformas[pfIdx]; const meta=pf.hojas[hIdx]; const ws=meta._ws;
@@ -1149,18 +1164,20 @@ const Paso3={
       if(esParSospechoso(tokens)){ out.reclamos.push(mkReclamo(Object.assign({raw,obs:raw,tokensPendientes:tokens,motivo:'¿lista o rango? confirmar'},base))); continue; }
       for(const t of tokens) out.reclamos.push(mkReclamo(Object.assign({remision:normRem(t),raw,multi:tokens.length>1,obs:(normRem(raw)!==normRem(t))?raw:''},base)));
     }
-    meta.estado='ok'; meta.enc=out.enc; meta.n=out.reclamos.length; meta.notas=out.notas; delete meta._ws;
+    meta.estado='ok'; meta.enc=out.enc; meta.n=out.reclamos.length; meta.notas=out.notas;
     for(const rc of out.reclamos) S.corte.reclamos.push(rc);
     Paso3._finCarga();
   },
   cambiarAmbitoUI(pfIdx,hIdx){
     const pf=S.corte.proformas[pfIdx]; const meta=pf.hojas[hIdx];
-    const cur=meta.modo==='interno'?'TERRAPLEN_INTERNO':meta.ambito;
+    const cur=meta.estado==='ignorada'?'IGNORAR':(meta.modo==='interno'?'TERRAPLEN_INTERNO':meta.ambito);
     const op=(v,l)=>`<option value="${v}" ${cur===v?'selected':''}>${l}</option>`;
     abrirModal(`<h3>Cambiar ámbito — ${escapeHtml(meta.nombre)}</h3>
       <div class="note" style="margin-bottom:10px">Las reclamaciones de esta hoja que NO tengan decisión manual vuelven a
-      PENDIENTE y se re-concilian contra la base elegida. Las decididas a mano no se tocan.</div>
-      <select id="selNuevoAmb">${op('GRANULARES','GRANULARES')}${op('TERRAPLEN','TERRAPLEN')}${op('TERRAPLEN_INTERNO','TERRAPLEN (interno)')}${op('AMBAS','AMBAS')}</select>
+      PENDIENTE y se re-concilian contra la base elegida. Las decididas a mano no se tocan.<br>
+      <b>IGNORAR</b> saca la hoja del corte: se quitan TODAS sus reclamaciones (también las decididas a mano, con
+      confirmación). Puedes volver a asignarle una base mientras no recargues la página.</div>
+      <select id="selNuevoAmb">${op('GRANULARES','GRANULARES')}${op('TERRAPLEN','TERRAPLEN')}${op('TERRAPLEN_INTERNO','TERRAPLEN (interno)')}${op('AMBAS','AMBAS')}${op('IGNORAR','IGNORAR (fuera del corte)')}</select>
       <div style="margin-top:10px"><label style="font-size:12px"><input type="checkbox" id="chkReglaAmb" checked> guardar regla para esta hoja en la config del contratista</label></div>
       <div class="flexrow" style="margin-top:14px">
         <button class="btn" onclick="Paso3.aplicarAmbitoDesdeModal(${pfIdx},${hIdx})">Aplicar y re-conciliar</button>
@@ -1175,16 +1192,13 @@ const Paso3={
     this.aplicarAmbito(pfIdx,hIdx,ambito,modo,guardar);
   },
   aplicarAmbito(pfIdx,hIdx,ambito,modo,guardarRegla){
-    const pf=S.corte.proformas[pfIdx]; const meta=pf.hojas[hIdx]; if(!pf||!meta) return;
+    const pf=S.corte.proformas[pfIdx]; const meta=pf&&pf.hojas[hIdx]; if(!pf||!meta) return;
+    if(ambito==='IGNORAR') return this._ignorarHoja(pf,meta,guardarRegla);
+    if(guardarRegla) this._guardarRegla(meta.nombre,ambito,modo);
+    // Hoja que estaba fuera del corte: no hay reclamaciones que re-conciliar, hay que extraerla de nuevo.
+    if(meta.estado==='ignorada') return this._reactivarHoja(pf,meta,ambito,modo);
     const de=meta.ambito+(meta.modo?' interno':'');
     meta.ambito=ambito; meta.modo=modo||null;
-    if(guardarRegla){
-      const c=getContratista(S.corte.contratistaId);
-      const pat='^'+normTexto(meta.nombre).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$';
-      c.hojas=c.hojas.filter(h=>h.patron!==pat);
-      c.hojas.unshift(Object.assign({patron:pat,ambito},modo?{modo:'interno'}:{}));
-      guardarConfig();
-    }
     let n=0;
     for(const rc of S.corte.reclamos){
       if(rc.archivo!==pf.archivo||rc.hoja!==meta.nombre) continue;
@@ -1197,6 +1211,32 @@ const Paso3={
     autosave(); render();
     const cnt=conteoEstados();
     toast('✅ Hoja "'+meta.nombre+'" → '+ambito+(modo?' (interno)':'')+': '+n+' reclamaciones re-conciliadas · '+cnt.ENCONTRADA+' encontradas · '+cnt.NO_ENCONTRADA+' no encontradas');
+  },
+  // La hoja sale del corte: sus reclamaciones se quitan (no quedan "huérfanas" en el acta).
+  _ignorarHoja(pf,meta,guardarRegla){
+    const esMia=r=>r.archivo===pf.archivo&&r.hoja===meta.nombre;
+    const mias=S.corte.reclamos.filter(esMia);
+    const manuales=mias.filter(r=>r.decisionManual).length;
+    if(mias.length&&!confirm('Ignorar la hoja "'+meta.nombre+'": se quitan del corte sus '+mias.length+
+      ' reclamacion(es)'+(manuales?', incluidas '+manuales+' con decisión manual':'')+'. ¿Continuar?')) return;
+    if(guardarRegla) this._guardarRegla(meta.nombre,'IGNORAR',null);
+    S.corte.reclamos=S.corte.reclamos.filter(r=>!esMia(r));
+    meta.estado='ignorada'; meta.ambito=null; meta.modo=null; meta.enc=null; meta.n=null; meta.notas=[];
+    autosave(); render();
+    const cnt=conteoEstados();
+    toast('✅ Hoja "'+meta.nombre+'" ignorada: '+mias.length+' reclamacion(es) fuera del corte · '+
+      cnt.ENCONTRADA+' encontradas · '+cnt.NO_ENCONTRADA+' no encontradas');
+  },
+  // Devuelve al corte una hoja ignorada: hay que re-extraerla del archivo original.
+  _reactivarHoja(pf,meta,ambito,modo){
+    if(!meta._ws){
+      toast('⚠️ Para devolver al corte la hoja "'+meta.nombre+'" hay que volver a cargar el archivo '+
+        pf.archivo+' (la sesión guardada no conserva su contenido).',7000);
+      return;
+    }
+    Paso3._extraer(meta._ws,pf,meta,ambito,modo);
+    if(meta.estado==='sin_columna'){ autosave(); render(); toast('⚠️ Hoja "'+meta.nombre+'" → '+ambito+': sin columna de remisión reconocible, señálala en el Paso 3.',6000); return; }
+    Paso3._finCarga();
   },
   reemplazarClick(){
     if(!S.corte.reclamos.length){ toast('No hay proforma que reemplazar; carga archivos normalmente.'); return; }
@@ -1467,6 +1507,25 @@ function ambitoCompatible(pdfAmb,rcAmb){
   return pdfAmb===rcAmb;
 }
 function etiquetaAmbito(a){ return a==='GRANULARES'?'Granulares':a==='TERRAPLEN'?'Terraplén':'Mezclado (ambas)'; }
+
+/* ---- Umbral de tinta ROJA de una franja (pasada A del OCR) — corrección ago-2026 ----
+   "Rojez" de un píxel = r − max(g,b): 0 en el papel y en la tinta negra del formulario,
+   alto en el número impreso en rojo. El umbral NO puede ser fijo: el mismo número sale con
+   rojez ≈ 60 en un escaneo vivo y ≈ 20 en uno apagado (CamScanner), y el corte fijo anterior
+   (r>1.3·max(g,b) y rojez>20) dejaba la franja en CERO píxeles en el segundo caso — la pasada A
+   ni siquiera llamaba al OCR. Así que lo pone la propia franja: pico = percentil 99,9 de la
+   rojez (= la tinta, que es lo más rojo que hay ahí) y corte al 45% de ese pico.
+   `hayTinta` es el portero: sin número rojo el pico se queda en el ruido del papel (<10) y hay
+   que descartar la franja — con el suelo del umbral se marcarían decenas de miles de píxeles
+   de fondo y el OCR leería basura. Puro (recibe el RGBA) para poder verificarlo sin navegador. */
+function rojezPx(d,i){ const v=d[i]-Math.max(d[i+1],d[i+2]); return v>0?v:0; }
+function umbralRojo(d,n){
+  const hist=new Uint32Array(256);
+  for(let i=0;i<d.length;i+=4) hist[rojezPx(d,i)]++;
+  let acum=0, pico=0; const corte=n*0.999;
+  for(let v=0;v<256;v++){ acum+=hist[v]; if(acum>=corte){ pico=v; break; } }
+  return {pico, T:Math.max(8,Math.round(pico*0.45)), hayTinta:pico>=10};
+}
 function sugerirAmbitoPdf(nombre){
   const c=S.corte?getContratista(S.corte.contratistaId):null;
   const r=c?resolverAmbitoHoja(nombre,c):null;
@@ -1882,6 +1941,11 @@ const Paso5={
   // ---- OCR ----
   async correr(){
     const falt=faltantes(); if(!falt.length||!S.pdfs.length) return;
+    if(S.ocr.v!==OCR_V){          // caché de un lector viejo: releer (ver OCR_V)
+      const n=Object.keys(S.ocr.paginas).length;
+      S.ocr.paginas={}; S.ocr.candidatos={}; S.ocr.v=OCR_V;
+      if(n) toast('El lector de páginas cambió: se releen las '+n+' páginas ya procesadas.',5000);
+    }
     S.ocr.running=true; S.ocr.cancel=false;
     S.ocr.total=S.pdfs.reduce((a,p)=>a+(p.error?0:p.numPages),0);
     S.ocr.hecho=0;
@@ -1923,12 +1987,16 @@ const Paso5={
   async _ocrPagina(worker,canvas,faltSet,faltSC){
     const tokens=new Set();
     const W=canvas.width,H=canvas.height;
-    // Pasada A (roja): mitad derecha de cada tercio de la página (2–3 partes por página).
+    // Pasada A (roja): mitad derecha de la página, en 5 bandas de un tercio de alto que se
+    // SOLAPAN a la mitad (ago-2026). Con tres tercios secos, el número de un parte que caía
+    // justo en la costura salía partido en dos y no lo leía nadie; con el solapamiento toda
+    // franja de la página aparece entera en alguna banda.
     await worker.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'11'});
-    for(let t=0;t<3;t++){
-      const y0=Math.floor(t*H/3), h=Math.ceil(H/3);
+    const h=Math.ceil(H/3);
+    for(let t=0;t<5;t++){
+      const y0=Math.min(H-h,Math.floor(t*H/6));
       const reg=this._recorteRojo(canvas,Math.floor(W/2),y0,W-Math.floor(W/2),h);
-      if(!reg) continue;   // sin píxeles rojos suficientes
+      if(!reg) continue;   // sin tinta roja en la banda
       try{
         const r=await worker.recognize(reg);
         for(const m of (r.data.text.match(/\d{3,6}/g)||[])) tokens.add(m);
@@ -1948,16 +2016,25 @@ const Paso5={
     }
     return Array.from(tokens);
   },
-  // Filtro rojo por píxel (r>60 && r>max(g,b)*1.3 && r-max(g,b)>20) → binario, upscale 4×.
+  // Filtro rojo ADAPTATIVO (corrección ago-2026) → binario, upscale 4×.
+  // El umbral FIJO anterior (r>60 && r>max(g,b)*1.3 && r-max>20) solo daba por buena la tinta
+  // VIVA. En un PDF de CamScanner con el color apagado —caso real: SOPORTES ORTIZ 01–15 ago—
+  // el número impreso se queda en r-max ≈ 20-29 y ratio ≈ 1.2, así que la franja salía con CERO
+  // píxeles rojos y la pasada A ni llamaba al OCR: 21 de 25 páginas "sin lectura". Ahora el
+  // umbral lo pone la PROPIA banda: canal de rojez (r - max(g,b)), pico = percentil 99.9 (la
+  // tinta, que es lo más rojo que hay) y corte al 45% de ese pico. Si el pico se queda en el
+  // ruido (<10) la banda no tiene tinta roja y se descarta — sin ese portero, el suelo del
+  // umbral marcaba decenas de miles de píxeles de papel y el OCR leía basura.
   _recorteRojo(canvas,x,y,w,h){
     const ctx=canvas.getContext('2d');
     const img=ctx.getImageData(x,y,w,h); const d=img.data;
+    const u=umbralRojo(d,w*h);
+    if(!u.hayTinta) return null;                   // banda sin tinta roja
     const out=document.createElement('canvas'); out.width=w; out.height=h;
     const octx=out.getContext('2d'); const oimg=octx.createImageData(w,h); const od=oimg.data;
     let rojos=0;
     for(let i=0;i<d.length;i+=4){
-      const r=d[i],g=d[i+1],b=d[i+2]; const mx=Math.max(g,b);
-      const es=(r>60 && r>mx*1.3 && (r-mx)>20);
+      const es=(rojezPx(d,i)>=u.T && d[i]>40);
       if(es) rojos++;
       const v=es?0:255;
       od[i]=v; od[i+1]=v; od[i+2]=v; od[i+3]=255;
@@ -2803,7 +2880,7 @@ function sesionSerializable(){
       TERRAPLEN:S.bases.TERRAPLEN?{archivo:S.bases.TERRAPLEN.archivo,hoja:S.bases.TERRAPLEN.hoja,utiles:S.bases.TERRAPLEN.utiles}:null
     },
     pdfMeta:S.pdfs.map(p=>({name:p.name,pages:p.numPages,kind:p.kind,ambito:ambitoPdfDe(p),ambitoAuto:!!p.ambitoAuto})),
-    ocr:{paginas:S.ocr.paginas,candidatos:S.ocr.candidatos,descartados:S.ocr.descartados,editadas:S.ocr.editadas,revisadas:S.ocr.revisadas}
+    ocr:{v:S.ocr.v,paginas:S.ocr.paginas,candidatos:S.ocr.candidatos,descartados:S.ocr.descartados,editadas:S.ocr.editadas,revisadas:S.ocr.revisadas}
   };
 }
 
@@ -2845,7 +2922,7 @@ const Sesion={
   },
   _aplicar(s){
     S.corte=s.corte;
-    S.ocr={running:false,cancel:false,hecho:0,total:0,
+    S.ocr={running:false,cancel:false,hecho:0,total:0,v:(s.ocr&&s.ocr.v)||0,
       paginas:(s.ocr&&s.ocr.paginas)||{},candidatos:(s.ocr&&s.ocr.candidatos)||{},
       descartados:(s.ocr&&s.ocr.descartados)||{},editadas:(s.ocr&&s.ocr.editadas)||{},
       revisadas:(s.ocr&&s.ocr.revisadas)||{}};
@@ -2856,7 +2933,7 @@ const Sesion={
   descartarAuto(){
     localStorage.removeItem(LS_SESION);
     S.corte=null; S.pdfs=[];
-    S.ocr={running:false,cancel:false,hecho:0,total:0,paginas:{},candidatos:{},descartados:{},editadas:{},revisadas:{}};
+    S.ocr={running:false,cancel:false,hecho:0,total:0,v:OCR_V,paginas:{},candidatos:{},descartados:{},editadas:{},revisadas:{}};
     render();
   }
 };
@@ -2920,10 +2997,11 @@ if(typeof module!=='undefined'&&module.exports){
     resetReclamo,hojasSospechosas,
     obsReclamo,filasActa,resumenCorte,cmpRemision,faltantes,pendientesOrdenadas,
     ambitoPdfDe,ambitoPdfPorNombre,ambitoCompatible,etiquetaAmbito,sugerirAmbitoPdf,clasificarPaginas,
+    rojezPx,umbralRojo,
     pkDeTexto,ccCatalogo,propuestaPendiente,valoresActaPendiente,pendientesConComprobante,filasActaPendientes,CC_AREA_AJENA,
     pkMetros,kmTotalesPendiente,unidadDominante,reglaMaterialPendiente,ambitoPendiente,materialBasePendiente,numProforma,
     derivadosProforma,completarDesdeProforma,reclamosCompletados,huecosSinDato,reclamosConHuecos,CAMPOS_COMPLETABLES,LBL_CAMPO,
-    Paso5,S,ESTADOS,ESTADOS_ACTA
+    Paso3,Paso5,S,ESTADOS,ESTADOS_ACTA
   };
 }
 if(typeof document!=='undefined'){ init(); }
