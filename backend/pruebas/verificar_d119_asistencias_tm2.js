@@ -346,18 +346,21 @@ ok(conVista('asistencia_plus_tm2','','usaFlujoDomFest') === true, "usaFlujoDomFe
 ok(conVista('asistencia_plus_tm2','tierras','usaFlujoDomFest') === true, 'true en Tierras');
 ok(conVista('asistencia_plus_tm2','odt','usaFlujoDomFest') === true, 'true en ODT');
 ok(conVista('asistencia_plus_tm2','odl','usaFlujoDomFest') === true, 'true en ODL (no depende de la vista)');
+ok(conVista('asistencia_plus_tm2','odt,odl','usaFlujoDomFest') === true, 'true en Drenajes ODT+ODL (D135)');
 console.log('   · esVistaTierras = "la vista INCLUYE tierras" (§2.3b — si no, el Parte sale sin la fila del admin):');
 ok(conVista('asistencia_plus_tm2','','esVistaTierras') === true,  "en 'Todas' es TRUE (el Parte lleva la fila de extras del admin)");
 ok(conVista('asistencia_plus_tm2','tierras','esVistaTierras') === true, 'en Tierras: true');
 ok(conVista('asistencia_plus_tm2','odt','esVistaTierras') === false, 'en ODT: false');
 ok(conVista('asistencia_plus_tm2','odl','esVistaTierras') === false, 'en ODL: false');
+ok(conVista('asistencia_plus_tm2','odt,odl','esVistaTierras') === false, 'en Drenajes ODT+ODL: false (D135)');
 console.log('   · el aviso del pisado del capataz en dom/fest (D115) le llega donde aplica:');
 ok(conVista('asistencia_plus_tm2','','esVistaDrenajes') === true,   "en 'Todas': sí (puede marcar gente de ODT/ODL)");
 ok(conVista('asistencia_plus_tm2','odt','esVistaDrenajes') === true, 'en ODT: sí');
+ok(conVista('asistencia_plus_tm2','odt,odl','esVistaDrenajes') === true, 'en Drenajes ODT+ODL: sí (D135)');
 ok(conVista('asistencia_plus_tm2','tierras','esVistaDrenajes') === false, 'en Tierras: no (allá el riesgo no existe)');
-console.log('   · selector "Ver como":');
-ok(JSON.stringify(conVista('asistencia_plus_tm2','','opcionesVerComo')) === JSON.stringify(['','tierras','odt','odl']),
-  'ofrece Todas / Tierras / ODT / ODL y nada más (ni uf3)');
+console.log('   · selector "Ver como" (lista revisada por D135: drenajes va COMPLETO):');
+ok(JSON.stringify(conVista('asistencia_plus_tm2','','opcionesVerComo')) === JSON.stringify(['','tierras','odt,odl']),
+  'ofrece Todas / Tierras / Drenajes(ODT+ODL) y nada más (ni uf3, ni ODT y ODL sueltos — D135)');
 ok(JSON.stringify(conVista('admin','','opcionesVerComo')) === JSON.stringify(['','tierras','odt','odl','odt,odl','uf3']),
   'el del admin no cambia (D116)');
 ok(conVista('residente_dren','','opcionesVerComo') === null, 'residente_dren sigue SIN selector');
