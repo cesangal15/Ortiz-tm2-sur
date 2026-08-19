@@ -664,20 +664,37 @@ function filtroEsDrenajes(){
 }
 /* D119 — quién ve el selector "Ver como" y con qué opciones. Devuelve `null` = no se dibuja.
  * El admin conserva EXACTAMENTE la lista de D116 (incluida `uf3` y el combinado `odt,odl`). El rol
- * nuevo ve solo sus tres áreas + "Todas": ni `uf3` ni el combinado de drenajes, que para ella sería
- * un cuarto camino a lo mismo. La lista corta es COMODIDAD, no seguridad — quien teclee `&area=uf3`
- * en la URL se topa con la intersección de `areasEfectivas` en el backend, que la ignora y le devuelve
- * sus tres áreas. Los demás roles (residente_dren, duvan, jeisson, residentes de un área) siguen sin
- * selector: vienen acotados por su rol y una sola área no tiene nada que filtrar. */
+ * nuevo ve solo sus áreas + "Todas": sin `uf3`. La lista corta es COMODIDAD, no seguridad — quien
+ * teclee `&area=uf3` en la URL se topa con la intersección de `areasEfectivas` en el backend, que la
+ * ignora y le devuelve sus tres áreas. Los demás roles (residente_dren, duvan, jeisson, residentes de
+ * un área) siguen sin selector: vienen acotados por su rol y una sola área no tiene nada que filtrar.
+ *
+ * D135 — a `angie` DRENAJES le va COMPLETO (`odt,odl`), no ODT y ODL por separado.
+ *
+ * POR QUÉ. El resumen cuenta como "sin reportar" a quien está en el roster del área revisada y no
+ * tiene fila REPORTADA en esa misma área: el backend filtra las filas de ASISTENCIA por área ANTES de
+ * cruzarlas con el personal esperado (`asistenciaDia`), así que la fila existe pero, si se reportó en
+ * una cuadrilla de la OTRA área, no entra en el cruce. En drenajes eso pasa todo el tiempo — la gente
+ * se mueve entre cuadrillas ODT y ODL según el frente, y su fila en PERSONAL se queda en la de origen.
+ * Resultado en campo (ago-2026): 8 personas marcadas "sin reportar" en la vista ODT que estaban
+ * reportadas en una cuadrilla ODL ese mismo día. No era un dato que faltara, era la mitad del dato
+ * escondida por el filtro; y el remedio natural —"completarlas" desde el resumen— habría DUPLICADO
+ * la fila. Mirando `odt,odl` el cruce ve las dos áreas a la vez y el falso faltante desaparece.
+ *
+ * Separar ODT de ODL además ya no compra nada: desde D84 hay un solo residente de drenajes y el Parte
+ * de Navision se arma por día×proyecto (los CC ya distinguen el capítulo 06 del 07), así que la vista
+ * combinada exporta exactamente lo mismo que las dos por separado. El combinado NO es nuevo: es el
+ * valor que el admin tiene desde D116 y la misma vista que `residente_dren` tiene por su rol.
+ * `esVistaDrenajes()` y `usaFlujoDomFest()` ya lo daban por bueno (`areasFiltro()` parte por comas). */
 function opcionesVerComo(){
   if(STATE.rol==='admin')               return ['','tierras','odt','odl','odt,odl','uf3'];
-  if(STATE.rol==='asistencia_plus_tm2') return ['','tierras','odt','odl'];
+  if(STATE.rol==='asistencia_plus_tm2') return ['','tierras','odt,odl'];
   return null;
 }
 function etiquetaArea(a){
   if(a==='')        return 'Todas las áreas';
   if(a==='tierras') return 'Tierras';
-  if(a==='odt,odl') return 'ODT + ODL (drenajes)';
+  if(a==='odt,odl') return 'Drenajes (ODT + ODL)';
   return a.toUpperCase();
 }
 // D101: ¿la vista está acotada a un área? Con `areas` del backend (o, si el Apps Script aún no se
