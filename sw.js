@@ -18,11 +18,15 @@
  * archivo). Con network-first, el CONTENIDO de los archivos se refresca solo al haber señal — un
  * cambio de texto en un HTML NO requiere subir la versión.
  */
-// D108: se sube la versión para que los equipos en campo reciban el login nuevo — el que ya NO lleva
+// D138: se sube a v5 porque la lista de precache CAMBIA (entra `flota.js`, el catálogo de máquinas
+// vivo que usan capataz y chequeadora). Sin subirla, un teléfono ya instalado serviría el shell viejo
+// y `flota.js` no estaría en su caché: con señal se bajaría igual, pero SIN señal la pantalla se
+// quedaría sin el archivo y sin lista de máquinas.
+// D108: se subió la versión para que los equipos en campo recibieran el login nuevo — el que ya NO lleva
 // las contraseñas dentro y sabe entrar sin señal con la sesión/credencial recordada. Sin subirla, un
 // teléfono podría seguir sirviendo el index.html viejo desde el precache.
 // (D84 la subió antes por el login sin ariel/albert/residente_odt y el reporte de drenajes multi-área.)
-const CACHE_V = 'tm2-v4';
+const CACHE_V = 'tm2-v5';
 const FONT_CACHE = CACHE_V + '-fonts';
 
 // Lista explícita: shell + capturas + app. NO precachear las páginas fuera de alcance
@@ -38,6 +42,7 @@ const PRECACHE = [
   './asistencia.html',
   './auth.js',
   './offline.js',
+  './flota.js',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',

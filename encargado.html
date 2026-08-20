@@ -149,15 +149,20 @@
 </div>
 
 <script src="auth.js"></script>
+<script src="flota.js"></script>
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
 // D84: `albert` y `ariel` salieron a UF3 (fuera de este sistema); ya no se esperan en la bandeja.
 const CAPATACES_ESPERADOS = ['angel','alejo','robinson'];
 // Flota viva para el chip "maquinaria sin reporte". D136: NH69, BL009, CS78B, NH404, NH420,
 // CAT900, NH421, EXC001, EXC013 y EXC014 se devolvieron/entregaron (ago-2026) y salen del listado.
+// D138: el chip "maquinaria sin reporte" se arma con la flota VIGENTE ese día (hoja MAQUINAS), que
+// llega junto con la bandeja. Lo de abajo es solo el respaldo si el catálogo no responde.
 // D137: CR020 y D150B salen — no estan en obra (confirmado por el dueno); eran codigos huerfanos
 // que se listaban como faltantes aunque el capataz no podia reportarlos. CR08 entra al catalogo.
-const TODAS_MAQUINAS = ['BL005','EXC015','FNG02','MO03','MO04','MO09','CR019','CR013','CR016','CR08','NH403','CR026','RT-02'];
+const MAQUINAS_RESPALDO = ['BL005','EXC015','FNG02','MO03','MO04','MO09','CR019','CR013','CR016','CR08','NH403','CR026','RT-02'];
+const TIPO_RESPALDO = {'BL005':'BULLDOZER','EXC015':'EXCAVADORA','MO03':'MOTONIVELADORA','MO04':'MOTONIVELADORA','MO09':'MOTONIVELADORA','FNG02':'FINISHER','CR019':'VIBROCOMPACTADOR','CR013':'VIBROCOMPACTADOR','CR016':'VIBROCOMPACTADOR','CR08':'VIBROCOMPACTADOR','NH403':'VIBROCOMPACTADOR','CR026':'MINIBULDOZER','RT-02':'RETROEXCAVADORA'};
+let TODAS_MAQUINAS = MAQUINAS_RESPALDO.slice();
 // Categorías cuyo volumen es OFICIAL de la chequeadora; el conteo del capataz es solo control.
 const CAT_CONTROL_CAPATAZ = ['Excavación aprovechable','Excavación préstamo','Excavación no aprovechable','Conformación / ZODME','Terraplén'];
 const ACTIVIDADES = [
@@ -322,6 +327,16 @@ const BASE_TOL_M = 30;      // espejo de BASE_TOL_M en Codigo.gs (ajuste por PK 
 const SUBTRAMO_BORDE_M = 50;
 let TRAMOS=[], TRAMO_IDX={};
 function normTramo(s){ return String(s==null?'':s).replace(/[   ​‌‍﻿]/g,' ').toUpperCase().replace(/\s+/g,' ').trim(); }
+/* D138 — flota ESPERADA el día que se está revisando, desde la hoja MAQUINAS. Va en paralelo con la
+ * bandeja porque depende de la fecha: una máquina devuelta no debe salir como "sin reporte" en días
+ * en que ya no estaba, ni una recién llegada en días anteriores a su ingreso. Si el catálogo falla,
+ * se queda con el respaldo y el panel funciona igual. Solo se listan las ESPERADAS: el finisher y su
+ * vibro, que van y vienen, no ensucian el chip los días que no están en obra. */
+async function loadFlota(fecha){
+  const fl=await TM2Flota.cargar(APPS_SCRIPT_URL, fecha, {ids:MAQUINAS_RESPALDO, tipos:TIPO_RESPALDO, prog:{}});
+  const esperadas=fl.maquinas.filter(m=>m.esperada!==false);
+  if(esperadas.length) TODAS_MAQUINAS=TM2Flota.ids(esperadas);
+}
 async function loadTramos(){
   if(TRAMOS.length) return;                                  // catálogo estable: se pide una sola vez
   try{
@@ -494,7 +509,7 @@ async function consultar(){
     // D104: el catálogo de subtramos (?action=tramos) se pide en paralelo con la bandeja; es estable,
     // así que solo se descarga la primera consulta. Si falla, el panel funciona igual y el bloque de
     // subtramo simplemente no se muestra (el backend sigue resolviendo solo).
-    const [resp] = await Promise.all([fetch(url), loadTramos()]);
+    const [resp] = await Promise.all([fetch(url), loadTramos(), loadFlota(fecha)]);
     const data=await resp.json();
     STATE.fecha=fecha;
     // D110: `_enviada` = la fila YA pasó por un envío a DATA. Lo dice el servidor: enviar_data deja en

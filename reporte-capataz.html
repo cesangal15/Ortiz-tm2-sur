@@ -13,6 +13,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
 <script src="auth.js"></script>
 <script src="offline.js"></script>
+<script src="flota.js"></script>
 <style>
   :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--success:#2ecc71;--error:#e74c3c;--input-bg:#12151f;--uf1:#3a9bdc;--uf2:#9b59b6;}
   *{box-sizing:border-box;margin:0;padding:0;}
@@ -130,6 +131,8 @@
     <div class="field">
       <label>Fecha del reporte <span class="req">*</span></label>
       <input type="date" id="fechaReporte">
+      <!-- D138: solo aparece si la lista de máquinas NO salió del servidor (sin señal o hoja vacía). -->
+      <div id="avisoFlota" style="display:none;margin-top:8px;font-size:12px;color:#f5a623;line-height:1.5;"></div>
     </div>
   </div>
   <div class="card">
@@ -228,12 +231,21 @@ function capFromCc(cc){ if(!cc) return ''; const p=cc.split('.')[0]; return p===
 // (D71): PAVIMENTOS (CC 04.*) va en el grupo PAVIMENTOS, como lo tiene la hoja BASE.
 function grupoFromCc(cc){ return (cc && cc.split('.')[0]==='04') ? 'PAVIMENTOS' : 'TIERRAS'; }
 
-const MAQUINAS = ['BL005','EXC015','FNG02','MO03','MO04','MO09','CR08','CR019','CR013','CR016','NH403','CR026','RT-02'];
-const TIPO_EQUIPO = {'BL005':'BULLDOZER','EXC015':'EXCAVADORA','MO03':'MOTONIVELADORA','MO04':'MOTONIVELADORA','MO09':'MOTONIVELADORA','FNG02':'FINISHER','CR08':'VIBROCOMPACTADOR','CR019':'VIBROCOMPACTADOR','CR013':'VIBROCOMPACTADOR','CR016':'VIBROCOMPACTADOR','NH403':'VIBROCOMPACTADOR','CR026':'MINIBULDOZER','RT-02':'RETROEXCAVADORA'};
-// Alquiladas = 5 h programadas; el resto (propias) cae al default de 6.4 h en progHoras().
+// D138: la flota YA NO vive aquí — la sirve `?action=maquinas&fecha=` desde la hoja MAQUINAS, así que
+// un alta o una baja es editar una fila, sin tocar código ni redesplegar. Lo de abajo es el RESPALDO
+// de último recurso: solo se usa si este teléfono nunca ha tenido señal (ver flota.js). Conviene
+// mantenerlo grosso modo al día, pero ya no manda.
 // D136: NH69/BL009/CS78B/NH404/NH420/CAT900/NH421 salieron de la obra (ago-2026); de las
 // que quedan, solo NH403 y RT-02 son alquiladas.
-const HORAS_PROG = {'NH403':5,'RT-02':5};
+const MAQUINAS_RESPALDO = ['BL005','EXC015','FNG02','MO03','MO04','MO09','CR08','CR019','CR013','CR016','NH403','CR026','RT-02'];
+const TIPO_RESPALDO = {'BL005':'BULLDOZER','EXC015':'EXCAVADORA','MO03':'MOTONIVELADORA','MO04':'MOTONIVELADORA','MO09':'MOTONIVELADORA','FNG02':'FINISHER','CR08':'VIBROCOMPACTADOR','CR019':'VIBROCOMPACTADOR','CR013':'VIBROCOMPACTADOR','CR016':'VIBROCOMPACTADOR','NH403':'VIBROCOMPACTADOR','CR026':'MINIBULDOZER','RT-02':'RETROEXCAVADORA'};
+// Alquiladas = 5 h programadas; el resto (propias) cae al default de 6.4 h en progHoras().
+const PROG_RESPALDO = {'NH403':5,'RT-02':5};
+// Estado vivo (se repuebla al cargar la flota del día). Arranca en el respaldo para que la pantalla
+// sirva desde el primer instante, incluso antes de que responda el servidor.
+let MAQUINAS = MAQUINAS_RESPALDO.slice();
+let TIPO_EQUIPO = Object.assign({}, TIPO_RESPALDO);
+let HORAS_PROG = Object.assign({}, PROG_RESPALDO);
 // Tipos sin producción propia (compactan/apoyan frentes de otras máquinas): vibros + mini cargador/buldozer (D41/D44)
 // + la retroexcavadora RT-02 "la pajarita" (alquilada, 5 h): apoya frentes de otras máquinas.
 const TIPOS_SIN_PRODUCCION = ['VIBROCOMPACTADOR','MINICARGADOR','MINIBULDOZER','RETROEXCAVADORA'];
@@ -252,6 +264,10 @@ window.onload = function(){
   document.getElementById('backBtn').textContent = (rol==='encargado'||rol==='residente') ? '← Volver' : 'Salir';
   document.getElementById('fechaReporte').value=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
   addLinea();
+  // D138: flota del día desde la hoja MAQUINAS (con caída a caché sin señal). No bloquea la pantalla:
+  // los desplegables ya están pintados con el respaldo y se repintan cuando llegue.
+  refrescarFlota();
+  document.getElementById('fechaReporte').addEventListener('change', refrescarFlota);
 };
 function logout(){
   const rol=localStorage.getItem('rol');
@@ -273,7 +289,25 @@ function actividadOptions(){
   order.forEach(g=>{ html+='<optgroup label="'+g+'">'; groups[g].forEach(x=>{ html+='<option value="'+x.a.replace(/"/g,'&quot;')+'">'+x.a+'</option>'; }); html+='</optgroup>'; });
   return html;
 }
-function maqOptions(){ return '<option value="">— Máquina —</option>'+MAQUINAS.map(m=>'<option>'+m+'</option>').join(''); }
+// `actual` se conserva SIEMPRE como opción aunque ya no esté en la flota del día: si al recargar la
+// lista desapareciera la máquina que el capataz ya eligió, se le borraría el dato sin que lo note.
+function maqOptions(actual){
+  const extra = (actual && MAQUINAS.indexOf(actual)<0) ? '<option value="'+actual+'" selected>'+actual+' (fuera de la flota del día)</option>' : '';
+  return '<option value="">— Máquina —</option>'+extra+MAQUINAS.map(m=>'<option'+(m===actual?' selected':'')+'>'+m+'</option>').join('');
+}
+/* D138 — recarga la flota vigente para la fecha del reporte y repinta los desplegables de equipo ya
+ * puestos, conservando lo elegido. Se llama al abrir y al cambiar la fecha (una máquina que hoy está
+ * puede no haber estado el día que se reporta). Sin señal cae a la caché de este teléfono. */
+function refrescarFlota(){
+  const fecha=(document.getElementById('fechaReporte')||{}).value||'';
+  return TM2Flota.cargar(APPS_SCRIPT_URL, fecha, {ids:MAQUINAS_RESPALDO, tipos:TIPO_RESPALDO, prog:PROG_RESPALDO})
+    .then(function(fl){
+      MAQUINAS=TM2Flota.ids(fl.maquinas); TIPO_EQUIPO=TM2Flota.tipos(fl.maquinas); HORAS_PROG=TM2Flota.progs(fl.maquinas);
+      document.querySelectorAll('select.e-id').forEach(function(sel){ sel.innerHTML=maqOptions(sel.value); });
+      const av=document.getElementById('avisoFlota'), t=TM2Flota.aviso(fl);
+      if(av){ av.textContent=t; av.style.display=t?'block':'none'; }
+    });
+}
 function motivoOptions(){ return '<option value="">— Motivo —</option>'+MOTIVOS.map(m=>'<option>'+m+'</option>').join(''); }
 
 function addLinea(){
@@ -388,7 +422,7 @@ function addEquipo(i){
   const cont=document.getElementById('eqs_'+i), j=eqIdx++;
   const row=document.createElement('div'); row.className='eq-item'; row.id='eq_'+j;
   row.innerHTML=
-    '<div class="eq-top"><select class="e-id" onchange="onEqChange('+j+')">'+maqOptions()+'</select>'
+    '<div class="eq-top"><select class="e-id" onchange="onEqChange('+j+')">'+maqOptions('')+'</select>'
     +'<button class="btn-del" onclick="delEquipo('+j+')" title="Quitar">✕</button></div>'
     +'<div class="eq-dup" id="eqdup_'+j+'" style="display:none;"></div>'
     +'<div class="eq-prog" id="eqprog_'+j+'"></div>'
