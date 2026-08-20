@@ -144,6 +144,11 @@ const COMPLEM=[
   {c:'ADECUACION',l:'Adecuación de caminos'},{c:'DERRUMBE',l:'Limpieza de derrumbe'}
 ];
 const COMPLEM_LBL={}; COMPLEM.forEach(x=>COMPLEM_LBL[x.c]=x.l);
+// Tipos cuya producción es SIEMPRE nula (D41/D44/D111): el backend la descarta aunque llegue, así
+// que a estas máquinas no se les pide el campo. Importa desde D137: la lista de faltantes ya no es
+// solo de productivas, así que vibros/minibuldózer/RT-02 aparecen aquí y antes no lo hacían.
+const TIPOS_SIN_PRODUCCION=['VIBROCOMPACTADOR','MINICARGADOR','MINIBULDOZER','RETROEXCAVADORA'];
+function sinProduccion(tipo){ return TIPOS_SIN_PRODUCCION.indexOf(String(tipo||'').toUpperCase())>=0; }
 let STATE = { fecha:'', frentes:[], otras:[], flota:[], faltantes:[], nuevas:[] };
 let MAQPROG = {};   // id_maquina -> horas programadas (para mostrar el motivo solo si trabajó menos)
 
@@ -333,7 +338,8 @@ function render(){
                 '<select class="sel-dst" id="dst_'+m.id_maquina+'">'+dstOpts+'</select>'+
                 '<div class="mini"><label>Horas oper.</label><input type="number" step="0.1" id="hf_'+m.id_maquina+'" oninput="toggleMot(\'mfw_'+esc(m.id_maquina)+'\',this.value,\''+esc(m.id_maquina)+'\')"></div>'+
                 '<span class="mini wide" id="mfw_'+m.id_maquina+'" style="display:none"><label>Motivo</label><select id="mf_'+m.id_maquina+'">'+motivoOpts('')+'</select></span>'+
-                '<div class="mini"><label>Prod. (si frente)</label><input type="number" step="0.01" id="pf_'+m.id_maquina+'"></div>'+
+                (sinProduccion(m.tipo) ? '<span class="mini wide" style="opacity:.7">sin producción propia</span>'
+                                       : '<div class="mini"><label>Prod. (si frente)</label><input type="number" step="0.01" id="pf_'+m.id_maquina+'"></div>')+
                 '<button class="btn-add" onclick="addFaltante(\''+esc(m.id_maquina)+'\')">➕ Asignar</button>'+
               '</div>'+
             '</div>';

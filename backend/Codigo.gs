@@ -1427,11 +1427,15 @@ const MAQ_CATALOGO = {
   CR026:{tipo:'MINIBULDOZER',prog:6.4},
   'RT-02':{tipo:'RETROEXCAVADORA',prog:5}
 };
-// Flota "requerida" diaria (mismo conjunto que estado.html): máquinas productivas cuya presencia se
-// espera cada día. El panel la usa para mostrar las FALTANTES (sin reporte) y permitir registrar sus
-// horas manualmente (D61). CAT320 y MC705 retiradas de la obra (jun-2026); NH69, BL009, EXC001,
-// EXC013 y EXC014 devueltas (ago-2026, D136).
-const MAQ_FLOTA_ESPERADA = ['BL005','EXC015','MO03','MO04','MO09'];
+// Flota "requerida" diaria (mismo conjunto que estado.html): máquinas de las que se espera saber
+// cada día SI reportaron o no. El panel la usa para mostrar las FALTANTES (sin reporte) y permitir
+// registrar sus horas manualmente (D61).
+// D137: es TODO el catálogo, no solo las productivas. Antes eran las 10 de BL/EXC/MO/NH69 (D61d) y
+// vibros, finisher, minibuldózer y RT-02 (D111) quedaban fuera, así que de esas nunca se sabía si
+// habían trabajado o si simplemente nadie las reportó — que es justo lo que la pantalla existe para
+// responder. Se DERIVA del catálogo (no se copia a mano) para que las dos listas no puedan divergir:
+// dar de baja una máquina en MAQ_CATALOGO la saca también de las faltantes, en un solo sitio.
+const MAQ_FLOTA_ESPERADA = Object.keys(MAQ_CATALOGO);
 // Bucket de una fila de MAQUINARIA a partir de su par H/I derivado (CAPTURA_ACT_MAP). '' = no editable.
 function bucketDeMaqRow(r){
   const h=String(r.actividad||'').toUpperCase(), i=String(r.sub_actividad||'').toUpperCase();

@@ -103,13 +103,20 @@
 <script src="auth.js"></script>
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
-// Flota productiva que se espera cada día (misma lista que MAQ_FLOTA_ESPERADA de Codigo.gs).
-// D136: NH69, BL009, EXC001, EXC013 y EXC014 se devolvieron/entregaron (ago-2026) y salen de la flota.
-const TODAS_MAQUINAS = ['BL005','EXC015','MO03','MO04','MO09'];
+// Flota que se espera cada día = MISMO conjunto que MAQ_FLOTA_ESPERADA de Codigo.gs, que a partir
+// de D137 es TODO el catálogo (05_CATALOGO §4), no solo las productivas: de un vibro o del finisher
+// también hay que poder saber si trabajó o si nadie lo reportó. Al dar de baja o de alta una máquina
+// hay que tocar las DOS (aquí y el catálogo del backend).
+// D136: NH69, BL009, EXC001, EXC013, EXC014, CS78B, NH404, NH420, CAT900 y NH421 devueltas (ago-2026).
+const TODAS_MAQUINAS = ['BL005','EXC015','MO03','MO04','MO09','FNG02','CR019','CR013','CR016','NH403','CR026','RT-02'];
 const TIPO_EQUIPO = {
   'BL005':'BULLDOZER',
   'EXC015':'EXCAVADORA',
-  'MO03':'MOTONIVELADORA','MO04':'MOTONIVELADORA','MO09':'MOTONIVELADORA'
+  'MO03':'MOTONIVELADORA','MO04':'MOTONIVELADORA','MO09':'MOTONIVELADORA',
+  'FNG02':'FINISHER',
+  'CR019':'VIBROCOMPACTADOR','CR013':'VIBROCOMPACTADOR','CR016':'VIBROCOMPACTADOR','NH403':'VIBROCOMPACTADOR',
+  'CR026':'MINIBULDOZER',
+  'RT-02':'RETROEXCAVADORA'
 };
 
 window.onload = function() {
