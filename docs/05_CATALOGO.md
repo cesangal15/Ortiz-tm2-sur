@@ -171,7 +171,7 @@ Terraplén (genera fila de terraplén) · Puente · ODL · Botadero (solo excava
 
 | ID | Tipo | Hrs prog | Proveedor |
 |---|---|---|---|
-| BL005, BL009 | BULLDOZER | 6.4 | Propias |
+| BL005 | BULLDOZER | 6.4 | Propia |
 | EXC015 | EXCAVADORA | 6.4 | Propia |
 | MO03, MO04, MO09 | MOTONIVELADORA | 6.4 | Propias |
 | FNG02 | FINISHER | 6.4 | Propia |
@@ -182,7 +182,7 @@ Terraplén (genera fila de terraplén) · Puente · ODL · Botadero (solo excava
 
 **Retiradas de la obra (jun-2026, D61):** CAT320 (excavadora alquilada) y MC705 (motoniveladora alquilada). Ya no aparecen en los desplegables de capataz/chequeadora, ni en el panel de producción, ni en el estado de máquinas faltantes.
 
-**Devueltas / entregadas (ago-2026, D136):** **NH69** (bulldozer alquilado), **EXC001, EXC013, EXC014** (excavadoras propias), **CS78B** (vibro GEOEXCON), **NH404, NH420** (vibros DINISSAN), **CAT900** (vibro SK RENTAL) y **NH421** (minicargador DINISSAN). Mismo tratamiento que D61: salen de los desplegables de capataz y chequeadora, del catálogo del panel de producción y de la flota esperada de `estado.html`/panel. **Su histórico en MAQUINARIA no se toca** (las filas ya escritas siguen ahí y siguen saliendo en los informes del período en que trabajaron). Quedan **6 máquinas en la flota esperada** (BL005, BL009, EXC015, MO03, MO04, MO09) y **una sola excavadora** en el selector de la chequeadora (EXC015). El único vibro alquilado que queda es NH403.
+**Devueltas / entregadas (ago-2026, D136):** **NH69** (bulldozer alquilado), **BL009** (bulldozer propio), **EXC001, EXC013, EXC014** (excavadoras propias), **CS78B** (vibro GEOEXCON), **NH404, NH420** (vibros DINISSAN), **CAT900** (vibro SK RENTAL) y **NH421** (minicargador DINISSAN). Mismo tratamiento que D61: salen de los desplegables de capataz y chequeadora, del catálogo del panel de producción y de la flota esperada de `estado.html`/panel. **Su histórico en MAQUINARIA no se toca** (las filas ya escritas siguen ahí y siguen saliendo en los informes del período en que trabajaron). Quedan **5 máquinas en la flota esperada** (BL005, EXC015, MO03, MO04, MO09), **un solo bulldozer** (BL005) y **una sola excavadora** en el selector de la chequeadora (EXC015). El único vibro alquilado que queda es NH403.
 
 **Regla de producción por tipo:**
 - VIBROCOMPACTADOR: producción siempre nula — compactan frentes ejecutados por otras máquinas; el campo producción no se muestra ni se guarda.
@@ -191,7 +191,7 @@ Terraplén (genera fila de terraplén) · Puente · ODL · Botadero (solo excava
 - Actividades de apoyo (Compactación terraplén/subbase/BTC · Paisajeo / Adecuación de caminos / Limpieza de derrumbe): producción nula para cualquier tipo de máquina.
 - Todos los demás tipos + actividades productivas: producción = largo de la línea de la actividad.
 
-CC habituales por máquina (de reportes Abr–May): BL→02.07/02.08 · EXC→02.05/02.06/02.03 · MO→02.07/03.01/03.03 · CR013→02.07-UF2/03.01 · CR016→02.07/03.01 · CR019→02.07-UF1 · FNG02→03.03.
+CC habituales por máquina (de reportes Abr–May; incluye máquinas ya devueltas, se conservan como referencia del histórico): BL→02.07/02.08 · EXC→02.05/02.06/02.03 · MO→02.07/03.01/03.03 · CR013→02.07-UF2/03.01 · CR016→02.07/03.01 · CR019→02.07-UF1 · FNG02→03.03.
 
 **PENDIENTE DE VALIDAR:** marca/modelo/valor-hora reales de vibros nuevos en dim; bulldozer alquilado D150B y motoniveladora 120 alquilada (IDs pendientes).
 

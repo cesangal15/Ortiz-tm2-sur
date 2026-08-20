@@ -228,10 +228,11 @@ function capFromCc(cc){ if(!cc) return ''; const p=cc.split('.')[0]; return p===
 // (D71): PAVIMENTOS (CC 04.*) va en el grupo PAVIMENTOS, como lo tiene la hoja BASE.
 function grupoFromCc(cc){ return (cc && cc.split('.')[0]==='04') ? 'PAVIMENTOS' : 'TIERRAS'; }
 
-const MAQUINAS = ['BL005','BL009','EXC015','FNG02','MO03','MO04','MO09','CR08','CR019','CR013','CR016','NH403','CR026','RT-02'];
-const TIPO_EQUIPO = {'BL005':'BULLDOZER','BL009':'BULLDOZER','EXC015':'EXCAVADORA','MO03':'MOTONIVELADORA','MO04':'MOTONIVELADORA','MO09':'MOTONIVELADORA','FNG02':'FINISHER','CR08':'VIBROCOMPACTADOR','CR019':'VIBROCOMPACTADOR','CR013':'VIBROCOMPACTADOR','CR016':'VIBROCOMPACTADOR','NH403':'VIBROCOMPACTADOR','CR026':'MINIBULDOZER','RT-02':'RETROEXCAVADORA'};
+const MAQUINAS = ['BL005','EXC015','FNG02','MO03','MO04','MO09','CR08','CR019','CR013','CR016','NH403','CR026','RT-02'];
+const TIPO_EQUIPO = {'BL005':'BULLDOZER','EXC015':'EXCAVADORA','MO03':'MOTONIVELADORA','MO04':'MOTONIVELADORA','MO09':'MOTONIVELADORA','FNG02':'FINISHER','CR08':'VIBROCOMPACTADOR','CR019':'VIBROCOMPACTADOR','CR013':'VIBROCOMPACTADOR','CR016':'VIBROCOMPACTADOR','NH403':'VIBROCOMPACTADOR','CR026':'MINIBULDOZER','RT-02':'RETROEXCAVADORA'};
 // Alquiladas = 5 h programadas; el resto (propias) cae al default de 6.4 h en progHoras().
-// D136: NH69/CS78B/NH404/NH420/CAT900/NH421 salieron de la obra (devueltas ago-2026).
+// D136: NH69/BL009/CS78B/NH404/NH420/CAT900/NH421 salieron de la obra (ago-2026); de las
+// que quedan, solo NH403 y RT-02 son alquiladas.
 const HORAS_PROG = {'NH403':5,'RT-02':5};
 // Tipos sin producción propia (compactan/apoyan frentes de otras máquinas): vibros + mini cargador/buldozer (D41/D44)
 // + la retroexcavadora RT-02 "la pajarita" (alquilada, 5 h): apoya frentes de otras máquinas.

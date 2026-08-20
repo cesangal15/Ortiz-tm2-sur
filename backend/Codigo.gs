@@ -1411,12 +1411,14 @@ const MAQ_COMPLEM = {
 };
 // Catálogo de máquinas (05_CATALOGO §4): tipo + horas programadas. Para crear filas y poblar el
 // selector de "redirigir producción" (solo las que generan producción; vibros/minis fuera).
-// D136: devueltas al proveedor (ago-2026) y fuera del catálogo — NH69 (bulldozer alquilado),
-// EXC001/EXC013/EXC014 (excavadoras propias), CS78B/NH404/NH420/CAT900 (vibros alquilados) y
-// NH421 (minicargador). Salir del catálogo NO borra lo ya escrito en MAQUINARIA: el histórico se
-// conserva; solo dejan de ofrecerse y de esperarse. (Antes: CAT320 y MC705, jun-2026, D61.)
+// D136: devueltas/entregadas (ago-2026) y fuera del catálogo — NH69 (bulldozer alquilado),
+// BL009 (bulldozer propio), EXC001/EXC013/EXC014 (excavadoras propias),
+// CS78B/NH404/NH420/CAT900 (vibros alquilados) y NH421 (minicargador). BL005 queda como
+// único bulldozer y EXC015 como única excavadora. Salir del catálogo NO borra lo ya escrito
+// en MAQUINARIA: el histórico se conserva; solo dejan de ofrecerse y de esperarse.
+// (Antes: CAT320 y MC705, jun-2026, D61.)
 const MAQ_CATALOGO = {
-  BL005:{tipo:'BULLDOZER',prog:6.4}, BL009:{tipo:'BULLDOZER',prog:6.4},
+  BL005:{tipo:'BULLDOZER',prog:6.4},
   EXC015:{tipo:'EXCAVADORA',prog:6.4},
   MO03:{tipo:'MOTONIVELADORA',prog:6.4}, MO04:{tipo:'MOTONIVELADORA',prog:6.4}, MO09:{tipo:'MOTONIVELADORA',prog:6.4},
   FNG02:{tipo:'FINISHER',prog:6.4},
@@ -1427,9 +1429,9 @@ const MAQ_CATALOGO = {
 };
 // Flota "requerida" diaria (mismo conjunto que estado.html): máquinas productivas cuya presencia se
 // espera cada día. El panel la usa para mostrar las FALTANTES (sin reporte) y permitir registrar sus
-// horas manualmente (D61). CAT320 y MC705 retiradas de la obra (jun-2026); NH69, EXC001, EXC013 y
-// EXC014 devueltas (ago-2026, D136).
-const MAQ_FLOTA_ESPERADA = ['BL005','BL009','EXC015','MO03','MO04','MO09'];
+// horas manualmente (D61). CAT320 y MC705 retiradas de la obra (jun-2026); NH69, BL009, EXC001,
+// EXC013 y EXC014 devueltas (ago-2026, D136).
+const MAQ_FLOTA_ESPERADA = ['BL005','EXC015','MO03','MO04','MO09'];
 // Bucket de una fila de MAQUINARIA a partir de su par H/I derivado (CAPTURA_ACT_MAP). '' = no editable.
 function bucketDeMaqRow(r){
   const h=String(r.actividad||'').toUpperCase(), i=String(r.sub_actividad||'').toUpperCase();
