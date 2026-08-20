@@ -9,7 +9,9 @@
 │                        ├── reporte-capataz.html (capataz, encargado, admin)             │
 │                        ├── reporte-chequeadora.html (chequeadora, admin)                │
 │                        ├── estado.html          (admin)                                 │
-│                        ├── produccion-maquinaria.html (admin · ajuste de producción)    │
+│                        ├── produccion-maquinaria.html "Maquinaria" (admin · residente ·  │
+│                        │      jeisson solo Flota · jefe solo lectura — D139: pestañas     │
+│                        │      Producción del día + Flota, alta/baja sobre hoja MAQUINAS)  │
 │                        ├── residente.html      (residente, admin)                       │
 │                        ├── jefe.html (jefe · residente · admin — resumen post-DATA,      │
 │                        │             filtro Área tierras/ODT/ODL + copiado por área)     │

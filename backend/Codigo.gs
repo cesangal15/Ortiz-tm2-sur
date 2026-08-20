@@ -1032,6 +1032,7 @@ function doGet(e){
   if(a==='drenajes')    return drenajesCatalogo();
   if(a==='tramos')      return tramosCatalogo();   // D104: subtramos del eje para el selector del residente
   if(a==='maquinas')    return maquinasCatalogo(e); // D138: flota vigente en una fecha (hoja MAQUINAS)
+  if(a==='flota')       return flotaLeer(e);        // D139: estancias + avisos para la pestaña Flota
   if(a==='acumulado_drenajes') return acumuladoDrenajes(e);
   if(a==='maquinaria_produccion') return maquinariaProduccion(e);
   if(a==='debug')       return debug(e);
@@ -1047,8 +1048,14 @@ function doPost(e){
     const ses=sesion_(e, body);
     if(!ses.ok) return json({ok:false, auth:false, error:ses.error});
     if(ses.usuario) body.usuario = ses.usuario;
+    // D139: el ROL también sale del token y se sobrescribe SIEMPRE (aunque venga vacío), para que un
+    // guard de escritura no pueda leer un rol que puso el cliente. `_auth_tolerada` marca el modo
+    // tolerante de D109 (AUTH_ESTRICTO=false), donde no hay identidad que comprobar.
+    body._rol = ses.rol || '';
+    body._auth_tolerada = !!ses.tolerado;
     if(body.action==='enviar_data') return enviarData(body);
     if(body.action==='maquinaria_produccion') return maquinariaProduccionGuardar(body);
+    if(body.action==='flota_guardar') return flotaGuardar(body);   // D139: alta/baja de máquinas
     return guardarReporte(body);
   }catch(err){ return json({ok:false, error:String(err)}); }
 }
@@ -1576,6 +1583,342 @@ function maquinasCatalogo(e){
   });
   return json({ ok:true, fecha:fl.fecha, fuente:fl.fuente, maquinas:maquinas, avisos:fl.avisos });
 }
+/* ============ D139 — ALTA Y BAJA DE MÁQUINAS DESDE LA PANTALLA (backlog 2.29) ============
+ *
+ * POR QUÉ EXISTE ESTO, Y NO ES "COMODIDAD". D138 mudó el catálogo a la hoja `MAQUINAS` para que un
+ * alta o una baja fuera editar una fila en vez de una sesión de desarrollo, y al cerrarlo dejó
+ * señalado el riesgo que abre justo eso: **el `id_maquina` lo teclea ahora una persona**, y tiene que
+ * coincidir LETRA POR LETRA con `dim_maquinaria` del maestro `Modelo_Produccion_Maquinaria` (por eso
+ * `RT-02` va con guion, D111) o el pegado a `Captura_Diaria` deja de cruzar EN SILENCIO. Una hoja
+ * suelta no puede avisar de eso; una pantalla sí. Esa es la razón del ítem — no entrar al Sheet es lo
+ * secundario.
+ *
+ * EL GUARD DE TYPOS. No se puede leer `dim_maquinaria` (es un .xlsx maestro y la regla del proyecto
+ * es no tocarlos), pero SÍ el vocabulario que de verdad se pega a Captura: los `id_maquina` que ya
+ * existen en la hoja `MAQUINARIA`. Al dar de alta un ID que no aparece ahí ni en `MAQUINAS`, el
+ * endpoint NO escribe: devuelve `confirmar:true` con el parecido más cercano y la pantalla pregunta.
+ * El caso común es el typo de una máquina que YA existe, y se atrapa NORMALIZANDO (quitar lo que no
+ * sea alfanumérico + mayúsculas: `RT02` y `RT-02` colapsan a `RT02`); con eso basta para el grueso,
+ * no hace falta distancia de edición. Una máquina nueva de verdad se confirma una vez y entra.
+ * La lectura de `MAQUINARIA` va **acotada a la COLUMNA `id_maquina`** con el instrumento de D107: esa
+ * hoja crece todos los días y tiene ~40 columnas; leerla entera por esto sería una regresión.
+ *
+ * IDENTIDAD DE LA ESTANCIA = `id_maquina` + `fecha_ingreso`, NUNCA el número de fila: alguien puede
+ * estar editando la hoja a mano al mismo tiempo (que es el punto de D138) y las filas se mueven.
+ *
+ * UN REINGRESO ES UNA FILA NUEVA, jamás editar la vieja: editarla perdería el hueco en que la máquina
+ * no estuvo, que es exactamente lo que la ventana semiabierta existe para conservar (lección de D85
+ * con el personal). "Corregir" está aparte y es para una estancia mal escrita, no para reingresar.
+ *
+ * LO QUE **NO** CAMBIA: la recepción de reportes sigue SIN validar contra el catálogo (D138) — un
+ * reporte que esperó en la cola sin señal (D82) puede traer una máquina ya devuelta y rechazarlo
+ * perdería trabajo real del capataz. El catálogo decide qué se OFRECE y qué se ESPERA, nunca qué se
+ * acepta.
+ */
+const FLOTA_INFINITO = '9999-12-31';   // tope para comparar una estancia abierta (fecha_retiro vacía)
+// Quién ESCRIBE la flota (se comprueba en el SERVIDOR, no solo en el guard del cliente — D109: la
+// identidad sale del token y `doPost` la sobrescribe). `jefe` entra a la pantalla en SOLO LECTURA.
+// `jeisson` (rol `asistencia_plus`, cuadrilla OPERADORES) es el primer usuario de asistencias que
+// toca una pantalla de obra: aceptado a propósito, y NO implica mezclar los módulos — esto es el
+// Apps Script de obra y el aislamiento de D69 (Sheet y script propios de asistencias) no se toca.
+const FLOTA_ROLES_ESCRIBEN    = ['admin','residente'];
+const FLOTA_USUARIOS_ESCRIBEN = ['jeisson'];
+// Quién ajusta la PRODUCCIÓN del día (la pestaña de siempre, D59/D60/D61/D62). `jeisson` solo tiene
+// la flota; `jefe` no escribe nada.
+const MAQPROD_ROLES_ESCRIBEN  = ['admin','residente'];
+
+// Clave de comparación de IDs: sin nada que no sea alfanumérico y en mayúsculas. `RT02` y `RT-02`
+// colapsan a `RT02`, que es como se atrapa el typo de una máquina que ya existe.
+function normMaqClave_(s){ return String(s==null?'':s).replace(/[^A-Za-z0-9]/g,'').toUpperCase(); }
+
+/* Vocabulario REAL de máquinas: los `id_maquina` distintos que ya están escritos en la hoja
+ * MAQUINARIA — que es exactamente lo que después se pega a `Captura_Diaria` y cruza (o no) contra
+ * `dim_maquinaria`. Lectura ACOTADA A UNA COLUMNA (D107): fila de encabezados + la columna
+ * `id_maquina`, en vez de las ~40 columnas × N filas de la hoja entera. Memo de ejecución. */
+var _idsMaquinaria;
+function idsMaquinariaHistorico_(){
+  if(_idsMaquinaria) return _idsMaquinaria;
+  _idsMaquinaria = { ids:{}, porClave:{}, n:0 };
+  const sh=ss_().getSheetByName('MAQUINARIA');
+  if(!sh || sh.getLastRow()<2) return _idsMaquinaria;
+  const h=leerRango_(sh, 1, 1, 1, sh.getLastColumn())[0];
+  let col=0;
+  for(let j=0;j<h.length;j++) if(String(h[j]==null?'':h[j]).trim()==='id_maquina'){ col=j+1; break; }
+  if(!col) return _idsMaquinaria;                       // sin la columna: el guard queda mudo, no rompe
+  const v=leerRango_(sh, 2, col, sh.getLastRow()-1, 1);
+  for(let i=0;i<v.length;i++){
+    const id=normMaqId(v[i][0]); if(!id) continue;
+    if(!_idsMaquinaria.ids[id]){ _idsMaquinaria.ids[id]=0; _idsMaquinaria.n++; }
+    _idsMaquinaria.ids[id]++;
+    const k=normMaqClave_(id); if(!k) continue;
+    const l=(_idsMaquinaria.porClave[k]=_idsMaquinaria.porClave[k]||[]);
+    if(l.indexOf(id)<0) l.push(id);
+  }
+  return _idsMaquinaria;
+}
+
+/* ¿Este ID ya se conoce, y si no, a qué se parece? `conocido` = aparece tal cual en el histórico de
+ * MAQUINARIA o ya está en la hoja MAQUINAS (un reingreso no debe preguntar nada). `sugerencia` = otro
+ * ID que colapsa al mismo normalizado, que es el typo típico. */
+function flotaSugerencia_(id){
+  const objetivo=normMaqId(id), clave=normMaqClave_(objetivo);
+  if(!clave) return { conocido:false, sugerencia:'' };
+  const hist=idsMaquinariaHistorico_();
+  if(hist.ids[objetivo]) return { conocido:true, sugerencia:'' };
+  const enHoja=getFlotaRows_().filter(function(r){ return normMaqId(r.id)===objetivo; });
+  if(enHoja.length) return { conocido:true, sugerencia:'' };
+  const cand=(hist.porClave[clave]||[]).slice();
+  getFlotaRows_().forEach(function(r){
+    const x=normMaqId(r.id);
+    if(x && x!==objetivo && normMaqClave_(x)===clave && cand.indexOf(x)<0) cand.push(x);
+  });
+  return { conocido:false, sugerencia: cand.length ? cand[0] : '' };
+}
+
+// Dos estancias de la MISMA máquina se pisan si sus ventanas semiabiertas se cortan.
+function _flotaTraslapa_(a, b){
+  const ra=a.ret||FLOTA_INFINITO, rb=b.ret||FLOTA_INFINITO;
+  return a.ing < rb && b.ing < ra;
+}
+// Filas de la hoja normalizadas (fechas validadas, id en mayúsculas) conservando su nº de fila real.
+function _flotaFilasNorm_(){
+  return getFlotaRows_().map(function(r){
+    const retCrudo=(r.ret===''||r.ret==null)?'':fdate(r.ret);
+    return { id:normMaqId(r.id), ing:fdateValida_(r.ing), ret:(retCrudo?fdateValida_(r.ret):''),
+             retCrudo:retCrudo, tipo:String(r.tipo==null?'':r.tipo).toUpperCase().trim(),
+             prog:r.prog, propiedad:String(r.propiedad==null?'':r.propiedad).trim(),
+             nota:String(r.nota==null?'':r.nota).trim(), fila:r._row };
+  }).filter(function(r){ return !!r.id; });   // fila en blanco: ni error ni aviso (D138)
+}
+
+/* Todas las ESTANCIAS de la hoja (no solo las vigentes: la pestaña muestra el historial) + los avisos
+ * de lo que se encuentre raro. Los avisos son la mitad del valor de la pantalla: hoy `?action=maquinas`
+ * ya los devuelve y NADIE los ve. */
+function flotaEstancias_(fecha){
+  const f=fdateValida_(fecha) || fdate(new Date());
+  const filas=_flotaFilasNorm_(), avisos=[], porMaquina={}, porClave={};
+  const estancias=filas.map(function(r){
+    if(!r.ing) avisos.push('Fila '+r.fila+' ('+r.id+'): sin fecha_ingreso válida (yyyy-mm-dd); esa estancia se ignora.');
+    if(r.retCrudo && !r.ret) avisos.push('Fila '+r.fila+' ('+r.id+'): fecha_retiro "'+r.retCrudo+'" no se entiende; se toma como si siguiera en obra.');
+    if(r.ing && r.ret && r.ret<r.ing) avisos.push('Fila '+r.fila+' ('+r.id+'): fecha_retiro anterior al ingreso; esa estancia nunca está vigente.');
+    if(!r.tipo) avisos.push('Fila '+r.fila+' ('+r.id+'): sin tipo; se tratará como máquina CON producción.');
+    else if(MAQ_TIPOS_VALIDOS.indexOf(r.tipo)<0) avisos.push('Fila '+r.fila+' ('+r.id+'): tipo "'+r.tipo+'" no está en la lista conocida; se tratará como máquina CON producción.');
+    const progHoja=parseFloat(r.prog);
+    const e={ id_maquina:r.id, tipo:r.tipo, propiedad:r.propiedad, notas:r.nota, fila:r.fila,
+              horas_prog:(isNaN(progHoja)||progHoja<=0) ? '' : progHoja,
+              prog:(isNaN(progHoja)||progHoja<=0) ? progPorPropiedad_(r.propiedad) : progHoja,
+              fecha_ingreso:r.ing, fecha_retiro:r.ret, valida:!!r.ing,
+              produce: !esTipoSinProduccion(r.tipo),
+              vigente: !!(r.ing && r.ing<=f && (!r.ret || f<r.ret)) };
+    (porMaquina[r.id]=porMaquina[r.id]||[]).push(e);
+    const k=normMaqClave_(r.id); if(k){ const l=(porClave[k]=porClave[k]||[]); if(l.indexOf(r.id)<0) l.push(r.id); }
+    return e;
+  });
+  // Estancias de la misma máquina que se pisan (D138 ya avisaba solo de las vigentes el día consultado).
+  Object.keys(porMaquina).forEach(function(id){
+    const ls=porMaquina[id].filter(function(x){ return x.valida; });
+    for(let i=0;i<ls.length;i++) for(let j=i+1;j<ls.length;j++){
+      if(_flotaTraslapa_({ing:ls[i].fecha_ingreso, ret:ls[i].fecha_retiro}, {ing:ls[j].fecha_ingreso, ret:ls[j].fecha_retiro}))
+        avisos.push('Filas '+ls[i].fila+' y '+ls[j].fila+' ('+id+'): dos estancias que se pisan. Una máquina no puede estar dos veces en obra el mismo día.');
+    }
+  });
+  // Dos IDs distintos que colapsan al mismo normalizado: casi siempre es el typo de D111 (RT02/RT-02).
+  Object.keys(porClave).forEach(function(k){
+    if(porClave[k].length>1)
+      avisos.push('«'+porClave[k].join('» y «')+'» se escriben distinto pero son el mismo código. '
+        + 'Solo UNO puede coincidir con dim_maquinaria del maestro (D111): revisa cuál.');
+  });
+  // Lo mismo contra el vocabulario REAL de MAQUINARIA: un ID de la hoja que no está en el histórico y
+  // se parece a uno que sí. Solo se avisa cuando HAY parecido — una máquina nueva de verdad no tiene
+  // por qué salir señalada todos los días.
+  const hist=idsMaquinariaHistorico_();
+  Object.keys(porMaquina).forEach(function(id){
+    if(hist.ids[id]) return;
+    const cand=(hist.porClave[normMaqClave_(id)]||[]).filter(function(x){ return x!==id; });
+    if(cand.length) avisos.push('«'+id+'» no aparece en el histórico de MAQUINARIA, pero «'+cand[0]+'» sí. '
+      + 'Si son la misma máquina, el que cruza con el maestro es «'+cand[0]+'».');
+  });
+  return { fecha:f, estancias:estancias, avisos:avisos, filas_utiles:filas.filter(function(r){ return !!r.ing; }).length };
+}
+
+// Cuerpo de la respuesta de lectura. Se reusa tras escribir para devolver la hoja YA actualizada en la
+// MISMA ejecución — que es, de paso, la prueba de que las dos memorias quedaron invalidadas.
+function flotaPayload_(fecha){
+  const fl=flotaEstancias_(fecha);
+  return { ok:true, fecha:fl.fecha, estancias:fl.estancias, avisos:fl.avisos,
+           fuente: fl.filas_utiles ? 'hoja' : 'vacia',
+           tipos:MAQ_TIPOS_VALIDOS, orden_tipo:MAQ_ORDEN_TIPO,
+           historico_maquinaria: idsMaquinariaHistorico_().n };
+}
+
+/* Endpoint `?action=flota&fecha=` — SOLO LECTURA: las estancias de la hoja MAQUINAS con su historial.
+ * Distinto de `?action=maquinas`, que devuelve la flota VIGENTE de un día (lo que consumen las cuatro
+ * capturas). Aquí hace falta el historial completo, incluidas las estancias cerradas. */
+function flotaLeer(e){
+  return json(flotaPayload_((e&&e.parameter)?e.parameter.fecha:''));
+}
+
+/* Guard de escritura en el SERVIDOR (D109). `body._rol` y `body._usuario_tolerado` los siembra
+ * `doPost` desde el TOKEN: el cliente no puede inventárselos. */
+function _permiso_(body, roles, usuarios, queEs){
+  if(body && body._auth_tolerada) return {ok:true};   // AUTH_ESTRICTO=false: modo tolerante de D109
+  const rol=String((body&&body._rol)||'').trim().toLowerCase();
+  const usr=String((body&&body.usuario)||'').trim().toLowerCase();
+  if(roles.indexOf(rol)>=0) return {ok:true};
+  if(usuarios.indexOf(usr)>=0) return {ok:true};
+  if(rol==='jefe') return {ok:false, error:'El jefe entra a la pantalla de Maquinaria en SOLO LECTURA: '
+    + 'puede consultarlo todo, pero no '+queEs+'. No se guardó nada.'};
+  return {ok:false, error:'Tu usuario no puede '+queEs+'. No se guardó nada.'};
+}
+function puedeEscribirFlota_(body){
+  return _permiso_(body, FLOTA_ROLES_ESCRIBEN, FLOTA_USUARIOS_ESCRIBEN, 'dar de alta ni de baja máquinas');
+}
+function puedeAjustarProduccion_(body){
+  return _permiso_(body, MAQPROD_ROLES_ESCRIBEN, [], 'ajustar la producción de maquinaria');
+}
+
+const ERROR_FECHA_INGRESO = 'La fecha de ingreso llegó vacía o con un formato que no se entiende. '
+  + 'Elige el día y vuelve a guardar. No se escribió nada a propósito (D106): una estancia sin fecha '
+  + 'de ingreso no está vigente ningún día y la máquina desaparecería de las capturas.';
+const ERROR_FECHA_RETIRO = 'La fecha de retiro llegó con un formato que no se entiende. '
+  + 'Déjala vacía si la máquina sigue en obra, o elige el PRIMER DÍA QUE YA NO ESTUVO. No se escribió nada.';
+
+/* POST {action:'flota_guardar', op:'alta'|'baja'|'corregir', ...} — ESCRIBE la hoja MAQUINAS.
+ *
+ *   alta      — anexa una estancia nueva. Un REINGRESO entra por aquí (fila nueva), nunca editando la
+ *               vieja: editarla borraría el hueco en que la máquina no estuvo.
+ *   baja      — pone `fecha_retiro` a la estancia ABIERTA. Recordatorio que la pantalla repite: es el
+ *               PRIMER DÍA QUE YA NO ESTUVO, no el último que trabajó (ventana semiabierta, D138/D85).
+ *   corregir  — arregla una estancia mal escrita (fechas o datos). NO es el camino del reingreso.
+ *
+ * La estancia se identifica por `clave:{id_maquina, fecha_ingreso}`, NO por el número de fila.
+ */
+function flotaGuardar(body){
+  const permiso=puedeEscribirFlota_(body);
+  if(!permiso.ok) return json({ok:false, error:permiso.error});
+
+  const op=String(body.op||'').trim().toLowerCase();
+  if(['alta','baja','corregir'].indexOf(op)<0)
+    return json({ok:false, error:'Operación de flota no reconocida: "'+op+'". Se esperaba alta, baja o corregir.'});
+
+  // getSheet auto-sana los encabezados al esquema actual (D93/D100) y precede a toda escritura.
+  const sh=getSheet('MAQUINAS', MAQUINAS_HEADERS);
+  // `getFlotaRows_` tiene memo PROPIO (no usa `_memoHoja`), así que `invalidarHoja_` no lo alcanza:
+  // sin esto se leería la hoja de antes de sanear los encabezados. Mismo problema que D107 documentó
+  // para `_memoRango`, aquí en la lectura previa a la escritura.
+  _flotaRows = undefined;
+  const filas=_flotaFilasNorm_();
+  const cRet=MAQUINAS_HEADERS.indexOf('fecha_retiro')+1;
+
+  function fin(extra){
+    invalidarHoja_('MAQUINAS');   // hoja completa + rangos acotados
+    _flotaRows = undefined;       // memo propio de getFlotaRows_ (la otra memoria)
+    // `_idsMaquinaria` NO se toca: es el histórico de la hoja MAQUINARIA, que esto nunca escribe.
+    const out=flotaPayload_(body.fecha||'');   // lectura POSTERIOR, misma ejecución: ve lo recién escrito
+    Object.keys(extra||{}).forEach(function(k){ out[k]=extra[k]; });
+    return json(out);
+  }
+
+  /* ---------- baja: cerrar la estancia abierta ---------- */
+  if(op==='baja'){
+    const cl=body.clave||{};
+    const id=normMaqId(cl.id_maquina), ing=fdateValida_(cl.fecha_ingreso);
+    if(!id || !ing) return json({ok:false, error:'No llegó la estancia que se quiere cerrar (máquina + fecha de ingreso).'});
+    const ret=fdateValida_(body.fecha_retiro);
+    if(!ret) return json({ok:false, error:ERROR_FECHA_RETIRO});
+    const halladas=filas.filter(function(r){ return r.id===id && r.ing===ing; });
+    if(!halladas.length) return json({ok:false, error:'No se encontró la estancia de '+id+' con ingreso '+ing+'. '
+      + 'Puede que alguien la haya cambiado en la hoja mientras tanto: vuelve a cargar la pantalla.'});
+    if(halladas.length>1) return json({ok:false, error:'Hay '+halladas.length+' estancias de '+id+' con el mismo ingreso '+ing
+      + ' (filas '+halladas.map(function(r){return r.fila;}).join(', ')+'). Arregla la hoja antes: la estancia se identifica por máquina + fecha de ingreso.'});
+    const est=halladas[0];
+    if(est.ret) return json({ok:false, error:'Esa estancia de '+id+' ya está cerrada el '+est.ret+'. '
+      + 'Si la fecha está mal, usa "Corregir"; si la máquina volvió a la obra, va un ALTA nueva (nunca editar la vieja: se perdería el hueco en que no estuvo).'});
+    if(ret<=ing) return json({ok:false, error:'La fecha de retiro ('+ret+') tiene que ser POSTERIOR al ingreso ('+ing+'). '
+      + 'Recuerda que el retiro es el PRIMER DÍA QUE YA NO ESTUVO, no el último que trabajó.'});
+    const choque=filas.filter(function(r){ return r.id===id && r.fila!==est.fila && r.ing; })
+                      .filter(function(r){ return _flotaTraslapa_(r, {ing:ing, ret:ret}); });
+    if(choque.length) return json({ok:false, error:'Con ese retiro la estancia se pisaría con otra de '+id
+      + ' (fila '+choque[0].fila+': '+choque[0].ing+' → '+(choque[0].ret||'sigue en obra')+').'});
+    sh.getRange(est.fila, cRet).setValue(ret);
+    return fin({ op:'baja', id_maquina:id, fecha_ingreso:ing, fecha_retiro:ret,
+                 mensaje:id+' queda fuera de la obra desde el '+ret+' (ese día ya no estuvo). '
+                   + 'Los reportes anteriores no se tocan.' });
+  }
+
+  /* ---------- alta / corregir: datos completos de la estancia ---------- */
+  const id=normMaqId(body.id_maquina);
+  if(!id) return json({ok:false, error:'Falta el código de la máquina (id_maquina).'});
+  const ing=fdateValida_(body.fecha_ingreso);
+  if(!ing) return json({ok:false, error:ERROR_FECHA_INGRESO});
+  const retTxt=String(body.fecha_retiro==null?'':body.fecha_retiro).trim();
+  const ret=retTxt ? fdateValida_(retTxt) : '';
+  if(retTxt && !ret) return json({ok:false, error:ERROR_FECHA_RETIRO});
+  if(ret && ret<=ing) return json({ok:false, error:'La fecha de retiro ('+ret+') tiene que ser POSTERIOR al ingreso ('+ing+'). '
+    + 'La ventana es semiabierta: el retiro es el primer día que la máquina YA NO estuvo.'});
+  const tipo=String(body.tipo||'').toUpperCase().trim();
+  if(MAQ_TIPOS_VALIDOS.indexOf(tipo)<0) return json({ok:false, error:'El tipo "'+(body.tipo||'')+'" no está en la lista conocida ('
+    + MAQ_TIPOS_VALIDOS.join(' · ')+'). El tipo decide si la máquina lleva producción propia, así que no puede ir a ojo.'});
+  const propiedad=String(body.propiedad||'').trim().toLowerCase();
+  if(propiedad!=='propia' && propiedad!=='alquilada')
+    return json({ok:false, error:'La propiedad tiene que ser "propia" o "alquilada": de ahí salen las horas programadas (6.4 / 5, D10).'});
+  const progTxt=String(body.horas_prog==null?'':body.horas_prog).trim();
+  let prog='';
+  if(progTxt!==''){
+    const p=parseFloat(progTxt);
+    if(isNaN(p) || p<=0 || p>24) return json({ok:false, error:'Las horas programadas tienen que ser un número entre 0 y 24, o quedar vacías para deducirlas de la propiedad (5 h alquilada / 6.4 h propia, D10).'});
+    prog=p;
+  }
+  const notas=String(body.notas==null?'':body.notas).trim();
+
+  // Fila que se está corrigiendo (si es el caso): se excluye de los choques consigo misma.
+  let filaDestino=0, original=null;
+  if(op==='corregir'){
+    const cl=body.clave||{};
+    const cid=normMaqId(cl.id_maquina), cing=fdateValida_(cl.fecha_ingreso);
+    if(!cid || !cing) return json({ok:false, error:'No llegó la estancia que se quiere corregir (máquina + fecha de ingreso).'});
+    const halladas=filas.filter(function(r){ return r.id===cid && r.ing===cing; });
+    if(!halladas.length) return json({ok:false, error:'No se encontró la estancia de '+cid+' con ingreso '+cing+'. '
+      + 'Puede que alguien la haya cambiado en la hoja mientras tanto: vuelve a cargar la pantalla.'});
+    if(halladas.length>1) return json({ok:false, error:'Hay '+halladas.length+' estancias de '+cid+' con el mismo ingreso '+cing
+      + ' (filas '+halladas.map(function(r){return r.fila;}).join(', ')+'). Arregla la hoja antes: la estancia se identifica por máquina + fecha de ingreso.'});
+    original=halladas[0]; filaDestino=original.fila;
+  }
+
+  // Clave duplicada: dos estancias de la misma máquina con el mismo ingreso.
+  const dup=filas.filter(function(r){ return r.id===id && r.ing===ing && r.fila!==filaDestino; });
+  if(dup.length) return json({ok:false, error:'Ya existe una estancia de '+id+' que empieza el '+ing+' (fila '+dup[0].fila+'). '
+    + 'Si la máquina volvió después, el alta va con la fecha del REINGRESO; si esa fila está mal, corrígela.'});
+
+  // Traslape con otra estancia de la misma máquina.
+  const choque=filas.filter(function(r){ return r.id===id && r.fila!==filaDestino && r.ing; })
+                    .filter(function(r){ return _flotaTraslapa_(r, {ing:ing, ret:ret}); });
+  if(choque.length) return json({ok:false, error:id+' ya está en obra en ese rango (fila '+choque[0].fila+': '
+    + choque[0].ing+' → '+(choque[0].ret||'sigue en obra')+'). Cierra esa estancia antes de abrir otra.'});
+
+  // EL GUARD DE TYPOS (la razón del ítem). No escribe: pregunta.
+  if(!body.confirmado){
+    const s=flotaSugerencia_(id);
+    if(!s.conocido){
+      const msg = s.sugerencia
+        ? ('«'+id+'» no aparece en el histórico de MAQUINARIA. El parecido más cercano es «'+s.sugerencia+'». ¿Es una máquina nueva de verdad?')
+        : ('«'+id+'» no aparece en el histórico de MAQUINARIA ni en la hoja MAQUINAS. El código tiene que coincidir letra por letra con dim_maquinaria del maestro (D111) o el pegado a Captura_Diaria deja de cruzar en silencio. ¿Es una máquina nueva de verdad?');
+      return json({ ok:false, confirmar:true, id_maquina:id, sugerencia:s.sugerencia, error:msg });
+    }
+  }
+
+  const valores=[id, tipo, (prog===''?'':prog), propiedad, ing, ret, notas];
+  if(op==='corregir'){
+    sh.getRange(filaDestino, 1, 1, MAQUINAS_HEADERS.length).setValues([valores]);
+    return fin({ op:'corregir', id_maquina:id, fecha_ingreso:ing,
+                 mensaje:'Estancia de '+id+' corregida (fila '+filaDestino+').' });
+  }
+  ensureRows_(sh, 1);                                   // D93: capacidad antes de anexar
+  sh.getRange(sh.getLastRow()+1, 1, 1, MAQUINAS_HEADERS.length).setValues([valores]);
+  return fin({ op:'alta', id_maquina:id, fecha_ingreso:ing,
+               mensaje:id+' entra a la obra desde el '+ing+(ret?(' y sale el '+ret):'')+'.' });
+}
+
 // Bucket de una fila de MAQUINARIA a partir de su par H/I derivado (CAPTURA_ACT_MAP). '' = no editable.
 function bucketDeMaqRow(r){
   const h=String(r.actividad||'').toUpperCase(), i=String(r.sub_actividad||'').toUpperCase();
@@ -1750,6 +2093,10 @@ function maquinariaProduccion(e){
 // original del capataz en produccion_capataz_orig la PRIMERA vez; (2) crea filas nuevas (nuevas[])
 // para redirigir producción huérfana a una máquina (D60). ESCRIBE SOLO MAQUINARIA: nunca DATA/BANDEJA.
 function maquinariaProduccionGuardar(body){
+  // D139: el rol se comprueba en el SERVIDOR, no solo en el guard del cliente. La pantalla la abren
+  // ahora también el residente (edita), `jeisson` (solo la pestaña de flota) y el jefe (solo lectura).
+  const permiso=puedeAjustarProduccion_(body);
+  if(!permiso.ok) return json({ok:false, error:permiso.error});
   // D106: las filas NUEVAS de este panel llevan la fecha del payload a MAQUINARIA.
   const fecha=fdateValida_(body.fecha), ajustes=body.ajustes||[], nuevas=body.nuevas||[];
   if(!fecha) return json({ok:false, error:ERROR_FECHA});

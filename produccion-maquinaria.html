@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Producción de Maquinaria</title>
+<title>Maquinaria</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
 <style>
   :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--success:#2ecc71;--error:#e74c3c;--input-bg:#12151f;--uf1:#3a9bdc;--uf2:#9b59b6;}
@@ -21,7 +21,7 @@
   .filtro-row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;}
   .field{flex:1;min-width:130px;}
   label{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-bottom:5px;letter-spacing:0.5px;text-transform:uppercase;}
-  input[type="date"],input[type="number"],select{width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 14px;outline:none;transition:border-color 0.2s;appearance:none;color-scheme:dark;}
+  input[type="date"],input[type="number"],input[type="text"],select{width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 14px;outline:none;transition:border-color 0.2s;appearance:none;color-scheme:dark;}
   select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a80a0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px;cursor:pointer;}
   input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,0.1);}
   select option,optgroup{background:#1a1d27;}
@@ -103,14 +103,46 @@
   .empty-state{text-align:center;padding:40px 20px;color:var(--muted);}
   .empty-state .icon{font-size:40px;margin-bottom:12px;}
   .loading{text-align:center;padding:30px;color:var(--muted);font-size:14px;}
-  @media(max-width:480px){.maq-row{grid-template-columns:52px 1fr;}.edits{grid-column:1/-1;}}
+  /* ---- pestañas (D139): la pantalla pasa a ser "Maquinaria" con Producción del día + Flota ---- */
+  .tabs{display:flex;gap:6px;border-bottom:1px solid var(--border);margin-bottom:18px;flex-wrap:wrap;}
+  .tab{background:none;border:none;border-bottom:3px solid transparent;color:var(--muted);cursor:pointer;
+       font-family:'Syne',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;padding:11px 14px;}
+  .tab:hover{color:var(--text);}
+  .tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+  .avisos{background:rgba(245,166,35,0.07);border:1px solid rgba(245,166,35,0.4);border-radius:10px;padding:11px 13px;font-size:12px;line-height:1.55;margin-bottom:16px;}
+  .avisos b{color:var(--accent);font-family:'Syne',sans-serif;}
+  .avisos ul{margin:6px 0 0 17px;} .avisos li{margin-bottom:3px;}
+  .maqcard{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px;}
+  .maqcard-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding-bottom:9px;border-bottom:1px solid var(--border);}
+  .maqcard-head .maq-id{font-size:15px;}
+  .badge.enobra{border-color:rgba(46,204,113,0.45);color:var(--success);background:rgba(46,204,113,0.08);}
+  .badge.fuera{border-color:rgba(122,128,160,0.45);color:var(--muted);}
+  .badge.porllegar{border-color:rgba(58,155,220,0.45);color:var(--uf1);}
+  .est-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 0;border-bottom:1px solid var(--border);font-size:12.5px;}
+  .est-row:last-child{border-bottom:none;}
+  .est-when{font-family:'Syne',sans-serif;font-weight:700;white-space:nowrap;}
+  .est-note{color:var(--muted);font-size:11.5px;min-width:0;}
+  .est-acts{margin-left:auto;display:flex;gap:6px;flex-shrink:0;}
+  .btn-mini{background:var(--input-bg);border:1px solid var(--border);border-radius:7px;color:var(--muted);cursor:pointer;
+            font-family:'Syne',sans-serif;font-size:10.5px;font-weight:700;letter-spacing:0.5px;padding:7px 10px;}
+  .btn-mini:hover{border-color:var(--accent);color:var(--accent);}
+  .btn-mini.danger:hover{border-color:var(--error);color:var(--error);}
+  .hist-toggle{background:none;border:none;color:var(--uf1);cursor:pointer;font-family:'DM Sans',sans-serif;font-size:11.5px;padding:8px 0 2px;}
+  .fform{margin-top:11px;padding-top:11px;border-top:1px dashed var(--accent);}
+  .fform .ftitle{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:9px;}
+  .fgrid{display:flex;gap:9px;flex-wrap:wrap;align-items:flex-end;}
+  .fgrid .f{flex:1;min-width:118px;} .fgrid .f.wide{flex:2;min-width:190px;}
+  .fgrid .f input,.fgrid .f select{padding:9px 11px;font-size:13px;}
+  .fhint{font-size:11.5px;color:var(--muted);line-height:1.5;margin-top:9px;}
+  .fhint b{color:var(--accent);}
+  @media(max-width:480px){.maq-row{grid-template-columns:52px 1fr;}.edits{grid-column:1/-1;}.est-acts{margin-left:0;width:100%;}}
 </style>
 </head>
 <body>
 <div class="header">
   <div class="header-left">
-    <div class="label">Maquinaria · Admin</div>
-    <h1>⚙️ Producción de Maquinaria</h1>
+    <div class="label" id="headerLabel">Maquinaria</div>
+    <h1>⚙️ Maquinaria</h1>
   </div>
   <div class="header-user">
     <span id="userDisplay">—</span>
@@ -120,14 +152,28 @@
 </div>
 
 <div class="container">
-  <div class="filtro-card">
-    <div class="filtro-row">
-      <div class="field"><label>Fecha</label><input type="date" id="fecha"></div>
-      <button class="btn-consultar" onclick="consultar()">CONSULTAR →</button>
+  <!-- D139: dos pestañas sobre el MISMO modelo de datos y la misma audiencia (un día de máquinas),
+       no dos pantallas: la entrada de las dos es la misma (una fecha), que es justo el criterio con
+       el que D112 sí justificó pantalla propia para `horas-persona.html` (allá la entrada es otra). -->
+  <div class="tabs">
+    <button class="tab active" id="tabProd"  onclick="verTab('prod')">Producción del día</button>
+    <button class="tab"        id="tabFlota" onclick="verTab('flota')">Flota</button>
+  </div>
+
+  <div id="panelProd">
+    <div class="filtro-card">
+      <div class="filtro-row">
+        <div class="field"><label>Fecha</label><input type="date" id="fecha"></div>
+        <button class="btn-consultar" onclick="consultar()">CONSULTAR →</button>
+      </div>
+    </div>
+    <div id="resultados">
+      <div class="empty-state"><div class="icon">⚙️</div><p>Selecciona una fecha para ver el panorama de producción del día.</p></div>
     </div>
   </div>
-  <div id="resultados">
-    <div class="empty-state"><div class="icon">⚙️</div><p>Selecciona una fecha para ver el panorama de producción del día.</p></div>
+
+  <div id="panelFlota" style="display:none">
+    <div id="flotaCont"><div class="loading">⏳ Cargando la flota...</div></div>
   </div>
 </div>
 
@@ -152,13 +198,53 @@ function sinProduccion(tipo){ return TIPOS_SIN_PRODUCCION.indexOf(String(tipo||'
 let STATE = { fecha:'', frentes:[], otras:[], flota:[], faltantes:[], nuevas:[] };
 let MAQPROG = {};   // id_maquina -> horas programadas (para mostrar el motivo solo si trabajó menos)
 
+/* ---- D139: quién entra y qué puede tocar ----
+ * `admin` y el `residente` de tierras editan las dos pestañas. `jeisson` (rol `asistencia_plus`,
+ * cuadrilla OPERADORES — los operadores de estas máquinas) edita SOLO la flota: es el primer usuario
+ * de asistencias que entra a una pantalla de OBRA, aceptado a propósito, y no mezcla los módulos —
+ * esta pantalla habla con el Apps Script de obra y el aislamiento de D69 no se toca. El `jefe` entra
+ * en SOLO LECTURA desde `jefe.html`: se le esconde TODO lo editable (ajustes de producción,
+ * redirección, registro de horas, altas y bajas). El guard de verdad está en el SERVIDOR (D109): esto
+ * es la cara visible, no el cerrojo. */
+let ROL='', USUARIO='', PUEDE_PRODUCCION=false, PUEDE_FLOTA=false, SOLO_LECTURA=false;
+const VOLVER={ admin:'menu.html', residente:'residente.html', jefe:'jefe.html' };
+
 window.onload = function(){
-  const rol=localStorage.getItem('rol'), usuario=localStorage.getItem('usuario');
-  if(!rol || rol!=='admin'){ window.location.href='index.html'; return; }
-  document.getElementById('userDisplay').textContent=usuario||'admin';
-  if(rol==='admin'){var _bm=document.getElementById('btnMenu');if(_bm)_bm.style.display='inline-block';}
+  ROL=localStorage.getItem('rol')||''; USUARIO=(localStorage.getItem('usuario')||'').trim().toLowerCase();
+  PUEDE_PRODUCCION = (ROL==='admin' || ROL==='residente');
+  PUEDE_FLOTA      = (PUEDE_PRODUCCION || USUARIO==='jeisson');
+  SOLO_LECTURA     = (ROL==='jefe');
+  if(!PUEDE_FLOTA && !SOLO_LECTURA){ window.location.href='index.html'; return; }
+  document.getElementById('userDisplay').textContent=USUARIO||ROL;
+  document.getElementById('headerLabel').textContent =
+    SOLO_LECTURA ? 'Maquinaria · Consulta' : ('Maquinaria · '+(USUARIO||ROL));
+  var _bm=document.getElementById('btnMenu');
+  if(_bm){
+    const destino = VOLVER[ROL] || (USUARIO==='jeisson' ? 'seleccion-reporte.html' : '');
+    if(destino){
+      if(ROL!=='admin') _bm.textContent='← Volver';
+      _bm.onclick=function(){ location.href=destino; };
+      _bm.style.display='inline-block';
+    }
+  }
   document.getElementById('fecha').value=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
+  // `jeisson` solo tiene la flota: se le esconde la pestaña de producción y se abre la suya.
+  if(!PUEDE_PRODUCCION && !SOLO_LECTURA){
+    document.getElementById('tabProd').style.display='none';
+    verTab('flota');
+  }
 };
+
+// Pestañas. La flota se pide la PRIMERA vez que se abre: quien solo viene a ajustar producción no
+// paga esa lectura, y quien solo viene a la flota no paga la del panorama del día.
+function verTab(cual){
+  const esFlota=(cual==='flota');
+  document.getElementById('panelProd').style.display  = esFlota?'none':'';
+  document.getElementById('panelFlota').style.display = esFlota?'':'none';
+  document.getElementById('tabProd').className  = 'tab'+(esFlota?'':' active');
+  document.getElementById('tabFlota').className = 'tab'+(esFlota?' active':'');
+  if(esFlota && !FLOTA.cargada) cargarFlota();
+}
 function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); localStorage.removeItem('tm2_token'); window.location.href='index.html'; }
 function fmt(n){ return (Math.round((parseFloat(n)||0)*100)/100).toLocaleString('es-CO'); }
 function ufLabel(p){ return p==='3701'?'UF1':p==='3702'?'UF2':(p||'—'); }
@@ -238,9 +324,12 @@ function render(){
     cont.innerHTML='<div class="empty-state"><div class="icon">🗓️</div><p>No hay producción de maquinaria para esta fecha.</p></div>';
     return;
   }
-  let html='<div class="nota">Este panel <b>lee DATA</b> (volumen y PK oficial) y <b>lee/escribe MAQUINARIA</b>. Nunca modifica DATA. '+
-    'La producción viene sugerida (repartida proporcional a lo que reportaron) y el <b>Restante</b> te avisa para no pasarte del oficial. '+
-    'El <b>motivo</b> solo aparece si la máquina trabajó menos horas que las programadas.</div>';
+  let html = SOLO_LECTURA
+    ? '<div class="nota">Vista de <b>solo lectura</b>: el panorama de maquinaria del día tal como quedó en MAQUINARIA. '+
+      'Los ajustes de producción, la redirección y el registro de horas los hace el residente o el administrador.</div>'
+    : '<div class="nota">Este panel <b>lee DATA</b> (volumen y PK oficial) y <b>lee/escribe MAQUINARIA</b>. Nunca modifica DATA. '+
+      'La producción viene sugerida (repartida proporcional a lo que reportaron) y el <b>Restante</b> te avisa para no pasarte del oficial. '+
+      'El <b>motivo</b> solo aparece si la máquina trabajó menos horas que las programadas.</div>';
 
   // ---- frentes ajustables ----
   if(STATE.frentes.length){
@@ -270,9 +359,11 @@ function render(){
                 '<div class="maq-info"><div class="maq-act">'+esc(r.actividad)+'</div>'+
                   '<div class="maq-sub"><span class="pill">actual: '+(r.produccion_actual===''?'—':fmt(r.produccion_actual))+'</span>'+pk+hr+orig+multi+'</div>'+
                 '</div>'+
-                '<div class="edits"><div class="mini"><label>Producción</label>'+
-                  '<input type="number" step="0.01" inputmode="decimal" value="'+esc(r._val)+'" '+
-                    'oninput="setFila(\''+r.id_registro+'\',this.value); recalcBal(\''+key+'\')"></div></div>'+
+                (SOLO_LECTURA
+                  ? '<div class="edits"><span class="pill">sugerido: '+(r._val===''?'—':fmt(r._val))+'</span></div>'
+                  : '<div class="edits"><div class="mini"><label>Producción</label>'+
+                    '<input type="number" step="0.01" inputmode="decimal" value="'+esc(r._val)+'" '+
+                      'oninput="setFila(\''+r.id_registro+'\',this.value); recalcBal(\''+key+'\')"></div></div>')+
               '</div>';
       });
       pend.forEach(o=>{
@@ -288,6 +379,7 @@ function render(){
                 '</div>'+
               '</div>';
       });
+      if(!SOLO_LECTURA){
       const opts='<option value="">— redirigir a máquina —</option>'+STATE.flota.map(c=>
         '<option value="'+c.id_maquina+'">'+c.id_maquina+(c.reportada?' · reportada':'')+'</option>').join('');
       html+='<div class="add-wrap"><div class="alabel">Redirigir producción a una máquina (crea su fila)</div>'+
@@ -298,6 +390,7 @@ function render(){
                 '<span class="mini wide" id="nmw_'+key+'" style="display:none"><label>Motivo</label><select id="nm_'+key+'">'+motivoOpts('')+'</select></span>'+
                 '<button class="btn-add" onclick="addMaquina(\''+key+'\')">➕ Añadir</button>'+
               '</div></div>';
+      }
       html+='</div>';
     });
   }
@@ -323,7 +416,7 @@ function render(){
   const faltanReal=STATE.faltantes.filter(m=>!asig[m.id_maquina]);
   const pendFalt=STATE.nuevas.map((n,i)=>({n,i})).filter(o=>o.n._faltante);
   if(STATE.faltantes.length){
-    html+='<div class="section-title">Máquinas faltantes · asígnalas o registra horas</div><div class="falt-card">';
+    html+='<div class="section-title">'+(SOLO_LECTURA?'Máquinas sin reporte ese día':'Máquinas faltantes · asígnalas o registra horas')+'</div><div class="falt-card">';
     let dstFrentes=''; STATE.frentes.forEach(f=>{ dstFrentes+='<option value="F|'+frenteKey(f)+'">'+f.cc+' · '+esc(f.label)+' · '+ufLabel(f.proyecto)+'</option>'; });
     let dstComplem=COMPLEM.map(x=>'<option value="A|'+x.c+'">'+esc(x.l)+'</option>').join('');
     const dstOpts='<option value="">— elegir destino —</option>'+
@@ -334,6 +427,7 @@ function render(){
       html+='<div class="falt-item">'+
               '<div class="falt-head"><span class="maq-id">'+esc(m.id_maquina)+'</span>'+
                 '<span class="falt-tipo">'+esc(m.tipo||'')+' · prog '+esc(m.prog)+' h</span><span class="badge falta">FALTA</span></div>'+
+              (SOLO_LECTURA ? '' :
               '<div class="falt-ctrls">'+
                 '<select class="sel-dst" id="dst_'+m.id_maquina+'">'+dstOpts+'</select>'+
                 '<div class="mini"><label>Horas oper.</label><input type="number" step="0.1" id="hf_'+m.id_maquina+'" oninput="toggleMot(\'mfw_'+esc(m.id_maquina)+'\',this.value,\''+esc(m.id_maquina)+'\')"></div>'+
@@ -341,7 +435,7 @@ function render(){
                 (sinProduccion(m.tipo) ? '<span class="mini wide" style="opacity:.7">sin producción propia</span>'
                                        : '<div class="mini"><label>Prod. (si frente)</label><input type="number" step="0.01" id="pf_'+m.id_maquina+'"></div>')+
                 '<button class="btn-add" onclick="addFaltante(\''+esc(m.id_maquina)+'\')">➕ Asignar</button>'+
-              '</div>'+
+              '</div>')+
             '</div>';
     });
     if(pendFalt.length){
@@ -359,7 +453,7 @@ function render(){
     html+='</div>';
   }
 
-  html+='<div class="actions"><button class="btn-action primary" id="btnGuardar" onclick="guardar()">💾 GUARDAR</button></div>';
+  if(!SOLO_LECTURA) html+='<div class="actions"><button class="btn-action primary" id="btnGuardar" onclick="guardar()">💾 GUARDAR</button></div>';
   html+='<div class="msg-box" id="msg"></div>';
   cont.innerHTML=html;
 }
@@ -416,6 +510,286 @@ async function guardar(){
   }finally{
     const b=document.getElementById('btnGuardar'); if(b){ b.disabled=false; b.textContent='💾 GUARDAR'; }
   }
+}
+
+/* ==================== PESTAÑA FLOTA (D139, backlog 2.29) ====================
+ *
+ * Da de alta y de baja máquinas ESCRIBIENDO la hoja `MAQUINAS` de D138 desde la web, en vez de a mano
+ * en el Sheet. La razón principal no es la comodidad: el `id_maquina` lo teclea una persona y tiene
+ * que coincidir LETRA POR LETRA con `dim_maquinaria` del maestro (por eso `RT-02` va con guion, D111)
+ * o el pegado a `Captura_Diaria` deja de cruzar EN SILENCIO. Una hoja suelta no puede avisar de eso;
+ * esta pantalla sí — el servidor compara contra el histórico de MAQUINARIA y pregunta antes de
+ * guardar. Aquí también se ven por fin los `avisos` que `?action=maquinas` ya devolvía y nadie leía.
+ *
+ * UNA FILA POR ESTANCIA y ventana SEMIABIERTA `[ingreso, retiro)`: `fecha_retiro` es el PRIMER DÍA QUE
+ * YA NO ESTUVO (vacía = sigue en obra). Un REINGRESO es una fila nueva, jamás editar la vieja:
+ * editarla perdería el hueco en que la máquina no estuvo (lección de D85 con el personal). "Corregir"
+ * existe aparte, para una estancia mal escrita.
+ */
+const TIPOS_RESPALDO=['BULLDOZER','EXCAVADORA','MOTONIVELADORA','FINISHER','VIBROCOMPACTADOR',
+                      'MINICARGADOR','MINIBULDOZER','RETROEXCAVADORA'];
+let FLOTA={ cargada:false, fecha:'', estancias:[], avisos:[], tipos:[], orden:[], fuente:'', historico:0 };
+// Formulario abierto (uno a la vez) + sus valores. Se guardan en el estado, no en el DOM: la lista se
+// vuelve a pintar entera después de cada cambio, como en el resto de la pantalla.
+let FL={ op:'', clave:null, vals:{}, hist:{}, msg:null, guardando:false };
+
+function hoyCol(){ return new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'}); }
+function flTipos(){ return (FLOTA.tipos&&FLOTA.tipos.length)?FLOTA.tipos:TIPOS_RESPALDO; }
+function flOrden(){ return (FLOTA.orden&&FLOTA.orden.length)?FLOTA.orden:TIPOS_RESPALDO; }
+
+async function cargarFlota(){
+  const cont=document.getElementById('flotaCont');
+  cont.innerHTML='<div class="loading">⏳ Cargando la flota...</div>';
+  try{
+    const resp=await fetch(`${APPS_SCRIPT_URL}?action=flota&fecha=${hoyCol()}`);
+    const d=await resp.json();
+    if(!d || !d.ok) throw new Error((d&&d.error)||'respuesta inesperada');
+    aplicarFlota(d);
+  }catch(err){
+    cont.innerHTML='<div class="empty-state"><div class="icon">⚠️</div><p>No se pudo leer la hoja MAQUINAS. '+
+      'Revisa el Apps Script o la conexión.</p><p style="font-size:12px;margin-top:8px">Si el endpoint no existe todavía, '+
+      'falta <b>redesplegar</b> el Apps Script de obra.</p></div>';
+  }
+}
+// Comparte el mismo camino la carga inicial y la respuesta de una escritura: `flota_guardar` devuelve
+// la hoja YA releída en la misma ejecución, así que no hace falta una segunda petición.
+function aplicarFlota(d){
+  FLOTA.cargada=true; FLOTA.fecha=d.fecha||hoyCol(); FLOTA.estancias=d.estancias||[];
+  FLOTA.avisos=d.avisos||[]; FLOTA.tipos=d.tipos||[]; FLOTA.orden=d.orden_tipo||[];
+  FLOTA.fuente=d.fuente||''; FLOTA.historico=d.historico_maquinaria||0;
+  renderFlota();
+}
+
+function flPorMaquina(){
+  const m={};
+  FLOTA.estancias.forEach(function(e){ (m[e.id_maquina]=m[e.id_maquina]||[]).push(e); });
+  Object.keys(m).forEach(function(id){
+    m[id].sort(function(a,b){ return String(b.fecha_ingreso||'').localeCompare(String(a.fecha_ingreso||'')); });
+  });
+  const orden=flOrden();
+  const ids=Object.keys(m).sort(function(a,b){
+    const ta=orden.indexOf(m[a][0].tipo), tb=orden.indexOf(m[b][0].tipo);
+    return ((ta<0?99:ta)-(tb<0?99:tb)) || (a<b?-1:a>b?1:0);
+  });
+  return { map:m, ids:ids };
+}
+function flEstado(ls){
+  if(ls.some(function(e){ return e.vigente; })) return {clase:'enobra', txt:'EN OBRA'};
+  const ult=ls[0]||{};
+  if(!ult.valida)                          return {clase:'fuera', txt:'sin fecha válida'};
+  if(ult.fecha_ingreso>FLOTA.fecha)        return {clase:'porllegar', txt:'llega el '+ult.fecha_ingreso};
+  if(ult.fecha_retiro)                     return {clase:'fuera', txt:'fuera desde '+ult.fecha_retiro};
+  return {clase:'fuera', txt:'fuera'};
+}
+function flVentana(e){
+  if(!e.valida) return 'sin fecha de ingreso';
+  return e.fecha_ingreso+' → '+(e.fecha_retiro ? e.fecha_retiro : 'sigue en obra');
+}
+function flClaveIgual(e){ return FL.clave && FL.clave.id_maquina===e.id_maquina && FL.clave.fecha_ingreso===e.fecha_ingreso; }
+
+/* ---- formularios (uno abierto a la vez) ---- */
+// La estancia se busca por su CLAVE (máquina + fecha de ingreso), nunca se serializa el objeto en el
+// HTML: es la misma identidad con la que el servidor la localiza, y así una nota con comillas no puede
+// romper el atributo.
+function flEstancia(id, ing){
+  return FLOTA.estancias.filter(function(e){ return e.id_maquina===id && e.fecha_ingreso===ing; })[0] || null;
+}
+function flAbrir(op, id, ing){
+  const e = id ? flEstancia(id, ing) : null;
+  if(op!=='alta' && !e) return;
+  FL.op=(op==='reingreso'?'alta':op); FL.msg=null;
+  FL.clave = (op==='corregir'||op==='baja') ? { id_maquina:e.id_maquina, fecha_ingreso:e.fecha_ingreso } : null;
+  if(op==='alta')      FL.vals={ id_maquina:'', tipo:'', propiedad:'propia', fecha_ingreso:hoyCol(), horas_prog:'', notas:'' };
+  if(op==='reingreso') FL.vals={ id_maquina:e.id_maquina, tipo:e.tipo, propiedad:e.propiedad||'propia',
+                                 fecha_ingreso:hoyCol(), horas_prog:e.horas_prog===''?'':String(e.horas_prog), notas:'' };
+  if(op==='baja')      FL.vals={ fecha_retiro:hoyCol() };
+  if(op==='corregir')  FL.vals={ id_maquina:e.id_maquina, tipo:e.tipo, propiedad:e.propiedad||'propia',
+                                 fecha_ingreso:e.fecha_ingreso, fecha_retiro:e.fecha_retiro||'',
+                                 horas_prog:e.horas_prog===''?'':String(e.horas_prog), notas:e.notas||'' };
+  renderFlota();
+}
+function flCerrar(){ FL.op=''; FL.clave=null; FL.vals={}; renderFlota(); }
+function flSet(campo, val){ FL.vals[campo]=val; }
+function flToggleHist(id){ FL.hist[id]=!FL.hist[id]; renderFlota(); }
+
+function flSelTipo(){
+  return '<select onchange="flSet(\'tipo\',this.value)"><option value="">— tipo —</option>'+
+    flTipos().map(function(t){ return '<option value="'+t+'"'+(t===FL.vals.tipo?' selected':'')+'>'+t+'</option>'; }).join('')+
+    '</select>';
+}
+function flSelProp(){
+  return '<select onchange="flSet(\'propiedad\',this.value)">'+
+    ['propia','alquilada'].map(function(p){ return '<option value="'+p+'"'+(p===FL.vals.propiedad?' selected':'')+'>'+p+'</option>'; }).join('')+
+    '</select>';
+}
+// Formulario de datos completos: sirve para el alta, el reingreso y la corrección.
+function flFormDatos(titulo){
+  const esCorregir=(FL.op==='corregir');
+  return '<div class="fform"><div class="ftitle">'+titulo+'</div><div class="fgrid">'+
+    '<div class="f"><label>Código (id_maquina)</label><input type="text" value="'+esc(FL.vals.id_maquina||'')+'" '+
+      'oninput="flSet(\'id_maquina\',this.value)" placeholder="EXC015" autocapitalize="characters"></div>'+
+    '<div class="f wide"><label>Tipo</label>'+flSelTipo()+'</div>'+
+    '<div class="f"><label>Propiedad</label>'+flSelProp()+'</div>'+
+    '<div class="f"><label>Ingreso</label><input type="date" value="'+esc(FL.vals.fecha_ingreso||'')+'" oninput="flSet(\'fecha_ingreso\',this.value)"></div>'+
+    (esCorregir ? '<div class="f"><label>Retiro</label><input type="date" value="'+esc(FL.vals.fecha_retiro||'')+'" oninput="flSet(\'fecha_retiro\',this.value)"></div>' : '')+
+    '<div class="f"><label>Horas prog.</label><input type="number" step="0.1" value="'+esc(FL.vals.horas_prog||'')+'" '+
+      'oninput="flSet(\'horas_prog\',this.value)" placeholder="auto"></div>'+
+    '<div class="f wide"><label>Notas</label><input type="text" value="'+esc(FL.vals.notas||'')+'" oninput="flSet(\'notas\',this.value)"></div>'+
+    '</div>'+
+    '<div class="fhint">Horas programadas en blanco = se deducen de la propiedad: <b>5 h</b> alquilada · <b>6.4 h</b> propia (D10). '+
+      'El código tiene que coincidir <b>letra por letra</b> con el maestro (por eso <b>RT-02</b> lleva guion): si no se reconoce, se avisa antes de guardar.'+
+      (esCorregir ? ' Corregir es para una estancia <b>mal escrita</b>; si la máquina volvió a la obra, va un <b>reingreso</b> (fila nueva), que conserva el hueco en que no estuvo.' : '')+
+    '</div>'+
+    '<div class="actions">'+
+      '<button class="btn-action primary" onclick="flGuardar()"'+(FL.guardando?' disabled':'')+'>💾 '+(esCorregir?'GUARDAR CAMBIOS':'DAR DE ALTA')+'</button>'+
+      '<button class="btn-action" onclick="flCerrar()">Cancelar</button>'+
+    '</div></div>';
+}
+function flFormBaja(e){
+  return '<div class="fform"><div class="ftitle">Dar de baja '+esc(e.id_maquina)+'</div><div class="fgrid">'+
+    '<div class="f"><label>Primer día que YA NO estuvo</label><input type="date" value="'+esc(FL.vals.fecha_retiro||'')+'" oninput="flSet(\'fecha_retiro\',this.value)"></div>'+
+    '</div>'+
+    '<div class="fhint">Ojo, es el error fácil: la fecha de retiro es el <b>primer día que la máquina YA NO estuvo</b>, '+
+      'no el último que trabajó. Si trabajó hasta el viernes, el retiro es el <b>sábado</b>. Los reportes anteriores no se tocan.</div>'+
+    '<div class="actions">'+
+      '<button class="btn-action primary" onclick="flGuardar()"'+(FL.guardando?' disabled':'')+'>💾 DAR DE BAJA</button>'+
+      '<button class="btn-action" onclick="flCerrar()">Cancelar</button>'+
+    '</div></div>';
+}
+
+/* ---- escritura ---- */
+function flPayload(confirmado){
+  const p={ action:'flota_guardar', op:(FL.op==='baja'?'baja':FL.op), fecha:FLOTA.fecha,
+            usuario:localStorage.getItem('usuario')||'' };
+  if(FL.clave) p.clave={ id_maquina:FL.clave.id_maquina, fecha_ingreso:FL.clave.fecha_ingreso };
+  Object.keys(FL.vals).forEach(function(k){ p[k]=FL.vals[k]; });
+  if(confirmado) p.confirmado=true;
+  return p;
+}
+async function flGuardar(){ return flEnviar(flPayload(false)); }
+async function flEnviar(payload){
+  if(FL.guardando) return;
+  FL.guardando=true; FL.msg=null; renderFlota();
+  try{
+    const resp=await fetch(APPS_SCRIPT_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+                                             body:JSON.stringify(payload) });
+    const d=await resp.json();
+    FL.guardando=false;
+    // EL GUARD DE TYPOS: el servidor no escribió nada y pregunta. Es la razón de ser de esta pestaña.
+    if(d && d.confirmar){
+      const seguir=confirm(d.error+'\n\nAceptar = es una máquina nueva de verdad, guardar así.\nCancelar = volver a revisar el código.');
+      if(seguir) return flEnviar(Object.assign({}, payload, {confirmado:true}));
+      FL.msg={ tipo:'err', txt:'No se guardó nada. Revisa el código de la máquina'+(d.sugerencia?(': ¿querías decir «'+d.sugerencia+'»?'):'.') };
+      renderFlota(); return;
+    }
+    if(d && d.ok){
+      const m=d.mensaje||'Flota actualizada.';
+      FL.op=''; FL.clave=null; FL.vals={};
+      aplicarFlota(d);                       // la respuesta ya trae la hoja releída
+      FL.msg={ tipo:'ok', txt:'✓ '+m };
+      renderFlota();
+      return;
+    }
+    FL.msg={ tipo:'err', txt:(d&&d.error)||'Respuesta inesperada del servidor.' };
+    renderFlota();
+  }catch(err){
+    FL.guardando=false;
+    FL.msg={ tipo:'err', txt:'No se pudo guardar. Revisa el Apps Script o la conexión. Esta pantalla necesita señal (D49).' };
+    renderFlota();
+  }
+}
+
+/* ---- pintado ---- */
+function renderFlota(){
+  const cont=document.getElementById('flotaCont');
+  const puede=PUEDE_FLOTA;
+  const g=flPorMaquina();
+  let html='';
+
+  html+='<div class="nota">Esta pestaña <b>escribe la hoja MAQUINAS</b>: es el catálogo vivo de la obra (D138). '+
+    'Cada fila es una <b>estancia</b> —una máquina que entra y sale varias veces son varias filas— y la ventana es '+
+    '<b>semiabierta</b>: la fecha de retiro es el <b>primer día que ya no estuvo</b>. '+
+    'No toca DATA, ni BANDEJA, ni MAQUINARIA: el histórico de lo ya reportado se conserva siempre.</div>';
+
+  if(FLOTA.fuente==='vacia'){
+    html+='<div class="avisos"><b>La hoja MAQUINAS está vacía o no tiene ninguna fila utilizable.</b> '+
+      'Mientras tanto las capturas se sirven del catálogo de respaldo del servidor — nunca se ofrece una flota vacía. '+
+      'Da de alta las máquinas aquí para que la hoja mande.</div>';
+  }
+  if(FLOTA.avisos.length){
+    html+='<div class="avisos"><b>Revisar en la hoja ('+FLOTA.avisos.length+')</b><ul>'+
+      FLOTA.avisos.map(function(a){ return '<li>'+esc(a)+'</li>'; }).join('')+'</ul></div>';
+  }
+  if(FL.msg){
+    html+='<div class="msg-box '+FL.msg.tipo+'" style="display:block;margin:0 0 16px">'+esc(FL.msg.txt)+'</div>';
+  }
+
+  // Alta / reingreso (formulario suelto arriba)
+  if(puede){
+    if(FL.op==='alta' && !FL.clave){
+      html+='<div class="maqcard">'+flFormDatos('Alta de máquina o reingreso')+'</div>';
+    }else{
+      html+='<div class="actions" style="margin:0 0 16px"><button class="btn-action primary" onclick="flAbrir(\'alta\')">➕ DAR DE ALTA UNA MÁQUINA</button></div>';
+    }
+  }else{
+    html+='<div class="nota">Vista de <b>solo lectura</b>: las altas y las bajas las hacen el residente, el administrador o jeisson.</div>';
+  }
+
+  if(!g.ids.length){
+    html+='<div class="empty-state"><div class="icon">🚜</div><p>La hoja MAQUINAS no tiene ninguna máquina todavía.</p></div>';
+    cont.innerHTML=html; return;
+  }
+
+  const enObra=g.ids.filter(function(id){ return g.map[id].some(function(e){ return e.vigente; }); }).length;
+  html+='<div class="section-title">Flota · '+enObra+' en obra hoy ('+FLOTA.fecha+') de '+g.ids.length+' máquinas</div>';
+
+  g.ids.forEach(function(id){
+    const ls=g.map[id], st=flEstado(ls), abierta=ls.filter(function(e){ return e.valida && !e.fecha_retiro; })[0]||null;
+    const act=ls[0];
+    html+='<div class="maqcard">';
+    html+='<div class="maqcard-head">'+
+            '<span class="maq-id">'+esc(id)+'</span>'+
+            '<span class="badge '+st.clase+'">'+esc(st.txt)+'</span>'+
+            '<span class="falt-tipo">'+esc(act.tipo||'sin tipo')+' · '+esc(act.propiedad||'—')+' · prog '+esc(act.prog)+' h'+
+              (act.produce?'':' · sin producción propia')+'</span>'+
+            (ls.length>1?'<span class="pill">'+ls.length+' estancias</span>':'')+
+            // Un REINGRESO es una fila nueva, nunca editar la vieja (perdería el hueco en que no
+            // estuvo, D85). Solo se ofrece si la máquina NO tiene una estancia abierta.
+            ((puede && !abierta && act.valida)
+              ? '<span class="est-acts"><button class="btn-mini" onclick="flAbrir(\'reingreso\',\''+esc(id)+'\',\''+esc(act.fecha_ingreso)+'\')">↩ Reingreso</button></span>' : '')+
+          '</div>';
+
+    // estancia actual (la más reciente) siempre visible
+    html+=flEstRow(act, puede);
+    // historial plegado
+    if(ls.length>1){
+      html+='<button class="hist-toggle" onclick="flToggleHist(\''+esc(id)+'\')">'+
+              (FL.hist[id]?'▾ ocultar':'▸ ver')+' historial ('+(ls.length-1)+' estancia'+(ls.length-1>1?'s':'')+' anterior'+(ls.length-1>1?'es':'')+')</button>';
+      if(FL.hist[id]) ls.slice(1).forEach(function(e){ html+=flEstRow(e, puede); });
+    }
+    // formulario abierto sobre una estancia de ESTA máquina
+    if(FL.clave && FL.clave.id_maquina===id){
+      const objetivo=ls.filter(flClaveIgual)[0];
+      if(objetivo) html += (FL.op==='baja') ? flFormBaja(objetivo) : flFormDatos('Corregir la estancia '+flVentana(objetivo));
+    }
+    html+='</div>';
+  });
+
+  cont.innerHTML=html;
+}
+function flEstRow(e, puede){
+  const acts=[], arg="'"+esc(e.id_maquina)+"','"+esc(e.fecha_ingreso)+"'";
+  if(puede){
+    if(e.valida && !e.fecha_retiro) acts.push('<button class="btn-mini danger" onclick="flAbrir(\'baja\','+arg+')">Dar de baja</button>');
+    acts.push('<button class="btn-mini" onclick="flAbrir(\'corregir\','+arg+')">Corregir</button>');
+  }
+  return '<div class="est-row">'+
+           '<span class="est-when">'+esc(flVentana(e))+'</span>'+
+           (e.vigente?'<span class="pill h">vigente hoy</span>':'')+
+           (e.notas?'<span class="est-note">'+esc(e.notas)+'</span>':'')+
+           '<span class="est-note">fila '+e.fila+'</span>'+
+           (acts.length?('<span class="est-acts">'+acts.join('')+'</span>'):'')+
+         '</div>';
 }
 </script>
 </body>
