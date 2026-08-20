@@ -233,3 +233,55 @@ y solo sirve para revocar accesos.
 **UF3 queda fuera a propósito** (la lleva `residente_uf3`, D101). Si algún día entra, es agregar `uf3`
 a esta columna **y** a `areasDeUsuario('angie')` en `CodigoAsistencias.gs` — las dos, porque hoy el
 módulo deriva las áreas del mapa por usuario y no del token.
+
+
+---
+
+# Seed de OBRA — hoja `MAQUINAS` (D138)
+
+**Ojo: esta va en el Google Sheet de OBRA** (el de BANDEJA/DATA/MAQUINARIA), no en el de
+Asistencias. Es el catálogo de la flota, que hasta D138 vivía escrito en `Codigo.gs` y en cuatro
+pantallas.
+
+**MAQUINAS.tsv** → hoja nueva `MAQUINAS`, pegando desde A1 (incluye la fila de encabezados).
+`id_maquina · tipo · horas_prog · propiedad · fecha_ingreso · fecha_retiro · notas`
+
+## Cómo se lee
+
+- **Una fila por ESTANCIA, no por máquina.** Si el finisher entra y sale cinco veces, son cinco
+  filas. Es lo mismo que D85 con el personal: para un reingreso que respete los días en que no
+  estuvo va un alta NUEVA, no editar la anterior.
+- **`fecha_retiro` es el PRIMER DÍA QUE YA NO ESTUVO** (ventana `[ingreso, retiro)`, igual que
+  `activaEnFecha` de D85). Vacía = sigue en obra.
+- **`horas_prog` puede ir vacía:** se deduce de `propiedad` (alquilada 5 h / propia 6.4 h, D10).
+- **`tipo`** decide si la máquina genera producción (los vibros, minicargador, minibuldózer y
+  retroexcavadora nunca la generan — D41/D44/D111). Un tipo desconocido no rompe nada, pero el
+  endpoint lo avisa y la trata como productiva.
+
+## Alta y baja, ya sin tocar código
+
+- **Llega una máquina:** una fila nueva con su `fecha_ingreso`. Aparece sola en el desplegable del
+  capataz, en el de la chequeadora si es excavadora, y en las faltantes.
+- **Se va:** se le pone `fecha_retiro` = el primer día que ya no estuvo. Desaparece hacia adelante y
+  **sigue saliendo bien hacia atrás** (consultar un día anterior muestra la flota que había ese día).
+- **Vuelve:** fila NUEVA con la fecha de reingreso. No se edita la vieja: se perdería el hueco.
+
+## Lo que trae la semilla
+
+25 estancias que reconstruyen el histórico de 2026, para que consultar un día pasado muestre la
+flota que de verdad había: las 11 vigentes hoy, las 10 devueltas en ago-2026 (D136), CAT320 y MC705
+retiradas en jun-2026 (D61), y FNG02 + CR08 marcadas como fuera de obra.
+
+**Lo único que hay que confirmar antes de pegar:** el finisher **FNG02** y su vibro de pareja
+**CR08** quedan con `fecha_retiro = 2026-08-20`, es decir "hoy no están". Si SÍ están en obra ahora
+mismo, se borra esa celda en las dos filas y listo. La fecha `2026-01-01` de los ingresos es un
+"desde siempre" conservador: no se conocen las fechas reales de ingreso y no hace falta afinarlas
+salvo que se quiera consultar días anteriores a esa fecha.
+
+**El ID tiene que coincidir letra por letra con `dim_maquinaria`** del maestro
+`Modelo_Produccion_Maquinaria` (por eso `RT-02` va con guion, D111). Si no, el pegado a
+`Captura_Diaria` deja de cruzar en silencio.
+
+Si la hoja no existe, está vacía o no tiene una sola fila utilizable, el backend cae al catálogo
+`MAQ_CATALOGO` de `Codigo.gs` — nunca sirve una flota vacía, que dejaría al capataz sin poder
+reportar ninguna máquina.

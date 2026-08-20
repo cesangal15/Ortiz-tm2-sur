@@ -1031,6 +1031,7 @@ function doGet(e){
   if(a==='volquetas')   return volquetasDelDia(e);
   if(a==='drenajes')    return drenajesCatalogo();
   if(a==='tramos')      return tramosCatalogo();   // D104: subtramos del eje para el selector del residente
+  if(a==='maquinas')    return maquinasCatalogo(e); // D138: flota vigente en una fecha (hoja MAQUINAS)
   if(a==='acumulado_drenajes') return acumuladoDrenajes(e);
   if(a==='maquinaria_produccion') return maquinariaProduccion(e);
   if(a==='debug')       return debug(e);
@@ -1411,25 +1412,170 @@ const MAQ_COMPLEM = {
 };
 // Catálogo de máquinas (05_CATALOGO §4): tipo + horas programadas. Para crear filas y poblar el
 // selector de "redirigir producción" (solo las que generan producción; vibros/minis fuera).
-// D136: devueltas al proveedor (ago-2026) y fuera del catálogo — NH69 (bulldozer alquilado),
-// EXC001/EXC013/EXC014 (excavadoras propias), CS78B/NH404/NH420/CAT900 (vibros alquilados) y
-// NH421 (minicargador). Salir del catálogo NO borra lo ya escrito en MAQUINARIA: el histórico se
-// conserva; solo dejan de ofrecerse y de esperarse. (Antes: CAT320 y MC705, jun-2026, D61.)
+// D136: devueltas/entregadas (ago-2026) y fuera del catálogo — NH69 (bulldozer alquilado),
+// BL009 (bulldozer propio), EXC001/EXC013/EXC014 (excavadoras propias),
+// CS78B/NH404/NH420/CAT900 (vibros alquilados) y NH421 (minicargador). BL005 queda como
+// único bulldozer y EXC015 como única excavadora. Salir del catálogo NO borra lo ya escrito
+// en MAQUINARIA: el histórico se conserva; solo dejan de ofrecerse y de esperarse.
+// (Antes: CAT320 y MC705, jun-2026, D61.)
 const MAQ_CATALOGO = {
-  BL005:{tipo:'BULLDOZER',prog:6.4}, BL009:{tipo:'BULLDOZER',prog:6.4},
+  BL005:{tipo:'BULLDOZER',prog:6.4},
   EXC015:{tipo:'EXCAVADORA',prog:6.4},
   MO03:{tipo:'MOTONIVELADORA',prog:6.4}, MO04:{tipo:'MOTONIVELADORA',prog:6.4}, MO09:{tipo:'MOTONIVELADORA',prog:6.4},
   FNG02:{tipo:'FINISHER',prog:6.4},
-  CR019:{tipo:'VIBROCOMPACTADOR',prog:6.4}, CR013:{tipo:'VIBROCOMPACTADOR',prog:6.4}, CR016:{tipo:'VIBROCOMPACTADOR',prog:6.4},
+  CR019:{tipo:'VIBROCOMPACTADOR',prog:6.4}, CR013:{tipo:'VIBROCOMPACTADOR',prog:6.4}, CR016:{tipo:'VIBROCOMPACTADOR',prog:6.4}, CR08:{tipo:'VIBROCOMPACTADOR',prog:6.4},
   NH403:{tipo:'VIBROCOMPACTADOR',prog:5},
   CR026:{tipo:'MINIBULDOZER',prog:6.4},
   'RT-02':{tipo:'RETROEXCAVADORA',prog:5}
 };
-// Flota "requerida" diaria (mismo conjunto que estado.html): máquinas productivas cuya presencia se
-// espera cada día. El panel la usa para mostrar las FALTANTES (sin reporte) y permitir registrar sus
-// horas manualmente (D61). CAT320 y MC705 retiradas de la obra (jun-2026); NH69, EXC001, EXC013 y
-// EXC014 devueltas (ago-2026, D136).
-const MAQ_FLOTA_ESPERADA = ['BL005','BL009','EXC015','MO03','MO04','MO09'];
+// Flota "requerida" diaria (mismo conjunto que estado.html): máquinas de las que se espera saber
+// cada día SI reportaron o no. El panel la usa para mostrar las FALTANTES (sin reporte) y permitir
+// registrar sus horas manualmente (D61).
+// D137: es TODO el catálogo, no solo las productivas. Antes eran las 10 de BL/EXC/MO/NH69 (D61d) y
+// vibros, finisher, minibuldózer y RT-02 (D111) quedaban fuera, así que de esas nunca se sabía si
+// habían trabajado o si simplemente nadie las reportó — que es justo lo que la pantalla existe para
+// responder. Se DERIVA del catálogo (no se copia a mano) para que las dos listas no puedan divergir:
+// dar de baja una máquina en MAQ_CATALOGO la saca también de las faltantes, en un solo sitio.
+const MAQ_FLOTA_ESPERADA = Object.keys(MAQ_CATALOGO);
+// D138: máquinas del catálogo de respaldo que ENTRAN Y SALEN de la obra (el finisher y su vibro de
+// pareja: son caros de tener parados y solo se traen cuando hay BTC). Siguen siendo reportables,
+// pero NO se esperan cada día, así que no ensucian las faltantes con una falsa alarma diaria.
+// Solo aplica al respaldo en código: con la hoja MAQUINAS viva la distinción la dan las FECHAS.
+const MAQ_INTERMITENTES = ['FNG02','CR08'];
+
+/* ============ D138 — CATÁLOGO VIVO DE LA FLOTA (hoja MAQUINAS, backlog 2.28) ============
+ *
+ * EL PROBLEMA: las máquinas entran y salen de la obra continuamente según la necesidad — alquilar y
+ * tener parado es caro, así que el finisher FNG02 y el vibro CR08 (que trabajan en pareja) solo se
+ * traen cuando hay BTC que hacer, y lo mismo pasa con retros y vibros alquilados. Hasta hoy cada
+ * alta o baja era editar este archivo y 4 pantallas + redesplegar. Era el ÚLTIMO catálogo del
+ * sistema escrito en código: usuarios (D108), personal y cuadrillas (D84/D85), cubicaje (D53) e
+ * ítems de drenajes (D113b) ya viven en hojas que mantiene el usuario.
+ *
+ * FORMA DE LA HOJA — UNA FILA POR ESTANCIA, NO POR MÁQUINA:
+ *   id_maquina · tipo · horas_prog · propiedad · fecha_ingreso · fecha_retiro · notas
+ * Una máquina que entra y sale cinco veces son CINCO filas. Es la lección de D85 con el personal
+ * ("`reactivar` pierde el gap: para un reingreso que respete los días inactivos va un alta nueva
+ * con fecha de reingreso"), y es exactamente el caso del FNG02/CR08. Con una sola fila por máquina
+ * no habría forma de distinguir "estuvo en agosto pero no en julio" de "está desde julio".
+ *
+ * VENTANA SEMIABIERTA [fecha_ingreso, fecha_retiro), igual que `activaEnFecha` de D85: la
+ * `fecha_retiro` es el PRIMER DÍA QUE YA NO ESTUVO (vacía = sigue en obra). Así, consultar el
+ * estado del 15-jul devuelve la flota que había ESE día y el histórico nunca se desmiente: una
+ * máquina devuelta no aparece como faltante hacia atrás, ni una recién llegada como faltante en
+ * días en que todavía no estaba.
+ *
+ * RESPALDO EN CÓDIGO, A PROPÓSITO: si la hoja no existe, está vacía o no tiene ni una fila válida,
+ * se cae a `MAQ_CATALOGO`. Servir una flota VACÍA sería peor que estar desactualizado — el capataz
+ * no podría reportar ninguna máquina y todo saldría como faltante. Por eso `MAQ_CATALOGO` se
+ * conserva y hay que mantenerlo grosso modo al día, aunque ya no sea la fuente.
+ *
+ * LO QUE ESTO **NO** VALIDA, TAMBIÉN A PROPÓSITO: la recepción de reportes (`guardarReporte`) NO
+ * comprueba que la máquina esté en la flota. Un reporte que pasó el fin de semana en la cola sin
+ * señal (D82) puede traer una máquina que entretanto se devolvió, y rechazarlo perdería trabajo
+ * real del capataz. El catálogo decide qué se OFRECE y qué se ESPERA, no qué se acepta.
+ *
+ * OJO CON EL ID (D111): tiene que coincidir letra por letra con `dim_maquinaria` del maestro
+ * `Modelo_Produccion_Maquinaria` o el pegado a Captura_Diaria deja de cruzar EN SILENCIO (por eso
+ * `RT-02` va con guion). Como ahora el ID lo teclea el usuario en una hoja, el endpoint devuelve
+ * `avisos` con lo que encuentre raro en vez de tragárselo.
+ */
+const MAQUINAS_HEADERS = ['id_maquina','tipo','horas_prog','propiedad','fecha_ingreso','fecha_retiro','notas'];
+// Tipos que el sistema sabe tratar (05_CATALOGO §4). Un tipo fuera de esta lista no rompe nada, pero
+// se avisa: `esTipoSinProduccion` no lo reconocería y la máquina se trataría como productiva.
+const MAQ_TIPOS_VALIDOS = ['BULLDOZER','EXCAVADORA','MOTONIVELADORA','FINISHER','VIBROCOMPACTADOR',
+                           'MINICARGADOR','MINIBULDOZER','RETROEXCAVADORA'];
+// Orden de presentación en los desplegables (el mismo que tenían escrito a mano los frontends).
+const MAQ_ORDEN_TIPO = MAQ_TIPOS_VALIDOS;
+
+function normMaqId(s){ return String(s==null?'':s).trim().toUpperCase(); }
+// Horas programadas por defecto cuando la hoja no las trae: 5 h alquiladas / 6.4 h propias (D10).
+function progPorPropiedad_(p){ return String(p==null?'':p).toLowerCase().indexOf('alquil')>=0 ? 5 : 6.4; }
+
+/* Lee la hoja MAQUINAS cruda (memo de ejecución, como getCubicajeMap). Columnas ubicadas POR NOMBRE
+ * y tolerante: la mantiene el usuario a mano, así que un encabezado renombrado o reordenado no debe
+ * tumbarla. Si no hay encabezados reconocibles cae al orden por defecto de MAQUINAS_HEADERS. */
+var _flotaRows;
+function getFlotaRows_(){
+  if(_flotaRows) return _flotaRows;
+  _flotaRows=[];
+  const sh=ss_().getSheetByName('MAQUINAS');
+  if(!sh || sh.getLastRow()<2) return _flotaRows;
+  const v=leerRango_(sh, 1, 1, sh.getLastRow(), sh.getLastColumn()), h=v[0];
+  const idx={id:0, tipo:1, prog:2, prop:3, ing:4, ret:5, nota:6};
+  for(let j=0;j<h.length;j++){
+    const k=String(h[j]==null?'':h[j]).toLowerCase().trim();
+    if(k.indexOf('maquina')>=0 || k.indexOf('máquina')>=0 || k==='id')  idx.id=j;
+    else if(k.indexOf('tipo')>=0)                                       idx.tipo=j;
+    else if(k.indexOf('prog')>=0 || k.indexOf('hora')>=0)               idx.prog=j;
+    else if(k.indexOf('propiedad')>=0 || k.indexOf('propia')>=0)        idx.prop=j;
+    else if(k.indexOf('ingreso')>=0 || k.indexOf('entrada')>=0)         idx.ing=j;
+    else if(k.indexOf('retiro')>=0 || k.indexOf('salida')>=0)           idx.ret=j;
+    else if(k.indexOf('nota')>=0 || k.indexOf('observ')>=0)             idx.nota=j;
+  }
+  for(let i=1;i<v.length;i++){
+    _flotaRows.push({ id:v[i][idx.id], tipo:v[i][idx.tipo], prog:v[i][idx.prog], propiedad:v[i][idx.prop],
+                      ing:v[i][idx.ing], ret:v[i][idx.ret], nota:v[i][idx.nota], _row:i+1 });
+  }
+  return _flotaRows;
+}
+
+/* Flota VIGENTE en una fecha. Devuelve {fecha, fuente, catalogo, esperadas, avisos}:
+ *   catalogo  = {id: {tipo, prog, propiedad, notas}} SOLO de las máquinas vigentes ese día
+ *   esperadas = ids de los que se espera saber si reportaron (D137: todo el catálogo vigente)
+ *   fuente    = 'hoja' | 'codigo' (respaldo)
+ * Una máquina con varias estancias está vigente si CUALQUIERA de sus filas cubre la fecha. */
+function flotaEnFecha_(fecha){
+  const f = fdateValida_(fecha) || fdate(new Date());
+  const catalogo={}, avisos=[];
+  let validas=0;
+  getFlotaRows_().forEach(function(r){
+    const id=normMaqId(r.id);
+    if(!id) return;                                   // fila en blanco: ni error ni aviso
+    const ing=fdateValida_(r.ing);
+    if(!ing){ avisos.push('Fila '+r._row+' ('+id+'): sin fecha_ingreso válida (yyyy-mm-dd); esa estancia se ignora.'); return; }
+    const retCrudo = (r.ret===''||r.ret==null) ? '' : fdate(r.ret);
+    const ret = retCrudo ? fdateValida_(r.ret) : '';
+    if(retCrudo && !ret) avisos.push('Fila '+r._row+' ('+id+'): fecha_retiro "'+retCrudo+'" no se entiende; se toma como si siguiera en obra.');
+    if(ret && ret<ing)   avisos.push('Fila '+r._row+' ('+id+'): fecha_retiro anterior al ingreso; esa estancia nunca está vigente.');
+    validas++;
+    if(!(ing<=f && (!ret || f<ret))) return;           // ventana semiabierta [ingreso, retiro)
+    const tipo=String(r.tipo==null?'':r.tipo).toUpperCase().trim();
+    if(!tipo)                                  avisos.push('Fila '+r._row+' ('+id+'): sin tipo; se tratará como máquina CON producción.');
+    else if(MAQ_TIPOS_VALIDOS.indexOf(tipo)<0) avisos.push('Fila '+r._row+' ('+id+'): tipo "'+tipo+'" no está en la lista conocida; se tratará como máquina CON producción.');
+    let prog=parseFloat(r.prog);
+    if(isNaN(prog) || prog<=0) prog=progPorPropiedad_(r.propiedad);
+    // Varias estancias vigentes el mismo día (traslape en la hoja): gana la última fila, y se avisa.
+    if(catalogo[id]) avisos.push('Fila '+r._row+' ('+id+'): hay dos estancias vigentes el '+f+'; se usa la última.');
+    catalogo[id]={ tipo:tipo, prog:prog, propiedad:String(r.propiedad==null?'':r.propiedad).trim(),
+                   notas:String(r.nota==null?'':r.nota).trim() };
+  });
+  if(!validas){
+    // Respaldo: la hoja no existe, está vacía o no tiene una sola fila utilizable.
+    Object.keys(MAQ_CATALOGO).forEach(function(id){
+      catalogo[id]={ tipo:MAQ_CATALOGO[id].tipo, prog:MAQ_CATALOGO[id].prog, propiedad:'', notas:'' };
+    });
+    return { fecha:f, fuente:'codigo', catalogo:catalogo, avisos:avisos,
+             esperadas:Object.keys(catalogo).filter(function(id){ return MAQ_INTERMITENTES.indexOf(id)<0; }) };
+  }
+  return { fecha:f, fuente:'hoja', catalogo:catalogo, avisos:avisos, esperadas:Object.keys(catalogo) };
+}
+
+/* Endpoint `?action=maquinas&fecha=` — SOLO LECTURA. Se lo comen los cuatro frontends que hoy
+ * llevan la lista escrita a mano (capataz, chequeadora, encargado, estado). Sin `fecha` responde
+ * con la flota de HOY. */
+function maquinasCatalogo(e){
+  const fl=flotaEnFecha_((e&&e.parameter)?e.parameter.fecha:'');
+  const maquinas=Object.keys(fl.catalogo).map(function(id){
+    const c=fl.catalogo[id];
+    return { id_maquina:id, tipo:c.tipo, prog:c.prog, propiedad:c.propiedad, notas:c.notas,
+             produce: !esTipoSinProduccion(c.tipo), esperada: fl.esperadas.indexOf(id)>=0 };
+  }).sort(function(a,b){
+    const ta=MAQ_ORDEN_TIPO.indexOf(a.tipo), tb=MAQ_ORDEN_TIPO.indexOf(b.tipo);
+    return ((ta<0?99:ta)-(tb<0?99:tb)) || (a.id_maquina<b.id_maquina?-1:a.id_maquina>b.id_maquina?1:0);
+  });
+  return json({ ok:true, fecha:fl.fecha, fuente:fl.fuente, maquinas:maquinas, avisos:fl.avisos });
+}
 // Bucket de una fila de MAQUINARIA a partir de su par H/I derivado (CAPTURA_ACT_MAP). '' = no editable.
 function bucketDeMaqRow(r){
   const h=String(r.actividad||'').toUpperCase(), i=String(r.sub_actividad||'').toUpperCase();
@@ -1589,11 +1735,15 @@ function maquinariaProduccion(e){
     return { proyecto:f.proyecto, bucket:f.bucket, cc:f.cc, label:f.label, tipo:f.tipo,
       oficial:f.oficial, n_maquinas:n, pk_oficial:(dataPk[k]||[]), filas:filas };
   });
-  const flota_produccion=Object.keys(MAQ_CATALOGO).filter(id=>!esTipoSinProduccion(MAQ_CATALOGO[id].tipo))
-    .map(id=>({ id_maquina:id, tipo:MAQ_CATALOGO[id].tipo, prog:MAQ_CATALOGO[id].prog, reportada: !!presentes[id] }));
-  const faltantes=MAQ_FLOTA_ESPERADA.filter(id=>!presentes[id])
-    .map(id=>({ id_maquina:id, tipo:(MAQ_CATALOGO[id]||{}).tipo||'', prog:(MAQ_CATALOGO[id]||{}).prog||'' }));
-  return json({ok:true, fecha, frentes, otras, flota_produccion, faltantes});
+  // D138: la flota sale de la hoja MAQUINAS VIGENTE ESE DÍA (respaldo al catálogo en código), así
+  // que consultar una fecha vieja no lista como faltante una máquina que entonces no estaba.
+  const fl=flotaEnFecha_(fecha);
+  const flota_produccion=Object.keys(fl.catalogo).filter(id=>!esTipoSinProduccion(fl.catalogo[id].tipo))
+    .map(id=>({ id_maquina:id, tipo:fl.catalogo[id].tipo, prog:fl.catalogo[id].prog, reportada: !!presentes[id] }));
+  const faltantes=fl.esperadas.filter(id=>!presentes[id])
+    .map(id=>({ id_maquina:id, tipo:(fl.catalogo[id]||{}).tipo||'', prog:(fl.catalogo[id]||{}).prog||'' }));
+  return json({ok:true, fecha, frentes, otras, flota_produccion, faltantes,
+                flota_fuente:fl.fuente, flota_avisos:fl.avisos});
 }
 
 // POST: (1) parcha la col T (producción) de filas existentes (ajustes[]) guardando el estimado
@@ -1628,10 +1778,11 @@ function maquinariaProduccionGuardar(body){
   //    - solo horas: registro de horas de una máquina sin reporte por ningún medio (D61).
   // Si trabajó menos que lo programado, el motivo deriva las horas muertas y el ESTADO (D12/D13).
   const ts=new Date(), reporta=body.usuario||'(ajuste-prod)';
+  const catFecha=flotaEnFecha_(fecha).catalogo;   // D138: flota vigente el día que se está ajustando
   const maqRows=[];
   nuevas.forEach(nv=>{
     const idM=String(nv.id_maquina||'').toUpperCase(); if(!idM) return;
-    const cat=MAQ_CATALOGO[idM]; if(!cat) return;               // máquina fuera de catálogo: se ignora
+    const cat=catFecha[idM]; if(!cat) return;                   // máquina fuera de la flota de ese día: se ignora
     const b  = nv.bucket  ? MAQ_BUCKETS[nv.bucket]   : null;  if(nv.bucket  && !b)  return;
     const cx = nv.complem ? MAQ_COMPLEM[nv.complem]  : null;  if(nv.complem && !cx) return;
     // actividad de la fila

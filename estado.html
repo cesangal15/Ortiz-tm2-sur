@@ -101,16 +101,27 @@
 </div>
 
 <script src="auth.js"></script>
+<script src="flota.js"></script>
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
-// Flota productiva que se espera cada día (misma lista que MAQ_FLOTA_ESPERADA de Codigo.gs).
-// D136: NH69, EXC001, EXC013 y EXC014 se devolvieron al proveedor (ago-2026) y salen de la flota.
-const TODAS_MAQUINAS = ['BL005','BL009','EXC015','MO03','MO04','MO09'];
-const TIPO_EQUIPO = {
-  'BL005':'BULLDOZER','BL009':'BULLDOZER',
+// D138: la flota esperada la sirve la hoja MAQUINAS por fecha (`?action=maquinas`), así que esta
+// pantalla ya dice la verdad hacia atrás: consultar el 15-jul compara contra las máquinas que había
+// ESE día, no contra las de hoy. Lo de abajo es el respaldo si el catálogo no responde.
+// D137: se esperan TODAS las del catálogo, no solo las productivas — de un vibro o del finisher
+// también hay que poder saber si trabajó o si nadie lo reportó.
+// D136: NH69, BL009, EXC001, EXC013, EXC014, CS78B, NH404, NH420, CAT900 y NH421 devueltas (ago-2026).
+const MAQUINAS_RESPALDO = ['BL005','EXC015','MO03','MO04','MO09','FNG02','CR019','CR013','CR016','CR08','NH403','CR026','RT-02'];
+const TIPO_RESPALDO = {
+  'BL005':'BULLDOZER',
   'EXC015':'EXCAVADORA',
-  'MO03':'MOTONIVELADORA','MO04':'MOTONIVELADORA','MO09':'MOTONIVELADORA'
+  'MO03':'MOTONIVELADORA','MO04':'MOTONIVELADORA','MO09':'MOTONIVELADORA',
+  'FNG02':'FINISHER',
+  'CR019':'VIBROCOMPACTADOR','CR013':'VIBROCOMPACTADOR','CR016':'VIBROCOMPACTADOR','CR08':'VIBROCOMPACTADOR','NH403':'VIBROCOMPACTADOR',
+  'CR026':'MINIBULDOZER',
+  'RT-02':'RETROEXCAVADORA'
 };
+let TODAS_MAQUINAS = MAQUINAS_RESPALDO.slice();
+let TIPO_EQUIPO = Object.assign({}, TIPO_RESPALDO);
 
 window.onload = function() {
   const rol = localStorage.getItem('rol');
@@ -133,12 +144,21 @@ async function consultar() {
   try {
     let url = `${APPS_SCRIPT_URL}?action=estado&fecha=${fecha}`;
     if (proyecto) url += `&proyecto=${encodeURIComponent(proyecto)}`;
-    const resp = await fetch(url);
+    // D138: la flota vigente de ESE día va en paralelo con el estado; si falla, queda el respaldo.
+    const [resp] = await Promise.all([fetch(url), cargarFlota(fecha)]);
     const data = await resp.json();
     renderResultados(data.reportadas || [], fecha, proyecto);
   } catch(err) {
     document.getElementById('resultados').innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Error al consultar. Verifica tu conexión.</p></div>`;
   }
+}
+
+/* D138 — flota ESPERADA en la fecha consultada (hoja MAQUINAS). Solo entran las esperadas: el
+ * finisher y su vibro, que entran y salen de la obra, no salen como "FALTA" los días que no están. */
+async function cargarFlota(fecha){
+  const fl = await TM2Flota.cargar(APPS_SCRIPT_URL, fecha, {ids:MAQUINAS_RESPALDO, tipos:TIPO_RESPALDO, prog:{}});
+  const esperadas = fl.maquinas.filter(m => m.esperada !== false);
+  if(esperadas.length){ TODAS_MAQUINAS = TM2Flota.ids(esperadas); TIPO_EQUIPO = TM2Flota.tipos(esperadas); }
 }
 
 function renderResultados(reportadas, fecha, proyecto) {

@@ -13,6 +13,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
 <script src="auth.js"></script>
 <script src="offline.js"></script>
+<script src="flota.js"></script>
 <style>
   :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--success:#2ecc71;--error:#e74c3c;--input-bg:#12151f;--uf1:#3a9bdc;--uf2:#9b59b6;}
   *{box-sizing:border-box;margin:0;padding:0;}
@@ -178,13 +179,37 @@ const ORIGEN_PK = { 'Masivo2':'19+800', 'Masivo1':'14+400', 'Diviso':'21+500' };
 
 // Maquinaria (D54): la chequeadora SOLO registra las excavadoras del origen.
 // El selector se limita a las excavadoras; el resto de la flota (bulldozers, motos, vibros, minis…) no aplica aquí.
+// D138: la lista sale de la hoja MAQUINAS filtrando por TIPO, así que una excavadora nueva aparece
+// sola y una devuelta desaparece sola — sin tocar esta pantalla. Antes había que editarla a mano.
 // D136: EXC001/EXC013/EXC014 se devolvieron (ago-2026), así que hoy queda una sola excavadora en obra.
-const MAQUINAS = ['EXC015'];
-const TIPO_EQUIPO = {'EXC015':'EXCAVADORA'};
-const HORAS_PROG = {};
+const MAQUINAS_RESPALDO = ['EXC015'];
+const TIPO_RESPALDO = {'EXC015':'EXCAVADORA'};
+let MAQUINAS = MAQUINAS_RESPALDO.slice();
+let TIPO_EQUIPO = Object.assign({}, TIPO_RESPALDO);
+let HORAS_PROG = {};
 function progHoras(id){ return HORAS_PROG[id]!==undefined?HORAS_PROG[id]:6.4; }
 const MOTIVOS = ['Mantenimiento','Sin operador','Falla mecánica','Lluvia / clima','Sin frente de trabajo','Esperando material','Abastecimiento de combustible','Traslado / movilización','Bloqueo','Otro (especificar)'];
-function maqOptions(){ return '<option value="">— Máquina —</option>'+MAQUINAS.map(m=>'<option>'+m+'</option>').join(''); }
+// `actual` se conserva SIEMPRE como opción aunque ya no esté en la flota del día: si al recargar la
+// lista desapareciera la máquina ya elegida, se borraría el dato sin que la chequeadora lo note.
+function maqOptions(actual){
+  const extra = (actual && MAQUINAS.indexOf(actual)<0) ? '<option value="'+actual+'" selected>'+actual+' (fuera de la flota del día)</option>' : '';
+  return '<option value="">— Máquina —</option>'+extra+MAQUINAS.map(m=>'<option'+(m===actual?' selected':'')+'>'+m+'</option>').join('');
+}
+/* D138 — excavadoras vigentes en la fecha del reporte, de la hoja MAQUINAS. Mismo patrón que
+ * `cargarCubicaje` (D82 §2.7): con señal se refresca y se guarda copia; sin señal se usa la copia. */
+function refrescarFlota(){
+  const fecha=(document.getElementById('fecha')||{}).value||'';
+  return TM2Flota.cargar(APPS_SCRIPT_URL, fecha, {ids:MAQUINAS_RESPALDO, tipos:TIPO_RESPALDO, prog:{}})
+    .then(function(fl){
+      const exc=TM2Flota.deTipo(fl.maquinas, 'EXCAVADORA');
+      // Si la flota del día no trae ninguna excavadora, se conserva la anterior: dejar el selector
+      // vacío le impediría a la chequeadora reportar la máquina del origen (D54).
+      if(exc.length){ MAQUINAS=TM2Flota.ids(exc); TIPO_EQUIPO=TM2Flota.tipos(exc); HORAS_PROG=TM2Flota.progs(exc); }
+      document.querySelectorAll('select.m-id').forEach(function(sel){ sel.innerHTML=maqOptions(sel.value); });
+      const t=TM2Flota.aviso(fl);
+      if(t) TM2Offline.bannerCatalogoViejo(document.querySelector('.container'), t);
+    });
+}
 function motivoOptions(){ return '<option value="">— Motivo —</option>'+MOTIVOS.map(m=>'<option>'+m+'</option>').join(''); }
 let maqIdx = 0;
 
@@ -202,6 +227,9 @@ window.onload = function(){
   document.getElementById('fecha').value = new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
   cargarCubicaje();
   addLinea();
+  // D138: excavadoras vigentes ese día (no bloquea: el selector ya está pintado con el respaldo).
+  refrescarFlota();
+  document.getElementById('fecha').addEventListener('change', refrescarFlota);
 };
 function logout(){
   // solo la sesión: la cola de envíos pendientes NO se borra al cerrar sesión (D82)
@@ -357,7 +385,7 @@ function addMaquina(){
   const j=maqIdx++;
   const row=document.createElement('div'); row.className='eq-item'; row.id='maq_'+j;
   row.innerHTML=
-    '<div class="eq-top"><select class="m-id" onchange="onMaqChange('+j+')">'+maqOptions()+'</select>'
+    '<div class="eq-top"><select class="m-id" onchange="onMaqChange('+j+')">'+maqOptions('')+'</select>'
     +'<button class="btn-del" onclick="delMaquina('+j+')" title="Quitar">✕</button></div>'
     +'<div class="eq-prog" id="mprog_'+j+'"></div>'
     +'<div class="grid2">'

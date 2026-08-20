@@ -171,18 +171,22 @@ Terraplén (genera fila de terraplén) · Puente · ODL · Botadero (solo excava
 
 | ID | Tipo | Hrs prog | Proveedor |
 |---|---|---|---|
-| BL005, BL009 | BULLDOZER | 6.4 | Propias |
+| BL005 | BULLDOZER | 6.4 | Propia |
 | EXC015 | EXCAVADORA | 6.4 | Propia |
 | MO03, MO04, MO09 | MOTONIVELADORA | 6.4 | Propias |
 | FNG02 | FINISHER | 6.4 | Propia |
-| CR019, CR013, CR016 | VIBROCOMPACTADOR | 6.4 | ORTIZ (propios) |
+| CR019, CR013, CR016, CR08 | VIBROCOMPACTADOR | 6.4 | ORTIZ (propios) |
 | NH403 | VIBROCOMPACTADOR | 5 | DINISSAN (alquilado) |
 | CR026 | MINIBULDOZER | 6.4 | ORTIZ (propia) |
 | RT-02 ("la pajarita") | RETROEXCAVADORA | 5 | Alquilada |
 
 **Retiradas de la obra (jun-2026, D61):** CAT320 (excavadora alquilada) y MC705 (motoniveladora alquilada). Ya no aparecen en los desplegables de capataz/chequeadora, ni en el panel de producción, ni en el estado de máquinas faltantes.
 
-**Devueltas / entregadas (ago-2026, D136):** **NH69** (bulldozer alquilado), **EXC001, EXC013, EXC014** (excavadoras propias), **CS78B** (vibro GEOEXCON), **NH404, NH420** (vibros DINISSAN), **CAT900** (vibro SK RENTAL) y **NH421** (minicargador DINISSAN). Mismo tratamiento que D61: salen de los desplegables de capataz y chequeadora, del catálogo del panel de producción y de la flota esperada de `estado.html`/panel. **Su histórico en MAQUINARIA no se toca** (las filas ya escritas siguen ahí y siguen saliendo en los informes del período en que trabajaron). Quedan **6 máquinas en la flota esperada** (BL005, BL009, EXC015, MO03, MO04, MO09) y **una sola excavadora** en el selector de la chequeadora (EXC015). El único vibro alquilado que queda es NH403.
+**Devueltas / entregadas (ago-2026, D136):** **NH69** (bulldozer alquilado), **BL009** (bulldozer propio), **EXC001, EXC013, EXC014** (excavadoras propias), **CS78B** (vibro GEOEXCON), **NH404, NH420** (vibros DINISSAN), **CAT900** (vibro SK RENTAL) y **NH421** (minicargador DINISSAN). Mismo tratamiento que D61: salen de los desplegables de capataz y chequeadora, del catálogo del panel de producción y de la flota esperada de `estado.html`/panel. **Su histórico en MAQUINARIA no se toca** (las filas ya escritas siguen ahí y siguen saliendo en los informes del período en que trabajaron). Quedan **5 máquinas en la flota esperada** (BL005, EXC015, MO03, MO04, MO09), **un solo bulldozer** (BL005) y **una sola excavadora** en el selector de la chequeadora (EXC015). El único vibro alquilado que queda es NH403.
+
+**El catálogo VIVE EN LA HOJA `MAQUINAS`, no en esta tabla (D138).** Desde D138 la flota la sirve `?action=maquinas&fecha=` desde la hoja `MAQUINAS` del Sheet de obra (`id_maquina · tipo · horas_prog · propiedad · fecha_ingreso · fecha_retiro · notas`), con **una fila por ESTANCIA**: una máquina que entra y sale cinco veces son cinco filas, y la ventana es **semiabierta `[fecha_ingreso, fecha_retiro)`** — `fecha_retiro` es el primer día que YA NO estuvo, igual que `activaEnFecha` de D85. Alta o baja = editar una fila, **sin tocar código ni redesplegar**. Existe porque las máquinas entran y salen continuamente según la necesidad (alquilar y tener parado es caro: el finisher **FNG02** y el vibro **CR08** trabajan en pareja y solo se traen cuando hay BTC). La tabla de arriba pasa a ser **referencia y respaldo**: es lo que sirve `MAQ_CATALOGO` si la hoja falta o está vacía —nunca se sirve una flota vacía, que dejaría al capataz sin poder reportar nada—, así que conviene mantenerla grosso modo al día aunque ya no mande. Semilla lista para pegar en `backend/seeds/MAQUINAS.tsv`. **El ID debe coincidir letra por letra con `dim_maquinaria`** (D111) o el pegado a Captura_Diaria deja de cruzar en silencio; el endpoint devuelve `avisos` con lo que encuentre raro.
+
+**Flota esperada = TODA la flota vigente ese día (D137, enmienda D61d/D111; afinado por D138):** la lista contra la que `estado.html` y la sección "máquinas faltantes" del panel de producción marcan quién **no** reportó ese día son **todas las vigentes ese día**, no solo las productivas. Antes eran las 10 de BL/EXC/MO/NH69 y los vibros, el finisher, el minibuldózer y la RT-02 quedaban fuera, así que de esas nunca se sabía si habían trabajado o si simplemente nadie las reportó. Con D138 esto se resuelve solo: **esperada = vigente en la hoja**, así que una máquina devuelta deja de esperarse el día de su retiro y una recién llegada empieza a esperarse el día de su ingreso, sin listas paralelas. Las pantallas ya no llevan la lista escrita (solo un respaldo), y `MAQ_FLOTA_ESPERADA` quedó derivada de `MAQ_CATALOGO` para el camino de respaldo. Ojo con la lectura: "FALTA" aquí significa **sin reporte**, no "máquina parada" — una máquina que no trabajó ese día tampoco se reporta (D28), y es el residente quien la anota como inoperativo en texto libre.
 
 **Regla de producción por tipo:**
 - VIBROCOMPACTADOR: producción siempre nula — compactan frentes ejecutados por otras máquinas; el campo producción no se muestra ni se guarda.
@@ -191,9 +195,11 @@ Terraplén (genera fila de terraplén) · Puente · ODL · Botadero (solo excava
 - Actividades de apoyo (Compactación terraplén/subbase/BTC · Paisajeo / Adecuación de caminos / Limpieza de derrumbe): producción nula para cualquier tipo de máquina.
 - Todos los demás tipos + actividades productivas: producción = largo de la línea de la actividad.
 
-CC habituales por máquina (de reportes Abr–May): BL→02.07/02.08 · EXC→02.05/02.06/02.03 · MO→02.07/03.01/03.03 · CR013→02.07-UF2/03.01 · CR016→02.07/03.01 · CR019→02.07-UF1 · FNG02→03.03.
+CC habituales por máquina (de reportes Abr–May; incluye máquinas ya devueltas, se conservan como referencia del histórico): BL→02.07/02.08 · EXC→02.05/02.06/02.03 · MO→02.07/03.01/03.03 · CR013→02.07-UF2/03.01 · CR016→02.07/03.01 · CR019→02.07-UF1 · FNG02→03.03.
 
-**PENDIENTE DE VALIDAR:** marca/modelo/valor-hora reales de vibros nuevos en dim; bulldozer alquilado D150B y motoniveladora 120 alquilada (IDs pendientes).
+**PENDIENTE DE VALIDAR:** marca/modelo/valor-hora reales de vibros nuevos en dim.
+
+**Códigos huérfanos resueltos (D137):** **CR08** estaba solo en el desplegable del capataz y **entra al catálogo** como vibro ORTIZ propio (6.4 h). **CR020** y **D150B** estaban solo en el chip "maquinaria sin reporte" del panel del residente —se listaban como faltantes aunque nadie podía reportarlas— y **no están en obra** (confirmado por el dueño, ago-2026): salen. Con esto el bulldozer alquilado D150B y la motoniveladora 120 alquilada dejan de figurar como IDs pendientes.
 
 ## 5. Motivos / Estados — CONFIRMADO
 Motivos (dropdown, 10): Mantenimiento · Sin operador · Falla mecánica · Lluvia/clima · Sin frente de trabajo · Esperando material · Abastecimiento de combustible · Traslado/movilización · **Bloqueo** · Otro (especificar).
