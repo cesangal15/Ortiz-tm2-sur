@@ -155,7 +155,9 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IV
 const CAPATACES_ESPERADOS = ['angel','alejo','robinson'];
 // Flota viva para el chip "maquinaria sin reporte". D136: NH69, BL009, CS78B, NH404, NH420,
 // CAT900, NH421, EXC001, EXC013 y EXC014 se devolvieron/entregaron (ago-2026) y salen del listado.
-const TODAS_MAQUINAS = ['BL005','EXC015','FNG02','MO03','MO04','MO09','CR019','CR013','CR016','NH403','CR026','CR020','D150B','RT-02'];
+// D137: CR020 y D150B salen — no estan en obra (confirmado por el dueno); eran codigos huerfanos
+// que se listaban como faltantes aunque el capataz no podia reportarlos. CR08 entra al catalogo.
+const TODAS_MAQUINAS = ['BL005','EXC015','FNG02','MO03','MO04','MO09','CR019','CR013','CR016','CR08','NH403','CR026','RT-02'];
 // Categorías cuyo volumen es OFICIAL de la chequeadora; el conteo del capataz es solo control.
 const CAT_CONTROL_CAPATAZ = ['Excavación aprovechable','Excavación préstamo','Excavación no aprovechable','Conformación / ZODME','Terraplén'];
 const ACTIVIDADES = [
