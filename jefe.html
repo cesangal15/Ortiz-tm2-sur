@@ -28,6 +28,15 @@
   .btn-consultar{padding:10px 18px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:8px;color:#0f1117;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;}
   .btn-consultar:hover{transform:translateY(-1px);}
   .filtros-din{margin-top:14px;padding-top:14px;border-top:1px solid var(--border);display:none;}
+  /* D139: puerta a la pantalla de Maquinaria. El jefe entra ahí en SOLO LECTURA; el contenido NO se
+     duplica aquí (una copia se desincroniza sola en cuanto una de las dos cambie). */
+  .tile-link{display:none;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--border);border-radius:14px;
+             padding:16px 18px;margin-bottom:20px;text-decoration:none;color:var(--text);transition:all 0.2s;}
+  .tile-link:hover{border-color:var(--accent);transform:translateY(-1px);box-shadow:0 6px 20px rgba(245,166,35,0.12);}
+  .tile-link .ico{font-size:30px;}
+  .tile-link h2{font-family:'Syne',sans-serif;font-size:15px;font-weight:800;}
+  .tile-link p{font-size:12px;color:var(--muted);margin-top:3px;}
+  .tile-link .arrow{margin-left:auto;color:var(--accent);font-family:'Syne',sans-serif;font-size:18px;}
   .section-title{font-family:'Syne',sans-serif;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin:26px 0 12px;display:flex;align-items:center;gap:8px;}
   .section-title::after{content:'';flex:1;height:1px;background:var(--border);}
   /* ---- Resumen (protagonista) ---- */
@@ -119,6 +128,15 @@
   <div id="resultados">
     <div class="empty-state"><div class="icon">🗓️</div><p>Elige un rango de fechas y consulta el resumen de obra.</p></div>
   </div>
+
+  <!-- D139: enlace a la pantalla de Maquinaria (producción del día + flota). El jefe la ve en SOLO
+       LECTURA: la propia pantalla esconde todo lo editable al detectar su rol, y el servidor lo
+       rechaza además si llegara por otra vía (D109). -->
+  <a class="tile-link" id="tileMaquinaria" href="produccion-maquinaria.html">
+    <div class="ico">⚙️</div>
+    <div><h2>Maquinaria</h2><p id="tileMaqSub">Producción del día por máquina y flota de la obra · solo lectura</p></div>
+    <div class="arrow">→</div>
+  </a>
 </div>
 
 <script src="auth.js"></script>
@@ -169,6 +187,15 @@ window.onload = function(){
   // D131: quien viene de drenajes arranca con el filtro en ODT+ODL — su alcance real. No es un cerrojo
   // (puede cambiarlo y mirar tierras: la pantalla es de solo lectura), es el punto de partida útil.
   if(ROLES_DREN.indexOf(rol)>=0){ const fa=document.getElementById('fArea'); if(fa) fa.value='drenajes'; }
+  // D139: la puerta a Maquinaria es para quien esa pantalla deja entrar — jefe (solo lectura), admin y
+  // residente de tierras (editan). Los roles de drenajes no la usan (allá las máquinas van en texto
+  // libre, D70), así que no se les ofrece un enlace que su propio guard rechazaría.
+  const _tm=document.getElementById('tileMaquinaria');
+  if(_tm && (rol==='jefe' || rol==='admin' || rol==='residente')){
+    _tm.style.display='flex';
+    if(rol!=='jefe'){ const sb=document.getElementById('tileMaqSub');
+      if(sb) sb.textContent='Producción del día por máquina y flota: altas, bajas y reingresos'; }
+  }
   // Fecha por defecto = HOY en zona horaria Colombia (D50), nunca toISOString().
   const hoy=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
   document.getElementById('desde').value=hoy;
