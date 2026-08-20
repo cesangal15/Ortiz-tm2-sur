@@ -172,23 +172,21 @@ Terraplén (genera fila de terraplén) · Puente · ODL · Botadero (solo excava
 | ID | Tipo | Hrs prog | Proveedor |
 |---|---|---|---|
 | BL005, BL009 | BULLDOZER | 6.4 | Propias |
-| NH69 | BULLDOZER | 5 | Alquilada |
-| EXC001, EXC013, EXC014, EXC015 | EXCAVADORA | 6.4 | Propias |
+| EXC015 | EXCAVADORA | 6.4 | Propia |
 | MO03, MO04, MO09 | MOTONIVELADORA | 6.4 | Propias |
 | FNG02 | FINISHER | 6.4 | Propia |
 | CR019, CR013, CR016 | VIBROCOMPACTADOR | 6.4 | ORTIZ (propios) |
-| CS78B | VIBROCOMPACTADOR | 5 | GEOEXCON (alquilada) |
-| NH403, NH404, NH420 | VIBROCOMPACTADOR | 5 | DINISSAN (alquilados) |
-| CAT900 | VIBROCOMPACTADOR | 5 | SK RENTAL (alquilada) |
-| NH421 | MINICARGADOR | 5 | DINISSAN (alquilada) |
+| NH403 | VIBROCOMPACTADOR | 5 | DINISSAN (alquilado) |
 | CR026 | MINIBULDOZER | 6.4 | ORTIZ (propia) |
 | RT-02 ("la pajarita") | RETROEXCAVADORA | 5 | Alquilada |
 
 **Retiradas de la obra (jun-2026, D61):** CAT320 (excavadora alquilada) y MC705 (motoniveladora alquilada). Ya no aparecen en los desplegables de capataz/chequeadora, ni en el panel de producción, ni en el estado de máquinas faltantes.
 
+**Devueltas / entregadas (ago-2026, D136):** **NH69** (bulldozer alquilado), **EXC001, EXC013, EXC014** (excavadoras propias), **CS78B** (vibro GEOEXCON), **NH404, NH420** (vibros DINISSAN), **CAT900** (vibro SK RENTAL) y **NH421** (minicargador DINISSAN). Mismo tratamiento que D61: salen de los desplegables de capataz y chequeadora, del catálogo del panel de producción y de la flota esperada de `estado.html`/panel. **Su histórico en MAQUINARIA no se toca** (las filas ya escritas siguen ahí y siguen saliendo en los informes del período en que trabajaron). Quedan **6 máquinas en la flota esperada** (BL005, BL009, EXC015, MO03, MO04, MO09) y **una sola excavadora** en el selector de la chequeadora (EXC015). El único vibro alquilado que queda es NH403.
+
 **Regla de producción por tipo:**
 - VIBROCOMPACTADOR: producción siempre nula — compactan frentes ejecutados por otras máquinas; el campo producción no se muestra ni se guarda.
-- MINICARGADOR y MINIBULDOZER (NH421, CR026): producción siempre nula — mismo tratamiento que los vibrocompactadores en cuanto al campo `produccion`.
+- MINICARGADOR y MINIBULDOZER (CR026; NH421 hasta su devolución en ago-2026, D136): producción siempre nula — mismo tratamiento que los vibrocompactadores en cuanto al campo `produccion`. La regla se mantiene por TIPO, no por máquina: si vuelve a entrar un minicargador se comporta igual sin tocar código.
 - RETROEXCAVADORA (RT-02, la pajarita, D111): producción siempre nula — apoya frentes de otras máquinas. Solo aparece en el reporte del capataz de TIERRAS (no en el de la chequeadora, cuyo selector es solo excavadoras, ni en drenajes, que captura máquinas en texto libre); no entra en la flota esperada de `estado.html` ni en el selector de "redirigir producción" de `produccion-maquinaria.html`.
 - Actividades de apoyo (Compactación terraplén/subbase/BTC · Paisajeo / Adecuación de caminos / Limpieza de derrumbe): producción nula para cualquier tipo de máquina.
 - Todos los demás tipos + actividades productivas: producción = largo de la línea de la actividad.
