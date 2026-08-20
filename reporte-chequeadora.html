@@ -177,9 +177,10 @@ const TIPOS = ['Terraplén','Puente','ODL','ODT','Botadero'];
 const ORIGEN_PK = { 'Masivo2':'19+800', 'Masivo1':'14+400', 'Diviso':'21+500' };
 
 // Maquinaria (D54): la chequeadora SOLO registra las excavadoras del origen.
-// El selector se limita a las 5 excavadoras; el resto de la flota (bulldozers, motos, vibros, minis…) no aplica aquí.
-const MAQUINAS = ['EXC001','EXC013','EXC014','EXC015'];
-const TIPO_EQUIPO = {'EXC001':'EXCAVADORA','EXC013':'EXCAVADORA','EXC014':'EXCAVADORA','EXC015':'EXCAVADORA'};
+// El selector se limita a las excavadoras; el resto de la flota (bulldozers, motos, vibros, minis…) no aplica aquí.
+// D136: EXC001/EXC013/EXC014 se devolvieron (ago-2026), así que hoy queda una sola excavadora en obra.
+const MAQUINAS = ['EXC015'];
+const TIPO_EQUIPO = {'EXC015':'EXCAVADORA'};
 const HORAS_PROG = {};
 function progHoras(id){ return HORAS_PROG[id]!==undefined?HORAS_PROG[id]:6.4; }
 const MOTIVOS = ['Mantenimiento','Sin operador','Falla mecánica','Lluvia / clima','Sin frente de trabajo','Esperando material','Abastecimiento de combustible','Traslado / movilización','Bloqueo','Otro (especificar)'];

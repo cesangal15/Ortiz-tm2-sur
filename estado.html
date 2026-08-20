@@ -103,10 +103,12 @@
 <script src="auth.js"></script>
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
-const TODAS_MAQUINAS = ['BL005','BL009','EXC001','EXC013','EXC014','EXC015','MO03','MO04','MO09','NH69'];
+// Flota productiva que se espera cada día (misma lista que MAQ_FLOTA_ESPERADA de Codigo.gs).
+// D136: NH69, EXC001, EXC013 y EXC014 se devolvieron al proveedor (ago-2026) y salen de la flota.
+const TODAS_MAQUINAS = ['BL005','BL009','EXC015','MO03','MO04','MO09'];
 const TIPO_EQUIPO = {
-  'BL005':'BULLDOZER','BL009':'BULLDOZER','NH69':'BULLDOZER',
-  'EXC001':'EXCAVADORA','EXC013':'EXCAVADORA','EXC014':'EXCAVADORA','EXC015':'EXCAVADORA',
+  'BL005':'BULLDOZER','BL009':'BULLDOZER',
+  'EXC015':'EXCAVADORA',
   'MO03':'MOTONIVELADORA','MO04':'MOTONIVELADORA','MO09':'MOTONIVELADORA'
 };
 

@@ -1411,20 +1411,25 @@ const MAQ_COMPLEM = {
 };
 // Catálogo de máquinas (05_CATALOGO §4): tipo + horas programadas. Para crear filas y poblar el
 // selector de "redirigir producción" (solo las que generan producción; vibros/minis fuera).
+// D136: devueltas al proveedor (ago-2026) y fuera del catálogo — NH69 (bulldozer alquilado),
+// EXC001/EXC013/EXC014 (excavadoras propias), CS78B/NH404/NH420/CAT900 (vibros alquilados) y
+// NH421 (minicargador). Salir del catálogo NO borra lo ya escrito en MAQUINARIA: el histórico se
+// conserva; solo dejan de ofrecerse y de esperarse. (Antes: CAT320 y MC705, jun-2026, D61.)
 const MAQ_CATALOGO = {
-  BL005:{tipo:'BULLDOZER',prog:6.4}, BL009:{tipo:'BULLDOZER',prog:6.4}, NH69:{tipo:'BULLDOZER',prog:5},
-  EXC001:{tipo:'EXCAVADORA',prog:6.4}, EXC013:{tipo:'EXCAVADORA',prog:6.4}, EXC014:{tipo:'EXCAVADORA',prog:6.4}, EXC015:{tipo:'EXCAVADORA',prog:6.4},
+  BL005:{tipo:'BULLDOZER',prog:6.4}, BL009:{tipo:'BULLDOZER',prog:6.4},
+  EXC015:{tipo:'EXCAVADORA',prog:6.4},
   MO03:{tipo:'MOTONIVELADORA',prog:6.4}, MO04:{tipo:'MOTONIVELADORA',prog:6.4}, MO09:{tipo:'MOTONIVELADORA',prog:6.4},
   FNG02:{tipo:'FINISHER',prog:6.4},
   CR019:{tipo:'VIBROCOMPACTADOR',prog:6.4}, CR013:{tipo:'VIBROCOMPACTADOR',prog:6.4}, CR016:{tipo:'VIBROCOMPACTADOR',prog:6.4},
-  CS78B:{tipo:'VIBROCOMPACTADOR',prog:5}, NH403:{tipo:'VIBROCOMPACTADOR',prog:5}, NH404:{tipo:'VIBROCOMPACTADOR',prog:5}, NH420:{tipo:'VIBROCOMPACTADOR',prog:5}, CAT900:{tipo:'VIBROCOMPACTADOR',prog:5},
-  NH421:{tipo:'MINICARGADOR',prog:5}, CR026:{tipo:'MINIBULDOZER',prog:6.4},
+  NH403:{tipo:'VIBROCOMPACTADOR',prog:5},
+  CR026:{tipo:'MINIBULDOZER',prog:6.4},
   'RT-02':{tipo:'RETROEXCAVADORA',prog:5}
 };
 // Flota "requerida" diaria (mismo conjunto que estado.html): máquinas productivas cuya presencia se
 // espera cada día. El panel la usa para mostrar las FALTANTES (sin reporte) y permitir registrar sus
-// horas manualmente (D61). CAT320 y MC705 retiradas de la obra (jun-2026).
-const MAQ_FLOTA_ESPERADA = ['BL005','BL009','EXC001','EXC013','EXC014','EXC015','MO03','MO04','MO09','NH69'];
+// horas manualmente (D61). CAT320 y MC705 retiradas de la obra (jun-2026); NH69, EXC001, EXC013 y
+// EXC014 devueltas (ago-2026, D136).
+const MAQ_FLOTA_ESPERADA = ['BL005','BL009','EXC015','MO03','MO04','MO09'];
 // Bucket de una fila de MAQUINARIA a partir de su par H/I derivado (CAPTURA_ACT_MAP). '' = no editable.
 function bucketDeMaqRow(r){
   const h=String(r.actividad||'').toUpperCase(), i=String(r.sub_actividad||'').toUpperCase();
