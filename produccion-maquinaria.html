@@ -17,6 +17,10 @@
   .logout-btn{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:4px 10px;cursor:pointer;margin-top:4px;font-family:'DM Sans',sans-serif;}
   .logout-btn:hover{border-color:var(--error);color:var(--error);}
   .container{max-width:760px;margin:0 auto;padding:24px 16px;}
+  /* D139b — la pestaña de Flota es de ESCRITORIO (mismo criterio que `digitadora.html`, D83:
+     quien administra la flota lo hace sentado en un computador, no en el frente de obra), así
+     que ahí el contenedor se ensancha a tabla. La pestaña de producción sigue mobile-first. */
+  .container.ancho{max-width:1180px;padding:24px 24px;}
   .filtro-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:16px;}
   .filtro-row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;}
   .field{flex:1;min-width:130px;}
@@ -112,29 +116,79 @@
   .avisos{background:rgba(245,166,35,0.07);border:1px solid rgba(245,166,35,0.4);border-radius:10px;padding:11px 13px;font-size:12px;line-height:1.55;margin-bottom:16px;}
   .avisos b{color:var(--accent);font-family:'Syne',sans-serif;}
   .avisos ul{margin:6px 0 0 17px;} .avisos li{margin-bottom:3px;}
-  .maqcard{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px;}
-  .maqcard-head{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding-bottom:9px;border-bottom:1px solid var(--border);}
-  .maqcard-head .maq-id{font-size:15px;}
+  /* ---- D139b: resumen de la flota (lo primero que se ve: qué máquinas tengo HOY) ---- */
+  .flota-kpis{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;}
+  .fk{background:linear-gradient(135deg,var(--surface2),var(--surface));border:1px solid var(--border);border-radius:14px;padding:14px 20px;min-width:120px;}
+  .fk .k-val{font-family:'Syne',sans-serif;font-size:26px;font-weight:800;color:var(--success);line-height:1.05;}
+  .fk.gris .k-val{color:var(--muted);}
+  .fk .k-lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-top:5px;}
+  .fk-tipos{flex:1;min-width:260px;display:flex;gap:7px;flex-wrap:wrap;align-content:center;
+            background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px 14px;}
+  .tchip{font-size:11.5px;border:1px solid var(--border);border-radius:20px;padding:4px 11px;color:var(--muted);white-space:nowrap;}
+  .tchip b{font-family:'Syne',sans-serif;color:var(--accent);font-size:12.5px;margin-right:4px;}
+  .flota-barra{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px;}
+  .flota-barra .buscador{flex:1;min-width:200px;max-width:320px;}
+  .flota-barra input[type="text"]{padding:9px 13px;font-size:13px;}
+  /* ---- tabla (una línea por máquina, orden por TIPO) ---- */
+  .grupo{margin-bottom:22px;}
+  .grupo-tit{display:flex;align-items:center;gap:9px;margin:0 0 6px;font-family:'Syne',sans-serif;font-size:11px;
+             font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--accent);}
+  .grupo-tit::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,rgba(245,166,35,0.35),transparent);}
+  .grupo-tit .n{color:var(--muted);font-family:'DM Sans',sans-serif;letter-spacing:0;font-weight:400;font-size:11.5px;}
+  .tabla{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+  .tr{display:grid;grid-template-columns:120px 110px 62px 132px 1fr auto;gap:14px;align-items:center;
+      padding:10px 16px;border-bottom:1px solid var(--border);font-size:12.5px;}
+  .tr:last-child{border-bottom:none;}
+  .tr.th{background:var(--input-bg);color:var(--muted);font-size:9.5px;letter-spacing:1.5px;text-transform:uppercase;
+         font-family:'Syne',sans-serif;font-weight:700;padding:9px 16px;}
+  .tr.fuera-fila{grid-template-columns:120px 158px 62px 196px 1fr auto;}   /* el TIPO va completo: MOTONIVELADORA/VIBROCOMPACTADOR no caben en 110px */
+  .tr:hover:not(.th){background:rgba(245,166,35,0.035);}
+  .tr .cid{font-family:'Syne',sans-serif;font-weight:800;font-size:14px;letter-spacing:0.3px;}
+  .tr .cmut{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .tr .cfecha{font-family:'Syne',sans-serif;font-weight:700;white-space:nowrap;}
+  .tr .cnota{color:var(--muted);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .tr .cacts{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap;}
+  .tr.sep{display:flex;align-items:center;gap:10px;background:var(--input-bg);padding:8px 16px;
+          font-family:'Syne',sans-serif;font-size:10px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--accent);}
+  .tr.sep .n{font-family:'DM Sans',sans-serif;font-size:11px;font-weight:400;letter-spacing:0;text-transform:none;color:var(--muted);}
+  .tr.sep .nota-tipo{margin-left:auto;font-family:'DM Sans',sans-serif;font-size:10.5px;font-weight:400;letter-spacing:0;
+                     text-transform:none;color:var(--muted);}
+  .tr.sub{background:var(--input-bg);font-size:12px;border-bottom:1px dashed var(--border);}
+  .tr.sub .cid{font-family:'DM Sans',sans-serif;font-weight:400;font-size:11.5px;color:var(--muted);}
+  .tr.form{display:block;background:var(--input-bg);}
+  .plegable{background:var(--surface);border:1px solid var(--border);border-radius:12px;margin-bottom:14px;overflow:hidden;}
+  .plegable > .cab{display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;cursor:pointer;
+                   color:var(--text);font-family:'Syne',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.5px;
+                   text-transform:uppercase;padding:14px 16px;text-align:left;}
+  .plegable > .cab:hover{color:var(--accent);}
+  .plegable > .cab .n{margin-left:auto;font-family:'DM Sans',sans-serif;font-size:11.5px;font-weight:400;
+                      letter-spacing:0;text-transform:none;color:var(--muted);}
+  .plegable .tabla{border:none;border-radius:0;border-top:1px solid var(--border);}
   .badge.enobra{border-color:rgba(46,204,113,0.45);color:var(--success);background:rgba(46,204,113,0.08);}
   .badge.fuera{border-color:rgba(122,128,160,0.45);color:var(--muted);}
   .badge.porllegar{border-color:rgba(58,155,220,0.45);color:var(--uf1);}
-  .est-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 0;border-bottom:1px solid var(--border);font-size:12.5px;}
-  .est-row:last-child{border-bottom:none;}
-  .est-when{font-family:'Syne',sans-serif;font-weight:700;white-space:nowrap;}
-  .est-note{color:var(--muted);font-size:11.5px;min-width:0;}
-  .est-acts{margin-left:auto;display:flex;gap:6px;flex-shrink:0;}
   .btn-mini{background:var(--input-bg);border:1px solid var(--border);border-radius:7px;color:var(--muted);cursor:pointer;
-            font-family:'Syne',sans-serif;font-size:10.5px;font-weight:700;letter-spacing:0.5px;padding:7px 10px;}
+            font-family:'Syne',sans-serif;font-size:10.5px;font-weight:700;letter-spacing:0.5px;padding:6px 10px;white-space:nowrap;}
   .btn-mini:hover{border-color:var(--accent);color:var(--accent);}
   .btn-mini.danger:hover{border-color:var(--error);color:var(--error);}
-  .hist-toggle{background:none;border:none;color:var(--uf1);cursor:pointer;font-family:'DM Sans',sans-serif;font-size:11.5px;padding:8px 0 2px;}
-  .fform{margin-top:11px;padding-top:11px;border-top:1px dashed var(--accent);}
-  .fform .ftitle{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:9px;}
+  .btn-mini.on{border-color:var(--accent);color:var(--accent);}
+  .fform{padding:14px 16px;border-top:1px dashed var(--accent);background:var(--input-bg);}
+  .fform.suelto{background:var(--surface);border:1px solid var(--accent);border-radius:12px;margin-bottom:16px;}
+  .fform .ftitle{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--accent);margin-bottom:10px;}
   .fgrid{display:flex;gap:9px;flex-wrap:wrap;align-items:flex-end;}
-  .fgrid .f{flex:1;min-width:118px;} .fgrid .f.wide{flex:2;min-width:190px;}
+  /* max-width: con un solo campo (la baja) el input no se estira a todo el ancho de la tabla. */
+  .fgrid .f{flex:1;min-width:118px;max-width:300px;} .fgrid .f.wide{flex:2;min-width:190px;max-width:420px;}
   .fgrid .f input,.fgrid .f select{padding:9px 11px;font-size:13px;}
   .fhint{font-size:11.5px;color:var(--muted);line-height:1.5;margin-top:9px;}
   .fhint b{color:var(--accent);}
+  .fform .actions{margin-top:12px;}
+  .fform .btn-action{flex:0 0 auto;min-width:150px;padding:11px 16px;}
+  @media(max-width:900px){
+    .tr,.tr.fuera-fila{grid-template-columns:1fr auto;gap:4px 12px;padding:12px 14px;}
+    .tr.th{display:none;}
+    .tr .cmut,.tr .cfecha,.tr .cnota{grid-column:1;font-size:11.5px;}
+    .tr .cacts{grid-column:2;grid-row:1/4;align-self:center;}
+  }
   @media(max-width:480px){.maq-row{grid-template-columns:52px 1fr;}.edits{grid-column:1/-1;}.est-acts{margin-left:0;width:100%;}}
 </style>
 </head>
@@ -151,7 +205,7 @@
   </div>
 </div>
 
-<div class="container">
+<div class="container" id="contenedor">
   <!-- D139: dos pestañas sobre el MISMO modelo de datos y la misma audiencia (un día de máquinas),
        no dos pantallas: la entrada de las dos es la misma (una fecha), que es justo el criterio con
        el que D112 sí justificó pantalla propia para `horas-persona.html` (allá la entrada es otra). -->
@@ -173,7 +227,10 @@
   </div>
 
   <div id="panelFlota" style="display:none">
+    <!-- Cabecera (resumen, avisos, alta, buscador) y LISTA van en dos contenedores: el buscador
+         filtra repintando solo la lista, así el campo no pierde el foco a cada tecla. -->
     <div id="flotaCont"><div class="loading">⏳ Cargando la flota...</div></div>
+    <div id="flotaLista"></div>
   </div>
 </div>
 
@@ -243,6 +300,8 @@ function verTab(cual){
   document.getElementById('panelFlota').style.display = esFlota?'':'none';
   document.getElementById('tabProd').className  = 'tab'+(esFlota?'':' active');
   document.getElementById('tabFlota').className = 'tab'+(esFlota?' active':'');
+  const _c=document.getElementById('contenedor');
+  if(_c) _c.className = 'container'+(esFlota?' ancho':'');
   if(esFlota && !FLOTA.cargada) cargarFlota();
 }
 function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); localStorage.removeItem('tm2_token'); window.location.href='index.html'; }
@@ -531,7 +590,9 @@ const TIPOS_RESPALDO=['BULLDOZER','EXCAVADORA','MOTONIVELADORA','FINISHER','VIBR
 let FLOTA={ cargada:false, fecha:'', estancias:[], avisos:[], tipos:[], orden:[], fuente:'', historico:0 };
 // Formulario abierto (uno a la vez) + sus valores. Se guardan en el estado, no en el DOM: la lista se
 // vuelve a pintar entera después de cada cambio, como en el resto de la pantalla.
-let FL={ op:'', clave:null, vals:{}, hist:{}, msg:null, guardando:false };
+// `q` = filtro del buscador · `pleg` = qué bloques plegados están abiertos · `hist` = qué máquinas
+// muestran sus estancias anteriores. Nada de esto viaja al servidor: es solo cómo se está mirando.
+let FL={ op:'', clave:null, vals:{}, hist:{}, pleg:{fuera:false}, q:'', msg:null, guardando:false };
 
 function hoyCol(){ return new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'}); }
 function flTipos(){ return (FLOTA.tipos&&FLOTA.tipos.length)?FLOTA.tipos:TIPOS_RESPALDO; }
@@ -540,6 +601,7 @@ function flOrden(){ return (FLOTA.orden&&FLOTA.orden.length)?FLOTA.orden:TIPOS_R
 async function cargarFlota(){
   const cont=document.getElementById('flotaCont');
   cont.innerHTML='<div class="loading">⏳ Cargando la flota...</div>';
+  document.getElementById('flotaLista').innerHTML='';
   try{
     const resp=await fetch(`${APPS_SCRIPT_URL}?action=flota&fecha=${hoyCol()}`);
     const d=await resp.json();
@@ -573,19 +635,10 @@ function flPorMaquina(){
   });
   return { map:m, ids:ids };
 }
-function flEstado(ls){
-  if(ls.some(function(e){ return e.vigente; })) return {clase:'enobra', txt:'EN OBRA'};
-  const ult=ls[0]||{};
-  if(!ult.valida)                          return {clase:'fuera', txt:'sin fecha válida'};
-  if(ult.fecha_ingreso>FLOTA.fecha)        return {clase:'porllegar', txt:'llega el '+ult.fecha_ingreso};
-  if(ult.fecha_retiro)                     return {clase:'fuera', txt:'fuera desde '+ult.fecha_retiro};
-  return {clase:'fuera', txt:'fuera'};
-}
 function flVentana(e){
   if(!e.valida) return 'sin fecha de ingreso';
   return e.fecha_ingreso+' → '+(e.fecha_retiro ? e.fecha_retiro : 'sigue en obra');
 }
-function flClaveIgual(e){ return FL.clave && FL.clave.id_maquina===e.id_maquina && FL.clave.fecha_ingreso===e.fecha_ingreso; }
 
 /* ---- formularios (uno abierto a la vez) ---- */
 // La estancia se busca por su CLAVE (máquina + fecha de ingreso), nunca se serializa el objeto en el
@@ -610,7 +663,7 @@ function flAbrir(op, id, ing){
 }
 function flCerrar(){ FL.op=''; FL.clave=null; FL.vals={}; renderFlota(); }
 function flSet(campo, val){ FL.vals[campo]=val; }
-function flToggleHist(id){ FL.hist[id]=!FL.hist[id]; renderFlota(); }
+function flToggleHist(id){ FL.hist[id]=!FL.hist[id]; renderFlotaLista(); }
 
 function flSelTipo(){
   return '<select onchange="flSet(\'tipo\',this.value)"><option value="">— tipo —</option>'+
@@ -699,17 +752,63 @@ async function flEnviar(payload){
   }
 }
 
-/* ---- pintado ---- */
-function renderFlota(){
-  const cont=document.getElementById('flotaCont');
-  const puede=PUEDE_FLOTA;
-  const g=flPorMaquina();
+/* ---- pintado ----
+ * TRES BLOQUES, no una lista larga. La pregunta que esta pestaña existe para responder es «¿qué
+ * máquinas tengo HOY?», así que eso va arriba, agrupado por TIPO y en tabla de una línea. Lo que ya
+ * se devolvió pesa menos y va PLEGADO: se mira solo si se quiere. Las filas con problema salen
+ * aparte, arriba del todo, porque son las únicas que piden acción inmediata.
+ */
+function flGrupos(){
+  const q=String(FL.q||'').trim().toUpperCase();
+  const pasa=function(e){ return !q || (e.id_maquina+' '+(e.tipo||'')+' '+(e.notas||'')).toUpperCase().indexOf(q)>=0; };
+  const porMaq=flPorMaquina();
+  const hoy={}, fuera=[], porLlegar=[], rotas=[];
+  porMaq.ids.forEach(function(id){
+    const ls=porMaq.map[id].filter(pasa);
+    if(!ls.length) return;
+    const vig=ls.filter(function(e){ return e.vigente; })[0];
+    const invalidas=ls.filter(function(e){ return !e.valida; });
+    invalidas.forEach(function(e){ rotas.push(e); });
+    const validas=ls.filter(function(e){ return e.valida; });
+    if(!validas.length) return;
+    if(vig){ const t=vig.tipo||'(sin tipo)'; (hoy[t]=hoy[t]||[]).push({e:vig, ls:ls, id:id}); return; }
+    const futura=validas.filter(function(e){ return e.fecha_ingreso>FLOTA.fecha; })
+                        .sort(function(a,b){ return a.fecha_ingreso<b.fecha_ingreso?-1:1; })[0];
+    if(futura){ porLlegar.push({e:futura, ls:ls, id:id}); return; }
+    fuera.push({e:validas[0], ls:ls, id:id});   // validas[0] = la más reciente (ya vienen ordenadas)
+  });
+  // Fuera: las devueltas más recientemente primero — lo que salió ayer interesa más que lo de enero.
+  fuera.sort(function(a,b){ return String(b.e.fecha_retiro||'').localeCompare(String(a.e.fecha_retiro||'')); });
+  const tiposHoy=flOrden().filter(function(t){ return hoy[t]; })
+                 .concat(Object.keys(hoy).filter(function(t){ return flOrden().indexOf(t)<0; }).sort());
+  return { hoy:hoy, tiposHoy:tiposHoy, fuera:fuera, porLlegar:porLlegar, rotas:rotas,
+           nHoy:Object.keys(hoy).reduce(function(n,t){ return n+hoy[t].length; },0) };
+}
+
+function renderFlota(){ renderFlotaCabecera(); renderFlotaLista(); }
+function flFiltro(v){ FL.q=v; renderFlotaLista(); }
+
+function renderFlotaCabecera(){
+  const cont=document.getElementById('flotaCont'), puede=PUEDE_FLOTA;
+  // El resumen se calcula SIN el filtro: es el estado de la obra, no de la búsqueda.
+  const qGuardada=FL.q; FL.q=''; const g=flGrupos(); FL.q=qGuardada;
   let html='';
 
-  html+='<div class="nota">Esta pestaña <b>escribe la hoja MAQUINAS</b>: es el catálogo vivo de la obra (D138). '+
-    'Cada fila es una <b>estancia</b> —una máquina que entra y sale varias veces son varias filas— y la ventana es '+
-    '<b>semiabierta</b>: la fecha de retiro es el <b>primer día que ya no estuvo</b>. '+
-    'No toca DATA, ni BANDEJA, ni MAQUINARIA: el histórico de lo ya reportado se conserva siempre.</div>';
+  if(FL.msg) html+='<div class="msg-box '+FL.msg.tipo+'" style="display:block;margin:0 0 16px">'+esc(FL.msg.txt)+'</div>';
+
+  // 1) Lo primero: cuántas máquinas hay hoy y de qué tipo.
+  html+='<div class="flota-kpis">'+
+          '<div class="fk"><div class="k-val">'+g.nHoy+'</div><div class="k-lbl">en obra hoy</div></div>'+
+          '<div class="fk gris"><div class="k-val">'+g.fuera.length+'</div><div class="k-lbl">fuera</div></div>'+
+          '<div class="fk-tipos">'+
+            (g.tiposHoy.length
+              ? g.tiposHoy.map(function(t){ return '<span class="tchip"><b>'+g.hoy[t].length+'</b>'+esc(flTipoCorto(t))+'</span>'; }).join('')
+              : '<span class="tchip">sin máquinas en obra hoy</span>')+
+          '</div>'+
+        '</div>';
+  html+='<div class="est-note" style="margin:-8px 0 16px;font-size:11.5px;color:var(--muted)">Flota vigente el <b>'+esc(FLOTA.fecha)+'</b>'+
+        (g.porLlegar.length?(' · '+g.porLlegar.length+' por llegar'):'')+
+        ' · una fila por <b>estancia</b>, ventana semiabierta: la fecha de retiro es el <b>primer día que ya no estuvo</b>.</div>';
 
   if(FLOTA.fuente==='vacia'){
     html+='<div class="avisos"><b>La hoja MAQUINAS está vacía o no tiene ninguna fila utilizable.</b> '+
@@ -717,79 +816,153 @@ function renderFlota(){
       'Da de alta las máquinas aquí para que la hoja mande.</div>';
   }
   if(FLOTA.avisos.length){
-    html+='<div class="avisos"><b>Revisar en la hoja ('+FLOTA.avisos.length+')</b><ul>'+
+    html+='<div class="avisos"><b>⚠ Revisar en la hoja ('+FLOTA.avisos.length+')</b><ul>'+
       FLOTA.avisos.map(function(a){ return '<li>'+esc(a)+'</li>'; }).join('')+'</ul></div>';
   }
-  if(FL.msg){
-    html+='<div class="msg-box '+FL.msg.tipo+'" style="display:block;margin:0 0 16px">'+esc(FL.msg.txt)+'</div>';
+
+  // 2) Barra: alta + buscador. El formulario de alta reemplaza al botón mientras está abierto.
+  if(puede && FL.op==='alta' && !FL.clave){
+    html+='<div class="fform suelto">'+flFormDatos('Alta de máquina o reingreso')+'</div>';
   }
-
-  // Alta / reingreso (formulario suelto arriba)
-  if(puede){
-    if(FL.op==='alta' && !FL.clave){
-      html+='<div class="maqcard">'+flFormDatos('Alta de máquina o reingreso')+'</div>';
-    }else{
-      html+='<div class="actions" style="margin:0 0 16px"><button class="btn-action primary" onclick="flAbrir(\'alta\')">➕ DAR DE ALTA UNA MÁQUINA</button></div>';
-    }
-  }else{
-    html+='<div class="nota">Vista de <b>solo lectura</b>: las altas y las bajas las hacen el residente, el administrador o jeisson.</div>';
-  }
-
-  if(!g.ids.length){
-    html+='<div class="empty-state"><div class="icon">🚜</div><p>La hoja MAQUINAS no tiene ninguna máquina todavía.</p></div>';
-    cont.innerHTML=html; return;
-  }
-
-  const enObra=g.ids.filter(function(id){ return g.map[id].some(function(e){ return e.vigente; }); }).length;
-  html+='<div class="section-title">Flota · '+enObra+' en obra hoy ('+FLOTA.fecha+') de '+g.ids.length+' máquinas</div>';
-
-  g.ids.forEach(function(id){
-    const ls=g.map[id], st=flEstado(ls), abierta=ls.filter(function(e){ return e.valida && !e.fecha_retiro; })[0]||null;
-    const act=ls[0];
-    html+='<div class="maqcard">';
-    html+='<div class="maqcard-head">'+
-            '<span class="maq-id">'+esc(id)+'</span>'+
-            '<span class="badge '+st.clase+'">'+esc(st.txt)+'</span>'+
-            '<span class="falt-tipo">'+esc(act.tipo||'sin tipo')+' · '+esc(act.propiedad||'—')+' · prog '+esc(act.prog)+' h'+
-              (act.produce?'':' · sin producción propia')+'</span>'+
-            (ls.length>1?'<span class="pill">'+ls.length+' estancias</span>':'')+
-            // Un REINGRESO es una fila nueva, nunca editar la vieja (perdería el hueco en que no
-            // estuvo, D85). Solo se ofrece si la máquina NO tiene una estancia abierta.
-            ((puede && !abierta && act.valida)
-              ? '<span class="est-acts"><button class="btn-mini" onclick="flAbrir(\'reingreso\',\''+esc(id)+'\',\''+esc(act.fecha_ingreso)+'\')">↩ Reingreso</button></span>' : '')+
-          '</div>';
-
-    // estancia actual (la más reciente) siempre visible
-    html+=flEstRow(act, puede);
-    // historial plegado
-    if(ls.length>1){
-      html+='<button class="hist-toggle" onclick="flToggleHist(\''+esc(id)+'\')">'+
-              (FL.hist[id]?'▾ ocultar':'▸ ver')+' historial ('+(ls.length-1)+' estancia'+(ls.length-1>1?'s':'')+' anterior'+(ls.length-1>1?'es':'')+')</button>';
-      if(FL.hist[id]) ls.slice(1).forEach(function(e){ html+=flEstRow(e, puede); });
-    }
-    // formulario abierto sobre una estancia de ESTA máquina
-    if(FL.clave && FL.clave.id_maquina===id){
-      const objetivo=ls.filter(flClaveIgual)[0];
-      if(objetivo) html += (FL.op==='baja') ? flFormBaja(objetivo) : flFormDatos('Corregir la estancia '+flVentana(objetivo));
-    }
-    html+='</div>';
-  });
-
+  html+='<div class="flota-barra">'+
+        (puede && !(FL.op==='alta' && !FL.clave)
+          ? '<button class="btn-action primary" style="flex:0 0 auto;min-width:210px;padding:11px 18px" onclick="flAbrir(\'alta\')">➕ DAR DE ALTA UNA MÁQUINA</button>'
+          : '')+
+        '<div class="buscador"><input type="text" id="flQ" placeholder="🔍 Buscar código, tipo o nota…" value="'+esc(FL.q||'')+'" oninput="flFiltro(this.value)"></div>'+
+        (puede?'':'<span class="est-note" style="color:var(--muted);font-size:11.5px">Vista de solo lectura: las altas y las bajas las hacen el residente, el administrador o jeisson.</span>')+
+        '</div>';
   cont.innerHTML=html;
 }
-function flEstRow(e, puede){
-  const acts=[], arg="'"+esc(e.id_maquina)+"','"+esc(e.fecha_ingreso)+"'";
+// Etiqueta corta para los chips del resumen (la lista de tipos completa vive en la tabla).
+function flTipoCorto(t){
+  const m={ BULLDOZER:'bulldozer', EXCAVADORA:'excavadora', MOTONIVELADORA:'motoniveladora', FINISHER:'finisher',
+            VIBROCOMPACTADOR:'vibro', MINICARGADOR:'minicargador', MINIBULDOZER:'minibuldózer', RETROEXCAVADORA:'retro' };
+  const l=m[t]||String(t||'').toLowerCase();
+  return l;
+}
+
+function renderFlotaLista(){
+  const cont=document.getElementById('flotaLista'), puede=PUEDE_FLOTA;
+  const g=flGrupos();
+  let html='';
+
+  if(!FLOTA.estancias.length){
+    cont.innerHTML='<div class="empty-state"><div class="icon">🚜</div><p>La hoja MAQUINAS no tiene ninguna máquina todavía.</p></div>';
+    return;
+  }
+
+  // (a) Filas con problema — arriba porque son las únicas que exigen acción.
+  if(g.rotas.length){
+    html+='<div class="grupo"><div class="grupo-tit">⚠ Filas con problema <span class="n">'+g.rotas.length+'</span></div>'+
+          '<div class="tabla">'+
+          '<div class="tr th"><span>Código</span><span>Tipo</span><span>Prog</span><span>Ventana</span><span>Notas</span><span></span></div>'+
+          g.rotas.map(function(e){ return flFila(e, puede, 'rota'); }).join('')+
+          '</div></div>';
+  }
+
+  // (b) LO DE HOY: UNA sola tabla, con una fila separadora por tipo. Una tabla por tipo repetía la
+  // cabecera seis veces y estiraba la pantalla; así se lee de un vistazo, que es lo que se pedía.
+  html+='<div class="grupo-tit" style="margin-bottom:12px">🚜 En obra hoy <span class="n">'+g.nHoy+' máquina'+(g.nHoy===1?'':'s')+'</span></div>';
+  if(!g.tiposHoy.length){
+    html+='<div class="empty-state" style="padding:24px"><p>'+(FL.q?'Ninguna máquina en obra coincide con la búsqueda.':'Hoy no hay ninguna máquina en obra.')+'</p></div>';
+  }else{
+    html+='<div class="grupo"><div class="tabla">'+
+          '<div class="tr th"><span>Código</span><span>Propiedad</span><span>Prog</span><span>En obra desde</span><span>Notas</span><span></span></div>'+
+          g.tiposHoy.map(function(t){
+            const filas=g.hoy[t];
+            // La regla de producción es por TIPO (D41/D44/D111), así que se dice una vez en el
+            // separador y no como un chip repetido en cada fila.
+            const sinProd=filas.length && !filas[0].e.produce;
+            return '<div class="tr sep">'+esc(t)+' <span class="n">'+filas.length+'</span>'+
+                     (sinProd?'<span class="nota-tipo">sin producción propia · apoyan frentes de otras máquinas</span>':'')+
+                   '</div>'+
+                   filas.map(function(x){ return flFila(x.e, puede, 'hoy', x.ls); }).join('');
+          }).join('')+
+          '</div></div>';
+  }
+
+  // (c) Por llegar (ingreso futuro): solo si hay.
+  if(g.porLlegar.length){
+    html+='<div class="grupo"><div class="grupo-tit">🕓 Por llegar <span class="n">'+g.porLlegar.length+'</span></div>'+
+          '<div class="tabla">'+
+          '<div class="tr th"><span>Código</span><span>Tipo</span><span>Prog</span><span>Llega el</span><span>Notas</span><span></span></div>'+
+          g.porLlegar.map(function(x){ return flFila(x.e, puede, 'llega', x.ls); }).join('')+
+          '</div></div>';
+  }
+
+  // (d) Lo que YA NO está: plegado. Se mira solo si se quiere.
+  if(g.fuera.length){
+    html+='<div class="plegable">'+
+          '<button class="cab" onclick="flTogglePleg(\'fuera\')">'+(FL.pleg.fuera?'▾':'▸')+' Ya no están en la obra'+
+            '<span class="n">'+g.fuera.length+' máquina'+(g.fuera.length===1?'':'s')+' · su histórico en MAQUINARIA se conserva</span></button>'+
+          (FL.pleg.fuera
+            ? '<div class="tabla">'+
+              '<div class="tr th fuera-fila"><span>Código</span><span>Tipo</span><span>Prog</span><span>Estuvo</span><span>Notas</span><span></span></div>'+
+              g.fuera.map(function(x){ return flFila(x.e, puede, 'fuera', x.ls); }).join('')+
+              '</div>'
+            : '')+
+          '</div>';
+  }
+  cont.innerHTML=html;
+}
+function flTogglePleg(k){ FL.pleg[k]=!FL.pleg[k]; renderFlotaLista(); }
+
+/* Una fila de máquina. `modo` decide qué columnas y qué botones:
+ *   hoy   — propiedad · prog · desde        → Dar de baja / Corregir
+ *   llega — tipo · prog · llega el          → Corregir
+ *   fuera — tipo · prog · ventana completa  → Reingreso / Corregir
+ *   rota  — sin fecha válida                → Corregir
+ * `ls` son TODAS las estancias de esa máquina: si hay más de una, la fila ofrece el historial. */
+function flFila(e, puede, modo, ls){
+  const id=e.id_maquina, arg="'"+esc(id)+"','"+esc(e.fecha_ingreso)+"'";
+  const nEst=(ls||[]).filter(function(x){ return x.valida; }).length;
+  const acts=[];
   if(puede){
-    if(e.valida && !e.fecha_retiro) acts.push('<button class="btn-mini danger" onclick="flAbrir(\'baja\','+arg+')">Dar de baja</button>');
+    if(modo==='hoy')   acts.push('<button class="btn-mini danger" onclick="flAbrir(\'baja\','+arg+')">Dar de baja</button>');
+    if(modo==='fuera') acts.push('<button class="btn-mini" onclick="flAbrir(\'reingreso\','+arg+')">↩ Reingreso</button>');
     acts.push('<button class="btn-mini" onclick="flAbrir(\'corregir\','+arg+')">Corregir</button>');
   }
-  return '<div class="est-row">'+
-           '<span class="est-when">'+esc(flVentana(e))+'</span>'+
-           (e.vigente?'<span class="pill h">vigente hoy</span>':'')+
-           (e.notas?'<span class="est-note">'+esc(e.notas)+'</span>':'')+
-           '<span class="est-note">fila '+e.fila+'</span>'+
-           (acts.length?('<span class="est-acts">'+acts.join('')+'</span>'):'')+
-         '</div>';
+  if(nEst>1) acts.push('<button class="btn-mini'+(FL.hist[id]?' on':'')+'" onclick="flToggleHist(\''+esc(id)+'\')" '+
+                       'title="Estancias anteriores de esta máquina">'+(FL.hist[id]?'▾':'▸')+' '+nEst+' estancias</button>');
+
+  const col2 = modo==='hoy' ? esc(e.propiedad||'—') : esc(e.tipo||'sin tipo');
+  const col4 = modo==='hoy'   ? esc(e.fecha_ingreso)
+             : modo==='llega' ? esc(e.fecha_ingreso)
+             : modo==='rota'  ? 'sin fecha de ingreso'
+             : esc(e.fecha_ingreso)+' → '+esc(e.fecha_retiro||'sigue en obra');
+  const marca = '';   // la regla de producción nula es por TIPO: se dice en el separador, no por fila
+  let html='<div class="tr'+(modo==='fuera'?' fuera-fila':'')+'">'+
+             '<span class="cid">'+esc(id)+'</span>'+
+             '<span class="cmut">'+col2+marca+'</span>'+
+             '<span class="cmut">'+esc(e.prog)+' h</span>'+
+             '<span class="cfecha'+(modo==='rota'?' cmut':'')+'">'+col4+'</span>'+
+             '<span class="cnota" title="'+esc(e.notas||'')+'">'+esc(e.notas||'')+'</span>'+
+             '<span class="cacts">'+acts.join('')+'</span>'+
+           '</div>';
+  // Historial de la máquina (todas sus estancias, incluida la que ya se ve arriba).
+  if(nEst>1 && FL.hist[id]){
+    html+=(ls||[]).filter(function(x){ return x.valida; }).map(function(x){
+      const esta=(x.fecha_ingreso===e.fecha_ingreso);
+      return '<div class="tr sub">'+
+               '<span class="cid">'+(esta?'· actual':'· anterior')+'</span>'+
+               '<span class="cmut">'+esc(x.propiedad||'—')+'</span>'+
+               '<span class="cmut">'+esc(x.prog)+' h</span>'+
+               '<span class="cfecha">'+esc(x.fecha_ingreso)+' → '+esc(x.fecha_retiro||'sigue en obra')+'</span>'+
+               '<span class="cnota" title="'+esc(x.notas||'')+'">'+esc(x.notas||'')+' <span class="cmut">fila '+x.fila+'</span></span>'+
+               '<span class="cacts">'+(puede&&!esta?'<button class="btn-mini" onclick="flAbrir(\'corregir\',\''+esc(id)+'\',\''+esc(x.fecha_ingreso)+'\')">Corregir</button>':'')+'</span>'+
+             '</div>';
+    }).join('');
+  }
+  // Formulario abierto sobre ESTA estancia.
+  if(FL.clave && FL.clave.id_maquina===id && FL.clave.fecha_ingreso===e.fecha_ingreso){
+    const obj=flEstancia(id, e.fecha_ingreso);
+    if(obj) html+='<div class="tr form">'+((FL.op==='baja')?flFormBaja(obj):flFormDatos('Corregir la estancia de '+id+' · '+flVentana(obj)))+'</div>';
+  }else if(FL.clave && FL.clave.id_maquina===id && FL.op==='corregir' && nEst>1 && FL.hist[id]){
+    // corrección abierta sobre una estancia del historial de esta máquina
+    const obj=flEstancia(FL.clave.id_maquina, FL.clave.fecha_ingreso);
+    if(obj) html+='<div class="tr form">'+flFormDatos('Corregir la estancia de '+id+' · '+flVentana(obj))+'</div>';
+  }
+  return html;
 }
 </script>
 </body>

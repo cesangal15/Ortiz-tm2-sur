@@ -374,7 +374,11 @@ function pantalla(rol, usuario, mutar){
   vm.createContext(ctx);
   vm.runInContext(js, ctx);
   ctx.window.onload();
-  return { ctx:ctx, nodos:nodos, flota:function(d){ ctx.aplicarFlota(d); return nodo('flotaCont').innerHTML; } };
+  return { ctx:ctx, nodos:nodos,
+           // D139b: la pestaña pinta en DOS contenedores — cabecera (resumen/alta/buscador) y lista.
+           flota:function(d){ ctx.aplicarFlota(d); return nodo('flotaCont').innerHTML+nodo('flotaLista').innerHTML; },
+           lista:function(){ return nodo('flotaLista').innerHTML; },
+           cab:function(){ return nodo('flotaCont').innerHTML; } };
 }
 
 console.log('\n12 · La pestaña Flota se pinta sin romperse (guard de rol en el cliente)');
@@ -382,22 +386,33 @@ console.log('\n12 · La pestaña Flota se pinta sin romperse (guard de rol en el
   // Se ejecuta el <script> REAL de la pantalla con un DOM mínimo. No es una prueba de aspecto: es que
   // el camino de pintado no lance y que el jefe no vea ni un botón de escritura.
   ok('la pantalla trae un <script> propio', !!PANTALLA_JS);
-  const datos={ ok:true, fecha:'2026-08-20', tipos:['BULLDOZER','EXCAVADORA'], orden_tipo:['BULLDOZER','EXCAVADORA'],
-    fuente:'hoja', historico_maquinaria:5, avisos:['Fila 4 (XX): sin tipo; se tratará como máquina CON producción.'],
+  const datos={ ok:true, fecha:'2026-08-20', tipos:['BULLDOZER','EXCAVADORA'],
+    orden_tipo:['BULLDOZER','EXCAVADORA','MOTONIVELADORA','FINISHER','VIBROCOMPACTADOR'],
+    fuente:'hoja', historico_maquinaria:5, avisos:['Fila 9 (XX): sin tipo; se tratará como máquina CON producción.'],
     estancias:[
       { id_maquina:'BL005', tipo:'BULLDOZER', propiedad:'propia', notas:"la de Jose 'el flaco'", fila:2, horas_prog:6.4, prog:6.4,
         fecha_ingreso:'2026-01-01', fecha_retiro:'', valida:true, produce:true, vigente:true },
-      { id_maquina:'FNG02', tipo:'FINISHER', propiedad:'propia', notas:'', fila:3, horas_prog:'', prog:6.4,
+      { id_maquina:'EXC015', tipo:'EXCAVADORA', propiedad:'propia', notas:'', fila:3, horas_prog:6.4, prog:6.4,
+        fecha_ingreso:'2026-01-01', fecha_retiro:'', valida:true, produce:true, vigente:true },
+      { id_maquina:'CR019', tipo:'VIBROCOMPACTADOR', propiedad:'propia', notas:'ORTIZ', fila:4, horas_prog:6.4, prog:6.4,
+        fecha_ingreso:'2026-01-01', fecha_retiro:'', valida:true, produce:false, vigente:true },
+      { id_maquina:'BL009', tipo:'BULLDOZER', propiedad:'propia', notas:'Entregada (D136)', fila:5, horas_prog:6.4, prog:6.4,
+        fecha_ingreso:'2026-01-01', fecha_retiro:'2026-08-20', valida:true, produce:true, vigente:false },
+      { id_maquina:'FNG02', tipo:'FINISHER', propiedad:'propia', notas:'', fila:6, horas_prog:'', prog:6.4,
         fecha_ingreso:'2026-06-01', fecha_retiro:'2026-06-15', valida:true, produce:true, vigente:false },
-      { id_maquina:'FNG02', tipo:'FINISHER', propiedad:'propia', notas:'', fila:4, horas_prog:'', prog:6.4,
-        fecha_ingreso:'2026-08-03', fecha_retiro:'2026-08-20', valida:true, produce:true, vigente:false }
+      { id_maquina:'FNG02', tipo:'FINISHER', propiedad:'propia', notas:'', fila:7, horas_prog:'', prog:6.4,
+        fecha_ingreso:'2026-08-03', fecha_retiro:'2026-08-20', valida:true, produce:true, vigente:false },
+      { id_maquina:'MO09', tipo:'MOTONIVELADORA', propiedad:'alquilada', notas:'llega el lunes', fila:8, horas_prog:'', prog:5,
+        fecha_ingreso:'2026-09-01', fecha_retiro:'', valida:true, produce:true, vigente:false },
+      { id_maquina:'XX', tipo:'', propiedad:'', notas:'', fila:9, horas_prog:'', prog:6.4,
+        fecha_ingreso:'', fecha_retiro:'', valida:false, produce:true, vigente:false }
     ] };
 
   const admin=pantalla('admin','admin');
   const hAdmin=admin.flota(datos);
   ok('admin ve el botón de alta',        /DAR DE ALTA UNA MÁQUINA/.test(hAdmin));
   ok('admin ve "Dar de baja" y "Corregir"', /Dar de baja/.test(hAdmin) && /Corregir/.test(hAdmin));
-  ok('el historial de FNG02 sale plegado', /ver historial \(1 estancia anterior\)/.test(hAdmin), hAdmin.slice(0,200));
+  ok('el resumen dice cuántas hay en obra HOY', /class="k-val">3<\/div><div class="k-lbl">en obra hoy/.test(hAdmin), admin.cab().slice(0,400));
   ok('se muestran los avisos de la hoja',  /Revisar en la hoja \(1\)/.test(hAdmin));
   ok('una nota con comilla no rompe el marcado', hAdmin.indexOf("Jose 'el flaco'")>=0 || hAdmin.indexOf('Jose &#39;')>=0 || hAdmin.indexOf("Jose 'el")>=0);
   ok('el recordatorio de la ventana semiabierta está a la vista', /primer día que ya no estuvo/i.test(hAdmin));
@@ -419,6 +434,44 @@ console.log('\n12 · La pestaña Flota se pinta sin romperse (guard de rol en el
 
   const capataz=pantalla('capataz','angel');
   ok('un capataz sale al login',            /index\.html/.test(capataz.ctx.location.href), capataz.ctx.location.href);
+
+  // ---- D139b: la queja real era la presentación. Lo de HOY manda; lo devuelto no estorba. ----
+  const lista=admin.lista();
+  ok('«En obra hoy» va ANTES que «Ya no están en la obra»',
+     lista.indexOf('En obra hoy') >= 0 && lista.indexOf('En obra hoy') < lista.indexOf('Ya no están en la obra'));
+  ok('las de hoy salen AGRUPADAS por tipo',
+     /BULLDOZER/.test(lista) && /EXCAVADORA/.test(lista) && /VIBROCOMPACTADOR/.test(lista));
+  ok('y en el orden del catálogo (bulldozer antes que excavadora)',
+     lista.indexOf('>BULLDOZER ') < lista.indexOf('>EXCAVADORA '), 'MAQ_ORDEN_TIPO');
+  ok('las devueltas NO se listan hasta abrir el bloque',
+     lista.indexOf('BL009')<0 && /Ya no están en la obra/.test(lista),
+     'el bloque va plegado: se mira solo si se quiere');
+  ok('el bloque plegado dice cuántas son',   /2 máquinas · su histórico en MAQUINARIA se conserva/.test(lista), lista.slice(-400));
+  admin.ctx.flTogglePleg('fuera');
+  const abierto=admin.lista();
+  ok('al abrirlo aparecen las devueltas con su ventana completa',
+     /BL009/.test(abierto) && /2026-01-01 → 2026-08-20/.test(abierto));
+  ok('FNG02 (2 estancias) ofrece su historial', /2 estancias/.test(abierto));
+  ok('«Por llegar» sale aparte',              /Por llegar/.test(abierto) && /MO09/.test(abierto));
+  ok('las filas rotas salen arriba del todo, para arreglarlas',
+     abierto.indexOf('Filas con problema') >= 0 && abierto.indexOf('Filas con problema') < abierto.indexOf('En obra hoy'));
+  ok('la regla de producción nula se dice UNA vez, en el separador del tipo',
+     /VIBROCOMPACTADOR.{0,120}sin producción propia/.test(abierto)
+     && (abierto.match(/sin producción propia/g)||[]).length===1,
+     'por TIPO (D41/D44/D111), no como un chip repetido en cada fila');
+
+  // El buscador filtra sin tocar el resumen (que es el estado de la obra, no el de la búsqueda).
+  admin.ctx.flFiltro('EXC');
+  const filtrado=admin.lista();
+  ok('el buscador filtra la lista',           /EXC015/.test(filtrado) && !/BL005/.test(filtrado));
+  ok('y el resumen NO cambia con el filtro',  /class="k-val">3<\/div><div class="k-lbl">en obra hoy/.test(admin.cab()));
+  admin.ctx.flFiltro('');
+
+  // La pestaña de Flota es de escritorio: contenedor ancho (mismo criterio que digitadora.html, D83).
+  admin.ctx.verTab('flota');
+  ok('la pestaña de Flota ensancha el contenedor', /ancho/.test(admin.nodos.contenedor.className), admin.nodos.contenedor.className);
+  admin.ctx.verTab('prod');
+  ok('la de producción vuelve al ancho de siempre', !/ancho/.test(admin.nodos.contenedor.className));
 
   // La OTRA mitad del "solo lectura": la pestaña de producción del día (D59/D60/D61/D62 intactos).
   const prod={ fecha:'2026-08-20',
@@ -480,7 +533,7 @@ console.log('\n13 · MUTACIÓN a propósito: comprobar que el arnés no es ciego
      'la comprobación del detector no estaría midiendo nada');
 
   // (d) Si el pintado ignorara PUEDE_FLOTA, el jefe vería los botones de escritura.
-  const jefeSuelto=pantalla('jefe','jefe', function(js){ return js.replace('const puede=PUEDE_FLOTA;','const puede=true;'); });
+  const jefeSuelto=pantalla('jefe','jefe', function(js){ return js.split('puede=PUEDE_FLOTA').join('puede=true'); });
   const hSuelto=jefeSuelto.flota({ ok:true, fecha:'2026-08-20', estancias:[
     { id_maquina:'BL005', tipo:'BULLDOZER', propiedad:'propia', notas:'', fila:2, horas_prog:6.4, prog:6.4,
       fecha_ingreso:'2026-01-01', fecha_retiro:'', valida:true, produce:true, vigente:true }], avisos:[] });
