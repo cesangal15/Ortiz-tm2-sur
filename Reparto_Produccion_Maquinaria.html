@@ -101,7 +101,8 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
   <div class="alert info">
     Cruza el <b>reporte diario de obra</b> (hoja <code>dia suelto</code> — producción por actividad y día)
     con los <b>partes de maquinaria del jefe</b> y reparte la producción entre las máquinas propias del
-    <b>tipo coherente</b>, proporcional a horas. La salida principal es la tabla <b><code>fact_jefe</code></b>
+    <b>tipo coherente</b>, proporcional a horas. El <b>clima</b> de cada día sale de la hoja <code>DATOS</code>
+    del mismo reporte diario y llena la columna <b>CLIMA</b> de la salida. La salida principal es la tabla <b><code>fact_jefe</code></b>
     (una fila por máquina · día · actividad, 29 columnas): se pega sobre la tabla del maestro y
     <b>Informe_Mensual</b> y <b>Maquinas Junio</b> se llenan solos, porque son fórmulas
     <code>SUMIFS</code> sobre ella. Todo ocurre en el navegador: <b>no escribe</b> ninguno de los archivos que cargas.
@@ -120,6 +121,13 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
         <label class="fld" style="margin-top:10px">Hoja de producción</label>
         <input type="text" id="hojaProd" value="dia suelto">
         <div class="hint">Tabla dinámica: fila 4 = UF, fila 5 = actividad, datos desde la fila 6, columna A = fecha.</div>
+        <label class="fld" style="margin-top:10px">Hoja de clima</label>
+        <input type="text" id="hojaClima" value="DATOS">
+        <div class="hint">Del <b>mismo</b> archivo: una fila por día con la columna <b>TIEMPO</b> (SOLEADO · LLUVIAS ·
+          LLUVIAS PARCIALES). Llena la columna <b>CLIMA</b> de <code>fact_jefe</code>, que hasta ahora salía en blanco.
+          La cabecera se busca por texto, así que da igual en qué fila esté. Déjala <b>vacía</b> para no leer clima.
+          <b>La producción sigue saliendo de <code>dia suelto</code>:</b> <code>DATOS</code> no es su espejo —lleva sus
+          propios ajustes y no tiene columnas de MSR ni de préstamo—, así que se usa solo para el clima.</div>
       </div>
       <div>
         <label class="filebox" id="boxJefe">
@@ -383,6 +391,11 @@ const DIAS_ES = ['domingo','lunes','martes','miércoles','jueves','viernes','sá
 
 // Layout de la hoja de producción (`dia suelto`), en base 0.
 const P_FILA_UF = 3, P_FILA_ACT = 4, P_FILA_DATOS = 5, P_COL_FECHA = 0;
+/* Hoja de CLIMA (`DATOS` del reporte diario de obra, ago-2026): una fila por día con el
+   TIEMPO de la jornada. Es lo que llena la columna S (CLIMA) de `fact_jefe`, que hasta ahora
+   salía en blanco (D52). Cabecera resuelta por TEXTO, no por índice: en el archivo de agosto
+   está en la fila 2 (A=DIA · B=FECHA · X=TIEMPO) y los datos empiezan en la 3. */
+const HDR_CLIMA = { fecha:['FECHA','DIA'], clima:['TIEMPO','CLIMA'] };
 // Layout del parte MENSUAL por bloques (el que se describió en el encargo), en base 0.
 const J_COL_COD = 2, J_COL_TIPO_CC = 4, J_COL_HORAS = 18, J_FILA_DATOS = 5;
 const J_FILA_CORTE_INI = 1, J_FILA_CORTE_FIN = 2, J_COL_CORTE = 18;
@@ -514,6 +527,21 @@ function tipoDeEquipo(txt){
   return null;
 }
 function ufDeProyecto(p){ return p==='3701'?'UF1':(p==='3702'?'UF2':''); }
+
+/* El mismo clima llega escrito de varias formas —«SOLEADO», «Soleado», «lluvias parciales»—
+   y una dinámica sobre la columna CLIMA lo partiría en tres. Se unifica a MAYÚSCULAS con el
+   vocabulario del propio reporte de obra. Orden significativo: «LLUVIAS PARCIALES» contiene
+   LLUVIA y «parcialmente nublado» contiene PARCIAL. Un valor que no reconozca se respeta tal
+   cual (en mayúsculas): no se pierde información. */
+function canonClima(txt){
+  const t=norm(txt);
+  if(!t) return '';
+  const parcial=/PARCIAL/.test(t);
+  if(/LLUVI/.test(t))  return parcial?'LLUVIAS PARCIALES':'LLUVIAS';
+  if(/NUBLAD/.test(t)) return parcial?'PARCIALMENTE NUBLADO':'NUBLADO';
+  if(/SOLEAD/.test(t) || t==='SOL') return 'SOLEADO';
+  return t;
+}
 function horasProg(cod){ return HORAS_PROG[cod]!==undefined?HORAS_PROG[cod]:HORAS_PROG_DEFAULT; }
 
 /* actividad / SUB ACTIVIDAD / unidad de una fila de fact_jefe. */
@@ -783,6 +811,56 @@ function leerProduccion(P){
   }
   return { hoja:hoja, cols:cols, prodDia:prodDia, prodMes:prodMes,
            dias:[...dias].sort(), filasFuera:filasFuera, primera:primera, ultima:ultima };
+}
+
+/* ============================ LECTURA · CLIMA ============================ */
+
+/* El clima del día vive en la hoja `DATOS` del MISMO reporte diario de obra (columna TIEMPO).
+   Se lee APARTE de la producción a propósito: `DATOS` NO es un espejo de `dia suelto` —lleva
+   sus propios ajustes y no tiene columnas de MSR ni de préstamo— así que sirve como fuente de
+   clima pero no de producción (medido con el corte 16-jul→15-ago 2026: terraplén UF1 17.123 en
+   `DATOS` contra 15.285 en `dia suelto`, y los 2.305 de MSR no existen en `DATOS`).
+   Si el archivo es viejo y no trae la hoja, la columna CLIMA sale en blanco como hasta ahora. */
+function leerClima(P, dsProd){
+  const pedida=(document.getElementById('hojaClima').value||'').trim();
+  const vacio={ hoja:'', pedida:pedida, hay:false, cabecera:false, porDia:new Map(),
+                valores:new Map(), sinClima:[], fuera:0 };
+  if(!pedida) return vacio;
+  const hoja=buscarHoja(S.prod.wb,pedida);
+  if(!hoja) return vacio;
+  const ws=S.prod.wb.Sheets[hoja];
+  const r=rangoHoja(ws);
+
+  // Cabecera: la primera fila que tenga a la vez una columna de fecha y una de clima.
+  let cab=null;
+  for(let f=r.r0; f<=Math.min(r.r1,r.r0+12) && !cab; f++){
+    const cols={};
+    for(let c=r.c0;c<=r.c1;c++){
+      const h=normHdr(txtAt(ws,f,c));
+      if(!h) continue;
+      if(cols.fecha===undefined && HDR_CLIMA.fecha.indexOf(h)>=0) cols.fecha=c;
+      if(cols.clima===undefined && HDR_CLIMA.clima.indexOf(h)>=0) cols.clima=c;
+    }
+    if(cols.fecha!==undefined && cols.clima!==undefined) cab={fila:f, cols:cols};
+  }
+  if(!cab) return Object.assign({},vacio,{hoja:hoja});
+
+  const porDia=new Map();
+  let fuera=0;
+  for(let f=cab.fila+1; f<=r.r1; f++){
+    const fecha=fechaAt(ws,f,cab.cols.fecha);
+    if(!fecha) continue;                                   // totales y filas sueltas del final
+    const clima=canonClima(txtAt(ws,f,cab.cols.clima));
+    if(!clima) continue;
+    if(fecha<P.desde || fecha>P.hasta){ fuera++; continue; }
+    porDia.set(fecha,clima);                               // una fila por día; si se repite, gana la última
+  }
+  const valores=new Map();
+  porDia.forEach(v=>valores.set(v,(valores.get(v)||0)+1));
+  // Días del corte que SÍ tienen producción pero se quedaron sin clima: la columna sale vacía.
+  const sinClima=(dsProd?dsProd.dias:[]).filter(d=>!porDia.has(d));
+  return { hoja:hoja, pedida:pedida, hay:true, cabecera:true, porDia:porDia,
+           valores:valores, sinClima:sinClima, fuera:fuera };
 }
 
 /* ============================ LECTURA · PARTES DEL JEFE ============================ */
@@ -1069,7 +1147,7 @@ function repartir(P, dsProd, jefe){
       const voc=vocabulario(item, sub===SUB_NO_APROV, tipo);
       f={ maquina:cod, tipo:NOMBRE_TIPO[tipo]||'', fecha:fecha, proyecto:proyecto, uf:ufDeProyecto(proyecto),
           item:item, cc:(proyecto?proyecto+'.':'')+item, actividad:voc.act, sub:sub||voc.sub, unidad:voc.unidad,
-          horas:d?d.horas:0, idle:d?d.idle:0, produccion:null, base:'',
+          horas:d?d.horas:0, idle:d?d.idle:0, produccion:null, base:'', clima:'',
           operador:(d&&d.operador)||(m&&m.operador)||'', obs:(d&&d.desc)||'' };
       idx.set(k,f); filas.push(f);
     }
@@ -1194,9 +1272,12 @@ document.getElementById('btnProc').addEventListener('click',()=>{
     if(!P.desde || !P.hasta) throw new Error('Falta el período de corte.');
     if(P.desde>P.hasta) throw new Error('El corte inicial es posterior al final.');
     const dsProd=leerProduccion(P);
+    const clima=leerClima(P,dsProd);
     const jefe=leerJefe(P);
     const out=repartir(P,dsProd,jefe);
-    S.out={ P:P, dsProd:dsProd, jefe:jefe, rep:out };
+    // El clima es del DÍA: se sella igual en todas las filas de esa fecha.
+    out.filas.forEach(f=>{ f.clima=clima.porDia.get(f.fecha)||''; });
+    S.out={ P:P, dsProd:dsProd, clima:clima, jefe:jefe, rep:out };
     render();
   }catch(err){
     S.out=null;
@@ -1208,7 +1289,7 @@ document.getElementById('btnProc').addEventListener('click',()=>{
 /* ============================ RENDER ============================ */
 
 function render(){
-  const {P,dsProd,jefe,rep}=S.out;
+  const {P,dsProd,clima,jefe,rep}=S.out;
   const avisos=[];
 
   const desc=rep.cuadre.filter(c=>Math.abs(c.dif)>TOL);
@@ -1250,6 +1331,30 @@ function render(){
       unicos.slice(0,10).map(escapeHtml).join(' | ')+(unicos.length>10?' …':'')+'</div>');
   }
   if(jefe.otrosProyectos) avisos.push('<div class="alert info">'+jefe.otrosProyectos+' fila(s) del parte de <b>otros frentes</b> (proyecto ≠ 3701/3702) descartadas.</div>');
+
+  /* --- Clima (columna S de fact_jefe) --- */
+  if(!clima.pedida){
+    avisos.push('<div class="alert info">🌦️ <b>Clima apagado</b> (hoja de clima vacía): la columna <b>CLIMA</b> de '+
+      '<code>fact_jefe</code> sale en blanco, como antes.</div>');
+  }else if(!clima.hoja){
+    avisos.push('<div class="alert warn">🌦️ No encontré la hoja de clima «<b>'+escapeHtml(clima.pedida)+'</b>» en '+
+      escapeHtml(S.prod.nombre)+': la columna <b>CLIMA</b> sale en blanco. Es la hoja <code>DATOS</code> del reporte '+
+      'diario de obra; si tu archivo es anterior a agosto-2026 no la trae.</div>');
+  }else if(!clima.cabecera){
+    avisos.push('<div class="alert warn">🌦️ La hoja «<b>'+escapeHtml(clima.hoja)+'</b>» no tiene una fila de encabezado '+
+      'con <b>FECHA</b>/<b>DIA</b> y <b>TIEMPO</b>/<b>CLIMA</b>: no pude leer el clima y la columna sale en blanco.</div>');
+  }else{
+    const det=[...clima.valores.entries()].sort((a,b)=>b[1]-a[1])
+      .map(([k,v])=>escapeHtml(k)+' <b>'+v+'</b>').join(' · ');
+    avisos.push('<div class="alert '+(clima.sinClima.length?'warn':'ok')+'">🌦️ Clima leído de <code>'+
+      escapeHtml(clima.hoja)+'</code>: <b>'+clima.porDia.size+'</b> día(s) del corte'+(det?' — '+det:'')+'. '+
+      'Va a la columna <b>CLIMA</b> de <code>fact_jefe</code>, igual para todas las máquinas de ese día.'+
+      (clima.sinClima.length
+        ? ' <b>'+clima.sinClima.length+' día(s) con producción se quedaron sin clima</b> ('+
+          clima.sinClima.slice(0,10).map(fmtFecha).join(' · ')+(clima.sinClima.length>10?' …':'')+
+          '): esas filas salen con la columna vacía.'
+        : '')+'</div>');
+  }
   const faltantes=[...P.propias].filter(c=>!jefe.maquinas.has(c));
   if(faltantes.length) avisos.push('<div class="alert info">Máquinas propias sin parte este mes: '+escapeHtml(faltantes.join(', '))+'</div>');
   if(!dsProd.dias.length) avisos.push('<div class="alert err">⚠️ Ningún día de <code>dia suelto</code> cae dentro del corte. Revisa las fechas.</div>');
@@ -1291,6 +1396,7 @@ function render(){
     '<span>Días con producción <b>'+dsProd.dias.length+'</b> ('+(dsProd.primera?fmtFecha(dsProd.primera)+' → '+fmtFecha(dsProd.ultima):'—')+')</span>'+
     '<span>Días fuera del corte <b>'+dsProd.filasFuera+'</b></span>'+
     '<span>Hoja producción <b>'+escapeHtml(dsProd.hoja)+'</b></span>'+
+    '<span>Hoja clima <b>'+escapeHtml(clima.hoja||'—')+'</b></span>'+
     '<span>Hoja partes <b>'+escapeHtml(jefe.hoja)+'</b></span></div>';
   h+='<div class="tbl-wrap"><table class="tbl"><thead><tr>'+
      '<th>CC</th><th>Actividad (fact_jefe)</th><th>UF · proyecto</th><th class="num">Producción (dia suelto)</th>'+
@@ -1358,13 +1464,15 @@ function render(){
     '<span>Filas <b>'+filas.length+'</b></span>'+
     '<span>Máquinas <b>'+new Set(filas.map(f=>f.maquina)).size+'</b></span>'+
     '<span>Días <b>'+new Set(filas.map(f=>f.fecha)).size+'</b></span>'+
+    '<span>Días con clima <b>'+new Set(filas.filter(f=>f.clima).map(f=>f.fecha)).size+'</b></span>'+
     '<span>Producción <b>'+n0(totProd)+'</b></span>'+
     '<span>Horas <b>'+n1(totHoras)+'</b></span>';
-  h='<table class="tbl"><thead><tr><th>Fecha</th><th>Proy.</th><th>Máquina</th><th>Tipo</th>'+
+  h='<table class="tbl"><thead><tr><th>Fecha</th><th>Clima</th><th>Proy.</th><th>Máquina</th><th>Tipo</th>'+
     '<th>Actividad</th><th>SUB ACTIVIDAD</th><th class="num">Horas</th><th class="num">Idle</th>'+
     '<th class="num">Producción</th><th>CC</th><th>Base</th></tr></thead><tbody>';
   for(const f of filas.slice(0,400)){
-    h+='<tr><td class="mono">'+fmtFecha(f.fecha)+'</td><td class="mono">'+escapeHtml(f.proyecto)+'</td>'+
+    h+='<tr><td class="mono">'+fmtFecha(f.fecha)+'</td>'+
+       '<td class="note">'+escapeHtml(f.clima||'')+'</td><td class="mono">'+escapeHtml(f.proyecto)+'</td>'+
        '<td class="mono">'+escapeHtml(f.maquina)+'</td><td class="note">'+escapeHtml(f.tipo)+'</td>'+
        '<td>'+escapeHtml(f.actividad)+'</td><td>'+escapeHtml(f.sub)+'</td>'+
        '<td class="num">'+n1(f.horas)+'</td><td class="num">'+n1(f.idle)+'</td>'+
@@ -1394,7 +1502,7 @@ function aoaFactJefe(conCabecera){
       i+1, fechaUTC(f.fecha), diaSemana(f.fecha), Number(f.proyecto)||f.proyecto, f.maquina, f.tipo,
       f.operador||'', f.actividad, f.sub, f.unidad,
       horasProg(f.maquina), round(f.horas||0,2), '', round(f.idle||0,2), '',
-      '', '', ESTADO_DEFAULT, '', (f.produccion==null?'':round(f.produccion,DEC)), '', '',
+      '', '', ESTADO_DEFAULT, f.clima||'', (f.produccion==null?'':round(f.produccion,DEC)), '', '',
       '', '', '', '', f.obs||'', f.cc, f.item
     ]);
   });
