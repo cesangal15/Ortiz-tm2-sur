@@ -249,10 +249,21 @@ Sí. Mientras el OCR corre:
   ese momento (`recruzar`), así que si cargaste una proforma nueva mientras
   tanto, **no hay que repetir el OCR**.
 - **Minimizar la ventana o irte a otras pestañas del navegador tampoco lo
-  detiene**: la lectura no depende de que la página se esté pintando (no hay
-  `requestAnimationFrame`, que es lo que un navegador congela en una pestaña
-  oculta) y tesseract corre en un *worker* aparte. Eso sí, **puede ir más
-  lento**: los navegadores frenan las pestañas que no estás mirando.
+  detiene** — pero esto costó una corrección (ago-2026), porque antes **sí** lo
+  detenía. pdf.js agenda el dibujo de la página con `requestAnimationFrame`
+  cuando la intención es la de PANTALLA, y desde el primer trozo; un navegador
+  no dispara rAF en una pestaña que no estás mirando, así que
+  `page.render().promise` no resolvía nunca y el bucle se quedaba colgado en el
+  `await`. **No lento: parado**, hasta volver a la pestaña. El render del OCR
+  pide ahora `intent:'print'`, que usa microtareas en vez de rAF — y que además
+  es la intención que corresponde: esto no se dibuja para mirarlo, se rasteriza
+  para leerlo. Las páginas que **sí** se muestran (candidatos, revisión guiada,
+  miniaturas) conservan la intención de pantalla.
+
+  Comprobado con pdf.js 3.11.174 —la versión fijada— simulando la pestaña
+  oculta (rAF existe pero su callback jamás se llama): con la intención por
+  defecto se cuelga tras pedir 1 rAF; con `intent:'print'` resuelve pidiendo 0.
+  Como no se puede verificar sin navegador, el arnés lo vigila en el código.
 - **Lo que sí lo mata:** cerrar la pestaña, recargar (F5) o navegar fuera.
 
 Por eso el OCR hace **autosave cada 10 páginas** (corrección ago-2026). Antes

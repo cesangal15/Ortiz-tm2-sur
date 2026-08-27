@@ -2010,8 +2010,25 @@ const Paso5={
 
   // ---- render de páginas ----
   _pageCache:new Map(),
-  async renderPagina(pdfIdx,pagina,scale){
-    const key=pdfIdx+':'+pagina+':'+scale;
+  /* `paraOcr` NO es una preferencia de calidad: es lo que decide si esta página se puede
+     renderizar con la pestaña OCULTA (corrección ago-2026).
+
+     pdf.js agenda el dibujo con `requestAnimationFrame` cuando la intención es la de PANTALLA
+     (`useRequestAnimationFrame: !intentPrint`), y lo hace desde el PRIMER trozo. Un navegador no
+     dispara rAF en una pestaña que no estás mirando, así que `page.render().promise` no resuelve
+     NUNCA y el bucle del OCR se queda colgado en `await` — no lento: parado, hasta que vuelves a
+     la pestaña. Comprobado con pdf.js 3.11.174 (la versión fijada) simulando la pestaña oculta
+     —rAF existe pero su callback jamás se llama—: con la intención por defecto se cuelga tras
+     pedir 1 rAF; con `intent:'print'` resuelve pidiendo 0.
+
+     La intención de IMPRESIÓN es además la que corresponde: esto no se dibuja para que alguien lo
+     mire, se rasteriza para leerlo. Sobre un parte escaneado —una página que es una imagen— los
+     píxeles son los mismos; lo que cambia son anotaciones y contenido opcional, que aquí no hay.
+     Las páginas que SÍ se le muestran a César (candidatos, revisión guiada, miniaturas) se quedan
+     con la intención de pantalla, que es la suya. La intención entra en la clave del caché para
+     que las dos no se pisen. */
+  async renderPagina(pdfIdx,pagina,scale,paraOcr){
+    const key=pdfIdx+':'+pagina+':'+scale+':'+(paraOcr?'p':'d');
     if(this._pageCache.has(key)) return this._pageCache.get(key);
     const p=S.pdfs[pdfIdx]; if(!p||p.error) return null;
     const canvas=document.createElement('canvas');
@@ -2027,7 +2044,9 @@ const Paso5={
       const page=await p.doc.getPage(pagina);
       const vp=page.getViewport({scale});
       canvas.width=vp.width; canvas.height=vp.height;
-      await page.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
+      const par={canvasContext:canvas.getContext('2d'),viewport:vp};
+      if(paraOcr) par.intent='print';   // sin esto el OCR se para con la pestaña oculta (ver arriba)
+      await page.render(par).promise;
     }
     if(this._pageCache.size>10){ const k0=this._pageCache.keys().next().value; this._pageCache.delete(k0); }
     this._pageCache.set(key,canvas);
@@ -2075,7 +2094,7 @@ const Paso5={
           if(S.ocr.cancel) throw new Error('cancelado');
           const key=p.name+'#'+pg;
           if(!S.ocr.paginas[key]){
-            const canvas=await this.renderPagina(fi,pg,2.0);
+            const canvas=await this.renderPagina(fi,pg,2.0,true);   // true = intención de impresión: sigue con la pestaña oculta
             const tokens=await this._ocrPagina(worker,canvas,faltSet,faltSC,faltSM);
             S.ocr.paginas[key]=tokens;
           }

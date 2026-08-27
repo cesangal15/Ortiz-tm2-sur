@@ -145,5 +145,21 @@ const enSombra=marcas.slice(2).reduce((a,m)=>{
   return a;},0);
 chk('las marcas de la zona oscura NO se pierden', enSombra>0, true);
 
+console.log('\n8) El render del OCR pide la intención de IMPRESIÓN (si no, se para con la pestaña oculta)');
+/* pdf.js agenda el dibujo con requestAnimationFrame cuando la intención es la de PANTALLA
+   (`useRequestAnimationFrame: !intentPrint`), desde el PRIMER trozo. Un navegador no dispara rAF
+   en una pestaña oculta, así que `page.render().promise` no resuelve nunca y el bucle del OCR se
+   queda colgado en el `await`: no lento, PARADO. Comprobado con pdf.js 3.11.174 (la versión
+   fijada) simulando la pestaña oculta —rAF existe pero su callback jamás se llama—: con la
+   intención por defecto se cuelga tras pedir 1 rAF; con `intent:'print'` resuelve pidiendo 0.
+   Esto no se puede verificar sin navegador, así que se vigila en el CÓDIGO: quitar el flag es
+   una regresión que nadie notaría hasta minimizar la ventana en mitad de un corte. */
+const fuente=require('fs').readFileSync(
+  path.join(__dirname,'..','..','conciliador','conciliador.js'),'utf8');
+chk("el bucle del OCR llama a renderPagina con paraOcr", /renderPagina\(fi,pg,2\.0,true\)/.test(fuente), true);
+chk("…y paraOcr pone intent:'print'", /if\(paraOcr\)\s*par\.intent='print';/.test(fuente), true);
+chk('la intención entra en la clave del caché (no se pisan las dos)', /paraOcr\?'p':'d'/.test(fuente), true);
+chk('las páginas que se MUESTRAN siguen con la intención de pantalla', /pagDom\(fi,c\.page,1\.4\)/.test(fuente)&&!/pagDom\([^)]*,true\)/.test(fuente), true);
+
 console.log('\n'+(fallos?('❌ '+fallos+' verificación(es) fallaron'):'✅ Todo correcto'));
 process.exit(fallos?1:0);
