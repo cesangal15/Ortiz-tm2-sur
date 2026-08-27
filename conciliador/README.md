@@ -30,7 +30,7 @@ navegador las descarga; después quedan en caché del navegador.
 | 2 · Abrir corte | Eliges contratista + quincena | Rechaza empresas vetadas (ORTIZ, VOLKETSA, Betulia). Un contratista a la vez. |
 | 3 · Cargar proforma | 1..N `.xlsx` del contratista | Auto-detecta encabezado (títulos arriba, alias de columna), enruta hojas por patrones (PUTANA→GRANULARES, INTERNO→interno, Hoja1→ignorar…), explota celdas multi-remisión, detecta pares sospechosos "¿lista o rango?" y concilia al instante. Hoja no reconocida → tú la señalas (y guardas la regla). El botón "cambiar" de cada hoja reasigna la base **o la saca del corte con IGNORAR** (reversible mientras no recargues la página). |
 | 4 · Conciliación | Revisas el tablero por estados | Llave cerrada: remisión exacta (texto, ceros incluidos) + empresa ∈ alias + fecha ≥ mínima. 0 candidatos → NO_ENCONTRADA (con sugerencias: "existe con otra empresa" y "existe en la otra base"); 1 → clasificador (solo UF3 excluye; áreas PLANTA/PUENTE/TM1/ODT… van al acta con observación); >1 → eliges tú. Si una hoja entera parece estar en la base equivocada, sale un aviso con un botón para cambiarla de ámbito y re-conciliar. |
-| 5 · Investigación PDF | Cargas los PDFs de partes, marcas el **ámbito** de cada uno y corres el OCR | Cada PDF lleva un ámbito **"Partes de…"** (Granulares / Terraplén / Mezclado; sugerido por el nombre del archivo con las mismas reglas de hojas del contratista, marca *auto* hasta que lo confirmes): sus páginas se cruzan ÚNICAMENTE con las faltantes de esa base — un número parecido de la otra base ya no genera candidatos falsos ni vuelve la página "candidata" en la cobertura; "Mezclado (ambas)" busca contra todas (comportamiento anterior, y el default cuando el nombre no da señal). Cambiar el ámbito poda los candidatos incompatibles y re-cruza al instante (los comprobantes ya confirmados no se tocan). En la revisión guiada las faltantes de la otra base quedan plegadas ("N faltantes de la otra base ocultas"), a un clic por si el ámbito estaba mal. Búsqueda dirigida SOLO de las no-encontradas (listadas de menor a mayor por número de remisión, en la lista lateral y en los botones del modal de revisión): pasada roja por franjas (número impreso arriba-derecha, 1–3 partes/página) + pasada gris de respaldo (AVENSA). Verde = exacto, naranja = 1 dígito. NUNCA auto-confirma: tú ves la página y decides (Confirmar / Es ASFALTO / No es). Además, el panel "Cobertura del OCR por página" muestra la vista inversa: páginas SIN lectura o cuyo número no coincide con nada reclamado. El botón **"▶ Revisar contra las faltantes"** las recorre una por una: ves el parte, la lista de faltantes sin confirmar como botones (≈ marca las que están a 1 dígito de lo leído) y con UN clic confirmas el comprobante; o pulsas **"✕ No es ninguna faltante"** y la página se descarta de la lista (es reproceso: remisión que ya está en la base). Las descartadas se pueden ver y restaurar con ↩ (y corregir su lectura las re-abre). El ✏️ para corregir la lectura del OCR sigue disponible (si el número corregido es una faltante pasa a candidato; si es de una remisión ya conciliada, la página sale de la revisión). Por revisar y descartadas salen en el resumen del Paso 7. Navegador manual de miniaturas siempre disponible. **Un renglón por PÁGINA (ago-2026):** si el OCR leía en la misma hoja el número exacto y otro a un dígito, la página salía dos veces; ahora se fusionan en un solo candidato (mejor nivel, con las lecturas de la página a la vista) y el contador verde/naranja de la lista de faltantes cuadra con lo que se pinta. |
+| 5 · Investigación PDF | Cargas los PDFs de partes, marcas el **ámbito** de cada uno y corres el OCR | Cada PDF lleva un ámbito **"Partes de…"** (Granulares / Terraplén / Mezclado; sugerido por el nombre del archivo con las mismas reglas de hojas del contratista, marca *auto* hasta que lo confirmes): sus páginas se cruzan ÚNICAMENTE con las faltantes de esa base — un número parecido de la otra base ya no genera candidatos falsos ni vuelve la página "candidata" en la cobertura; "Mezclado (ambas)" busca contra todas (comportamiento anterior, y el default cuando el nombre no da señal). Cambiar el ámbito poda los candidatos incompatibles y re-cruza al instante (los comprobantes ya confirmados no se tocan). En la revisión guiada las faltantes de la otra base quedan plegadas ("N faltantes de la otra base ocultas"), a un clic por si el ámbito estaba mal. Búsqueda dirigida SOLO de las no-encontradas (listadas de menor a mayor por número de remisión, en la lista lateral y en los botones del modal de revisión): pasada roja por franjas (número impreso arriba-derecha, 1–3 partes/página), **pasada C para el tiquete de báscula** (presentación nueva de PUTANA: el número se lee de su rótulo, ver abajo) y pasada gris de respaldo a página completa (AVENSA). Verde = exacto, naranja = 1 dígito. NUNCA auto-confirma: tú ves la página y decides (Confirmar / Es ASFALTO / No es). Además, el panel "Cobertura del OCR por página" muestra la vista inversa: páginas SIN lectura o cuyo número no coincide con nada reclamado. El botón **"▶ Revisar contra las faltantes"** las recorre una por una: ves el parte, la lista de faltantes sin confirmar como botones (≈ marca las que están a 1 dígito de lo leído) y con UN clic confirmas el comprobante; o pulsas **"✕ No es ninguna faltante"** y la página se descarta de la lista (es reproceso: remisión que ya está en la base). Las descartadas se pueden ver y restaurar con ↩ (y corregir su lectura las re-abre). El ✏️ para corregir la lectura del OCR sigue disponible (si el número corregido es una faltante pasa a candidato; si es de una remisión ya conciliada, la página sale de la revisión). Por revisar y descartadas salen en el resumen del Paso 7. Navegador manual de miniaturas siempre disponible. **Un renglón por PÁGINA (ago-2026):** si el OCR leía en la misma hoja el número exacto y otro a un dígito, la página salía dos veces; ahora se fusionan en un solo candidato (mejor nivel, con las lecturas de la página a la vista) y el contador verde/naranja de la lista de faltantes cuadra con lo que se pinta. |
 | 6 · Resolución manual | Decides las dudosas | Cola de revisión manual, múltiples, duplicadas y alertas de internos >3 km. Cada transición queda auditada (estado anterior/nuevo, fecha-hora, nota). |
 | 7 · Exportes | Copias/descargas | Bloque acta (TSV al portapapeles + .xlsx), **bloque acta de PENDIENTES** (mismo modelo A..S con lo que sabe la proforma y CC propuesto — ver abajo), Excel digitadora y PDF de pendientes — ambos en el MISMO orden: fecha de la proforma de menor a mayor y, dentro del día, remisión de menor a mayor (páginas deduplicadas), para que la digitadora trabaje renglón a página — y resumen del corte. |
 
@@ -238,10 +238,44 @@ Notas del seed de reglas de hojas (además de las 4 del ejemplo de la spec):
 - Nombre de mes (`JUNIO 2026` de ASOTRASAAT) → **AMBAS**: busca en las dos bases;
   si aparece en ambas cae a `MULTIPLE_EN_BASE` (nunca asume mal).
 
+### ¿Puedo dejarlo leyendo e irme a hacer otra cosa?
+
+Sí. Mientras el OCR corre:
+
+- **Cambiar de paso dentro de la herramienta** (irte al 3 a cargar otra proforma,
+  al 4 a revisar el tablero…) **no lo detiene**: lo único que lo para es el botón
+  **✕ Cancelar**, que solo existe en la vista del Paso 5. Al volver al Paso 5 se
+  re-cruzan solas todas las páginas ya leídas contra las faltantes que haya en
+  ese momento (`recruzar`), así que si cargaste una proforma nueva mientras
+  tanto, **no hay que repetir el OCR**.
+- **Minimizar la ventana o irte a otras pestañas del navegador tampoco lo
+  detiene** — pero esto costó una corrección (ago-2026), porque antes **sí** lo
+  detenía. pdf.js agenda el dibujo de la página con `requestAnimationFrame`
+  cuando la intención es la de PANTALLA, y desde el primer trozo; un navegador
+  no dispara rAF en una pestaña que no estás mirando, así que
+  `page.render().promise` no resolvía nunca y el bucle se quedaba colgado en el
+  `await`. **No lento: parado**, hasta volver a la pestaña. El render del OCR
+  pide ahora `intent:'print'`, que usa microtareas en vez de rAF — y que además
+  es la intención que corresponde: esto no se dibuja para mirarlo, se rasteriza
+  para leerlo. Las páginas que **sí** se muestran (candidatos, revisión guiada,
+  miniaturas) conservan la intención de pantalla.
+
+  Comprobado con pdf.js 3.11.174 —la versión fijada— simulando la pestaña
+  oculta (rAF existe pero su callback jamás se llama): con la intención por
+  defecto se cuelga tras pedir 1 rAF; con `intent:'print'` resuelve pidiendo 0.
+  Como no se puede verificar sin navegador, el arnés lo vigila en el código.
+- **Lo que sí lo mata:** cerrar la pestaña, recargar (F5) o navegar fuera.
+
+Por eso el OCR hace **autosave cada 10 páginas** (corrección ago-2026). Antes
+solo guardaba al terminar o al cancelar, así que un corte en seco —cerrar la
+pestaña, un F5 sin querer— tiraba la corrida entera; con un PDF de 25 páginas
+eso son minutos de lectura perdidos. Ahora, al volver a abrir y pulsar
+"Buscar", las páginas ya leídas no se repiten.
+
 ## Sesión
 
 - **Autosave** en localStorage en cada cambio relevante (si supera el límite,
-  avisa y pide export).
+  avisa y pide export) y **cada 10 páginas mientras corre el OCR**.
 - **Exportar/Importar sesión (JSON):** todo el estado del corte (reclamaciones,
   historial, asignaciones PDF por nombre de archivo + página, caché de OCR,
   páginas descartadas a mano en la revisión, ámbito elegido de cada PDF — al
@@ -286,6 +320,83 @@ criterio no cambia: **el OCR propone, tú confirmas viendo la página.**
 Si un escaneo llega tan lavado que ni así lo lee (en ese PDF quedó 1 página),
 sigue estando la revisión guiada "▶ Revisar las N contra las faltantes".
 
+### Formato NUEVO de PUTANA: el tiquete de báscula — pasada C (ago-2026)
+
+Los granulares de PUTANA pasan a llegar como **tiquete de báscula** impreso en
+matricial: todo monoespaciado, gris, del mismo cuerpo, y **fotografiado con el
+móvil** (no escaneado). La remisión es el campo del encabezado:
+
+```
+                COPIA DE TIQUETE NUMERO:8.650
+```
+
+Eso tumba las **dos** suposiciones del lector anterior y añade una trampa que no
+tiene nada que ver con la imagen:
+
+1. **No hay color que aislar.** La pasada A mide rojez = `r − max(g,b)`, que en
+   gris es ≈ 0: `hayTinta` da falso en las cinco bandas y el OCR no se llama ni
+   una vez. (Es otro problema que el de "tinta roja apagada" de arriba: aquel
+   era rojo *débil*, este es rojo *ausente*.)
+2. **El número no es grande ni está arriba a la derecha.** Es un campo de texto
+   más, del mismo cuerpo que el resto. Cualquier truco de píxeles que lo busque
+   por tamaño o por posición falla.
+3. **Viene con separador de miles.** El `\d{3,6}` de siempre lee `8` y `650` y
+   **jamás produce `8650`**, por bien que el OCR haya leído la hoja.
+
+Lo que este formato sí tiene, y el anterior no, es **estructura**: el número
+lleva su rótulo delante. Así que se lee **por rótulo, no por píxeles** — que
+además es lo único que lo distingue de los otros ocho números de la hoja (NIT,
+teléfono, los tres pesos, placa, PK, volumen), varios de ellos a un dígito de
+una remisión de cuatro cifras.
+
+**La pasada C**, sobre la hoja completa:
+
+- **Binarizado adaptativo por media local** (`binarizaAdaptativa`, método de
+  Bradley con imagen integral). Estos partes llegan fotografiados: sombra de la
+  mano, fondo asomando por un borde, media hoja más iluminada que la otra. Un
+  umbral **global** sacrifica la zona en sombra entera; la media local compara
+  cada píxel con la de su entorno (ventana = ancho/8) y lee igual en las dos.
+- **Escalado hasta 2000 px de ancho** antes de binarizar: el tiquete es de
+  cuerpo pequeño y una foto de móvil deja el rótulo en ~12 px de alto. (El
+  `_aGris` de la pasada B, que *reduce* a 1400, lo dejaría aún más chico.)
+- **OCR como texto, sin lista blanca de dígitos** (psm 6): hace falta leer el
+  rótulo, no solo cifras.
+- **Extracción anclada** (`tokensTiquete`), tolerante a los tropiezos típicos
+  del OCR sobre matricial (`TIQUETE` → `T1QUE7E`, `TI0UETE`) y a las variantes
+  del rótulo (`NUMERO`, `NRO.`, `No.`, dos puntos o nada). Global: una hoja con
+  dos o tres tiquetes aporta el número de cada uno. **Si el ancla no aparece,
+  devuelve vacío** y la página cae a la pasada B — nunca se inventa un número.
+- **Con el rótulo localizado se salta la pasada B**: sería cambiar un número
+  seguro por los ocho de la hoja.
+
+**El separador de miles se resuelve en la COMPARACIÓN, no en el token.** La
+primera versión emitía las dos grafías (`8650` y `8.650`) para cubrir lo que
+hubiera escrito la proforma; lo que hacía era sembrar naranjas falsos — `8.650`
+está a un dígito de `8650` y de sus vecinas `8641`/`8643`, así que cada tiquete
+ensuciaba tres faltantes ajenas. Ahora el token es uno solo, en dígitos, y
+`_cruzar` compara además con `sinMiles`, que quita el separador **y solo eso**
+(patrón de 1–3 cifras + grupos de exactamente 3): `8.650` → `8650`, pero
+`CH6199` y `0348` salen intactas. `normRem` —el contrato de conciliación, que
+guarda la remisión como texto literal y es lo que sostiene `0348`— **no se
+toca**.
+
+`OCR_V` sube a **3**: la primera corrida tras el cambio **relee** las páginas
+cacheadas (avisa en pantalla). Las decisiones humanas —páginas descartadas,
+lecturas corregidas, revisadas— se conservan.
+
+**Medido** con tesseract 5.3.4 sobre réplicas degradadas de las dos fotos reales
+(rampa de luz, sombra de la mano, desenfoque y JPEG), a 1000 y 1400 px de ancho:
+
+| | pasada B (la de hoy) | pasada C |
+|---|---|---|
+| tokens por página | **13**, todos basura | **1**, la remisión |
+| proforma escribe `8650` | la encuentra **por casualidad**: el OCR lee los dos puntos del rótulo como un `0` y `08642` casa por la regla de ceros | verde |
+| proforma escribe `8.650` | **no la encuentra nunca** (0 de 2) | verde |
+| falsos | un **verde falso**: `12.630` es el peso de entrada del tiquete, no una remisión | ninguno |
+
+**Si el formato cambia otra vez**, lo que hay que tocar es `RE_TIQUETE` (el
+rótulo) y `numeroRemision` (cómo se escribe el número), no la imagen.
+
 ## Limitaciones V1 (fuera de alcance)
 
 - No genera el acta completa (tarifas, totales, firmas): solo el bloque de pegado.
@@ -319,4 +430,5 @@ node backend/pruebas/verificar_conciliador_pendientes_area.js       # áreas del
 node backend/pruebas/verificar_conciliador_paso5_candidatos.js      # un renglón por página
 node backend/pruebas/verificar_conciliador_ignorar_hoja.js          # IGNORAR una hoja del corte
 node backend/pruebas/verificar_conciliador_ocr_umbral_rojo.js       # umbral rojo adaptativo
+node backend/pruebas/verificar_conciliador_ocr_tiquete.js           # tiquete de báscula de PUTANA (pasada C)
 ```

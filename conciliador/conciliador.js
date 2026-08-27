@@ -304,7 +304,8 @@ function getContratista(id){ return (S.config.contratistas||[]).find(c=>c.id===i
 // una corrección del OCR no se nota hasta borrar la sesión. Subirla invalida solo las lecturas
 // (las decisiones humanas —páginas descartadas, lecturas corregidas, revisadas— se conservan).
 // v2 (ago-2026): umbral rojo adaptativo + 5 bandas solapadas.
-const OCR_V=2;
+// v3 (ago-2026): pasada C para el tiquete de báscula de PUTANA (número leído por su ROTULO, sin color).
+const OCR_V=3;
 
 const S={
   config:null,
@@ -1526,6 +1527,113 @@ function umbralRojo(d,n){
   for(let v=0;v<256;v++){ acum+=hist[v]; if(acum>=corte){ pico=v; break; } }
   return {pico, T:Math.max(8,Math.round(pico*0.45)), hayTinta:pico>=10};
 }
+/* ---- Partes del formato NUEVO: el tiquete de báscula (ago-2026) ----
+   Los granulares de PUTANA pasan a llegar como TIQUETE DE BÁSCULA impreso en matricial: todo
+   monoespaciado, gris, del mismo tamaño, y fotografiado con el móvil (no escaneado). El número de
+   remisión es el campo `COPIA DE TIQUETE NUMERO:8.650` del encabezado.
+
+   Eso tumba las dos suposiciones del lector viejo: no hay color que aislar (la pasada A mide
+   rojez = r − max(g,b), que aquí es ≈ 0) y **el número no es grande ni está arriba a la derecha**
+   — es un dato más de una línea de texto, del mismo cuerpo que el resto. Y trae un tercer
+   problema que ninguna pasada de píxeles arregla: **viene con separador de miles**, así que el
+   `\d{3,6}` de siempre lee `8` y `650` y jamás produce `8650`.
+
+   Lo que sí tiene este formato, y el anterior no, es ESTRUCTURA: el número va precedido de su
+   rótulo. Así que se lee por ROTULO, no por píxeles — que además es lo único que distingue el
+   número de remisión de los otros ocho números de la hoja (NIT, teléfono, pesos, placa, PK,
+   volumen), varios de ellos a un dígito de una remisión de cuatro cifras.
+
+   Puras (texto y RGBA de entrada) para poder verificarlas sin navegador. */
+
+// Luminancia invertida: 0 = papel, 255 = tinta.
+function oscuridadPx(d,i){ const l=(d[i]*299+d[i+1]*587+d[i+2]*114)/1000; return l>=255?0:Math.round(255-l); }
+
+/* Binarizado ADAPTATIVO (media local, con imagen integral — método de Bradley).
+   Estos partes llegan FOTOGRAFIADOS: sombra de la mano, fondo oscuro asomando por un borde,
+   media hoja más iluminada que la otra. Un umbral global —el de la pasada roja o cualquier
+   Otsu— sacrifica la zona sombreada entera. La media local compara cada píxel con la de su
+   entorno (ventana = ancho/8) y se queda con lo que está un `t` por debajo, así que el rótulo
+   se lee igual en la parte iluminada y en la sombra. Devuelve máscara 1 = tinta. */
+function binarizaAdaptativa(d,w,h,opts){
+  const o=Object.assign({ventana:0,t:0.15},opts||{});
+  const S=o.ventana||Math.max(8,Math.round(w/8)), mitad=S>>1;
+  const integral=new Float64Array((w+1)*(h+1));
+  for(let y=0;y<h;y++){
+    let fila=0;
+    for(let x=0;x<w;x++){
+      fila+=oscuridadPx(d,(y*w+x)*4);
+      integral[(y+1)*(w+1)+(x+1)]=integral[y*(w+1)+(x+1)]+fila;
+    }
+  }
+  const mask=new Uint8Array(w*h);
+  for(let y=0;y<h;y++){
+    const y0=Math.max(0,y-mitad), y1=Math.min(h-1,y+mitad);
+    for(let x=0;x<w;x++){
+      const x0=Math.max(0,x-mitad), x1=Math.min(w-1,x+mitad);
+      const n=(x1-x0+1)*(y1-y0+1);
+      const suma=integral[(y1+1)*(w+1)+(x1+1)]-integral[y0*(w+1)+(x1+1)]
+                -integral[(y1+1)*(w+1)+x0]+integral[y0*(w+1)+x0];
+      // tinta = más oscura que la media de su entorno por el margen `t`
+      if(oscuridadPx(d,(y*w+x)*4)*n > suma*(1+o.t)) mask[y*w+x]=1;
+    }
+  }
+  return mask;
+}
+
+/* Un número tal como lo imprime el tiquete → la remisión en dígitos.
+   `8.650` es OCHO MIL SEISCIENTOS CINCUENTA: el punto es separador de MILES, no decimal. La coma
+   sí es decimal (`26.650,00` son 26.650 kg), así que una cola de coma/punto + 2 dígitos se
+   descarta antes de nada. Devuelve '' si no puede ser una remisión (3 a 6 cifras).
+   Una SOLA forma, la de dígitos: emitir además `8.650` como token parecía cubrir el caso de la
+   proforma que escribe el punto, pero lo que hacía era sembrar naranjas falsos — está a UN dígito
+   de 8650 y de sus vecinas 8641/8643, así que cada tiquete ensuciaba tres faltantes ajenas. Ese
+   caso se resuelve en la comparación (`sinMiles`), que es donde vive. */
+function numeroRemision(txt){
+  const sinDecimal=String(txt||'').trim().replace(/[.,]\d{2}$/,'');
+  const digitos=sinDecimal.replace(/[^0-9]/g,'');
+  return (digitos.length>=3&&digitos.length<=6)?digitos:'';
+}
+/* Quita el separador de MILES, y solo eso. `8.650`→`8650`, pero `CH6199` y `0348` salen intactos:
+   el patrón exige 1-3 cifras y grupos de exactamente 3. Se usa únicamente para cruzar lecturas de
+   OCR con faltantes; `normRem` —el contrato de conciliación, que guarda la remisión como TEXTO
+   literal y sostiene `0348`— NO se toca. Con esto da igual que la proforma escriba `8.650` y el
+   tiquete `8650` o al revés: cruzan igual, y en VERDE, sin inventar tokens. */
+function sinMiles(s){
+  const t=String(s==null?'':s).trim();
+  return /^\d{1,3}(?:[.\s']\d{3})+$/.test(t)?t.replace(/[.\s']/g,''):t;
+}
+
+/* Números de remisión leídos de un tiquete de báscula, ANCLADOS a su rótulo.
+   El ancla tolera los tropiezos típicos del OCR sobre matricial (`TIQUETE` → `T1QUETE`,
+   `TIOUETE`, `7IQUE7E`) y admite que entre el rótulo y el número haya `NUMERO`, `NRO`, `No.`,
+   dos puntos o nada. Global: una hoja puede traer dos o tres tiquetes y cada uno aporta el suyo.
+   Si el ancla no aparece, devuelve vacío — y la página cae a la pasada de respaldo, sin
+   inventarse un número; que es la regla de toda la herramienta. */
+const RE_TIQUETE=/[T7][I1L|!][QO0][UV][EF][T7][EF][^0-9]{0,24}?(\d[\d.,'\u00a0 ]{0,12}\d|\d)/g;
+function tokensTiquete(texto){
+  const t=String(texto||'').toUpperCase();
+  const out=[];
+  RE_TIQUETE.lastIndex=0;
+  let m;
+  while((m=RE_TIQUETE.exec(t))!==null){
+    const n=numeroRemision(m[1]);
+    if(n&&out.indexOf(n)<0) out.push(n);
+  }
+  return out;
+}
+
+/* Números sueltos de un texto OCR (pasadas de respaldo). Sobre `\d{3,6}` de siempre añade el
+   caso del separador de miles: sin esto, `8.650` entra como `8` y `650` y la remisión 8650 no
+   se produce NUNCA, por bien que el OCR haya leído la hoja. */
+function tokensNumericos(texto){
+  const t=String(texto||'');
+  const out=[];
+  const add=v=>{ if(v&&out.indexOf(v)<0) out.push(v); };
+  for(const m of (t.match(/\d{3,6}/g)||[])) add(m);
+  for(const m of (t.match(/\d{1,3}(?:[.'\u00a0 ]\d{3})+(?:,\d+)?/g)||[])) add(numeroRemision(m));
+  return out;
+}
+
 function sugerirAmbitoPdf(nombre){
   const c=S.corte?getContratista(S.corte.contratistaId):null;
   const r=c?resolverAmbitoHoja(nombre,c):null;
@@ -1624,6 +1732,8 @@ function vistaPaso5(){
     </div>
     <div class="progress-wrap" style="margin-top:8px"><div class="progress-bar" id="ocrBar" style="width:${S.ocr.total?Math.round(100*S.ocr.hecho/S.ocr.total):0}%"></div></div>
     <div class="note" style="margin-top:6px">Pasada A: franjas rojas (número impreso arriba-derecha, 1–3 partes por página).
+    Pasada C: <b>tiquete de báscula</b> (presentación nueva de PUTANA, sin letra roja) — lee la hoja como texto y saca el número
+    de su rótulo <span class="mono">COPIA DE TIQUETE NUMERO:</span>, así que no se cuela ningún otro número de la hoja.
     Pasada B (respaldo / AVENSA): página completa en gris. Coincidencia exacta = <span class="badge verde">verde</span>,
     un dígito de diferencia = <span class="badge naranja">naranja</span>. Las páginas ya procesadas quedan en caché y se
     re-cruzan solas si cambian las faltantes; vuelve a pulsar “Buscar” solo si agregaste PDFs nuevos.</div>`}
@@ -1900,8 +2010,25 @@ const Paso5={
 
   // ---- render de páginas ----
   _pageCache:new Map(),
-  async renderPagina(pdfIdx,pagina,scale){
-    const key=pdfIdx+':'+pagina+':'+scale;
+  /* `paraOcr` NO es una preferencia de calidad: es lo que decide si esta página se puede
+     renderizar con la pestaña OCULTA (corrección ago-2026).
+
+     pdf.js agenda el dibujo con `requestAnimationFrame` cuando la intención es la de PANTALLA
+     (`useRequestAnimationFrame: !intentPrint`), y lo hace desde el PRIMER trozo. Un navegador no
+     dispara rAF en una pestaña que no estás mirando, así que `page.render().promise` no resuelve
+     NUNCA y el bucle del OCR se queda colgado en `await` — no lento: parado, hasta que vuelves a
+     la pestaña. Comprobado con pdf.js 3.11.174 (la versión fijada) simulando la pestaña oculta
+     —rAF existe pero su callback jamás se llama—: con la intención por defecto se cuelga tras
+     pedir 1 rAF; con `intent:'print'` resuelve pidiendo 0.
+
+     La intención de IMPRESIÓN es además la que corresponde: esto no se dibuja para que alguien lo
+     mire, se rasteriza para leerlo. Sobre un parte escaneado —una página que es una imagen— los
+     píxeles son los mismos; lo que cambia son anotaciones y contenido opcional, que aquí no hay.
+     Las páginas que SÍ se le muestran a César (candidatos, revisión guiada, miniaturas) se quedan
+     con la intención de pantalla, que es la suya. La intención entra en la clave del caché para
+     que las dos no se pisen. */
+  async renderPagina(pdfIdx,pagina,scale,paraOcr){
+    const key=pdfIdx+':'+pagina+':'+scale+':'+(paraOcr?'p':'d');
     if(this._pageCache.has(key)) return this._pageCache.get(key);
     const p=S.pdfs[pdfIdx]; if(!p||p.error) return null;
     const canvas=document.createElement('canvas');
@@ -1917,7 +2044,9 @@ const Paso5={
       const page=await p.doc.getPage(pagina);
       const vp=page.getViewport({scale});
       canvas.width=vp.width; canvas.height=vp.height;
-      await page.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
+      const par={canvasContext:canvas.getContext('2d'),viewport:vp};
+      if(paraOcr) par.intent='print';   // sin esto el OCR se para con la pestaña oculta (ver arriba)
+      await page.render(par).promise;
     }
     if(this._pageCache.size>10){ const k0=this._pageCache.keys().next().value; this._pageCache.delete(k0); }
     this._pageCache.set(key,canvas);
@@ -1959,18 +2088,24 @@ const Paso5={
         const p=S.pdfs[fi]; if(p.error) continue;
         // corte temprano de la pasada A: solo cuentan las faltantes compatibles con el ámbito del PDF
         const faltPdf=falt.filter(rc=>ambitoCompatible(ambitoPdfDe(p),rc.ambito));
-        const faltSet=new Set(); const faltSC=new Set();
-        for(const rc of faltPdf){ faltSet.add(rc.remision); faltSC.add(rc.remSC); }
+        const faltSet=new Set(); const faltSC=new Set(); const faltSM=new Set();
+        for(const rc of faltPdf){ faltSet.add(rc.remision); faltSC.add(rc.remSC); faltSM.add(sinMiles(rc.remision)); }
         for(let pg=1;pg<=p.numPages;pg++){
           if(S.ocr.cancel) throw new Error('cancelado');
           const key=p.name+'#'+pg;
           if(!S.ocr.paginas[key]){
-            const canvas=await this.renderPagina(fi,pg,2.0);
-            const tokens=await this._ocrPagina(worker,canvas,faltSet,faltSC);
+            const canvas=await this.renderPagina(fi,pg,2.0,true);   // true = intención de impresión: sigue con la pestaña oculta
+            const tokens=await this._ocrPagina(worker,canvas,faltSet,faltSC,faltSM);
             S.ocr.paginas[key]=tokens;
           }
           this._cruzar(p.name,pg,fi,S.ocr.paginas[key],falt);
           S.ocr.hecho++;
+          // Autosave periódico (ago-2026): el `finally` guarda al terminar y al cancelar, pero un
+          // corte EN SECO —cerrar la pestaña, un F5 sin querer, quedarse sin batería— tiraba la
+          // corrida ENTERA. Un corte de 25 páginas son minutos de OCR, y la idea de esta pantalla
+          // es justamente dejarla trabajando e irse a otra cosa. Cada 10 páginas cuesta
+          // milisegundos: lo caro son las LECTURAS, que es exactamente lo que queda en firme.
+          if(S.ocr.hecho%10===0) autosave();
           const bar=$('ocrBar'); if(bar) bar.style.width=Math.round(100*S.ocr.hecho/S.ocr.total)+'%';
           const est=$('ocrEstado'); if(est) est.textContent=S.ocr.hecho+'/'+S.ocr.total+' páginas · '+p.name+' p.'+pg;
         }
@@ -1984,7 +2119,7 @@ const Paso5={
       autosave(); render();
     }
   },
-  async _ocrPagina(worker,canvas,faltSet,faltSC){
+  async _ocrPagina(worker,canvas,faltSet,faltSC,faltSM){
     const tokens=new Set();
     const W=canvas.width,H=canvas.height;
     // Pasada A (roja): mitad derecha de la página, en 5 bandas de un tercio de alto que se
@@ -1993,25 +2128,42 @@ const Paso5={
     // franja de la página aparece entera en alguna banda.
     await worker.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'11'});
     const h=Math.ceil(H/3);
-    for(let t=0;t<5;t++){
-      const y0=Math.min(H-h,Math.floor(t*H/6));
+    const bandas=[];
+    for(let t=0;t<5;t++) bandas.push(Math.min(H-h,Math.floor(t*H/6)));
+    for(const y0 of bandas){
       const reg=this._recorteRojo(canvas,Math.floor(W/2),y0,W-Math.floor(W/2),h);
       if(!reg) continue;   // sin tinta roja en la banda
       try{
         const r=await worker.recognize(reg);
-        for(const m of (r.data.text.match(/\d{3,6}/g)||[])) tokens.add(m);
+        for(const m of tokensNumericos(r.data.text)) tokens.add(m);
       }catch(_){}
     }
-    // ¿alguna coincidencia exacta ya?
-    let exacto=false;
-    for(const tk of tokens){ if(faltSet.has(tk)||faltSC.has(sinCeros(tk))||faltSet.has(sinCeros(tk))){ exacto=true; break; } }
-    if(!exacto){
-      // Pasada B (gris, respaldo y formato AVENSA): página completa.
+    const hay=()=>{ for(const tk of tokens){ if(faltSet.has(tk)||faltSC.has(sinCeros(tk))||faltSet.has(sinCeros(tk))||(faltSM&&faltSM.has(sinMiles(tk)))) return true; } return false; };
+    // Pasada C (tiquete de báscula, formato nuevo de PUTANA — ago-2026): la pasada A no puede
+    // con él (no hay tinta roja que aislar y el número no es grande ni está arriba a la derecha:
+    // es un campo de texto más, `COPIA DE TIQUETE NUMERO:8.650`). Se lee la hoja COMPLETA como
+    // TEXTO —sin lista blanca de dígitos, que aquí estorba: hace falta leer el rótulo— sobre un
+    // binarizado adaptativo, porque estos partes llegan fotografiados con sombra de la mano.
+    // El número sale ANCLADO a su rótulo, que es lo único que lo distingue de los otros ocho
+    // números de la hoja (NIT, teléfono, los tres pesos, placa, PK, volumen).
+    if(!hay()){
+      await worker.setParameters({tessedit_char_whitelist:'',tessedit_pageseg_mode:'6'});
+      try{
+        const r=await worker.recognize(this._aBinario(canvas,2000));
+        const tk=tokensTiquete(r.data.text);
+        for(const m of tk) tokens.add(m);
+        // Con el rótulo localizado no hace falta la pasada B: sería cambiar UN número seguro por
+        // los ocho de la hoja, varios a un dígito de una remisión de cuatro cifras.
+        if(tk.length) return Array.from(tokens);
+      }catch(_){}
+    }
+    if(!hay()){
+      // Pasada B (gris, respaldo y formato AVENSA): página completa, solo dígitos.
       await worker.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'3'});
       const gris=this._aGris(canvas,1400);
       try{
         const r=await worker.recognize(gris);
-        for(const m of (r.data.text.match(/\d{3,6}/g)||[])) tokens.add(m);
+        for(const m of tokensNumericos(r.data.text)) tokens.add(m);
       }catch(_){}
     }
     return Array.from(tokens);
@@ -2046,6 +2198,28 @@ const Paso5={
     uctx.drawImage(out,0,0,up.width,up.height);
     return up;
   },
+  // Página completa binarizada para la pasada C. Se ESCALA hasta `minW` antes de binarizar: el
+  // tiquete es matricial de cuerpo pequeño y una foto de móvil deja el rótulo en ~12 px de alto,
+  // por debajo de lo que tesseract lee con soltura; el `_aGris` de la pasada B, que REDUCE a
+  // 1400, lo dejaría aún más chico. Luego media local (`binarizaAdaptativa`), que es lo que
+  // salva la mitad de la hoja que queda en sombra al fotografiarla en la mano.
+  _aBinario(canvas,minW){
+    const sc=Math.max(1,Math.min(3,(minW||2000)/canvas.width));
+    const esc=document.createElement('canvas');
+    esc.width=Math.round(canvas.width*sc); esc.height=Math.round(canvas.height*sc);
+    esc.getContext('2d').drawImage(canvas,0,0,esc.width,esc.height);
+    const w=esc.width,h=esc.height;
+    const ectx=esc.getContext('2d');
+    const img=ectx.getImageData(0,0,w,h);
+    const mask=binarizaAdaptativa(img.data,w,h);
+    const d=img.data;
+    for(let p=0;p<w*h;p++){
+      const v=mask[p]?0:255, i=p*4;
+      d[i]=v; d[i+1]=v; d[i+2]=v; d[i+3]=255;
+    }
+    ectx.putImageData(img,0,0);
+    return esc;
+  },
   _aGris(canvas,maxW){
     const sc=Math.min(1,maxW/canvas.width);
     const out=document.createElement('canvas'); out.width=Math.round(canvas.width*sc); out.height=Math.round(canvas.height*sc);
@@ -2059,7 +2233,7 @@ const Paso5={
       for(const rc of falt){
         if(!ambitoCompatible(amb,rc.ambito)) continue;
         let nivel=null;
-        if(tk===rc.remision||sinCeros(tk)===rc.remSC) nivel='verde';
+        if(tk===rc.remision||sinCeros(tk)===rc.remSC||sinMiles(tk)===sinMiles(rc.remision)) nivel='verde';
         else if(dist1(tk,rc.remision)<=1) nivel='naranja';
         if(!nivel) continue;
         const key=fileName+'#'+pg;
@@ -2998,6 +3172,7 @@ if(typeof module!=='undefined'&&module.exports){
     obsReclamo,filasActa,resumenCorte,cmpRemision,faltantes,pendientesOrdenadas,
     ambitoPdfDe,ambitoPdfPorNombre,ambitoCompatible,etiquetaAmbito,sugerirAmbitoPdf,clasificarPaginas,
     rojezPx,umbralRojo,
+    oscuridadPx,binarizaAdaptativa,numeroRemision,sinMiles,tokensTiquete,tokensNumericos,
     pkDeTexto,ccCatalogo,propuestaPendiente,valoresActaPendiente,pendientesConComprobante,filasActaPendientes,CC_AREA_AJENA,
     pkMetros,kmTotalesPendiente,unidadDominante,reglaMaterialPendiente,ambitoPendiente,materialBasePendiente,numProforma,
     derivadosProforma,completarDesdeProforma,reclamosCompletados,huecosSinDato,reclamosConHuecos,CAMPOS_COMPLETABLES,LBL_CAMPO,
