@@ -304,7 +304,8 @@ function getContratista(id){ return (S.config.contratistas||[]).find(c=>c.id===i
 // una corrección del OCR no se nota hasta borrar la sesión. Subirla invalida solo las lecturas
 // (las decisiones humanas —páginas descartadas, lecturas corregidas, revisadas— se conservan).
 // v2 (ago-2026): umbral rojo adaptativo + 5 bandas solapadas.
-const OCR_V=2;
+// v3 (ago-2026): pasada A2 para los partes SIN letra roja (número aislado por tamaño, no por color).
+const OCR_V=3;
 
 const S={
   config:null,
@@ -1526,6 +1527,100 @@ function umbralRojo(d,n){
   for(let v=0;v<256;v++){ acum+=hist[v]; if(acum>=corte){ pico=v; break; } }
   return {pico, T:Math.max(8,Math.round(pico*0.45)), hayTinta:pico>=10};
 }
+/* ---- Tinta GRIS: el mismo número, sin el color que lo aislaba (ago-2026) ----
+   Los partes nuevos de PUTANA llegan con OTRA presentación: el número de recibo ya no va en
+   ROJO, sale impreso en negro/gris como el resto del formulario (y hay escaneos en los que
+   TODA la hoja sale gris). Para `umbralRojo` eso es una franja SIN tinta: `hayTinta` da falso
+   en las cinco bandas y la pasada A no llama al OCR ni una vez — la página cae en la pasada B
+   (hoja entera en gris, psm 3), que es el respaldo, no el lector bueno: lee todos los números
+   de la hoja (fecha, cantidad, placa, PK, el teléfono del membrete) y de ahí salen candidatos
+   naranja de un dígito que no son nada.
+
+   Sin color hay que aislar el número por otra vía, y la que queda es la que el propio README
+   ya decía del formato: está impreso **grande**. Así que:
+     1. `umbralOscuro` — binarizado adaptativo por LUMINANCIA. El papel es la moda de la banda
+        (percentil 50) y la tinta el percentil 99,5; el corte va al 55% del contraste entre los
+        dos. Un umbral fijo no sirve por lo mismo que no servía en rojo: un escaneo lavado deja
+        el papel en 60 y la tinta en 100, y un corte pensado para papel blanco no marca nada.
+        Portero `hayTinta`: contraste < 25 = banda en blanco (o escaneo sin remedio), se descarta.
+     2. `componentes` + `glifosGrandes` — se etiquetan las manchas de tinta (8-vecinos) y se
+        conservan SOLO las de altura comparable a la mayor. Eso deja los dígitos del folio y tira
+        el texto pequeño del formulario, los marcos y las rayas. Es el sustituto exacto del
+        filtro de color: antes "lo más rojo de la banda", ahora "lo más grande".
+   Puras (reciben el RGBA / la máscara) para poder verificarlas sin navegador. */
+function oscuridadPx(d,i){ const l=(d[i]*299+d[i+1]*587+d[i+2]*114)/1000; return l>=255?0:Math.round(255-l); }
+function umbralOscuro(d,n){
+  const hist=new Uint32Array(256);
+  for(let i=0;i<d.length;i+=4) hist[oscuridadPx(d,i)]++;
+  const pct=f=>{ let a=0; const c=n*f; for(let v=0;v<256;v++){ a+=hist[v]; if(a>=c) return v; } return 255; };
+  const papel=pct(0.5), pico=pct(0.995), contraste=pico-papel;
+  return {papel,pico,contraste,T:Math.max(papel+8,Math.round(papel+contraste*0.55)),hayTinta:contraste>=25};
+}
+// Manchas de tinta de una máscara binaria (1 = tinta), 8-vecinos, pila explícita (una hoja
+// escaneada tiene decenas de miles de píxeles conectados: con recursión se desborda).
+function componentes(mask,w,h){
+  const n=w*h, lab=new Int32Array(n), pila=new Int32Array(n), comps=[];
+  let id=0;
+  for(let p=0;p<n;p++){
+    if(!mask[p]||lab[p]) continue;
+    id++; let sp=0; pila[sp++]=p; lab[p]=id;
+    let x0=p%w,x1=x0,y0=(p/w)|0,y1=y0,px=0;
+    while(sp){
+      const q=pila[--sp]; px++;
+      const qx=q%w, qy=(q/w)|0;
+      if(qx<x0)x0=qx; if(qx>x1)x1=qx; if(qy<y0)y0=qy; if(qy>y1)y1=qy;
+      for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+        if(!dx&&!dy) continue;
+        const nx=qx+dx, ny=qy+dy;
+        if(nx<0||ny<0||nx>=w||ny>=h) continue;
+        const r=ny*w+nx;
+        if(mask[r]&&!lab[r]){ lab[r]=id; pila[sp++]=r; }
+      }
+    }
+    comps.push({id,x0,x1,y0,y1,px,w:x1-x0+1,h:y1-y0+1});
+  }
+  return {lab,comps};
+}
+/* Se queda con los glifos del FOLIO. Descarta primero lo que no puede ser un dígito impreso: lo
+   más bajo que el mínimo, lo que ocupa más de la mitad del alto de la banda (marcos, sellos),
+   lo muy ancho (rayas, cajas, palabras pegadas) y lo demasiado hueco (bordes finos).
+
+   El criterio NO es "lo más alto de la banda": un borrón del escaneo es más alto que el número y
+   se lo llevaría todo. Lo que distingue a un folio es que son VARIOS dígitos de la MISMA altura,
+   así que se busca el GRUPO de altura semejante (±30%) más alto que tenga al menos `minGrupo`
+   miembros — un borrón está solo y no forma grupo. `minAltoRel` es el suelo del grupo elegido,
+   en proporción al alto de la banda: por debajo de eso no es el folio sino el cuerpo de texto del
+   formulario, y la banda se descarta (cae a la pasada B, como antes). **Es el número a calibrar
+   si el formato cambia de nuevo:** sube si entra basura, baja si el folio nuevo viene chico. */
+function glifosGrandes(comps,w,h,opts){
+  const o=Object.assign({minAlto:9,frac:0.7,minGrupo:2,minAltoRel:0.03},opts||{});
+  const cand=comps.filter(c=> c.h>=o.minAlto && c.h<=h*0.5 && c.w<=w*0.5 && c.w<=c.h*3 && c.px>=c.h*2);
+  if(!cand.length) return [];
+  const porAlto=cand.slice().sort((a,b)=>b.h-a.h);
+  for(const semilla of porAlto){
+    if(semilla.h<h*o.minAltoRel) break;            // de aquí abajo ya es el texto del formulario
+    const grupo=cand.filter(c=>c.h>=semilla.h*o.frac&&c.h<=semilla.h/o.frac);
+    if(grupo.length>=o.minGrupo) return grupo.sort((a,b)=>a.x0-b.x0);
+  }
+  return [];
+}
+/* Cadena completa de la pasada A2 sobre el RGBA de una banda → máscara con SOLO los glifos
+   grandes. Devuelve también el diagnóstico para poder verificar cada eslabón por separado. */
+function mascaraOscura(d,w,h,opts){
+  const n=w*h, u=umbralOscuro(d,n);
+  if(!u.hayTinta) return Object.assign({},u,{mask:null,px:0,glifos:[],motivo:'sin contraste'});
+  const bruta=new Uint8Array(n); let brutos=0;
+  for(let p=0;p<n;p++) if(oscuridadPx(d,p*4)>=u.T){ bruta[p]=1; brutos++; }
+  if(brutos<40) return Object.assign({},u,{mask:null,px:0,glifos:[],motivo:'sin tinta suficiente'});
+  const {lab,comps}=componentes(bruta,w,h);
+  const glifos=glifosGrandes(comps,w,h,opts);
+  if(!glifos.length) return Object.assign({},u,{mask:null,px:0,glifos,motivo:'sin número grande'});
+  const ids=new Set(glifos.map(c=>c.id));
+  const mask=new Uint8Array(n); let px=0;
+  for(let p=0;p<n;p++) if(bruta[p]&&ids.has(lab[p])){ mask[p]=1; px++; }
+  return Object.assign({},u,{mask,px,glifos,motivo:null});
+}
+
 function sugerirAmbitoPdf(nombre){
   const c=S.corte?getContratista(S.corte.contratistaId):null;
   const r=c?resolverAmbitoHoja(nombre,c):null;
@@ -1624,7 +1719,8 @@ function vistaPaso5(){
     </div>
     <div class="progress-wrap" style="margin-top:8px"><div class="progress-bar" id="ocrBar" style="width:${S.ocr.total?Math.round(100*S.ocr.hecho/S.ocr.total):0}%"></div></div>
     <div class="note" style="margin-top:6px">Pasada A: franjas rojas (número impreso arriba-derecha, 1–3 partes por página).
-    Pasada B (respaldo / AVENSA): página completa en gris. Coincidencia exacta = <span class="badge verde">verde</span>,
+    Pasada A2: las mismas franjas cuando el parte <b>no trae letra roja</b> (presentación nueva o escaneo en gris) — ahí el
+    número se aísla por tamaño. Pasada B (respaldo / AVENSA): página completa en gris. Coincidencia exacta = <span class="badge verde">verde</span>,
     un dígito de diferencia = <span class="badge naranja">naranja</span>. Las páginas ya procesadas quedan en caché y se
     re-cruzan solas si cambian las faltantes; vuelve a pulsar “Buscar” solo si agregaste PDFs nuevos.</div>`}
   </div>
@@ -1993,14 +2089,34 @@ const Paso5={
     // franja de la página aparece entera en alguna banda.
     await worker.setParameters({tessedit_char_whitelist:'0123456789',tessedit_pageseg_mode:'11'});
     const h=Math.ceil(H/3);
-    for(let t=0;t<5;t++){
-      const y0=Math.min(H-h,Math.floor(t*H/6));
+    const bandas=[];
+    for(let t=0;t<5;t++) bandas.push(Math.min(H-h,Math.floor(t*H/6)));
+    let conTintaRoja=0;
+    for(const y0 of bandas){
       const reg=this._recorteRojo(canvas,Math.floor(W/2),y0,W-Math.floor(W/2),h);
       if(!reg) continue;   // sin tinta roja en la banda
+      conTintaRoja++;
       try{
         const r=await worker.recognize(reg);
         for(const m of (r.data.text.match(/\d{3,6}/g)||[])) tokens.add(m);
       }catch(_){}
+    }
+    // Pasada A2 (gris): los partes del formato nuevo traen el número impreso en NEGRO, y hay
+    // escaneos que apagan del todo el color. Ahí la pasada A no llega a llamar al OCR (ninguna
+    // banda tiene tinta roja) y la página caía directo en la pasada B, que lee la hoja entera y
+    // devuelve todos los números que hay en ella. Mismas bandas, mismo recorte: lo que cambia es
+    // que el número se aísla por TAMAÑO en vez de por color (ver `mascaraOscura`). Corre SOLO
+    // cuando la pasada A no dejó nada, así que un PDF del formato viejo cuesta exactamente igual
+    // que antes, y un PDF mixto usa en cada página la pasada que corresponde.
+    if(!conTintaRoja||!tokens.size){
+      for(const y0 of bandas){
+        const reg=this._recorteOscuro(canvas,Math.floor(W/2),y0,W-Math.floor(W/2),h);
+        if(!reg) continue;   // banda en blanco o sin número grande
+        try{
+          const r=await worker.recognize(reg);
+          for(const m of (r.data.text.match(/\d{3,6}/g)||[])) tokens.add(m);
+        }catch(_){}
+      }
     }
     // ¿alguna coincidencia exacta ya?
     let exacto=false;
@@ -2042,6 +2158,27 @@ const Paso5={
     if(rojos<40) return null;
     octx.putImageData(oimg,0,0);
     const up=document.createElement('canvas'); up.width=w*4; up.height=h*4;
+    const uctx=up.getContext('2d'); uctx.imageSmoothingEnabled=false;
+    uctx.drawImage(out,0,0,up.width,up.height);
+    return up;
+  },
+  // Recorte de la pasada A2 (sin color): binariza la banda por luminancia adaptativa y deja SOLO
+  // los glifos grandes — el folio. Sale en blanco y negro y con upscale 2×, que es lo que come
+  // bien tesseract (el 4× de la pasada roja está para reconstruir el trazo desgarrado que deja el
+  // filtro de color; aquí el trazo llega entero y cuadruplicar solo costaría tiempo).
+  _recorteOscuro(canvas,x,y,w,h){
+    const ctx=canvas.getContext('2d');
+    const img=ctx.getImageData(x,y,w,h);
+    const m=mascaraOscura(img.data,w,h);
+    if(!m.mask) return null;
+    const out=document.createElement('canvas'); out.width=w; out.height=h;
+    const octx=out.getContext('2d'); const oimg=octx.createImageData(w,h); const od=oimg.data;
+    for(let p=0;p<w*h;p++){
+      const v=m.mask[p]?0:255; const i=p*4;
+      od[i]=v; od[i+1]=v; od[i+2]=v; od[i+3]=255;
+    }
+    octx.putImageData(oimg,0,0);
+    const up=document.createElement('canvas'); up.width=w*2; up.height=h*2;
     const uctx=up.getContext('2d'); uctx.imageSmoothingEnabled=false;
     uctx.drawImage(out,0,0,up.width,up.height);
     return up;
@@ -2998,6 +3135,7 @@ if(typeof module!=='undefined'&&module.exports){
     obsReclamo,filasActa,resumenCorte,cmpRemision,faltantes,pendientesOrdenadas,
     ambitoPdfDe,ambitoPdfPorNombre,ambitoCompatible,etiquetaAmbito,sugerirAmbitoPdf,clasificarPaginas,
     rojezPx,umbralRojo,
+    oscuridadPx,umbralOscuro,componentes,glifosGrandes,mascaraOscura,
     pkDeTexto,ccCatalogo,propuestaPendiente,valoresActaPendiente,pendientesConComprobante,filasActaPendientes,CC_AREA_AJENA,
     pkMetros,kmTotalesPendiente,unidadDominante,reglaMaterialPendiente,ambitoPendiente,materialBasePendiente,numProforma,
     derivadosProforma,completarDesdeProforma,reclamosCompletados,huecosSinDato,reclamosConHuecos,CAMPOS_COMPLETABLES,LBL_CAMPO,

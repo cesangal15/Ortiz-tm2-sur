@@ -30,7 +30,7 @@ navegador las descarga; después quedan en caché del navegador.
 | 2 · Abrir corte | Eliges contratista + quincena | Rechaza empresas vetadas (ORTIZ, VOLKETSA, Betulia). Un contratista a la vez. |
 | 3 · Cargar proforma | 1..N `.xlsx` del contratista | Auto-detecta encabezado (títulos arriba, alias de columna), enruta hojas por patrones (PUTANA→GRANULARES, INTERNO→interno, Hoja1→ignorar…), explota celdas multi-remisión, detecta pares sospechosos "¿lista o rango?" y concilia al instante. Hoja no reconocida → tú la señalas (y guardas la regla). El botón "cambiar" de cada hoja reasigna la base **o la saca del corte con IGNORAR** (reversible mientras no recargues la página). |
 | 4 · Conciliación | Revisas el tablero por estados | Llave cerrada: remisión exacta (texto, ceros incluidos) + empresa ∈ alias + fecha ≥ mínima. 0 candidatos → NO_ENCONTRADA (con sugerencias: "existe con otra empresa" y "existe en la otra base"); 1 → clasificador (solo UF3 excluye; áreas PLANTA/PUENTE/TM1/ODT… van al acta con observación); >1 → eliges tú. Si una hoja entera parece estar en la base equivocada, sale un aviso con un botón para cambiarla de ámbito y re-conciliar. |
-| 5 · Investigación PDF | Cargas los PDFs de partes, marcas el **ámbito** de cada uno y corres el OCR | Cada PDF lleva un ámbito **"Partes de…"** (Granulares / Terraplén / Mezclado; sugerido por el nombre del archivo con las mismas reglas de hojas del contratista, marca *auto* hasta que lo confirmes): sus páginas se cruzan ÚNICAMENTE con las faltantes de esa base — un número parecido de la otra base ya no genera candidatos falsos ni vuelve la página "candidata" en la cobertura; "Mezclado (ambas)" busca contra todas (comportamiento anterior, y el default cuando el nombre no da señal). Cambiar el ámbito poda los candidatos incompatibles y re-cruza al instante (los comprobantes ya confirmados no se tocan). En la revisión guiada las faltantes de la otra base quedan plegadas ("N faltantes de la otra base ocultas"), a un clic por si el ámbito estaba mal. Búsqueda dirigida SOLO de las no-encontradas (listadas de menor a mayor por número de remisión, en la lista lateral y en los botones del modal de revisión): pasada roja por franjas (número impreso arriba-derecha, 1–3 partes/página) + pasada gris de respaldo (AVENSA). Verde = exacto, naranja = 1 dígito. NUNCA auto-confirma: tú ves la página y decides (Confirmar / Es ASFALTO / No es). Además, el panel "Cobertura del OCR por página" muestra la vista inversa: páginas SIN lectura o cuyo número no coincide con nada reclamado. El botón **"▶ Revisar contra las faltantes"** las recorre una por una: ves el parte, la lista de faltantes sin confirmar como botones (≈ marca las que están a 1 dígito de lo leído) y con UN clic confirmas el comprobante; o pulsas **"✕ No es ninguna faltante"** y la página se descarta de la lista (es reproceso: remisión que ya está en la base). Las descartadas se pueden ver y restaurar con ↩ (y corregir su lectura las re-abre). El ✏️ para corregir la lectura del OCR sigue disponible (si el número corregido es una faltante pasa a candidato; si es de una remisión ya conciliada, la página sale de la revisión). Por revisar y descartadas salen en el resumen del Paso 7. Navegador manual de miniaturas siempre disponible. **Un renglón por PÁGINA (ago-2026):** si el OCR leía en la misma hoja el número exacto y otro a un dígito, la página salía dos veces; ahora se fusionan en un solo candidato (mejor nivel, con las lecturas de la página a la vista) y el contador verde/naranja de la lista de faltantes cuadra con lo que se pinta. |
+| 5 · Investigación PDF | Cargas los PDFs de partes, marcas el **ámbito** de cada uno y corres el OCR | Cada PDF lleva un ámbito **"Partes de…"** (Granulares / Terraplén / Mezclado; sugerido por el nombre del archivo con las mismas reglas de hojas del contratista, marca *auto* hasta que lo confirmes): sus páginas se cruzan ÚNICAMENTE con las faltantes de esa base — un número parecido de la otra base ya no genera candidatos falsos ni vuelve la página "candidata" en la cobertura; "Mezclado (ambas)" busca contra todas (comportamiento anterior, y el default cuando el nombre no da señal). Cambiar el ámbito poda los candidatos incompatibles y re-cruza al instante (los comprobantes ya confirmados no se tocan). En la revisión guiada las faltantes de la otra base quedan plegadas ("N faltantes de la otra base ocultas"), a un clic por si el ámbito estaba mal. Búsqueda dirigida SOLO de las no-encontradas (listadas de menor a mayor por número de remisión, en la lista lateral y en los botones del modal de revisión): pasada roja por franjas (número impreso arriba-derecha, 1–3 partes/página), **pasada A2 por franjas para los partes sin letra roja** (presentación nueva de PUTANA / escaneo en gris: el número se aísla por TAMAÑO, ver abajo) y pasada gris de respaldo a página completa (AVENSA). Verde = exacto, naranja = 1 dígito. NUNCA auto-confirma: tú ves la página y decides (Confirmar / Es ASFALTO / No es). Además, el panel "Cobertura del OCR por página" muestra la vista inversa: páginas SIN lectura o cuyo número no coincide con nada reclamado. El botón **"▶ Revisar contra las faltantes"** las recorre una por una: ves el parte, la lista de faltantes sin confirmar como botones (≈ marca las que están a 1 dígito de lo leído) y con UN clic confirmas el comprobante; o pulsas **"✕ No es ninguna faltante"** y la página se descarta de la lista (es reproceso: remisión que ya está en la base). Las descartadas se pueden ver y restaurar con ↩ (y corregir su lectura las re-abre). El ✏️ para corregir la lectura del OCR sigue disponible (si el número corregido es una faltante pasa a candidato; si es de una remisión ya conciliada, la página sale de la revisión). Por revisar y descartadas salen en el resumen del Paso 7. Navegador manual de miniaturas siempre disponible. **Un renglón por PÁGINA (ago-2026):** si el OCR leía en la misma hoja el número exacto y otro a un dígito, la página salía dos veces; ahora se fusionan en un solo candidato (mejor nivel, con las lecturas de la página a la vista) y el contador verde/naranja de la lista de faltantes cuadra con lo que se pinta. |
 | 6 · Resolución manual | Decides las dudosas | Cola de revisión manual, múltiples, duplicadas y alertas de internos >3 km. Cada transición queda auditada (estado anterior/nuevo, fecha-hora, nota). |
 | 7 · Exportes | Copias/descargas | Bloque acta (TSV al portapapeles + .xlsx), **bloque acta de PENDIENTES** (mismo modelo A..S con lo que sabe la proforma y CC propuesto — ver abajo), Excel digitadora y PDF de pendientes — ambos en el MISMO orden: fecha de la proforma de menor a mayor y, dentro del día, remisión de menor a mayor (páginas deduplicadas), para que la digitadora trabaje renglón a página — y resumen del corte. |
 
@@ -286,6 +286,59 @@ criterio no cambia: **el OCR propone, tú confirmas viendo la página.**
 Si un escaneo llega tan lavado que ni así lo lee (en ese PDF quedó 1 página),
 sigue estando la revisión guiada "▶ Revisar las N contra las faltantes".
 
+### Partes SIN letra roja — pasada A2 (ago-2026)
+
+Los granulares de PUTANA empiezan a llegar con **otra presentación**: el mismo
+parte granular de siempre, pero **el número de recibo ya no va en rojo** — sale
+impreso en negro como el resto del formulario (y hay escaneos que apagan del
+todo el color, con lo que la hoja entera queda gris).
+
+Para la pasada A eso es una franja **sin tinta**: mide "rojez" = `r − max(g,b)`,
+que en negro o gris es ≈ 0, así que `hayTinta` daba falso en las cinco bandas y
+**el OCR no se llamaba ni una vez**. La página no quedaba ciega —caía en la
+pasada B— pero la pasada B es el *respaldo*, no el lector bueno: lee la hoja
+ENTERA en psm 3 y devuelve **todos** los números que hay en ella (fecha,
+cantidad, placa, PK, el teléfono del membrete), de donde salen candidatos
+naranja a un dígito que no son nada y el panel de cobertura deja de decir la
+verdad.
+
+Sin color hay que aislar el número por otra vía, y la que queda es la que el
+formato ya tenía: **está impreso grande**. La pasada A2 usa las **mismas cinco
+bandas** de la pasada A y cambia solo el filtro:
+
+1. **Binarizado adaptativo por luminancia** (`umbralOscuro`). El papel es el
+   percentil 50 de la banda y la tinta el 99,5; el corte va al **55% del
+   contraste** entre los dos. Fijo no sirve por lo mismo que no servía en rojo:
+   un escaneo lavado deja el papel en 200 y la tinta en 150, y un umbral pensado
+   para papel blanco no marca nada. Portero: contraste < 25 = banda en blanco.
+2. **Aislado por tamaño** (`componentes` + `glifosGrandes`). Se etiquetan las
+   manchas de tinta (8-vecinos) y se conserva el **grupo de altura semejante
+   (±30%) más alto que tenga al menos 2 miembros**. No es "lo más alto de la
+   banda": un borrón del escaneo es más alto que el número y se lo llevaría
+   todo — lo que distingue a un folio es que son **varios dígitos de la misma
+   altura**, y un borrón está solo. Debajo del **3% del alto de la banda** ya no
+   es el folio sino el cuerpo de texto del formulario, y la banda se descarta
+   (cae a la pasada B, como antes). Marcos, rayas y cajas se van por ancho.
+
+**Corre solo cuando la pasada A no dejó nada** (ninguna banda con tinta roja, o
+cero lecturas), así que un PDF del formato viejo cuesta exactamente lo mismo que
+antes y un PDF **mixto** usa en cada página la pasada que le toca. Sale a la
+mitad del upscale de la roja (2× en vez de 4×): el 4× está para reconstruir el
+trazo desgarrado que deja el filtro de color, y aquí el trazo llega entero.
+
+`OCR_V` sube a **3**, así que la primera corrida tras el cambio **relee** las
+páginas ya cacheadas (avisa en pantalla). Las decisiones humanas —páginas
+descartadas, lecturas corregidas, revisadas— se conservan.
+
+**Números a calibrar si el formato vuelve a cambiar** (`glifosGrandes`, en
+`conciliador.js`): `minAltoRel` (suelo del folio, 3% del alto de la banda; sube
+si entra basura, baja si el folio nuevo viene chico), `frac` (tolerancia de
+altura del grupo, ±30%) y `minGrupo` (2 dígitos). La geometría —mitad derecha de
+la página, 5 bandas solapadas— **no cambió**: si en la presentación nueva el
+número no está arriba a la derecha, es eso lo que hay que mover.
+
+Verificación: `node backend/pruebas/verificar_conciliador_ocr_gris.js`.
+
 ## Limitaciones V1 (fuera de alcance)
 
 - No genera el acta completa (tarifas, totales, firmas): solo el bloque de pegado.
@@ -319,4 +372,5 @@ node backend/pruebas/verificar_conciliador_pendientes_area.js       # áreas del
 node backend/pruebas/verificar_conciliador_paso5_candidatos.js      # un renglón por página
 node backend/pruebas/verificar_conciliador_ignorar_hoja.js          # IGNORAR una hoja del corte
 node backend/pruebas/verificar_conciliador_ocr_umbral_rojo.js       # umbral rojo adaptativo
+node backend/pruebas/verificar_conciliador_ocr_gris.js              # partes SIN letra roja (pasada A2)
 ```
