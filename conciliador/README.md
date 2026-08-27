@@ -238,10 +238,33 @@ Notas del seed de reglas de hojas (además de las 4 del ejemplo de la spec):
 - Nombre de mes (`JUNIO 2026` de ASOTRASAAT) → **AMBAS**: busca en las dos bases;
   si aparece en ambas cae a `MULTIPLE_EN_BASE` (nunca asume mal).
 
+### ¿Puedo dejarlo leyendo e irme a hacer otra cosa?
+
+Sí. Mientras el OCR corre:
+
+- **Cambiar de paso dentro de la herramienta** (irte al 3 a cargar otra proforma,
+  al 4 a revisar el tablero…) **no lo detiene**: lo único que lo para es el botón
+  **✕ Cancelar**, que solo existe en la vista del Paso 5. Al volver al Paso 5 se
+  re-cruzan solas todas las páginas ya leídas contra las faltantes que haya en
+  ese momento (`recruzar`), así que si cargaste una proforma nueva mientras
+  tanto, **no hay que repetir el OCR**.
+- **Minimizar la ventana o irte a otras pestañas del navegador tampoco lo
+  detiene**: la lectura no depende de que la página se esté pintando (no hay
+  `requestAnimationFrame`, que es lo que un navegador congela en una pestaña
+  oculta) y tesseract corre en un *worker* aparte. Eso sí, **puede ir más
+  lento**: los navegadores frenan las pestañas que no estás mirando.
+- **Lo que sí lo mata:** cerrar la pestaña, recargar (F5) o navegar fuera.
+
+Por eso el OCR hace **autosave cada 10 páginas** (corrección ago-2026). Antes
+solo guardaba al terminar o al cancelar, así que un corte en seco —cerrar la
+pestaña, un F5 sin querer— tiraba la corrida entera; con un PDF de 25 páginas
+eso son minutos de lectura perdidos. Ahora, al volver a abrir y pulsar
+"Buscar", las páginas ya leídas no se repiten.
+
 ## Sesión
 
 - **Autosave** en localStorage en cada cambio relevante (si supera el límite,
-  avisa y pide export).
+  avisa y pide export) y **cada 10 páginas mientras corre el OCR**.
 - **Exportar/Importar sesión (JSON):** todo el estado del corte (reclamaciones,
   historial, asignaciones PDF por nombre de archivo + página, caché de OCR,
   páginas descartadas a mano en la revisión, ámbito elegido de cada PDF — al

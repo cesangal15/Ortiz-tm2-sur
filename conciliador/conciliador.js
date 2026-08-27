@@ -2081,6 +2081,12 @@ const Paso5={
           }
           this._cruzar(p.name,pg,fi,S.ocr.paginas[key],falt);
           S.ocr.hecho++;
+          // Autosave periódico (ago-2026): el `finally` guarda al terminar y al cancelar, pero un
+          // corte EN SECO —cerrar la pestaña, un F5 sin querer, quedarse sin batería— tiraba la
+          // corrida ENTERA. Un corte de 25 páginas son minutos de OCR, y la idea de esta pantalla
+          // es justamente dejarla trabajando e irse a otra cosa. Cada 10 páginas cuesta
+          // milisegundos: lo caro son las LECTURAS, que es exactamente lo que queda en firme.
+          if(S.ocr.hecho%10===0) autosave();
           const bar=$('ocrBar'); if(bar) bar.style.width=Math.round(100*S.ocr.hecho/S.ocr.total)+'%';
           const est=$('ocrEstado'); if(est) est.textContent=S.ocr.hecho+'/'+S.ocr.total+' páginas · '+p.name+' p.'+pg;
         }
