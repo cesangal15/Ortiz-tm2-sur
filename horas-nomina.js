@@ -16,6 +16,11 @@
  * lógica afecta al Parte que se importa a Navision y a la pantalla de reclamos a la vez — se decide
  * aparte (registro de decisiones) y se aplica a las dos por construcción.
  *
+ * D142 añade `clasificarExtraAdmin`: el canal "solo extras" del admin (D73) no guarda horario sino un
+ * total de horas y un tipo, así que tiene su propio reparto a columnas — que hasta ahora vivía suelto
+ * dentro del generador del Parte. Mismo motivo, misma casa: ahora el Parte y la revisión de horas lo
+ * llaman los dos.
+ *
  * D112 movió el código SIN CAMBIAR UNA LÍNEA de lógica; la no-regresión se verificó celda a celda con
  * el arnés `backend/pruebas/verificar_refactor_horas.js` (el antes sale de git, no de una
  * transcripción a mano).
@@ -113,6 +118,45 @@ function clasificarHoras(tipoJornada, entrada, salida, cfg, turnoRow){
     extra_nocturna:round2(extraNocturna), recargo_noct_ord:round2(recargoNoct), extra_domfest:0, avisoExtra, avisoDomFest:false };
 }
 
+/* ---------- Extras del ADMIN (D73) → las MISMAS columnas del Parte (D142) ----------
+ * El canal "solo extras" del admin no guarda entrada/salida sino un TOTAL de horas y un TIPO
+ * (`diurna` / `nocturna` / `domfest`), así que `clasificarHoras` no le sirve: no hay horario que
+ * repartir. El reparto a columnas vivía dentro de `buildAdminExtraRow` (el generador del Parte, en
+ * `resumen-asistencia.html`) y era la ÚNICA pieza de cálculo de nómina que seguía fuera de este
+ * archivo. D142 la trae aquí por la misma razón que D112 movió el resto: la pantalla de revisión de
+ * horas tiene que enseñar EXACTAMENTE lo que se importó a Navision, y dos copias divergen.
+ *
+ * La regla no cambia (D73 + D120/D124): día normal = SOLO la extra, sin ordinarias, en la columna de
+ * su tipo (E diurna / F nocturna) topada a `max_extras_dia`; domingo/festivo = las primeras
+ * `domfest_tope` horas a **D** (ordinarias Dom/Fest) y lo que pase, hasta `max_extras_dia`, a **H**
+ * (extras diurnas Dom/Fest) — el mismo reparto que `clasificarHoras` le hace a cualquier trabajador.
+ * Los topes salen de CONFIG con los mismos valores por defecto de siempre (2 y 7).
+ *
+ * `avisoExtra`/`avisoDomFest` marcan lo que quedó FUERA del tope: hoy `guardarExtrasAdmin` ya no deja
+ * guardar más que eso (D124), pero un registro viejo puede traerlo y es mejor verlo que perderlo.
+ * Devuelve la misma forma que `clasificarHoras`, para que quien pinta no tenga que distinguir. */
+function clasificarExtraAdmin(ex, cfg){
+  const c={ ordinarias:0, ord_domfest:0, extra_diurna:0, extra_nocturna:0, recargo_noct_ord:0,
+            extra_domfest:0, avisoExtra:false, avisoDomFest:false };
+  const h=Math.max(0, parseFloat(ex && ex.horas)||0);
+  if(!h) return c;
+  const _e=parseFloat((cfg||{}).max_extras_dia), capE=isNaN(_e)?2:_e;
+  const _d=parseFloat((cfg||{}).domfest_tope),   capD=isNaN(_d)?7:_d;
+  const tipo=String((ex && ex.tipo)||'').trim().toLowerCase();
+  if(tipo==='domfest'){
+    c.ord_domfest=round2(Math.min(h, capD));
+    c.extra_domfest=round2(Math.min(Math.max(0, h-capD), capE));
+    c.avisoDomFest = h > capD+capE+0.001;
+  } else if(tipo==='nocturna'){
+    c.extra_nocturna=round2(Math.min(h, capE));
+    c.avisoExtra = h > capE+0.001;
+  } else {                                   // 'diurna' y cualquier cosa rara: se trata como diurna
+    c.extra_diurna=round2(Math.min(h, capE));
+    c.avisoExtra = h > capE+0.001;
+  }
+  return c;
+}
+
 function tipoJornadaDeFecha(fechaStr, festivos){
   const d=fechaStr.split('-'); const dt=new Date(Number(d[0]),Number(d[1])-1,Number(d[2]));
   const dow=dt.getDay();
@@ -123,5 +167,6 @@ function tipoJornadaDeFecha(fechaStr, festivos){
 
 // Node (arnés de pruebas) — en el navegador estas funciones ya son globales por el <script>.
 if(typeof module==='object' && module.exports){
-  module.exports={ round2, horasNum, ovlp, jornadaPorDefecto, turnoRowFor, clasificarHoras, tipoJornadaDeFecha };
+  module.exports={ round2, horasNum, ovlp, jornadaPorDefecto, turnoRowFor, clasificarHoras,
+    clasificarExtraAdmin, tipoJornadaDeFecha };
 }

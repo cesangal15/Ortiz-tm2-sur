@@ -109,6 +109,18 @@
  *
  * SOLO LECTURA de punta a punta: esta pantalla no escribe nada. Las correcciones se siguen haciendo
  * desde el resumen (detalle por cuadrilla / completar faltantes).
+ *
+ * D142 — LOS DOS CASOS QUE NO ENCAJABAN EN "UNA PERSONA DE ASISTENCIA":
+ *   · **El admin.** No está en PERSONAL ni en ASISTENCIA (D73): su jornada ordinaria va por fuera del
+ *     sistema y solo registra horas EXTRA de días puntuales, en la hoja `EXTRAS_ADMIN`. Buscarse a sí
+ *     mismo en el buscador no podía funcionar — no hay fila que encontrar—, así que tiene entrada
+ *     propia (botón, no resultado de búsqueda) y su propio endpoint, `?action=persona_admin`. El
+ *     reparto a columnas del Parte lo hace `clasificarExtraAdmin` de `horas-nomina.js`, el mismo que
+ *     usa el generador del Excel: la regla de oro de arriba también aplica a su canal.
+ *   · **El personal EVENTUAL (D85).** Sí salía en el buscador y sí traía sus días —eso nunca estuvo
+ *     roto—, pero se le contaban como "días sin reporte" todos los días en que no trabajó, y a un
+ *     eventual justamente NO se le espera en el día a día (el roster, los faltantes y el seguimiento
+ *     de ausencias ya lo excluyen). Ahora esta pantalla sigue la misma regla y lo dice en la ficha.
  * ================================================================================================ */
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbymgvQX03ZqS_YzIz5l6WVesasDUMYwGOFItrggTJCdsFhcjXQvDPVz03E7mNcZQ4Nq/exec";
 
@@ -129,6 +141,16 @@ const MESES=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','
 
 let STATE = { usuario:'', rol:'', areaFiltro:'', persona:null, desde:'', hasta:'', etiqueta:'',
   data:null, cargando:false, error:'', personal:null, persError:'', q:'', _pickList:[] };
+
+/* D142 — EL ADMIN NO ES UNA PERSONA DEL ROSTER, y por eso no salía en esta pantalla.
+ * Su jornada ordinaria va por fuera del sistema (D73) y lo único que registra son sus horas EXTRA de
+ * días puntuales, en la hoja `EXTRAS_ADMIN`, aislada de PERSONAL/CUADRILLAS/ASISTENCIA. Buscarlo en el
+ * buscador no podía funcionar: no hay fila que encontrar. Se le da entonces una ENTRADA PROPIA —un
+ * botón, no un resultado de búsqueda— que consulta su hoja con el endpoint `?action=persona_admin`.
+ * Solo aparece con rol `admin`, que es también el único que puede leer ese endpoint (el guard de verdad
+ * está en el backend, sobre el rol del token firmado; esconder el botón no es la seguridad). */
+const PERSONA_ADMIN = { _admin:true, codigo:'', cedula:'', nombre:'Mis horas extra',
+  cargo:'Canal propio del administrador (D73)', cuadrilla:'', estado:'' };
 
 /* ---------- utilidades ---------- */
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
@@ -237,6 +259,13 @@ function persElegir(i){
   STATE.persona=p; STATE.q=''; STATE.data=null; STATE.error='';
   consultar();
 }
+// D142: entrada propia del admin a SUS horas (EXTRAS_ADMIN, D73) — no pasa por el buscador porque no
+// está en PERSONAL. `_pickList` no se toca: no es un resultado de búsqueda, es otro origen de datos.
+function persElegirAdmin(){
+  STATE.persona=PERSONA_ADMIN; STATE.q=''; STATE.data=null; STATE.error='';
+  const box=document.getElementById('persResults'); if(box){ box.style.display='none'; box.innerHTML=''; }
+  consultar();
+}
 // D74b/D101: solo el admin puede cambiar de área ("ver como"). Los demás vienen acotados por el backend.
 function onAreaFiltro(v){
   STATE.areaFiltro=v; STATE.persona=null; STATE.data=null; STATE.personal=null;
@@ -276,16 +305,22 @@ async function consultar(){
     // `codigo` manda; solo si la persona no tiene código se consulta por cédula (mismo criterio que
     // keyPersona en el backend). El cerrojo de área lo aplica el BACKEND, no esta pantalla.
     const codigo=String(p.codigo||'').trim();
-    const url=`${APPS_SCRIPT_URL}?action=persona&codigo=${encodeURIComponent(codigo)}`
-      + `&cedula=${encodeURIComponent(codigo?'':String(p.cedula||'').trim())}`
-      + `&desde=${STATE.desde}&hasta=${STATE.hasta}`
-      + `&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`;
+    // D142: las horas del propio admin salen de OTRA hoja (EXTRAS_ADMIN, D73) y por eso de otro
+    // endpoint. No lleva `codigo` ni `area`: no se acota por área sino por rol, y el rol lo saca el
+    // backend del token firmado.
+    const url = p._admin
+      ? `${APPS_SCRIPT_URL}?action=persona_admin&desde=${STATE.desde}&hasta=${STATE.hasta}`
+        + `&usuario=${encodeURIComponent(STATE.usuario)}`
+      : `${APPS_SCRIPT_URL}?action=persona&codigo=${encodeURIComponent(codigo)}`
+        + `&cedula=${encodeURIComponent(codigo?'':String(p.cedula||'').trim())}`
+        + `&desde=${STATE.desde}&hasta=${STATE.hasta}`
+        + `&usuario=${encodeURIComponent(STATE.usuario)}&area=${encodeURIComponent(STATE.areaFiltro||'')}`;
     const resp=await fetch(url);
     const data=await resp.json();
     if(!data.ok) throw new Error(data.error||'persona');
     // Apps Script SIN redesplegar: doGet devuelve {ok:true, msg:'API Asistencias viva'} para una acción
     // que todavía no conoce. Se detecta por la ausencia de `filas` y se avisa con la causa real.
-    if(!data.filas) throw new Error('El Apps Script de asistencias todavía no tiene el endpoint de "persona". Redespliega CodigoAsistencias.gs (editar implementación → versión nueva, misma URL).');
+    if(!data.filas) throw new Error('El Apps Script de asistencias todavía no tiene el endpoint de "'+(p._admin?'persona_admin':'persona')+'". Redespliega CodigoAsistencias.gs (editar implementación → versión nueva, misma URL).');
     STATE.data=data;
   }catch(err){ STATE.error=err.message||String(err); }
   STATE.cargando=false; loadBar(false);
@@ -304,6 +339,11 @@ function enParte(f){ return f.presente==='No' || (f.presente==='Si' && !!String(
 // recargo sobre horas que ya están contadas en las ordinarias, no horas adicionales.
 function horasTrabajadas(cl){ return (cl.ordinarias||0)+(cl.ord_domfest||0)+(cl.extra_diurna||0)+(cl.extra_nocturna||0)+(cl.extra_domfest||0); }
 function etiquetaTipoDia(t){ return t==='domfest' ? 'Dom-Fest' : (t==='sabado' ? 'Sábado' : 'L-V'); }
+// D142: los tres tipos que guarda EXTRAS_ADMIN (D73), con el nombre que usa `mis-extras.html`.
+function etiquetaTipoExtra(t){
+  const s=String(t||'').toLowerCase();
+  return s==='nocturna' ? 'nocturna' : (s==='domfest' ? 'domingo/festivo' : 'diurna');
+}
 // Ventana activa de la persona (D72): [fecha_ingreso, fecha_retiro). El retiro es el PRIMER día NO
 // trabajado, así que los días desde el retiro no se le esperan y no cuentan como "sin reporte".
 function activaEn(per, fecha){
@@ -328,6 +368,36 @@ function calcular(d){
   const tot={ ordinarias:0, ord_domfest:0, extra_diurna:0, extra_nocturna:0, recargo_noct_ord:0, extra_domfest:0 };
   const detalle=[], porCC={}, porMotivo={}, fuera=[];
   const diasTrab={}, diasAus={}, conFila={};
+
+  /* D142 — LAS EXTRAS DEL ADMIN (D73) llevan su propia rama, corta a propósito.
+   * `EXTRAS_ADMIN` no guarda entrada/salida sino un TOTAL de horas y un TIPO, así que `clasificarHoras`
+   * no tiene nada que repartir: el reparto a columnas del Parte lo hace `clasificarExtraAdmin`, el
+   * mismo de `horas-nomina.js` que usa `buildAdminExtraRow` al generar el Excel de Navision. De ahí que
+   * los números de aquí no puedan discrepar del archivo importado, que es toda la razón de ser de esta
+   * pantalla. Lo que NO aplica y por eso no se calcula: ausencias (no se reporta ausencia en un canal
+   * de extras) ni "días sin reporte" (su jornada ordinaria va por fuera del sistema — contar como
+   * hueco cada día sin extra sería contar mal a propósito). */
+  if(d.esAdmin){
+    filas.forEach(function(ex){
+      const tipoJ=tipoJornadaDeFecha(ex.fecha, festivos);
+      const cl=clasificarExtraAdmin(ex, cfg);
+      const f={ fecha:ex.fecha, reporta:ex.reporta||'', cuadrilla:'', codigo:'', cedula:'', nombre:'', cargo:'',
+        cc:ex.cc||'', proyecto:ex.proyecto||'', hora_entrada:'', hora_salida:'', presente:'Si',
+        motivo_ausencia:'', turno:'',
+        observacion:'Extra '+etiquetaTipoExtra(ex.tipo)+' · '+fmtH(ex.horas)+' h registradas' };
+      conFila[ex.fecha]=true; diasTrab[ex.fecha]=true;
+      Object.keys(tot).forEach(k=>{ tot[k]+=(cl[k]||0); });
+      const cc=String(ex.cc||'').trim();
+      if(cc) porCC[cc]=(porCC[cc]||0)+horasTrabajadas(cl);
+      detalle.push({ f, cl, tipoJ, ausente:false, sinCC:false, enParte:true });
+    });
+    Object.keys(tot).forEach(k=>{ tot[k]=Math.round(tot[k]*100)/100; });
+    Object.keys(porCC).forEach(k=>{ porCC[k]=Math.round(porCC[k]*100)/100; });
+    detalle.sort(function(a,b){ return a.f.fecha<b.f.fecha ? -1 : (a.f.fecha>b.f.fecha ? 1 : 0); });
+    return { tot, detalle, porCC, porMotivo, fuera, sinReporte:[],
+      diasTrabajados:Object.keys(diasTrab).length, diasAusentes:0 };
+  }
+
   filas.forEach(function(f){
     const tipoJ=tipoJornadaDeFecha(f.fecha, festivos);
     const tr=turnoRowFor(f.turno, f.fecha, turnos, tipoJ);
@@ -353,7 +423,14 @@ function calcular(d){
   // normal, y esos días trabaja solo el personal disponible), así que va en su propio contador y nunca
   // se suma a las ausencias. Los domingos/festivos ni siquiera se cuentan aquí.
   const sinReporte=[];
-  diasDelRango(d.desde, d.hasta).forEach(function(fe){
+  /* D142 — al personal EVENTUAL (D85: `estado=eventual` en PERSONAL, p. ej. el encargado Javier) NO se
+   * le cuentan días sin reporte, y esto no es una excepción de esta pantalla: es la misma regla que ya
+   * aplican el roster del responsable, los faltantes del día y el seguimiento de ausencias (D94). A un
+   * eventual NO se le espera en el día a día — trabaja en ocasiones puntuales—, así que marcarle 25
+   * "días sin reporte" en un período de 26 era decir que falta algo cuando no falta nada, y enterraba
+   * los dos o tres días que sí trabajó bajo un aviso rojo que había que aprender a ignorar. */
+  const eventual = String((d.persona||{}).estado||'').toLowerCase()==='eventual';
+  if(!eventual) diasDelRango(d.desde, d.hasta).forEach(function(fe){
     if(conFila[fe]) return;
     if(!activaEn(d.persona, fe)) return;                       // aún no ingresaba / ya estaba retirada
     if(tipoJornadaDeFecha(fe, festivos)==='domfest') return;    // dom/fest sin reporte = normal
@@ -380,6 +457,17 @@ function render(){
    + '</div>';
   if(STATE.persError) h+='<div class="aviso">⚠️ No se pudo cargar el listado de personal: '+esc(STATE.persError)+'</div>';
   else if(!STATE.personal) h+='<p style="font-size:12px;color:var(--muted);margin-top:8px;">⏳ Cargando el listado de personal…</p>';
+  // D142: se dice A LA VISTA a quién alcanza el buscador. El eventual y el retirado SÍ están (y son
+  // justo a quienes se les consulta el período), pero eso no se adivina de un campo de texto vacío.
+  else h+='<p style="font-size:11px;color:var(--muted);margin-top:8px;">Incluye al personal <b>eventual</b> (D85) y a los <b>retirados</b>: son a quienes más se les revisa el período.</p>';
+  // D142: el admin no está en PERSONAL (D73) — no hay a quién buscar, así que tiene entrada propia.
+  if(STATE.rol==='admin'){
+    const on = !!(STATE.persona && STATE.persona._admin);
+    h+='<div style="margin-top:10px;">'
+     + `<button class="mini-btn${on?' on':''}" onclick="persElegirAdmin()">🧑‍💼 Mis horas extra (${esc(STATE.usuario)})</button>`
+     + '<span style="font-size:11px;color:var(--muted);">Tu jornada ordinaria va por fuera del sistema (D73); aquí salen las horas extra que registras en «Mis horas extra».</span>'
+     + '</div>';
+  }
 
   // Período: botones rápidos (11→10) + rango libre
   h+='<div style="margin-top:14px;">'
@@ -435,20 +523,32 @@ function resultadoHtml(d){
 
   // --- Ficha de la persona ---
   const estado=String(p.estado||'').toLowerCase();
-  const tag = !p.enPersonal ? '<span class="badge sin">fuera de PERSONAL</span>'
+  const esAdmin=!!d.esAdmin;
+  const tag = esAdmin ? '<span class="badge ok">canal propio (D73)</span>'
+            : !p.enPersonal ? '<span class="badge sin">fuera de PERSONAL</span>'
             : estado==='eventual' ? '<span class="badge">eventual</span>'
             : (estado && estado!=='activo') ? '<span class="badge sin">retirado</span>'
             : '<span class="badge ok">activo</span>';
   h+='<div class="ficha">'
-   + `<h2>${esc(p.nombre||'—')} ${tag}</h2>`
+   + `<h2>${esc(esAdmin?('Mis horas extra — '+String(p.nombre||'').toUpperCase()):(p.nombre||'—'))} ${tag}</h2>`
    + '<div class="meta">'
-   +   `Código <b>${esc(p.codigo||'—')}</b>${p.cedula?' · c.c. '+esc(p.cedula):''}<br>`
-   +   `${esc(p.cargo||'—')} · cuadrilla <b>${esc(p.cuadrilla||'—')}</b>`
-   +   (p.fecha_ingreso?`<br>Ingreso: ${esc(p.fecha_ingreso)}`:'')
-   +   (p.fecha_retiro?` · <span style="color:var(--accent)">Retiro: ${esc(p.fecha_retiro)}</span> <small>(primer día que ya no trabaja)</small>`:'')
+   +   (esAdmin
+        ? `No. Recurso Navision <b>${esc(p.codigo||'(sin definir en CONFIG.admin_recurso)')}</b><br>`
+          + 'Solo <b>horas extra de días puntuales</b>: tu jornada ordinaria va por fuera del sistema y no aparece en el Parte.'
+        : `Código <b>${esc(p.codigo||'—')}</b>${p.cedula?' · c.c. '+esc(p.cedula):''}<br>`
+          + `${esc(p.cargo||'—')} · cuadrilla <b>${esc(p.cuadrilla||'—')}</b>`
+          + (p.fecha_ingreso?`<br>Ingreso: ${esc(p.fecha_ingreso)}`:'')
+          + (p.fecha_retiro?` · <span style="color:var(--accent)">Retiro: ${esc(p.fecha_retiro)}</span> <small>(primer día que ya no trabaja)</small>`:''))
    + '</div>'
    + `<div class="meta" style="margin-top:8px;color:var(--accent);">📅 ${esc(etiquetaPeriodo(d.desde, d.hasta))} · ${d.dias} día(s) · ${(d.filas||[]).length} registro(s)</div>`
    + '</div>';
+  // D142: al eventual (D85) no se le esperan días, y decirlo aquí evita que "0 días sin reporte" se lea
+  // como que faltó información. Al admin se le explica de dónde salen sus filas.
+  if(!esAdmin && estado==='eventual'){
+    h+='<div class="aviso" style="color:var(--muted);border-color:var(--border);background:var(--surface2);margin-top:0;margin-bottom:16px;">'
+     + 'ℹ️ Es <b>personal eventual</b> (D85): no se le espera en el día a día, trabaja en ocasiones puntuales. '
+     + 'Por eso <b>no se cuentan "días sin reporte"</b> — solo salen los días que sí se le marcaron.</div>';
+  }
 
   // --- Totales del período. Se nombran IGUAL que en el Parte (entre paréntesis, con su letra de
   // columna) para que un reclamo se pueda cotejar contra el archivo de Navision línea por línea. ---
@@ -462,9 +562,13 @@ function resultadoHtml(d){
    + kpi(fmtH(c.tot.extra_domfest),    'Extra diurna Dom/Fest', 'Horas extras diurnas Dom/Fest (H)')
    + '</div>';
   h+='<div class="kpis" style="margin-top:10px;">'
-   + kpi(c.diasTrabajados, 'Días trabajados', '', true)
-   + kpi(c.diasAusentes,   'Días ausentes',   'reportado ausente, con motivo', true)
-   + kpi(c.sinReporte.length, 'Sin reporte',  'no hay fila ese día — no es una ausencia', true)
+   + (esAdmin
+      // D142: en el canal de extras "días ausentes" y "sin reporte" no significan nada (no se reporta
+      // ausencia, y la jornada ordinaria va por fuera). Se enseña lo que sí tiene sentido contar.
+      ? kpi(c.diasTrabajados, 'Días con extra', 'días del período con horas registradas', true)
+      : kpi(c.diasTrabajados, 'Días trabajados', '', true)
+        + kpi(c.diasAusentes,   'Días ausentes',   'reportado ausente, con motivo', true)
+        + kpi(c.sinReporte.length, 'Sin reporte',  'no hay fila ese día — no es una ausencia', true))
    + '</div>';
   h+='<p style="font-size:11px;color:var(--muted);margin-top:8px;">El <b>recargo nocturno ordinario (G)</b> es un recargo sobre horas que ya están contadas en las ordinarias: no se suma al total de horas trabajadas.</p>';
 
@@ -488,11 +592,13 @@ function resultadoHtml(d){
   else ccs.forEach(cc=>{ h+=`<div class="cuad-row"><span style="flex:1;white-space:normal;">${esc(cc)}</span><b>${fmtH(c.porCC[cc])} h</b></div>`; });
   h+='</div>';
 
-  const mots=Object.keys(c.porMotivo).sort((a,b)=>c.porMotivo[b]-c.porMotivo[a]);
-  h+='<div class="section-title">Ausencias por motivo</div><div class="card">';
-  if(!mots.length) h+='<p style="font-size:13px;color:var(--muted);">Sin ausencias reportadas en el período.</p>';
-  else mots.forEach(m=>{ h+=`<div class="cuad-row"><span style="flex:1;white-space:normal;">${esc(m)}</span><b>${c.porMotivo[m]} día(s)</b></div>`; });
-  h+='</div>';
+  if(!esAdmin){   // D142: el canal de extras no reporta ausencias — la sección no aplica
+    const mots=Object.keys(c.porMotivo).sort((a,b)=>c.porMotivo[b]-c.porMotivo[a]);
+    h+='<div class="section-title">Ausencias por motivo</div><div class="card">';
+    if(!mots.length) h+='<p style="font-size:13px;color:var(--muted);">Sin ausencias reportadas en el período.</p>';
+    else mots.forEach(m=>{ h+=`<div class="cuad-row"><span style="flex:1;white-space:normal;">${esc(m)}</span><b>${c.porMotivo[m]} día(s)</b></div>`; });
+    h+='</div>';
+  }
 
   // --- Detalle día a día (se arma diferido; aquí solo el contenedor) ---
   h+='<div class="section-title">Detalle día a día ('+c.detalle.length+')</div>';
@@ -520,7 +626,13 @@ function pintarDetalleDiferido(){
   if(window.requestIdleCallback) requestIdleCallback(pintar, {timeout:800}); else setTimeout(pintar, 0);
 }
 function detalleHtml(c){
-  if(!c.detalle.length) return '<p style="font-size:13px;color:var(--muted);">No hay ningún registro de esta persona en el período.</p>';
+  if(!c.detalle.length){
+    // D142: el vacío del canal de extras se explica distinto — no es que falte información, es que no
+    // se registró ninguna extra en el período (y se dice dónde se registran).
+    return (STATE.data && STATE.data.esAdmin)
+      ? '<p style="font-size:13px;color:var(--muted);">No registraste ninguna hora extra en este período. Se registran en <b>«Mis horas extra»</b> del menú.</p>'
+      : '<p style="font-size:13px;color:var(--muted);">No hay ningún registro de esta persona en el período.</p>';
+  }
   // La tabla lleva 17 columnas y la pantalla es mobile-first: en el teléfono las columnas de horas
   // quedan fuera de la vista y no se adivina que hay que deslizar. El aviso solo sale en pantallas
   // estrechas (en el PC la tabla cabe entera).
@@ -595,7 +707,9 @@ function textoResumen(){
   const c=STATE._calc, d=STATE.data; if(!c || !d) return '';
   const p=d.persona||{}, t=c.tot;
   const L=[];
-  L.push('*'+String(p.nombre||'').toUpperCase()+'* — cód. '+(p.codigo||'—'));
+  // D142: el canal de extras del admin no tiene "código de trabajador" sino No. Recurso de Navision.
+  L.push(d.esAdmin ? ('*MIS HORAS EXTRA* — '+String(p.nombre||'').toUpperCase())
+                   : ('*'+String(p.nombre||'').toUpperCase()+'* — cód. '+(p.codigo||'—')));
   L.push('Período '+etiquetaPeriodo(d.desde, d.hasta)+' ('+d.desde+' a '+d.hasta+')');
   L.push('');
   L.push('Ordinarias: '+fmtH(t.ordinarias)+' h');
@@ -605,7 +719,7 @@ function textoResumen(){
   if(t.recargo_noct_ord) L.push('Recargo nocturno ord.: '+fmtH(t.recargo_noct_ord)+' h');
   if(t.extra_domfest)    L.push('Extra diurna dom/fest: '+fmtH(t.extra_domfest)+' h');
   L.push('');
-  L.push('Días trabajados: '+c.diasTrabajados);
+  L.push((d.esAdmin?'Días con extra: ':'Días trabajados: ')+c.diasTrabajados);
   if(c.diasAusentes) L.push('Días ausentes: '+c.diasAusentes+' ('+Object.keys(c.porMotivo).join(', ')+')');
   if(c.sinReporte.length) L.push('Días sin reporte: '+c.sinReporte.length);
   L.push('');

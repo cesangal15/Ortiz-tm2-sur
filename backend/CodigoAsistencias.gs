@@ -20,6 +20,7 @@
  *                                                generador Navision (cliente decide por proyecto)
  *   GET  ?action=ausencias&desde=&hasta=…    -> seguimiento de ausencias por RANGO (D94): ausencias
  *                                                reportadas (con motivo) + días sin reportar
+ *   GET  ?action=persona_admin&desde=&hasta=  -> horas del PROPIO admin (EXTRAS_ADMIN, D142)
  *   GET  ?action=persona&codigo=&cedula=&desde=&hasta=
  *                                             -> horas de UNA persona en un rango (D112): filas CRUDAS
  *                                                + config/festivos/turnos; clasifica el cliente con el
@@ -1115,12 +1116,19 @@ function doGet(e){
   const ses=sesion_(e, null);
   if(!ses.ok) return json({ok:false, auth:false, error:ses.error});
   if(ses.usuario) e.parameter.usuario = ses.usuario;
+  /* D142 — el ROL del token también viaja, en `_rol`. Hasta ahora las lecturas solo necesitaban el
+   * `usuario` (de ahí salen las áreas), pero `persona_admin` no se acota por área sino por PERSONA: es
+   * el canal privado del admin (EXTRAS_ADMIN, D73) y nadie más lo puede leer. Mismo patrón que D139
+   * usó en el Apps Script de obra con `body._rol` en las escrituras: el rol lo pone el SERVIDOR desde
+   * el token firmado, nunca el cliente — un `&_rol=admin` tecleado en la URL se sobrescribe aquí. */
+  e.parameter._rol = ses.rol || '';
   if(a==='roster')     return roster(e);
   if(a==='asistencia') return asistenciaDia(e);
   if(a==='personal')   return personalCompleto(e);
   if(a==='export')     return exportDia(e);
   if(a==='ausencias')  return ausenciasRango(e);   // D94: seguimiento de ausencias por rango
   if(a==='persona')    return horasPersona(e);     // D112: horas de UNA persona en un rango (solo lectura)
+  if(a==='persona_admin') return horasAdmin(e);   // D142: las horas del PROPIO admin (EXTRAS_ADMIN, D73)
   // D99: refresco manual del caché de catálogos, para quien acaba de editar el Sheet a mano
   // (CAT_CC, CAT_MOTIVOS, CC_USADOS, CONFIG, TURNOS, `estado`/`area` de CUADRILLAS…).
   if(a==='cache_reset') return cacheReset(e);
@@ -1808,6 +1816,55 @@ function horasPersona(e){
         descanso_ini:ftime(t.descanso_ini), descanso_fin:ftime(t.descanso_fin),
         cruza_medianoche: String(t.cruza_medianoche||'').toUpperCase()==='SI' };
     }) });
+}
+
+/* ---------- GET persona_admin: las horas del PROPIO admin (D142) ----------
+ * `?action=persona_admin&desde=&hasta=` — **solo lectura, no escribe nada.**
+ *
+ * POR QUÉ HACE FALTA. `?action=persona` (D112) reconstruye el período de una persona leyendo
+ * `ASISTENCIA` + su ficha de `PERSONAL`. El admin no está en ninguna de las dos: por diseño de D73 su
+ * jornada ordinaria va por fuera del sistema y solo registra sus horas EXTRA de días puntuales, que
+ * viven aisladas en `EXTRAS_ADMIN`. Consecuencia observada por el dueño (ago-2026): la pantalla de
+ * revisión de horas servía para todo el mundo menos para él — se buscaba a sí mismo y no aparecía,
+ * porque no hay a quién buscar. Este endpoint es su equivalente, sobre la hoja que sí lo tiene.
+ *
+ * LA HOJA NO GUARDA HORARIO, guarda un TOTAL de horas y un TIPO (`diurna`/`nocturna`/`domfest`), así
+ * que aquí no hay entrada/salida que devolver: el cliente reparte a columnas del Parte con
+ * `clasificarExtraAdmin` de `horas-nomina.js` — el MISMO que usa `buildAdminExtraRow` al generar el
+ * Excel de Navision (D112: una sola fuente, nunca dos copias). Por eso se devuelve `config`
+ * (los topes) y `festivos`, igual que `?action=persona`.
+ *
+ * CERROJO: no es de área, es de PERSONA. `EXTRAS_ADMIN` es el canal privado del admin y ningún otro
+ * rol lo ve (ni siquiera el residente: `exportDia` ya se lo entrega solo a quien exporta tierras,
+ * D74b/D84). Aquí se exige `rol === 'admin'` **del token firmado** (`_rol`, puesto por `doGet`), no
+ * del parámetro que mande el cliente. Un `residente` que teclee esta URL recibe `ok:false`.
+ */
+function horasAdmin(e){
+  if(norm(e.parameter._rol)!=='admin'){
+    return json({ok:false, error:'Estas horas son el canal propio del administrador (D73): solo él las consulta.'});
+  }
+  const desde=fdateValida_(e.parameter.desde), hasta=fdateValida_(e.parameter.hasta);   // D106
+  if(!desde || !hasta) return json({ok:false, error:'Faltan las fechas del período (desde/hasta), o llegaron con un formato que no se entiende.'});
+  if(hasta < desde)    return json({ok:false, error:'El período está invertido: "hasta" es anterior a "desde".'});
+  const dias=diasDelRango(desde, hasta);
+  if(dias.length > MAX_DIAS_RANGO) return json({ok:false, error:'Período demasiado largo (máximo '+MAX_DIAS_RANGO+' días). Consulta por tramos.'});
+
+  /* `EXTRAS_ADMIN` es una hoja MINÚSCULA —una fila por día CON extra, no una por día— así que se lee
+   * entera y se filtra en memoria: el lector acotado por fecha de D102 está pensado para `ASISTENCIA`
+   * (miles de filas) y aquí no compraría nada. Nunca se cachea (D99): es de las tres hojas vivas. */
+  const filas=readSheet('EXTRAS_ADMIN', EXTRAS_ADMIN_HEADERS)
+    .map(function(r){
+      return { fecha:fdate(r.fecha), cc:String(r.cc||''), proyecto:String(r.proyecto||''),
+        horas:Number(r.horas)||0, tipo:norm(r.tipo), reporta:String(r.reporta||'') };
+    })
+    .filter(function(r){ return r.fecha && r.fecha>=desde && r.fecha<=hasta; })
+    .sort(function(a,b){ return a.fecha<b.fecha ? -1 : (a.fecha>b.fecha ? 1 : 0); });
+
+  const cfg=getConfigMap();
+  return json({ ok:true, esAdmin:true, desde, hasta, dias:dias.length,
+    persona:{ codigo:String(cfg.admin_recurso||''), cedula:'', nombre:String(e.parameter.usuario||'admin'),
+      cargo:'Administrador', cuadrilla:'', estado:'', fecha_ingreso:'', fecha_retiro:'', enPersonal:false },
+    filas, config:cfg, festivos:getFestivos() });
 }
 
 /* ---------- EXTRAS_ADMIN (D73): canal "solo extras" del admin ----------
