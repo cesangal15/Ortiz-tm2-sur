@@ -9,6 +9,11 @@
  *   2) Un día sin bulldozer, la motoniveladora recibía solo su 20% (270 de 1.349) y el 80%
  *      caía en un bulldozer PARADO: producción con cero horas, rendimiento infinito.
  *
+ *   3) BL005 estaba cargado SOLO a ZODME (02.08) en el parte y aun así salía con 290 y 350 m³ de
+ *      TERRAPLEN (02.07) y 0,0 horas, con base «horas totales»: el listón miraba el TOTAL de horas
+ *      del día, así que 7 h de ZODME lo daban por «trabajó» y, de único bulldozer, se llevaba el
+ *      80% del terraplén. El listón pasa a mirar las horas EN ESA ACTIVIDAD.
+ *
  * Reglas nuevas:
  *   · listón por POOL: quien no llegó a las «horas mínimas» del día no recibe producción ese
  *     día, y un grupo entero que no trabajó se CAE — su cuota (el 80/20) se renormaliza hacia
@@ -171,6 +176,53 @@ console.log('\n== El parte de BLOQUES mensuales no cambia (no hay día que mirar
   ok('sin detalle diario el listón no aplica: los dos reparten por el 80/20 del mes',
      prodDe(out,'NH69')>0 && prodDe(out,'MO04')>0, prodDe(out,'NH69')+' / '+prodDe(out,'MO04'));
   ok('cuadre exacto en mensual', cuadreOK(out) && out.huerfanas.length===0);
+}
+
+console.log('\n== Caso 3 — el listón mira la ACTIVIDAD, no el total de horas del día ==');
+{
+  /* Caso real del 13-ago: BL005 (único bulldozer) está cargado SOLO a ZODME; MO04 hace el
+     terraplén. El bulldozer NO puede recibir terraplén por haber estado en obra ese día. */
+  const parte=[
+    {fecha:'2026-07-16',cod:'BL005',tipo:'BULLDOZER',cc:'3702.02.08',horas:8},
+    {fecha:'2026-07-16',cod:'MO04',tipo:'MOTONIVELADORA',cc:'3701.02.07',horas:9},
+    {fecha:'2026-07-17',cod:'BL005',tipo:'BULLDOZER',cc:'3702.02.08',horas:7},
+    {fecha:'2026-07-17',cod:'MO04',tipo:'MOTONIVELADORA',cc:'3701.02.07',horas:9},
+    {fecha:'2026-07-18',cod:'BL005',tipo:'BULLDOZER',cc:'3702.02.08',horas:7},
+    {fecha:'2026-07-18',cod:'MO04',tipo:'MOTONIVELADORA',cc:'3701.02.07',horas:9}];
+  const out=monta(contexto(),[1000,1000,1000],parte,{propias:'BL005:BULL\nMO04:MOTO'});
+  const bull=out.filas.filter(f=>f.maquina==='BL005'&&f.item==='02.07');
+  ok('BL005 no recibe NADA de terraplén (solo está cargado a ZODME)',
+     bull.reduce((a,f)=>a+(f.produccion||0),0)===0, JSON.stringify(bull.map(f=>f.fecha+':'+f.produccion)));
+  ok('BL005 no tiene ninguna fila de 02.07', bull.length===0);
+  ok('MO04 se lleva los 3.000 m³ del terraplén', prodDe(out,'MO04')===3000, prodDe(out,'MO04')+'');
+  ok('ninguna fila lleva producción con cero horas',
+     !out.filas.some(f=>f.produccion>0 && (f.horas||0)===0),
+     JSON.stringify(out.filas.filter(f=>f.produccion>0&&(f.horas||0)===0).map(f=>f.maquina+' '+f.fecha+' '+f.cc)));
+  ok('ninguna fila sale con la base «horas totales» (el síntoma del bug)',
+     !out.filas.some(f=>/horas totales/.test(f.base||'')), JSON.stringify([...new Set(out.filas.map(f=>f.base))]));
+  ok('el grupo del bulldozer consta como caído', (out.caidas.get('02.07|BULLDOZER')||0)===3, JSON.stringify([...out.caidas]));
+  ok('cuadre exacto y cero huérfanas', cuadreOK(out) && out.huerfanas.length===0, JSON.stringify(out.cuadre));
+
+  // Escalón 1: el día que nadie reportó terraplén, lo recibe quien SÍ hace esa actividad en el corte…
+  const parte2=[
+    {fecha:'2026-07-16',cod:'BL005',tipo:'BULLDOZER',cc:'3702.02.08',horas:8},
+    {fecha:'2026-07-17',cod:'BL005',tipo:'BULLDOZER',cc:'3701.02.07',horas:7},
+    {fecha:'2026-07-17',cod:'MO04',tipo:'MOTONIVELADORA',cc:'3701.02.07',horas:9},
+    {fecha:'2026-07-18',cod:'BL005',tipo:'BULLDOZER',cc:'3701.02.07',horas:7},
+    {fecha:'2026-07-18',cod:'MO04',tipo:'MOTONIVELADORA',cc:'3701.02.07',horas:9}];
+  const out2=monta(contexto(),[1000,1000,1000],parte2,{propias:'BL005:BULL\nMO04:MOTO'});
+  ok('escalón 1: el 16 nadie hizo terraplén, pero los dos lo hacen en el corte → se reparte igual',
+     Math.abs(prodDe(out2,'BL005','2026-07-16')+prodDe(out2,'MO04','2026-07-16')-1000)<0.011);
+  ok('escalón 1: cuadre exacto y nada huérfano', cuadreOK(out2) && out2.huerfanas.length===0);
+
+  // …y si NADIE hace esa actividad en todo el corte, se cae al escalón 0 (presentes) sin perder m³.
+  const parte3=[
+    {fecha:'2026-07-16',cod:'BL005',tipo:'BULLDOZER',cc:'3702.02.08',horas:8},
+    {fecha:'2026-07-17',cod:'BL005',tipo:'BULLDOZER',cc:'3702.02.08',horas:7},
+    {fecha:'2026-07-18',cod:'BL005',tipo:'BULLDOZER',cc:'3702.02.08',horas:7}];
+  const out3=monta(contexto(),[1000,1000,1000],parte3,{propias:'BL005:BULL\nMO04:MOTO'});
+  ok('escalón 0: si nadie hace la actividad en todo el corte, la producción NO queda huérfana',
+     out3.huerfanas.length===0 && cuadreOK(out3), JSON.stringify(out3.huerfanas));
 }
 
 console.log('\n'+(fallos? '✗ '+fallos+' fallo(s) de '+casos : '✓ '+casos+' comprobaciones OK'));

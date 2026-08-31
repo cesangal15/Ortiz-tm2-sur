@@ -167,13 +167,16 @@ console.log('\n== La fuga original: máquina entregada a mitad del corte ==');
   ok('con estancia: sí conserva la producción de los días en que estuvo', prodDe(B.out,'EXC001')>0);
   ok('con estancia: ni una sola fila suya después del retiro',
      B.out.filas.filter(f=>f.maquina==='EXC001'&&f.fecha>='2026-07-20').length===0);
-  /* Aquí las dos redes dan el MISMO resultado, y es lo esperado: «trabajó ese día» se mide sobre
-     TODOS los CC del día, así que el 20 y el 21 EXC015 sí trabajó (en 02.06) y la regla de datos
-     ya deja fuera a EXC001. La estancia lo confirma. Lo que la estancia añade —y los datos no
-     pueden— se prueba en el bloque siguiente: cuando el parte le reporta horas a una entregada. */
-  ok('la regla de datos por sí sola ya cierra la fuga en este caso',
-     Math.abs(prodDe(A.out,'EXC001')-prodDe(B.out,'EXC001'))<0.011,
-     prodDe(A.out,'EXC001').toFixed(2)+' vs '+prodDe(B.out,'EXC001').toFixed(2));
+  /* Las dos redes NO son intercambiables, y este fixture lo enseña. El 20 y el 21 nadie reportó
+     horas de 02.05 (EXC015 estuvo en 02.06), así que el listón baja al escalón 1 —«esta actividad
+     es suya, la hace otros días»— y EXC001, que sí hace 02.05, vuelve a ser candidata. La regla de
+     DATOS no puede saber que ya la habían entregado; eso solo lo dice la ESTANCIA. */
+  ok('sin estancia queda fuga en los días que nadie reportó el CC (los datos no bastan)',
+     prodDe(A.out,'EXC001')>prodDe(B.out,'EXC001')+0.011,
+     'sin fecha '+prodDe(A.out,'EXC001').toFixed(2)+' vs con fecha '+prodDe(B.out,'EXC001').toFixed(2));
+  ok('la estancia cierra esa fuga y EXC015 recibe lo que EXC001 ya no',
+     prodDe(B.out,'EXC015')>prodDe(A.out,'EXC015')+0.011,
+     prodDe(A.out,'EXC015').toFixed(2)+' → '+prodDe(B.out,'EXC015').toFixed(2));
   ok('EXC001 se queda solo con los 3 días que trabajó',
      B.out.filas.filter(f=>f.maquina==='EXC001'&&f.produccion!=null).every(f=>f.fecha<='2026-07-18'));
   ok('el resto se lo lleva EXC015', Math.abs(prodDe(B.out,'EXC015')+prodDe(B.out,'EXC001')-7000)<0.011);
