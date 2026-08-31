@@ -196,13 +196,19 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
       <summary>Máquinas propias y mapa actividad → CC (editable)</summary>
       <div class="grid2" style="margin-top:10px">
         <div>
-          <label class="fld">Máquinas que entran al reparto (aquí se agregan y se quitan)</label>
-          <textarea id="propias" rows="3"></textarea>
+          <label class="fld">Máquinas que entran al reparto — <b>una línea por estancia</b></label>
+          <textarea id="propias" rows="9"></textarea>
           <div class="hint"><b>Esta es la lista que manda:</b> una máquina que no esté aquí no reparte ni sale en
             <code>fact_jefe</code>, aunque el parte le reporte horas. Para agregar una, escribe su código y, si no es de la
             flota conocida, su <b>tipo</b> detrás de dos puntos: <code>EXC026:EXC</code> · <code>D150B:BULL</code> ·
             <code>MO001:MOTO</code> · <code>FNG003:FIN</code> (o el nombre completo: <code>EXC026:EXCAVADORA</code>).
             El tipo importa porque decide qué actividades puede recibir.
+            <br><b>Fechas — para las que entran o se entregan a mitad del corte:</b> agrega
+            <code>ingreso..retiro</code> al final. <code>EXC013:..2026-08-20</code> = estuvo hasta el 19 (el
+            <b>retiro es el primer día que YA NO estuvo</b>, igual que la hoja <code>MAQUINAS</code> y el personal);
+            <code>RT02:EXC:2026-07-01..</code> = entró el 1 de julio y sigue; <code>EXC026:2026-07-05..2026-07-20</code> = las dos cosas.
+            Si entra y sale varias veces, <b>repite el código en otra línea</b>, una por estancia. Sin fechas = estuvo todo el corte.
+            Fuera de su estancia la máquina <b>no recibe producción y sus filas del parte se descartan enteras</b>.
             <b>CAT320 está fuera</b> por decisión de obra (retirada desde jun-2026, D61).
             Se normaliza el código: se quita el prefijo <code>40BUP</code> y las motoniveladoras de 3 dígitos pierden un cero
             (<code>MO003→MO03</code>). Siempre quedan fuera vibros/compactadoras y todo lo que no sea proyecto
@@ -306,7 +312,24 @@ const ALIAS_COD = { NG002:'FNG002', FNG02:'FNG002', FNG002:'FNG002' };
    (`EXC026:EXC`) para las que no estén en el catálogo de arriba.
    **CAT320 queda FUERA a propósito** (decisión del usuario, jul-2026): está retirada de la
    obra desde jun-2026 (D61) y aun así el parte le sigue reportando horas. */
-const MAQUINAS_PROPIAS = ['EXC001','EXC013','EXC014','EXC015','BL005','BL009','MO03','MO04','MO09','NH69','MC705','FNG002'];
+/* UNA LÍNEA POR ESTANCIA, no por máquina — igual que la hoja `MAQUINAS` de D138. La ventana es
+   SEMIABIERTA `[ingreso, retiro)`: la fecha de retiro es el PRIMER DÍA QUE YA NO ESTUVO. Sin fechas
+   = estuvo todo el corte. Una máquina que entra y sale varias veces se repite, una línea por estancia.
+   Fechas tomadas de `backend/seeds/MAQUINAS.tsv`: D136 (diez devoluciones el 20-ago-2026) y D61. */
+const MAQUINAS_PROPIAS = [
+  'EXC001:..2026-08-20    // devuelta el 20-ago (D136)',
+  'EXC013:..2026-08-20    // devuelta el 20-ago (D136)',
+  'EXC014:..2026-08-20    // devuelta el 20-ago (D136)',
+  'EXC015                 // sigue en obra',
+  'BL005                  // sigue en obra',
+  'BL009:..2026-08-20     // entregada el 20-ago (D136)',
+  'NH69:..2026-08-20      // devuelta el 20-ago (D136)',
+  'MO03                   // sigue en obra',
+  'MO04                   // sigue en obra',
+  'MO09                   // sigue en obra',
+  'MC705:..2026-06-16     // retirada en jun-2026 (D61)',
+  'FNG002:..2026-08-20    // finisher, intermitente (D136)'
+];
 
 // Proyectos de esta obra. El parte del jefe trae todos los frentes de la empresa (3703, 3706, 3709…).
 const PROYECTOS = ['3701','3702'];
@@ -544,6 +567,28 @@ function canonClima(txt){
 }
 function horasProg(cod){ return HORAS_PROG[cod]!==undefined?HORAS_PROG[cod]:HORAS_PROG_DEFAULT; }
 
+/* ---- ESTANCIAS: desde cuándo y hasta cuándo estuvo cada máquina en la obra ----
+   Mismo modelo que la hoja `MAQUINAS` (D138) y que el personal (D85): ventana **semiabierta**
+   `[ingreso, retiro)` — la fecha de retiro es el PRIMER DÍA QUE YA NO ESTUVO — y **varias
+   estancias por máquina** (el finisher entra y sale). Una máquina sin estancia declarada se
+   da por presente todo el corte, así que la lista de siempre sigue funcionando igual. */
+function estanciaActiva(estancias, cod, fecha){
+  const e=estancias && estancias.get(cod);
+  if(!e || !e.length) return true;
+  return e.some(x=>(!x.ing || fecha>=x.ing) && (!x.ret || fecha<x.ret));
+}
+/* ¿Pisó la obra ALGÚN día del corte? (para el reparto por el total del mes, que no mira fechas) */
+function estanciaSolapa(estancias, cod, desde, hasta){
+  const e=estancias && estancias.get(cod);
+  if(!e || !e.length) return true;
+  return e.some(x=>(!x.ing || x.ing<=hasta) && (!x.ret || x.ret>desde));
+}
+function estanciaTexto(estancias, cod){
+  const e=estancias && estancias.get(cod);
+  if(!e || !e.length) return 'todo el corte';
+  return e.map(x=>(x.ing?fmtFecha(x.ing):'—')+' → '+(x.ret?fmtFecha(x.ret)+' (excl.)':'sigue')).join(' · ');
+}
+
 /* actividad / SUB ACTIVIDAD / unidad de una fila de fact_jefe. */
 function vocabulario(item, noAprov, tipo){
   const base=ACTIVIDAD_CC[item];
@@ -561,7 +606,7 @@ const S={ prod:{wb:null,nombre:''}, jefe:{wb:null,nombre:''}, out:null };
 /* ============================ CARGA ============================ */
 
 function initParams(){
-  document.getElementById('propias').value = MAQUINAS_PROPIAS.join(', ');
+  document.getElementById('propias').value = MAQUINAS_PROPIAS.join('\n');
   document.getElementById('mapaAct').value = MAPA_ACTIVIDAD.map(r=>r.txt+' = '+r.ccs.join(',')).join('\n');
   const hoy=new Date(), y=hoy.getFullYear(), m=hoy.getMonth();
   const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
@@ -583,13 +628,37 @@ document.getElementById('pctBull').addEventListener('input',e=>{
    que no están en el catálogo de la flota, sin tener que fiarse del texto del parte. */
 const ALIAS_TIPO={ EXCAVADORA:'EXC', BULLDOZER:'BULL', BULDOZER:'BULL', MOTONIVELADORA:'MOTO',
                    FINISHER:'FIN', EXTENDEDORA:'FIN', EXC:'EXC', BULL:'BULL', MOTO:'MOTO', FIN:'FIN' };
+/* Un campo del token es una ESTANCIA si tiene la forma `ini..fin` (cualquiera de los dos extremos
+   puede faltar: `..2026-08-20` = estuvo hasta el 20 excluido; `2026-07-01..` = entró el 1 y sigue). */
+const RE_ESTANCIA=/^(\d{4}-\d{2}-\d{2})?\s*\.\.\s*(\d{4}-\d{2}-\d{2})?$/;
 function leerParams(){
-  const propias=new Set(), tiposManual={};
-  document.getElementById('propias').value.split(/[,\n;]+/).forEach(tok=>{
+  const propias=new Set(), tiposManual={}, estancias=new Map(), estanciasMalas=[];
+  /* Se lee por LÍNEAS —una por estancia— y se quita el comentario del final, para que la lista
+     se explique sola («EXC013:..2026-08-20 // devuelta, D136»). Las comas siguen separando
+     máquinas dentro de una línea, como en la lista de siempre. */
+  const tokens=[];
+  document.getElementById('propias').value.split(/\n+/).forEach(linea=>{
+    const t=linea.replace(/(#|\/\/).*$/,'').trim();
+    if(t) t.split(/[,;]+/).forEach(x=>{ if(x.trim()) tokens.push(x.trim()); });
+  });
+  tokens.forEach(tok=>{
     const p=tok.split(/[:=]/);
     const cod=normCod(p[0]); if(!cod) return;
     propias.add(cod);
-    if(p.length>1){ const t=ALIAS_TIPO[norm(p[1]).replace(/\s+/g,'')]; if(t) tiposManual[cod]=t; }
+    for(let i=1;i<p.length;i++){
+      const campo=String(p[i]).trim();
+      if(!campo) continue;
+      const m=campo.match(RE_ESTANCIA);
+      if(m){
+        if(!m[1] && !m[2]) continue;                       // «..» a secas no dice nada
+        if(m[1] && m[2] && m[2]<=m[1]){ estanciasMalas.push(cod+': '+campo+' (el retiro no es posterior al ingreso)'); continue; }
+        const a=estancias.get(cod)||[]; a.push({ing:m[1]||'', ret:m[2]||''}); estancias.set(cod,a);
+        continue;
+      }
+      const t=ALIAS_TIPO[norm(campo).replace(/\s+/g,'')];
+      if(t) tiposManual[cod]=t;
+      else if(/\d{4}-\d{2}-\d{2}|\.\./.test(campo)) estanciasMalas.push(cod+': '+campo+' (usa `ingreso..retiro`, fechas yyyy-mm-dd)');
+    }
   });
   const mapa=[];
   document.getElementById('mapaAct').value.split(/\n+/).forEach(l=>{
@@ -601,6 +670,8 @@ function leerParams(){
   return {
     propias: propias,
     tiposManual: tiposManual,
+    estancias: estancias,
+    estanciasMalas: estanciasMalas,
     soloHorasMaq: new Set(document.getElementById('soloHorasMaq').value.split(/[,\n;]+/).map(s=>normCod(s)).filter(Boolean)),
     mapa: mapa.length?mapa:MAPA_ACTIVIDAD,
     pctBull: Math.min(100,Math.max(0,parseFloat(document.getElementById('pctBull').value)||0))/100,
@@ -913,7 +984,7 @@ function maquinaDe(maquinas,cod,tipoRaw,P){
 function leerParteDiario(ws,cab,P){
   const r=rangoHoja(ws), C=cab.cols;
   const maquinas=new Map(), dias=new Map();
-  let fuera=0, otrosProyectos=0, sinCC=[];
+  let fuera=0, otrosProyectos=0, sinCC=[], fueraEstancia=[];
 
   for(let f=cab.fila+1; f<=r.r1; f++){
     const fecha=fechaAt(ws,f,C.fecha);
@@ -922,6 +993,15 @@ function leerParteDiario(ws,cab,P){
     if(fecha<P.desde || fecha>P.hasta){ fuera++; continue; }
 
     const cod=normCod(codRaw);
+    /* Fuera de su estancia la fila se descarta ENTERA: ni horas ni producción, no llega a
+       `fact_jefe`. El parte del jefe le sigue reportando horas a máquinas ya entregadas —pasó
+       con CAT320, 36,2 h un mes después de retirada (D91b)— y esas horas, si entran, arrastran
+       producción por la cascada de pesos. Se cuentan para avisarlo en pantalla, porque a partir
+       de aquí las horas de `fact_jefe` YA NO cuadran con las del parte. */
+    if(!estanciaActiva(P.estancias,cod,fecha)){
+      fueraEstancia.push({ cod:cod, fecha:fecha, horas:(C.horas!==undefined?numAt(ws,f,C.horas):0)||0 });
+      continue;
+    }
     const ccTxt=txtAt(ws,f,C.cc);
     const cc=parseCC(ccTxt);
     if(!cc){ if(ccTxt) sinCC.push({maquina:cod,texto:ccTxt}); continue; }
@@ -947,13 +1027,13 @@ function leerParteDiario(ws,cab,P){
     dias.set(kd,d);
   }
   return { formato:'diario', maquinas:maquinas, dias:dias, sinCC:sinCC,
-           filasFuera:fuera, otrosProyectos:otrosProyectos };
+           filasFuera:fuera, otrosProyectos:otrosProyectos, fueraEstancia:fueraEstancia };
 }
 
 /* Formato por BLOQUES con el total del mes (encabezado de máquina + sub-filas de CC). */
 function leerParteMensual(ws,P){
   const r=rangoHoja(ws);
-  const maquinas=new Map(), sinCC=[];
+  const maquinas=new Map(), sinCC=[], fueraEstancia=[];
   let actual=null, otrosProyectos=0;
 
   for(let f=J_FILA_DATOS;f<=r.r1;f++){
@@ -961,6 +1041,13 @@ function leerParteMensual(ws,P){
     if(codTxt){
       const cod=normCod(codTxt);
       if(!cod){ actual=null; continue; }
+      /* Este formato trae el TOTAL del mes, sin fecha por fila: no se puede recortar por días.
+         Lo único que se puede decidir aquí es si la máquina pisó la obra en algún momento del
+         corte; si no, su bloque entero se descarta. Los días concretos los recorta el derrame. */
+      if(!estanciaSolapa(P.estancias,cod,P.desde,P.hasta)){
+        fueraEstancia.push({ cod:cod, fecha:'', horas:0 });
+        actual=null; continue;
+      }
       const m=maquinaDe(maquinas,cod,txtAt(ws,f,J_COL_TIPO_CC),P);
       actual=m;
       continue;
@@ -979,7 +1066,7 @@ function leerParteMensual(ws,P){
     if(!actual.ccTxt.has(k)) actual.ccTxt.set(k,ccTxt);
   }
   return { formato:'mensual', maquinas:maquinas, dias:new Map(), sinCC:sinCC,
-           filasFuera:0, otrosProyectos:otrosProyectos };
+           filasFuera:0, otrosProyectos:otrosProyectos, fueraEstancia:fueraEstancia };
 }
 
 /* ============================ REPARTO (por día) ============================ */
@@ -1010,16 +1097,26 @@ function pesosDe(cands, proyecto, item, cruzarUF, fecha, jefe){
    producción del día × horas de la máquina ese día en ese CC — así la producción cae en
    días en que la actividad SÍ ocurrió y la máquina SÍ estuvo. Si nunca coinciden, se cae a
    la producción del día (la curva real del `dia suelto`) y luego a las horas. */
-function derramarEnDias(cod, proyecto, item, na, total, jefe, dsProd, minDia){
+function derramarEnDias(cod, proyecto, item, na, total, jefe, dsProd, minDia, estancias){
   const dias=dsProd.dias;
   if(!dias.length) return {partes:[], base:''};
   const pProd = dias.map(d=>dsProd.prodDia.get(d+'|'+proyecto+'|'+item+'|'+(na?1:0))||0);
   const pHoras= dias.map(d=>{ const x=jefe.dias.get(d+'|'+cod+'|'+proyecto+'|'+item); return x?x.horas:0; });
+  /* Un día en que la máquina ya estaba entregada NO puede recibir su tajada: el total del mes
+     se derrama solo sobre los días de su estancia. Sin estancia declarada, todos valen. */
+  const dentro=dias.map(d=>estanciaActiva(estancias,cod,d));
+  const recorta=dentro.some(x=>!x);          // ¿la estancia deja fuera algún día del corte?
+  const hayDentro=dentro.some(Boolean);
+  const soloDentro=a=>dias.map((_,i)=>dentro[i]?a[i]:0);
   const suma=a=>a.reduce((x,y)=>x+y,0);
-  let w=dias.map((_,i)=>pProd[i]*pHoras[i]), base='producción × horas del día';
-  if(suma(w)<=0){ w=pProd;  base='producción del día'; }
-  if(suma(w)<=0){ w=pHoras; base='horas del día'; }
-  if(suma(w)<=0){ w=dias.map(()=>1); base='partes iguales entre los días'; }
+  let w=soloDentro(dias.map((_,i)=>pProd[i]*pHoras[i])), base='producción × horas del día';
+  if(suma(w)<=0){ w=soloDentro(pProd);  base='producción del día'; }
+  if(suma(w)<=0){ w=soloDentro(pHoras); base='horas del día'; }
+  if(suma(w)<=0){ w=dias.map((_,i)=>dentro[i]?1:0); base='partes iguales entre los días'; }
+  // Red de seguridad: si la estancia no deja ni un día, antes que perder producción se derrama
+  // en todos y se dice por qué (no debería pasar: el candidato ya se filtró por solape).
+  if(suma(w)<=0){ w=dias.map(()=>1); base=hayDentro?'partes iguales entre los días':'partes iguales (ningún día cae en su estancia)'; }
+  else if(recorta) base+=' · solo sus días en obra';
   const partes=repartirRedondeado(w,total,DEC);
 
   /* Migajas: un día en que la máquina puso pocas horas se lleva una tajada mínima
@@ -1044,6 +1141,35 @@ function repartir(P, dsProd, jefe){
   const asign=[];        // {cod,tipo,fecha,proyecto,item,noAprov,produccion,base}
   const huerfanas=[];
   const basesUsadas=new Map();
+  const sinHoras=new Map();   // cod -> nº de días en que se le quitó la candidatura por no trabajar
+
+  /* Horas de una máquina en un día, sumando todos sus CC: sirve para saber si TRABAJÓ ese día. */
+  const horasDia=new Map();
+  for(const [k,d] of jefe.dias){
+    const p=k.split('|'), kk=p[0]+'|'+p[1];
+    horasDia.set(kk,(horasDia.get(kk)||0)+(d.horas||0));
+  }
+
+  /* Quién puede recibir la producción de un (día, actividad).
+     1) del tipo coherente; 2) DENTRO de su estancia ese día; 3) y, si el parte tiene detalle
+     diario, que ESE día haya trabajado. La (3) es la que tapa el agujero de verdad: sin ella,
+     un día en que nadie del tipo reportó ese CC la cascada se cae al total del mes y le entrega
+     producción —con CERO horas— a una máquina que ya no estaba. Si NADIE del grupo trabajó ese
+     día no se inventa una ausencia: se dejan los candidatos de la estancia y decide la cascada
+     de siempre, que es lo que garantiza que nunca quede producción huérfana (D86). */
+  function candidatosDe(tipos, fechaU){
+    let c=flota.filter(m=>tipos.indexOf(m.tipo)>=0);
+    c = fechaU ? c.filter(m=>estanciaActiva(P.estancias,m.cod,fechaU))
+               : c.filter(m=>estanciaSolapa(P.estancias,m.cod,P.desde,P.hasta));
+    if(fechaU && jefe.dias.size){
+      const trabajaron=c.filter(m=>(horasDia.get(fechaU+'|'+m.cod)||0)>0);
+      if(trabajaron.length){
+        c.forEach(m=>{ if(trabajaron.indexOf(m)<0) sinHoras.set(m.cod,(sinHoras.get(m.cod)||0)+1); });
+        c=trabajaron;
+      }
+    }
+    return c;
+  }
 
   /* Unidad de reparto. Por defecto **la UF no cuenta**: al informe le interesa la producción
      de la actividad, no en qué UF se hizo, así que las dos UF se juntan y el peso es el total
@@ -1072,12 +1198,17 @@ function repartir(P, dsProd, jefe){
     const grupos=coh.grupos.map(g=>{
       let share=g.share;
       if(coh.split && item==='02.07') share=(g.tipos.indexOf('BULL')>=0)?P.pctBull:(1-P.pctBull);
-      return { tipos:g.tipos, share:share, cands:flota.filter(m=>g.tipos.indexOf(m.tipo)>=0) };
+      return { tipos:g.tipos, share:share, cands:candidatosDe(g.tipos,fechaU) };
     }).filter(g=>g.cands.length>0);
 
     if(!grupos.length){
+      const tipos=coh.grupos.map(g=>g.tipos.map(t=>NOMBRE_TIPO[t]).join('/')).join(' + ');
+      // Distinguir «no hay ninguna en la flota» de «las que hay ya se habían entregado ese día».
+      const hayEnFlota=coh.grupos.some(g=>flota.some(m=>g.tipos.indexOf(m.tipo)>=0));
       huerfanas.push({proyecto:proyecto,item:item,total:total,
-        motivo:'sin máquinas propias del tipo coherente ('+coh.grupos.map(g=>g.tipos.map(t=>NOMBRE_TIPO[t]).join('/')).join(' + ')+')'});
+        motivo: hayEnFlota
+          ? 'ninguna máquina de ese tipo ('+tipos+') estaba en obra'+(fechaU?' el '+fmtFecha(fechaU):' en el corte')
+          : 'sin máquinas propias del tipo coherente ('+tipos+')'});
       continue;
     }
     const sumShare=grupos.reduce((a,g)=>a+g.share,0);
@@ -1124,7 +1255,7 @@ function repartir(P, dsProd, jefe){
             return;
           }
           // Reparto del corte: el total de esta máquina se derrama sobre los días.
-          const d=derramarEnDias(m.cod,pr,item,noAprov,monto,jefe,dsProd,P.minDia);
+          const d=derramarEnDias(m.cod,pr,item,noAprov,monto,jefe,dsProd,P.minDia,P.estancias);
           dsProd.dias.forEach((fecha,di)=>{
             if(!d.partes[di]) return;
             asign.push({ cod:m.cod, tipo:m.tipo, fecha:fecha, proyecto:pr, item:item,
@@ -1180,12 +1311,15 @@ function repartir(P, dsProd, jefe){
           const [proyecto,item]=k.split('|');
           const propios=filas.filter(f=>f.maquina===m.cod&&f.proyecto===proyecto&&f.item===item);
           if(propios.length) continue;
-          const dias=dsProd.dias;
+          // El prorrateo tampoco puede caer en días en que la máquina ya estaba entregada.
+          const dias=dsProd.dias.filter(d=>estanciaActiva(P.estancias,m.cod,d));
           if(!dias.length) continue;
           const partes=repartirRedondeado(dias.map(()=>1),h,DEC);
           const voc=vocabulario(item,false,m.tipo);
+          const recorta=dias.length<dsProd.dias.length;
           dias.forEach((fecha,i)=>{ if(!partes[i]) return;
-            const f=fila(m.cod,m.tipo,fecha,proyecto,item,voc.sub); f.horas=partes[i]; f.base='solo horas (prorrateo)'; });
+            const f=fila(m.cod,m.tipo,fecha,proyecto,item,voc.sub); f.horas=partes[i];
+            f.base='solo horas (prorrateo'+(recorta?' · solo sus días en obra':'')+')'; });
         }
       }
     }
@@ -1260,7 +1394,8 @@ function repartir(P, dsProd, jefe){
   const sinBloque=[...new Set(filas.filter(f=>f.produccion!=null && !BLOQUE_DE_CC[f.item]).map(f=>f.item))].sort();
 
   return { filas:filas, cuadre:cuadre, huerfanas:huerfanas, flota:flota,
-           bases:[...basesUsadas.values()], bloques:bloques, sinBloque:sinBloque };
+           bases:[...basesUsadas.values()], bloques:bloques, sinBloque:sinBloque,
+           sinHoras:sinHoras };
 }
 
 /* ============================ PROCESO ============================ */
@@ -1355,6 +1490,31 @@ function render(){
           '): esas filas salen con la columna vacía.'
         : '')+'</div>');
   }
+  /* --- Estancias: qué se descartó y por qué --- */
+  if(P.estanciasMalas.length)
+    avisos.push('<div class="alert err">⚠️ <b>Fechas de estancia mal escritas</b> (esas máquinas se toman como presentes todo el corte): '+
+      P.estanciasMalas.map(escapeHtml).join(' · ')+'. El formato es <code>COD:ingreso..retiro</code> con fechas <code>yyyy-mm-dd</code>.</div>');
+  const fe=jefe.fueraEstancia||[];
+  if(fe.length){
+    const porMaq=new Map();
+    fe.forEach(x=>{ const o=porMaq.get(x.cod)||{filas:0,horas:0,min:'',max:''};
+      o.filas++; o.horas+=x.horas||0;
+      if(x.fecha){ if(!o.min||x.fecha<o.min) o.min=x.fecha; if(!o.max||x.fecha>o.max) o.max=x.fecha; }
+      porMaq.set(x.cod,o); });
+    const totH=fe.reduce((a,x)=>a+(x.horas||0),0);
+    avisos.push('<div class="alert warn">🚚 <b>'+fe.length+' fila(s) del parte descartadas por estar fuera de la estancia</b> de su máquina: '+
+      [...porMaq.entries()].map(([c,o])=>escapeHtml(c)+' <b>'+o.filas+'</b>'+(o.horas?' ('+n1(o.horas)+' h)':'')+
+        (o.min?' · '+fmtFecha(o.min)+(o.max!==o.min?'→'+fmtFecha(o.max):''):'')).join(' · ')+
+      '. No entran a <code>fact_jefe</code> ni al reparto: el parte le sigue reportando horas a máquinas ya entregadas. '+
+      '<b>Ojo:</b> por eso las horas de <code>fact_jefe</code> quedan '+n1(totH)+' h por debajo de las del parte — si alguien compara, esta es la razón. '+
+      'Si alguna de estas sí estuvo, corrige su fecha en la lista de máquinas.</div>');
+  }
+  if(rep.sinHoras && rep.sinHoras.size)
+    avisos.push('<div class="alert info">📅 Días en que una máquina <b>no recibió producción porque no trabajó</b> (cero horas en el parte ese día, '+
+      'y sí las tuvo otra de su tipo): '+[...rep.sinHoras.entries()].sort((a,b)=>b[1]-a[1])
+        .map(([c,n])=>escapeHtml(c)+' <b>'+n+'</b>').join(' · ')+
+      '. Antes la producción de esos días se le repartía igual, por las horas del mes.</div>');
+
   const faltantes=[...P.propias].filter(c=>!jefe.maquinas.has(c));
   if(faltantes.length) avisos.push('<div class="alert info">Máquinas propias sin parte este mes: '+escapeHtml(faltantes.join(', '))+'</div>');
   if(!dsProd.dias.length) avisos.push('<div class="alert err">⚠️ Ningún día de <code>dia suelto</code> cae dentro del corte. Revisa las fechas.</div>');
@@ -1425,7 +1585,7 @@ function render(){
   const prodMaq=new Map();
   rep.filas.forEach(f=>{ if(f.produccion!=null) prodMaq.set(f.maquina,(prodMaq.get(f.maquina)||0)+f.produccion); });
   h='<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Código</th><th>Tipo (parte)</th><th>Tipo</th>'+
-    '<th>Estado</th><th class="num">Horas del corte</th><th class="num">Producción</th><th>Centros de coste</th></tr></thead><tbody>';
+    '<th>Estado</th><th>En obra</th><th class="num">Horas del corte</th><th class="num">Producción</th><th>Centros de coste</th></tr></thead><tbody>';
   for(const m of maqs){
     let chip;
     if(m.excluida) chip='<span class="chip mu">excluida (vibro/compactadora)</span>';
@@ -1434,8 +1594,14 @@ function render(){
     else if(P.soloHorasMaq.has(m.cod)) chip='<span class="chip in">solo horas (parámetro)</span>';
     else chip='<span class="chip ok">propia · reparte</span>';
     const ccs=[...m.cc.entries()].sort().map(([k,v])=>{ const p=k.split('|'); return (p[0]?p[0]+'.':'')+p[1]+' ('+n1(v)+' h)'; }).join(' · ');
+    // Días del corte que caen dentro de su estancia: es lo que responde «¿estuvo todo el mes?».
+    const dentro=dsProd.dias.filter(d=>estanciaActiva(P.estancias,m.cod,d)).length;
+    const parcial=dentro<dsProd.dias.length;
+    const est=escapeHtml(estanciaTexto(P.estancias,m.cod))+
+      (parcial?' <span class="chip wa">'+dentro+' de '+dsProd.dias.length+' días</span>':'');
     h+='<tr><td class="mono">'+escapeHtml(m.cod)+'</td><td class="note">'+escapeHtml(m.tipoRaw)+'</td>'+
        '<td>'+escapeHtml(NOMBRE_TIPO[m.tipo]||'—')+'</td><td>'+chip+'</td>'+
+       '<td class="note">'+est+'</td>'+
        '<td class="num">'+n1(m.horasTotal)+'</td><td class="num">'+(prodMaq.has(m.cod)?n0(prodMaq.get(m.cod)):'—')+'</td>'+
        '<td class="note">'+escapeHtml(ccs)+'</td></tr>';
   }
