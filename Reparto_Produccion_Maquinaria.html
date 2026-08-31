@@ -196,10 +196,19 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
             reparte por las horas totales de la máquina en esa actividad. Encendido, cada UF se reparte aparte
             (una máquina sin horas en esa UF no recibe su producción).</label>
         </div>
-        <div class="chk">
+        <div class="chk" style="margin-bottom:8px">
           <input type="checkbox" id="soloHoras" checked>
           <label for="soloHoras">Incluir las filas de <b>solo horas</b> (CC sin producción: desmonte, bloqueos, ODT…).
             <b>Déjalo marcado</b>: «Maquinas Junio» las necesita.</label>
+        </div>
+        <div class="chk">
+          <input type="checkbox" id="rellenarDias" checked>
+          <label for="rellenarDias"><b>Completar los días que el digitador no digitó</b> — <b>encendido por defecto</b>:
+            si tu rango dice que la máquina estaba en obra y el parte no la menciona ese día, sale igual, con
+            <b>cero horas y sin producción</b>. Es el espejo de la regla de arriba: allí una máquina que reaparece
+            después de salir se borra; aquí una que sí estaba y falta se agrega. Pasa sobre todo en domingos y
+            festivos. La fila va al centro de coste donde más horas tuvo en el corte —da igual cuál, va en cero—
+            y <b>no toca el reparto</b>: no le quita m³ a nadie.</label>
         </div>
       </div>
     </div>
@@ -692,6 +701,7 @@ function leerParams(){
     minDia: Math.max(0,parseFloat(document.getElementById('minDia').value)||0),
     minHorasProd: Math.max(0,parseFloat(document.getElementById('minHorasProd').value)||0),
     soloHoras: document.getElementById('soloHoras').checked,
+    rellenarDias: document.getElementById('rellenarDias').checked,
     desde: document.getElementById('desde').value,
     hasta: document.getElementById('hasta').value
   };
@@ -1404,6 +1414,39 @@ function repartir(P, dsProd, jefe){
     }
   }
 
+  /* ---- Días que el digitador NO digitó: la máquina aparece igual, en CERO ----
+     El espejo de D145. Allí, una máquina que reaparece tras salir es un error de digitación y su
+     fila se borra; aquí, una máquina que TU RANGO dice que estaba en obra y que el parte no
+     menciona ese día es el mismo error al revés — especialmente en domingos y festivos— y la fila
+     se crea. **Sin horas y sin producción**: es una fila de PRESENCIA, para que la máquina no
+     desaparezca del informe ese día. No entra al reparto (se genera después, ya repartido todo),
+     así que no le quita ni un m³ a nadie y el cuadre no se mueve.
+     El centro de coste es el que MÁS horas tuvo esa máquina en el corte: da igual cuál sea —la
+     fila va en cero— pero `fact_jefe` necesita uno para derivar actividad y SUB ACTIVIDAD. */
+  const rellenadas=[];
+  if(P.rellenarDias && P.desde && P.hasta){
+    const conFila=new Set(filas.map(f=>f.maquina+'|'+f.fecha));
+    const diasCorte=[];
+    for(let d=fechaUTC(P.desde); isoLocal(d)<=P.hasta; d.setUTCDate(d.getUTCDate()+1)) diasCorte.push(isoLocal(d));
+    for(const m of flotaTodas){
+      // CC principal = donde más horas acumuló en el corte. Sin ninguno no hay nada que escribir.
+      let ccPrin=null, hMax=-1;
+      for(const [k,h] of m.cc) if(h>hMax){ hMax=h; ccPrin=k; }
+      if(!ccPrin) continue;
+      const pr=ccPrin.split('|')[0], it=ccPrin.split('|')[1];
+      if(!ACTIVIDAD_CC[it]) continue;                     // CC sin vocabulario: no sabría qué escribir
+      for(const fecha of diasCorte){
+        if(!estanciaActiva(P.estancias,m.cod,fecha)) continue;   // fuera de su rango: D145 manda
+        if(conFila.has(m.cod+'|'+fecha)) continue;               // ese día sí lo digitaron
+        const voc=vocabulario(it,false,m.tipo);
+        const f=fila(m.cod,m.tipo,fecha,pr,it,voc.sub);
+        f.horas=0; f.idle=0; f.produccion=null; f.base='día no digitado (fila en cero)';
+        f.rellenada=true;
+        rellenadas.push({cod:m.cod, fecha:fecha});
+      }
+    }
+  }
+
   filas.sort((a,b)=> a.fecha.localeCompare(b.fecha) || a.maquina.localeCompare(b.maquina) || a.item.localeCompare(b.item));
 
   /* ---- Cuadre mensual por (proyecto, CC) ---- */
@@ -1440,7 +1483,7 @@ function repartir(P, dsProd, jefe){
 
   return { filas:filas, cuadre:cuadre, huerfanas:huerfanas, flota:flota,
            bases:[...basesUsadas.values()], bloques:bloques, sinBloque:sinBloque,
-           sinHoras:sinHoras, caidas:caidas };
+           sinHoras:sinHoras, caidas:caidas, rellenadas:rellenadas };
 }
 
 /* ============================ PROCESO ============================ */
@@ -1588,6 +1631,20 @@ function render(){
       '('+n1(P.minHorasProd)+' h; otra del pool sí trabajó): '+[...rep.sinHoras.entries()].sort((a,b)=>b[1]-a[1])
         .map(([c,n])=>escapeHtml(c)+' <b>'+n+'</b>').join(' · ')+
       '. Antes la producción de esos días se le repartía igual, por las horas del mes — así salían filas de 0,2 h con 500 m³.</div>');
+  if(rep.rellenadas && rep.rellenadas.length){
+    const porMaq=new Map();
+    rep.rellenadas.forEach(x=>{ const a=porMaq.get(x.cod)||[]; a.push(x.fecha); porMaq.set(x.cod,a); });
+    const finde=iso=>{ const d=fechaUTC(iso).getUTCDay(); return d===0||d===6; };
+    const nFinde=rep.rellenadas.filter(x=>finde(x.fecha)).length;
+    avisos.push('<div class="alert info">🗓️ <b>'+rep.rellenadas.length+' fila(s) agregadas en CERO</b> por días que el parte no digitó '+
+      'y tu rango dice que la máquina sí estaba: '+
+      [...porMaq.entries()].sort((a,b)=>b[1].length-a[1].length)
+        .map(([c,d])=>escapeHtml(c)+' <b>'+d.length+'</b>').join(' · ')+
+      '. Van con <b>0 horas y sin producción</b>, al centro de coste donde más horas tuvo cada una: solo para que no falten '+
+      'en el informe. <b>No tocan el reparto</b> — ni un m³ cambia de manos.'+
+      (nFinde? ' '+nFinde+' de ellas caen en sábado o domingo.' : '')+
+      ' Si prefieres que ese día quede en blanco, apaga «Completar los días que el digitador no digitó».</div>');
+  }
   if(rep.caidas && rep.caidas.size)
     avisos.push('<div class="alert info">⚖️ Días en que un <b>tipo entero no trabajó</b> una actividad y su cuota pasó al otro tipo '+
       '(el 80/20 se renormaliza — no se pierde nada): '+[...rep.caidas.entries()].sort((a,b)=>b[1]-a[1])
@@ -1721,7 +1778,8 @@ function render(){
        '<td>'+escapeHtml(f.actividad)+'</td><td>'+escapeHtml(f.sub)+'</td>'+
        '<td class="num">'+n1(f.horas)+'</td><td class="num">'+n1(f.idle)+'</td>'+
        '<td class="num">'+(f.produccion==null?'':n0(f.produccion))+'</td>'+
-       '<td class="mono">'+escapeHtml(f.cc)+'</td><td class="note">'+escapeHtml(f.base)+'</td></tr>';
+       '<td class="mono">'+escapeHtml(f.cc)+'</td><td class="note">'+
+       (f.rellenada?'<span class="chip in">no digitado</span> ':'')+escapeHtml(f.base)+'</td></tr>';
   }
   h+='</tbody></table>';
   if(filas.length>400) h+='<div class="hint">Se muestran las primeras 400 filas de '+filas.length+'. El .xlsx las trae todas.</div>';
