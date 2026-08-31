@@ -1541,18 +1541,47 @@ function render(){
       P.estanciasMalas.map(escapeHtml).join(' · ')+'. El formato es <code>COD:ingreso..retiro</code> con fechas <code>yyyy-mm-dd</code>.</div>');
   const fe=jefe.fueraEstancia||[];
   if(fe.length){
+    /* Se listan los DÍAS uno a uno y con su día de la semana. El patrón que reportó el dueño es
+       muy concreto —el digitador copia y pega filas los fines de semana y se le cuela una máquina
+       ya entregada— y verlo escrito («sábado 22/08») es lo que permite ir a corregir el origen. */
+    const finde=iso=>{ const d=fechaUTC(iso).getUTCDay(); return d===0||d===6; };
     const porMaq=new Map();
-    fe.forEach(x=>{ const o=porMaq.get(x.cod)||{filas:0,horas:0,min:'',max:''};
+    fe.forEach(x=>{ const o=porMaq.get(x.cod)||{filas:0,horas:0,dias:new Map()};
       o.filas++; o.horas+=x.horas||0;
-      if(x.fecha){ if(!o.min||x.fecha<o.min) o.min=x.fecha; if(!o.max||x.fecha>o.max) o.max=x.fecha; }
+      if(x.fecha) o.dias.set(x.fecha,(o.dias.get(x.fecha)||0)+(x.horas||0));
       porMaq.set(x.cod,o); });
     const totH=fe.reduce((a,x)=>a+(x.horas||0),0);
-    avisos.push('<div class="alert warn">🚚 <b>'+fe.length+' fila(s) del parte descartadas por estar fuera de la estancia</b> de su máquina: '+
-      [...porMaq.entries()].map(([c,o])=>escapeHtml(c)+' <b>'+o.filas+'</b>'+(o.horas?' ('+n1(o.horas)+' h)':'')+
-        (o.min?' · '+fmtFecha(o.min)+(o.max!==o.min?'→'+fmtFecha(o.max):''):'')).join(' · ')+
-      '. No entran a <code>fact_jefe</code> ni al reparto: el parte le sigue reportando horas a máquinas ya entregadas. '+
-      '<b>Ojo:</b> por eso las horas de <code>fact_jefe</code> quedan '+n1(totH)+' h por debajo de las del parte — si alguien compara, esta es la razón. '+
-      'Si alguna de estas sí estuvo, corrige su fecha en la lista de máquinas.</div>');
+    const nFinde=fe.filter(x=>x.fecha&&finde(x.fecha)).length;
+    avisos.push('<div class="alert warn">🚚 <b>'+fe.length+' fila(s) del parte descartadas por estar fuera de la estancia</b> de su máquina '+
+      '('+n1(totH)+' h en total). Manda la fecha que pusiste en la lista, no el parte: una máquina que ya salió y reaparece '+
+      'un día suelto es un <b>error de digitación</b>, así que esa fila no entra a <code>fact_jefe</code> ni al reparto.'+
+      [...porMaq.entries()].map(([c,o])=>{
+        const dd=[...o.dias.entries()].sort();
+        return '<div style="margin-top:6px"><b>'+escapeHtml(c)+'</b> — '+o.filas+' fila(s), '+n1(o.horas)+' h: '+
+          (dd.length? dd.slice(0,12).map(([f,h])=>'<span class="chip '+(finde(f)?'wa':'mu')+'">'+
+             escapeHtml(diaSemana(f))+' '+fmtFecha(f)+(h?' · '+n1(h)+' h':'')+'</span>').join(' ')+
+             (dd.length>12?' <span class="note">y '+(dd.length-12)+' más</span>':'')
+           : '<span class="note">el parte no trae fecha por fila</span>')+'</div>';
+      }).join('')+
+      '<div style="margin-top:6px">'+
+      (nFinde? '<b>'+nFinde+' de esas filas caen en sábado o domingo</b>, que es justo el patrón del copia-pega: vale la pena avisarle al digitador. ' : '')+
+      'Las horas de <code>fact_jefe</code> quedan '+n1(totH)+' h por debajo de las del parte — si alguien compara, esta es la razón. '+
+      'Si alguna de estas máquinas <b>sí</b> estuvo, corrige su fecha en la lista.</div></div>');
+  }
+
+  /* El parte de BLOQUES mensuales trae el TOTAL del corte sin fecha por fila: no hay dónde
+     recortar, así que una máquina con estancia parcial arrastra las horas de los días en que ya
+     no estaba. La producción sí queda acotada (el derrame solo cae en sus días), pero las HORAS
+     no se pueden limpiar sin inventar. Se avisa en vez de prorratear a ojo. */
+  if(jefe.formato==='mensual' && dsProd.dias.length){
+    const parciales=[...jefe.maquinas.values()].filter(m=>m.propia && !m.excluida &&
+      dsProd.dias.some(d=>!estanciaActiva(P.estancias,m.cod,d)));
+    if(parciales.length)
+      avisos.push('<div class="alert warn">📄 El parte está en formato de <b>bloques con el total del mes</b>: no trae fecha por fila, '+
+        'así que <b>no puedo descartar los días fuera de la estancia</b> de '+
+        parciales.map(m=>escapeHtml(m.cod)+' ('+n1(m.horasTotal)+' h)').join(' · ')+
+        '. Su <b>producción</b> sí queda acotada a los días en que estuvo, pero sus <b>horas</b> incluyen lo que el parte le haya '+
+        'cargado después de salir. Para que el recorte funcione hace falta el parte <b>día a día</b> (<code>BASE MAQUINARIA</code>).</div>');
   }
   if(rep.sinHoras && rep.sinHoras.size)
     avisos.push('<div class="alert info">📅 Veces que una máquina <b>no recibió producción por no llegar a las horas mínimas del día</b> '+

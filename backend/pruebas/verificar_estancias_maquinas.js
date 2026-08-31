@@ -254,6 +254,58 @@ console.log('\n== Parte de BLOQUES mensuales (sin fecha por fila) ==');
   ok('y su producción la reparte la que sí estaba', Math.abs(prodDe(R2.out,'EXC015')-7000)<0.011, prodDe(R2.out,'EXC015')+'');
 }
 
+console.log('\n== El copia-pega del digitador: la fecha de la lista le gana al parte ==');
+{
+  /* Patrón reportado por el dueño (ago-2026): el digitador copia y pega filas los fines de semana
+     y se le cuela una máquina YA ENTREGADA. La estancia manda; esa fila es un error de digitación. */
+  const filas=[];
+  DIAS.forEach(f=>{ filas.push({fecha:f,cod:'EXC015',cc:'3701.02.05',horas:10});
+                    if(f<'2026-07-20') filas.push({fecha:f,cod:'EXC001',cc:'3701.02.05',horas:9}); });
+  filas.push({fecha:'2026-07-21',cod:'EXC001',cc:'3701.02.05',horas:9});   // fantasma tras la salida
+  filas.push({fecha:'2026-07-22',cod:'EXC001',cc:'3701.02.05',horas:9});   // fantasma tras la salida
+  const ctx=contexto();
+  const R=monta(ctx,'EXC001:..2026-07-20\nEXC015',filas);
+  ok('las dos filas fantasma se descartan', (R.jefe.fueraEstancia||[]).length===2,
+     JSON.stringify((R.jefe.fueraEstancia||[]).map(x=>x.cod+' '+x.fecha)));
+  ok('ni una fila de EXC001 después de su salida', R.out.filas.filter(f=>f.maquina==='EXC001'&&f.fecha>='2026-07-20').length===0);
+  ok('las 18 h fantasma no cuentan en el total del parte',
+     Math.abs(R.jefe.maquinas.get('EXC001').horasTotal-27)<0.011, R.jefe.maquinas.get('EXC001').horasTotal+'');
+  ok('el aviso conserva la fecha de cada fila descartada (para ver el patrón del fin de semana)',
+     (R.jefe.fueraEstancia||[]).every(x=>/^\d{4}-\d{2}-\d{2}$/.test(x.fecha)));
+  // Del día de la salida en adelante, EXC015 es la única: se lleva esos días enteros.
+  const diasTrasSalida=DIAS.filter(d=>d>='2026-07-20');
+  ok('desde la salida, EXC015 se lleva la producción completa de cada día',
+     Math.abs(R.out.filas.filter(f=>f.maquina==='EXC015'&&f.fecha>='2026-07-20').reduce((a,f)=>a+(f.produccion||0),0)
+              - diasTrasSalida.length*1000)<0.011,
+     R.out.filas.filter(f=>f.maquina==='EXC015'&&f.fecha>='2026-07-20').reduce((a,f)=>a+(f.produccion||0),0)+
+     ' de '+diasTrasSalida.length*1000);
+  ok('entre las dos suman toda la producción del corte',
+     Math.abs(prodDe(R.out,'EXC001')+prodDe(R.out,'EXC015')-7000)<0.011);
+  ok('cuadre exacto y cero huérfanas', Math.abs(R.out.cuadre.find(c=>c.item==='02.05').dif)<0.011 && R.out.huerfanas.length===0);
+
+  // Sin la fecha escrita, el sistema no tiene cómo saberlo: el fantasma pasa. Es el argumento
+  // para mantener la lista al día, y conviene que la prueba lo deje dicho.
+  const ctx2=contexto();
+  const R2=monta(ctx2,'EXC001\nEXC015',filas);
+  ok('sin la fecha en la lista el fantasma SÍ se cuela (por eso hay que escribirla)',
+     R2.out.filas.some(f=>f.maquina==='EXC001'&&f.fecha>='2026-07-21'&&f.produccion>0));
+}
+
+console.log('\n== Parte de bloques mensuales: la producción se acota, las horas no se pueden ==');
+{
+  const bloques=[{cod:'EXC001',ccs:[{cc:'3701.02.05',horas:54}]},   // incluye 18 h fantasma
+                 {cod:'EXC015',ccs:[{cc:'3701.02.05',horas:70}]}];
+  const ctx=contexto();
+  const R=monta(ctx,'EXC001:..2026-07-20\nEXC015',bloques,{mensual:true});
+  ok('la PRODUCCIÓN sí queda acotada a los días de la estancia',
+     R.out.filas.filter(f=>f.maquina==='EXC001'&&f.fecha>='2026-07-20'&&f.produccion).length===0);
+  ok('las HORAS del bloque no se pueden recortar (el parte no trae fecha por fila)',
+     Math.abs(R.jefe.maquinas.get('EXC001').horasTotal-54)<0.011, R.jefe.maquinas.get('EXC001').horasTotal+'');
+  ok('la máquina queda detectable como estancia parcial, para poder avisarlo',
+     R.jefe.formato==='mensual' && R.out.filas.some(f=>f.maquina==='EXC001'));
+  ok('cuadre exacto igualmente', Math.abs(R.out.cuadre.find(c=>c.item==='02.05').dif)<0.011);
+}
+
 console.log('\n== Retrocompatible: una lista sin fechas se comporta como antes ==');
 {
   const filas=[];
