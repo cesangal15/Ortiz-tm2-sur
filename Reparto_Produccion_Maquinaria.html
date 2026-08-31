@@ -166,12 +166,14 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
           un día en que la obra reportó 3.011 m³. <b>No cambia ningún total del mes.</b> Pon 0 para desactivarlo.</div>
         <label class="fld" style="margin-top:8px">Horas mínimas para recibir producción (h/día)</label>
         <input type="number" id="minHorasProd" value="1" min="0" step="0.1">
-        <div class="hint">Con parte día a día: una máquina que ese día no llegó a estas horas <b>no recibe
-          producción ese día</b> — la reparten las que sí trabajaron, aunque sean del otro tipo (el 80/20
-          del terraplén se renormaliza). Existe porque en agosto un bulldozer con <b>0,2 h</b> salía con
-          <b>526 m³</b> (2.632 m³/h) por ser el único de su tipo. Sus horas igual salen en <code>fact_jefe</code>.
-          Si <b>nadie</b> trabajó la actividad ese día, no aplica (la producción no se pierde). Pon 0 para
-          exigir solo «reportó algo de horas».</div>
+        <div class="hint">Con parte día a día: para recibir producción de una actividad hay que <b>haberla hecho
+          ese día</b> —se miran las horas en <b>ese</b> centro de coste, no el total del día: un bulldozer con 7 h
+          en el ZODME no cobra terraplén— y con al menos estas horas. La reparten las que sí la hicieron, aunque
+          sean del otro tipo (el 80/20 del terraplén se renormaliza). Existe porque en agosto un bulldozer con
+          <b>0,2 h</b> salía con <b>526 m³</b> (2.632 m³/h) por ser el único de su tipo. Sus horas igual salen en
+          <code>fact_jefe</code>. Si <b>nadie</b> hizo esa actividad ese día se busca quien la haga en el corte, y
+          si nadie la hace nunca se reparte entre los presentes: la producción no se pierde. Pon 0 para exigir
+          solo «hizo algo de esa actividad».</div>
         <div class="hint">El resto (<span id="pctMotoLbl">20</span>%) a las motoniveladoras. Si solo hay un tipo presente
           —o solo uno <b>trabajó ese día</b>—, ese recibe el 100%: un día sin bulldozer no deja el 80% del terraplén
           en un bulldozer parado. El bulldozer sale como <b>NÚCLEO DE TERRAPLEN</b> y la motoniveladora como
@@ -1155,36 +1157,42 @@ function repartir(P, dsProd, jefe){
   const sinHoras=new Map();   // cod -> nº de veces que se le quitó la candidatura por no trabajar
   const caidas=new Map();     // 'item|TIPO' -> nº de días en que ese grupo no trabajó y su cuota fue al resto
 
-  /* Horas de una máquina en un día, sumando todos sus CC: sirve para saber si TRABAJÓ ese día. */
-  const horasDia=new Map();
+  /* Horas de una máquina en un día EN UNA ACTIVIDAD (sumando las dos UF: la actividad es la
+     misma se haga en la que se haga, D92). Es lo que decide si la máquina hizo ESE trabajo ese
+     día — NO el total del día: BL005 puede estar 7 h en el ZODME y no haber tocado el terraplén. */
+  const horasDiaItem=new Map();
   for(const [k,d] of jefe.dias){
-    const p=k.split('|'), kk=p[0]+'|'+p[1];
-    horasDia.set(kk,(horasDia.get(kk)||0)+(d.horas||0));
+    const p=k.split('|'), kk=p[0]+'|'+p[1]+'|'+p[3];      // fecha|cod|item
+    horasDiaItem.set(kk,(horasDiaItem.get(kk)||0)+(d.horas||0));
   }
 
   /* Quién puede recibir la producción de un (día, actividad):
-     1) del tipo coherente; 2) DENTRO de su estancia ese día; 3) y, con parte día a día, que ESE
-     día haya trabajado DE VERDAD — al menos las «horas mínimas» del parámetro. Sin la (3), un
-     día en que nadie del tipo reportó ese CC la cascada se cae al total del mes y le entrega
-     producción —con CERO horas, o con 0,2 h— a una máquina que no hizo el trabajo: en el corte
-     de agosto NH69 salía con 0,2 h y 526 m³ (2.632 m³/h) y con 0,1 h y 1.559 m³ (15.593 m³/h).
+     1) del tipo coherente; 2) DENTRO de su estancia ese día; 3) y, con parte día a día, que haya
+     hecho ESA ACTIVIDAD — no que simplemente haya estado en obra. La (3) mira las horas de la
+     máquina EN ESE ÍTEM, no el total del día: BL005 puede tener 7 h en el ZODME (02.08) y no
+     haber tocado el terraplén (02.07), y si se mira el total del día pasa el listón, se queda de
+     único bulldozer y se lleva el 80% del terraplén CON CERO HORAS (caso real del 13-ago: 290 y
+     350 m³ con base «horas totales», estando cargado solo a ZODME en el parte).
      El listón se mide sobre el POOL COMPLETO del CC (todos los tipos de su coherencia), no grupo
-     por grupo: si el bulldozer no trabajó pero la motoniveladora sí, el grupo del bulldozer se
-     CAE y su cuota (el 80% del terraplén) se renormaliza hacia quien sí trabajó — no puede
-     quedarse en un bulldozer parado. Escalones, para no dejar nunca producción huérfana (D86):
-       2 = alguien del pool llegó a las horas mínimas → reciben solo los que llegaron;
-       1 = nadie llegó, pero alguien reportó ALGO → reciben los que reportaron algo;
-       0 = nadie del pool trabajó (o el parte no trae días) → reciben los presentes, como siempre. */
-  const hDia=(m,fecha)=>horasDia.get(fecha+'|'+m.cod)||0;
+     por grupo: si el bulldozer no hizo terraplén pero la motoniveladora sí, el grupo del
+     bulldozer se CAE y su cuota se renormaliza hacia quien sí lo hizo.
+     ESCALONES, del más exigente al último recurso, para no dejar nunca producción huérfana (D86):
+       3 = alguien del pool hizo la actividad ese día con al menos las «horas mínimas»;
+       2 = nadie llegó al mínimo, pero alguien la hizo ese día (aunque fuera un rato);
+       1 = nadie la hizo ese día, pero alguien la hace EN EL CORTE (es su actividad, otro día);
+       0 = nadie del pool la hace nunca (o el parte no trae días) → los presentes, como siempre. */
+  const hDiaItem=(m,fecha,item)=>horasDiaItem.get(fecha+'|'+m.cod+'|'+item)||0;
+  const hCorteItem=(m,item)=>m.porItem.get(item)||0;
   function enEstancia(tipos, fechaU){
     const c=flota.filter(m=>tipos.indexOf(m.tipo)>=0);
     return fechaU ? c.filter(m=>estanciaActiva(P.estancias,m.cod,fechaU))
                   : c.filter(m=>estanciaSolapa(P.estancias,m.cod,P.desde,P.hasta));
   }
-  function pasaListon(m, fechaU, liston){
+  function pasaListon(m, fechaU, item, liston){
     if(!liston) return true;
-    const h=hDia(m,fechaU);
-    return liston===2 ? (h>0 && h+1e-9>=P.minHorasProd) : h>0;
+    if(liston===1) return hCorteItem(m,item)>0;
+    const h=hDiaItem(m,fechaU,item);
+    return liston===3 ? (h>0 && h+1e-9>=P.minHorasProd) : h>0;
   }
 
   /* Unidad de reparto. Por defecto **la UF no cuenta**: al informe le interesa la producción
@@ -1220,11 +1228,12 @@ function repartir(P, dsProd, jefe){
     let liston=0;
     if(fechaU && jefe.dias.size){
       const pool=preGrupos.reduce((a,g)=>a.concat(g.presentes),[]);
-      if(pool.some(m=>{ const h=hDia(m,fechaU); return h>0 && h+1e-9>=P.minHorasProd; })) liston=2;
-      else if(pool.some(m=>hDia(m,fechaU)>0)) liston=1;
+      if(pool.some(m=>{ const h=hDiaItem(m,fechaU,item); return h>0 && h+1e-9>=P.minHorasProd; })) liston=3;
+      else if(pool.some(m=>hDiaItem(m,fechaU,item)>0)) liston=2;
+      else if(pool.some(m=>hCorteItem(m,item)>0)) liston=1;
     }
     preGrupos.forEach(g=>{
-      g.cands=g.presentes.filter(m=>pasaListon(m,fechaU,liston));
+      g.cands=g.presentes.filter(m=>pasaListon(m,fechaU,item,liston));
       g.presentes.forEach(m=>{ if(g.cands.indexOf(m)<0) sinHoras.set(m.cod,(sinHoras.get(m.cod)||0)+1); });
     });
     const grupos=preGrupos.filter(g=>g.cands.length>0);
