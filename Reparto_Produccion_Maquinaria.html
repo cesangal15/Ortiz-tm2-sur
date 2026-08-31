@@ -164,8 +164,18 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
         <div class="hint">Las tajadas diarias por debajo de esto se acumulan en el día más fuerte de esa
           máquina y actividad. Son residuo de partir, no días flojos: en julio, una fila de 36 m³ caía
           un día en que la obra reportó 3.011 m³. <b>No cambia ningún total del mes.</b> Pon 0 para desactivarlo.</div>
-        <div class="hint">El resto (<span id="pctMotoLbl">20</span>%) a las motoniveladoras. Si solo hay un tipo presente, ese recibe el 100%.
-          El bulldozer sale como <b>NÚCLEO DE TERRAPLEN</b> y la motoniveladora como <b>CORONA DE TERRAPLEN</b>.</div>
+        <label class="fld" style="margin-top:8px">Horas mínimas para recibir producción (h/día)</label>
+        <input type="number" id="minHorasProd" value="1" min="0" step="0.1">
+        <div class="hint">Con parte día a día: una máquina que ese día no llegó a estas horas <b>no recibe
+          producción ese día</b> — la reparten las que sí trabajaron, aunque sean del otro tipo (el 80/20
+          del terraplén se renormaliza). Existe porque en agosto un bulldozer con <b>0,2 h</b> salía con
+          <b>526 m³</b> (2.632 m³/h) por ser el único de su tipo. Sus horas igual salen en <code>fact_jefe</code>.
+          Si <b>nadie</b> trabajó la actividad ese día, no aplica (la producción no se pierde). Pon 0 para
+          exigir solo «reportó algo de horas».</div>
+        <div class="hint">El resto (<span id="pctMotoLbl">20</span>%) a las motoniveladoras. Si solo hay un tipo presente
+          —o solo uno <b>trabajó ese día</b>—, ese recibe el 100%: un día sin bulldozer no deja el 80% del terraplén
+          en un bulldozer parado. El bulldozer sale como <b>NÚCLEO DE TERRAPLEN</b> y la motoniveladora como
+          <b>CORONA DE TERRAPLEN</b>.</div>
       </div>
       <div>
         <label class="fld">Opciones</label>
@@ -678,6 +688,7 @@ function leerParams(){
     separarUF: document.getElementById('separarUF').checked,
     repartoDiario: document.getElementById('repartoDiario').checked,
     minDia: Math.max(0,parseFloat(document.getElementById('minDia').value)||0),
+    minHorasProd: Math.max(0,parseFloat(document.getElementById('minHorasProd').value)||0),
     soloHoras: document.getElementById('soloHoras').checked,
     desde: document.getElementById('desde').value,
     hasta: document.getElementById('hasta').value
@@ -1141,7 +1152,8 @@ function repartir(P, dsProd, jefe){
   const asign=[];        // {cod,tipo,fecha,proyecto,item,noAprov,produccion,base}
   const huerfanas=[];
   const basesUsadas=new Map();
-  const sinHoras=new Map();   // cod -> nº de días en que se le quitó la candidatura por no trabajar
+  const sinHoras=new Map();   // cod -> nº de veces que se le quitó la candidatura por no trabajar
+  const caidas=new Map();     // 'item|TIPO' -> nº de días en que ese grupo no trabajó y su cuota fue al resto
 
   /* Horas de una máquina en un día, sumando todos sus CC: sirve para saber si TRABAJÓ ese día. */
   const horasDia=new Map();
@@ -1150,25 +1162,29 @@ function repartir(P, dsProd, jefe){
     horasDia.set(kk,(horasDia.get(kk)||0)+(d.horas||0));
   }
 
-  /* Quién puede recibir la producción de un (día, actividad).
-     1) del tipo coherente; 2) DENTRO de su estancia ese día; 3) y, si el parte tiene detalle
-     diario, que ESE día haya trabajado. La (3) es la que tapa el agujero de verdad: sin ella,
-     un día en que nadie del tipo reportó ese CC la cascada se cae al total del mes y le entrega
-     producción —con CERO horas— a una máquina que ya no estaba. Si NADIE del grupo trabajó ese
-     día no se inventa una ausencia: se dejan los candidatos de la estancia y decide la cascada
-     de siempre, que es lo que garantiza que nunca quede producción huérfana (D86). */
-  function candidatosDe(tipos, fechaU){
-    let c=flota.filter(m=>tipos.indexOf(m.tipo)>=0);
-    c = fechaU ? c.filter(m=>estanciaActiva(P.estancias,m.cod,fechaU))
-               : c.filter(m=>estanciaSolapa(P.estancias,m.cod,P.desde,P.hasta));
-    if(fechaU && jefe.dias.size){
-      const trabajaron=c.filter(m=>(horasDia.get(fechaU+'|'+m.cod)||0)>0);
-      if(trabajaron.length){
-        c.forEach(m=>{ if(trabajaron.indexOf(m)<0) sinHoras.set(m.cod,(sinHoras.get(m.cod)||0)+1); });
-        c=trabajaron;
-      }
-    }
-    return c;
+  /* Quién puede recibir la producción de un (día, actividad):
+     1) del tipo coherente; 2) DENTRO de su estancia ese día; 3) y, con parte día a día, que ESE
+     día haya trabajado DE VERDAD — al menos las «horas mínimas» del parámetro. Sin la (3), un
+     día en que nadie del tipo reportó ese CC la cascada se cae al total del mes y le entrega
+     producción —con CERO horas, o con 0,2 h— a una máquina que no hizo el trabajo: en el corte
+     de agosto NH69 salía con 0,2 h y 526 m³ (2.632 m³/h) y con 0,1 h y 1.559 m³ (15.593 m³/h).
+     El listón se mide sobre el POOL COMPLETO del CC (todos los tipos de su coherencia), no grupo
+     por grupo: si el bulldozer no trabajó pero la motoniveladora sí, el grupo del bulldozer se
+     CAE y su cuota (el 80% del terraplén) se renormaliza hacia quien sí trabajó — no puede
+     quedarse en un bulldozer parado. Escalones, para no dejar nunca producción huérfana (D86):
+       2 = alguien del pool llegó a las horas mínimas → reciben solo los que llegaron;
+       1 = nadie llegó, pero alguien reportó ALGO → reciben los que reportaron algo;
+       0 = nadie del pool trabajó (o el parte no trae días) → reciben los presentes, como siempre. */
+  const hDia=(m,fecha)=>horasDia.get(fecha+'|'+m.cod)||0;
+  function enEstancia(tipos, fechaU){
+    const c=flota.filter(m=>tipos.indexOf(m.tipo)>=0);
+    return fechaU ? c.filter(m=>estanciaActiva(P.estancias,m.cod,fechaU))
+                  : c.filter(m=>estanciaSolapa(P.estancias,m.cod,P.desde,P.hasta));
+  }
+  function pasaListon(m, fechaU, liston){
+    if(!liston) return true;
+    const h=hDia(m,fechaU);
+    return liston===2 ? (h>0 && h+1e-9>=P.minHorasProd) : h>0;
   }
 
   /* Unidad de reparto. Por defecto **la UF no cuenta**: al informe le interesa la producción
@@ -1195,11 +1211,31 @@ function repartir(P, dsProd, jefe){
     const coh=COHERENCIA[item];
     if(!coh){ huerfanas.push({proyecto:proyecto,item:item,total:total,motivo:'CC sin regla de coherencia'}); continue; }
 
-    const grupos=coh.grupos.map(g=>{
+    // Presentes por grupo primero; el listón se decide con el pool completo del CC.
+    const preGrupos=coh.grupos.map(g=>{
       let share=g.share;
       if(coh.split && item==='02.07') share=(g.tipos.indexOf('BULL')>=0)?P.pctBull:(1-P.pctBull);
-      return { tipos:g.tipos, share:share, cands:candidatosDe(g.tipos,fechaU) };
-    }).filter(g=>g.cands.length>0);
+      return { tipos:g.tipos, share:share, presentes:enEstancia(g.tipos,fechaU) };
+    });
+    let liston=0;
+    if(fechaU && jefe.dias.size){
+      const pool=preGrupos.reduce((a,g)=>a.concat(g.presentes),[]);
+      if(pool.some(m=>{ const h=hDia(m,fechaU); return h>0 && h+1e-9>=P.minHorasProd; })) liston=2;
+      else if(pool.some(m=>hDia(m,fechaU)>0)) liston=1;
+    }
+    preGrupos.forEach(g=>{
+      g.cands=g.presentes.filter(m=>pasaListon(m,fechaU,liston));
+      g.presentes.forEach(m=>{ if(g.cands.indexOf(m)<0) sinHoras.set(m.cod,(sinHoras.get(m.cod)||0)+1); });
+    });
+    const grupos=preGrupos.filter(g=>g.cands.length>0);
+    // Un grupo con máquinas presentes pero que no trabajaron ese día: su cuota se fue a los demás.
+    if(fechaU && grupos.length<preGrupos.length && grupos.length){
+      preGrupos.forEach(g=>{
+        if(g.cands.length || !g.presentes.length) return;
+        const kc=item+'|'+g.tipos.map(t=>NOMBRE_TIPO[t]||t).join('/');
+        caidas.set(kc,(caidas.get(kc)||0)+1);
+      });
+    }
 
     if(!grupos.length){
       const tipos=coh.grupos.map(g=>g.tipos.map(t=>NOMBRE_TIPO[t]).join('/')).join(' + ');
@@ -1395,7 +1431,7 @@ function repartir(P, dsProd, jefe){
 
   return { filas:filas, cuadre:cuadre, huerfanas:huerfanas, flota:flota,
            bases:[...basesUsadas.values()], bloques:bloques, sinBloque:sinBloque,
-           sinHoras:sinHoras };
+           sinHoras:sinHoras, caidas:caidas };
 }
 
 /* ============================ PROCESO ============================ */
@@ -1510,10 +1546,14 @@ function render(){
       'Si alguna de estas sí estuvo, corrige su fecha en la lista de máquinas.</div>');
   }
   if(rep.sinHoras && rep.sinHoras.size)
-    avisos.push('<div class="alert info">📅 Días en que una máquina <b>no recibió producción porque no trabajó</b> (cero horas en el parte ese día, '+
-      'y sí las tuvo otra de su tipo): '+[...rep.sinHoras.entries()].sort((a,b)=>b[1]-a[1])
+    avisos.push('<div class="alert info">📅 Veces que una máquina <b>no recibió producción por no llegar a las horas mínimas del día</b> '+
+      '('+n1(P.minHorasProd)+' h; otra del pool sí trabajó): '+[...rep.sinHoras.entries()].sort((a,b)=>b[1]-a[1])
         .map(([c,n])=>escapeHtml(c)+' <b>'+n+'</b>').join(' · ')+
-      '. Antes la producción de esos días se le repartía igual, por las horas del mes.</div>');
+      '. Antes la producción de esos días se le repartía igual, por las horas del mes — así salían filas de 0,2 h con 500 m³.</div>');
+  if(rep.caidas && rep.caidas.size)
+    avisos.push('<div class="alert info">⚖️ Días en que un <b>tipo entero no trabajó</b> una actividad y su cuota pasó al otro tipo '+
+      '(el 80/20 se renormaliza — no se pierde nada): '+[...rep.caidas.entries()].sort((a,b)=>b[1]-a[1])
+        .map(([k,n])=>{ const p=k.split('|'); return escapeHtml(p[0]+' sin '+p[1])+' <b>'+n+'</b> día(s)'; }).join(' · ')+'.</div>');
 
   const faltantes=[...P.propias].filter(c=>!jefe.maquinas.has(c));
   if(faltantes.length) avisos.push('<div class="alert info">Máquinas propias sin parte este mes: '+escapeHtml(faltantes.join(', '))+'</div>');
