@@ -118,6 +118,47 @@ cuadrilla activa de tierras/ODT/ODL, ALBERT incluida, sin tocar una sola celda. 
 o se repite, ese es el canal permanente; D134 es el atajo para que la gente de ALBERT la siga
 reportando quien la ve todos los días.
 
+## D145 — `albert` vuelve de UF3 a tierras (UF1/UF2) y recupera su login
+
+Es la **vuelta atrás del punto (1) de D84** en lo que toca a `albert` (`ariel` sigue fuera). Vuelve a
+ser capataz de tierras y vuelve a reportar actividades del día; la ASISTENCIA **no se mueve** — la
+cuadrilla ALBERT conserva el nombre y la siguen reportando `maleja`/`maria` (D84(3)/D134), como se
+acordó para no dejar el histórico apuntando a una cuadrilla que cambia de manos.
+
+**En el Sheet de OBRA, hoja `USUARIOS` (una fila):**
+
+| usuario | clave | rol | areas | redirige | estado |
+|---|---|---|---|---|---|
+| `albert` | *(la que se le asigne)* | `capataz` | *(vacío)* | `reporte-capataz.html` | `activo` |
+
+1. Si su fila **ya existe** con `estado` distinto de `activo` (así se saca a alguien sin borrarlo,
+   D108), basta con poner `activo` y revisar `rol`/`redirige`. Si no existe, se añade entera.
+2. La `clave` se teclea **en claro** y después se ejecuta **`endurecerClaves()`** en el Apps Script de
+   obra — la convierte al hash SHA-256 en el sitio (idempotente: lo que ya es hash se deja igual).
+3. `redirige = reporte-capataz.html` a propósito: entra **directo** a su reporte. `seleccion-reporte.html`
+   le mostraría un tile útil y otro de asistencia que no le traería a nadie (su cuadrilla la reporta
+   `maleja`/`maria`). En el repo queda la entrada `'albert'` de `seleccion-reporte.html` **excluida**
+   del tile de asistencia, como red de seguridad por si se le apunta ahí.
+4. `albert` tiene que **entrar una vez CON SEÑAL**: el rol y el `redirige` viajan en la sesión guardada
+   del teléfono (D82/D108) y solo se refrescan con un login contra el servidor. Después ya reporta
+   sin cobertura como cualquier capataz (la cola de D82 sube lo suyo al recuperar señal).
+
+**No hay que redesplegar el Apps Script:** el cambio en `Codigo.gs` es la semilla `setupUsuarios()`, que
+solo corre en una instalación nueva. El código que decide quién entra lee la hoja `USUARIOS` viva.
+
+**Lo que NO se toca (y por qué):** la hoja `CUADRILLAS` del Sheet de asistencias — `ALBERT` sigue con
+`responsables = maleja,maria` — y las cuadrillas ARIEL (`inactiva`) y UF3. En el repo, `encargado.html`
+vuelve a esperar su reporte en la bandeja (`CAPATACES_ESPERADOS`); eso solo alimenta el aviso de "falta
+por reportar" del día consultado y no altera nada de lo ya guardado.
+
+**Pendiente de decisión del dueño (dato, no código): la asistencia de `albert` como PERSONA.** D84 lo
+retiró en `PERSONAL` de tierras con `fecha_retiro = 2026-07-27` y en el seed de UF3 figura como
+**75746 ALBERT ESNAIDER ROJAS** con `cargo=CAPATAZ` dentro de la cuadrilla `UF3` (proyecto 3703). Si sus
+horas deben volver a pagarse por 3701/3702 hay que moverlo a mano: **alta nueva** en la cuadrilla de
+tierras que corresponda con su `fecha_ingreso` real (D85: `reactivar` pierde el hueco de los días en
+UF3) y retiro en UF3 con esa misma fecha. Mientras no se haga, su login funciona igual —el reporte de
+obra y la asistencia son módulos separados (D69)—, pero su nómina sigue saliendo en el Parte de 3703.
+
 ## Cuadrilla propia de `duvan` — asistencias de drenajes (D105)
 
 `duvan` (rol `asistencia_plus_dren`, D88) ya podía reportar CUALQUIER cuadrilla de ODT/ODL, pero no

@@ -52,9 +52,16 @@
 // Tiles por usuario (§3 del prompt): capataces y las chequeadoras con doble deber (mairy/maleja/luzdary)
 // conservan su reporte de obra + asistencia; jeisson (rol asistencia_plus) solo tiene asistencia
 // (reporta operadores) + resumen sin gestión.
-// D84: `albert` y `ariel` salieron a UF3 → se eliminan sus tiles (ya no tienen login).
+// D84: `albert` y `ariel` salieron a UF3 → se eliminaron sus tiles (ya no tenían login).
+// D145: `albert` VUELVE a tierras (UF1/UF2) y recupera su reporte de obra. NO recupera la asistencia:
+// la cuadrilla ALBERT sigue conservando el nombre pero la reportan `maleja`/`maria` (D84(3)/D134), así
+// que se le excluye del ASISTENCIA_TILE de abajo — con la cuadrilla en manos de otro, el formulario no
+// le traería a nadie. Su fila de USUARIOS lo lleva DIRECTO a `reporte-capataz.html` (un solo tile no
+// merece pantalla de selección); esta entrada es la red de seguridad por si algún día se le apunta
+// aquí. `ariel` sigue fuera.
 const TILES = {
   'angel':      [{href:'reporte-capataz.html', ico:'📋', t:'Reporte de Capataz', p:'Actividades del día con producción y maquinaria'}],
+  'albert':     [{href:'reporte-capataz.html', ico:'📋', t:'Reporte de Capataz', p:'Actividades del día con producción y maquinaria'}],
   'alejo':      [{href:'reporte-capataz.html', ico:'📋', t:'Reporte de Capataz', p:'Actividades del día con producción y maquinaria'}],
   'alejandro':  [{href:'reporte-capataz.html', ico:'📋', t:'Reporte de Capataz', p:'Actividades del día con producción y maquinaria'}],
   'robinson':   [{href:'reporte-capataz.html', ico:'📋', t:'Reporte de Capataz', p:'Actividades del día con producción y maquinaria'}],
@@ -141,7 +148,11 @@ window.onload = function(){
   // D101: residente_uf3 también trae sus dos tiles en la lista (no se le agrega el genérico).
   // D119: `angie` tampoco lo recibe — sus dos tiles ya vienen en la lista, y el genérico ("Asistencia
   // de tu cuadrilla") le duplicaría el mismo destino con un texto que no describe su alcance.
+  // D145: `albert` tampoco — vuelve a tierras solo para el reporte de obra; la asistencia de la
+  // cuadrilla ALBERT la siguen reportando `maleja`/`maria` (D84(3)/D134). Si algún día la cuadrilla
+  // vuelve a ser suya (su login en la celda `responsables`), se quita esta condición y ya.
   if(usuario!=='jeisson' && usuario!=='duvan' && usuario!=='residente_uf3' && usuario!=='angie'
+     && usuario!=='albert'
      && rol!=='residente_odt' && rol!=='residente_odl' && rol!=='residente_dren') tiles.push(ASISTENCIA_TILE);
   document.getElementById('tiles').innerHTML = tiles.map(t=>
     `<a class="tile" href="${t.href}"><div class="ico">${t.ico}</div><div class="t-main"><h2>${t.t}</h2><p>${t.p}</p></div><div class="arrow">→</div></a>`
