@@ -93,6 +93,39 @@ que ignorarla a mano fila por fila. Ahora:
 
 Verificación: `node backend/pruebas/verificar_conciliador_ignorar_hoja.js`.
 
+### ¿De dónde sale cada número del acta?
+
+Depende del estado de la fila, y son **dos fuentes distintas**:
+
+| | filas `ENCONTRADA` / `ACEPTADA_MANUAL` (bloque 1) | bloque de `PENDIENTE_DIGITACION` (bloque 1b) |
+|---|---|---|
+| cantidad | **la BASE** (tu `GRANULARES.xlsx` / `TERRAPLEN.xlsx`) | **la PROFORMA** del contratista |
+| m³·km | **la BASE, tal cual — no se recalcula** | **lo calcula la herramienta**: km totales × cantidad |
+| km totales | la BASE | reglas de `kmPorOrigen` (Putana = PK/1000+2,5; Avensa 25,7; Pekín 67,5) |
+
+Así que **una fórmula que corrijas en tu Excel entra sola al acta** para las
+filas que ya están digitadas: la herramienta copia lo que dice la base y no
+recalcula nada. Lo que corrijas **no** afecta al bloque de pendientes, que por
+definición son remisiones que aún no están en la base.
+
+**Las columnas de la base se leen POR POSICIÓN, no por el título.** Están
+fijadas en `BASES_DEF` dentro de `conciliador.js`:
+
+- **GRANULARES** (hoja `BASE 2026`, encabezado en la fila 2): fecha `A`,
+  remisión `B`, placa `C`, **cantidad `G`**, actividad `I`, CC `J`, km inicial
+  `L`, km final `M`, km totales `N`, **m³·km `O`**, unidad `P`, UF `R`, área
+  `X`, empresa `Z`.
+- **TERRAPLEN** (hoja `BASE 2026`, encabezado en la fila 4): fecha `A`,
+  remisión `B`, placa `C`, empresa `D`, **cantidad `H`**, actividad `I`/`J`,
+  UF `K`, CC `L`, km `P`/`S`/`V`, **m³·km `W`**, unidad `X`, área `AB`.
+
+Consecuencia práctica, y es la que importa: **puedes cambiar las FÓRMULAS de
+esas columnas cuanto quieras** —la herramienta lee el valor resultante—, pero
+**si INSERTAS, BORRAS o MUEVES una columna, el lector empieza a leer otra cosa
+sin avisar**. No se cae ni protesta: te saca el acta con la columna equivocada.
+Si algún día hay que reordenar la base, hay que tocar `BASES_DEF` en el mismo
+commit.
+
 ### Filas ENCONTRADAS a medias (completar con la proforma)
 
 Si la remisión matchea la base (remisión + empresa + fecha) pero la fila está
