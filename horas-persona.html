@@ -5,47 +5,48 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Horas por persona — Asistencias</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tema.css">
+<script src="tema.js"></script>
 <style>
-  :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--success:#2ecc71;--error:#e74c3c;--input-bg:#12151f;}
   *{box-sizing:border-box;margin:0;padding:0;}
   body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:0 0 60px;}
-  .header{background:linear-gradient(135deg,#1a1d27 0%,#0f1117 100%);border-bottom:3px solid var(--accent);padding:20px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20;}
-  .header-left .label{font-family:'Syne',sans-serif;font-size:10px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;}
+  .header{background:var(--header-grad);border-bottom:3px solid var(--accent);padding:20px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20;}
+  .header-left .label{font-family:'Syne',sans-serif;font-size:10px;letter-spacing:3px;color:var(--accent-txt);text-transform:uppercase;}
   .header-left h1{font-family:'Syne',sans-serif;font-size:19px;font-weight:800;}
   .header-user{font-size:12px;color:var(--muted);text-align:right;}
-  .header-user span{display:block;color:var(--accent);font-weight:600;}
+  .header-user span{display:block;color:var(--accent-txt);font-weight:600;}
   .logout-btn{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:4px 10px;cursor:pointer;margin-top:4px;font-family:'DM Sans',sans-serif;}
-  .logout-btn:hover{border-color:var(--error);color:var(--error);}
+  .logout-btn:hover{border-color:var(--error);color:var(--error-txt);}
   .container{max-width:860px;margin:0 auto;padding:20px 16px;}
   .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;}
   .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;}
   .field{flex:1;min-width:130px;}
   label{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-bottom:5px;letter-spacing:0.5px;text-transform:uppercase;}
-  input[type="date"],input[type="text"],select{width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 12px;outline:none;color-scheme:dark;}
-  select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a80a0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px;cursor:pointer;}
+  input[type="date"],input[type="text"],select{width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 12px;outline:none;}
+  select{appearance:none;background-image:var(--flecha);background-repeat:no-repeat;background-position:right 12px center;padding-right:32px;cursor:pointer;}
   input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,0.1);}
-  .btn{padding:10px 18px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:8px;color:#0f1117;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;}
+  .btn{padding:10px 18px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:8px;color:var(--btn-txt);font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;}
   .btn:hover{transform:translateY(-1px);}
   .btn-ghost{padding:10px 16px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Syne',sans-serif;font-size:12px;font-weight:700;cursor:pointer;}
-  .btn-ghost:hover{border-color:var(--accent);color:var(--accent);}
+  .btn-ghost:hover{border-color:var(--accent);color:var(--accent-txt);}
   .mini-btn{background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;margin-right:4px;font-family:'DM Sans',sans-serif;}
-  .mini-btn:hover{border-color:var(--accent);color:var(--accent);}
-  .mini-btn.on{border-color:var(--accent);color:var(--accent);}
+  .mini-btn:hover{border-color:var(--accent);color:var(--accent-txt);}
+  .mini-btn.on{border-color:var(--accent);color:var(--accent-txt);}
   .section-title{font-family:'Syne',sans-serif;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin:22px 0 10px;display:flex;align-items:center;gap:8px;}
   .section-title::after{content:'';flex:1;height:1px;background:var(--border);}
   .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;}
   .kpi{background:linear-gradient(135deg,var(--surface2),var(--surface));border:1px solid var(--border);border-radius:14px;padding:13px;text-align:center;}
-  .kpi .k-val{font-family:'Syne',sans-serif;font-size:21px;font-weight:800;color:var(--accent);}
+  .kpi .k-val{font-family:'Syne',sans-serif;font-size:21px;font-weight:800;color:var(--accent-txt);}
   .kpi .k-lbl{font-size:10px;text-transform:uppercase;letter-spacing:0.6px;color:var(--muted);margin-top:4px;line-height:1.35;}
   .kpi .k-col{display:block;font-size:9px;color:var(--muted);opacity:0.75;letter-spacing:0.5px;text-transform:none;}
   .kpi.neutro .k-val{color:var(--text);}
   .cuad-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid rgba(46,52,80,0.5);font-size:13.5px;}
   .cuad-row:last-child{border-bottom:none;}
   .badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;border:1px solid var(--border);white-space:nowrap;}
-  .badge.aus{border-color:rgba(245,166,35,0.4);color:var(--accent);}
-  .badge.sin{border-color:rgba(231,76,60,0.4);color:var(--error);}
-  .badge.ok{border-color:rgba(46,204,113,0.4);color:var(--success);}
-  .aviso{background:rgba(245,166,35,0.08);border:1px solid rgba(245,166,35,0.3);border-radius:10px;padding:10px 14px;font-size:12.5px;color:var(--accent);margin-top:12px;}
+  .badge.aus{border-color:rgba(245,166,35,0.4);color:var(--accent-txt);}
+  .badge.sin{border-color:rgba(231,76,60,0.4);color:var(--error-txt);}
+  .badge.ok{border-color:rgba(46,204,113,0.4);color:var(--success-txt);}
+  .aviso{background:rgba(245,166,35,0.08);border:1px solid rgba(245,166,35,0.3);border-radius:10px;padding:10px 14px;font-size:12.5px;color:var(--accent-txt);margin-top:12px;}
   .loading,.empty-state{text-align:center;padding:34px;color:var(--muted);font-size:14px;}
   .tabla-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
   .hint-scroll{display:none;}
@@ -81,7 +82,7 @@
   </div>
   <div class="header-user">
     <span id="userDisplay">—</span>
-    <button class="logout-btn" id="btnBack" style="border-color:var(--accent);color:var(--accent);margin-right:6px;">← Resumen</button>
+    <button class="logout-btn" id="btnBack" style="border-color:var(--accent);color:var(--accent-txt);margin-right:6px;">← Resumen</button>
     <button class="logout-btn" onclick="logout()">Salir</button>
   </div>
 </div>
@@ -482,7 +483,7 @@ function render(){
    +   `<div class="field" style="max-width:170px;"><label>Hasta</label><input type="date" id="inpHasta" value="${esc(STATE.hasta)}" onchange="onRangoLibre()"></div>`
    +   '<div class="field" style="flex:0;"><button class="btn" onclick="consultar()">Consultar →</button></div>'
    + '</div>'
-   + `<p style="font-size:12px;color:var(--accent);margin-top:10px;">📅 Período a consultar: <b>${esc(etiquetaPeriodo(STATE.desde, STATE.hasta))}</b> `
+   + `<p style="font-size:12px;color:var(--accent-txt);margin-top:10px;">📅 Período a consultar: <b>${esc(etiquetaPeriodo(STATE.desde, STATE.hasta))}</b> `
    + `<span style="color:var(--muted)">(${esc(STATE.desde)} a ${esc(STATE.hasta)}, ambos incluidos)</span></p>`
    // Supuesto escrito a la vista, para que el dueño lo corrija en la validación si el 10 va en los dos lados.
    + `<p style="font-size:11px;color:var(--muted);margin-top:4px;">El corte de extras y novedades es del <b>${CORTE_DIA}</b> al <b>${CORTE_DIA}</b>: el período va del día ${CORTE_DIA+1} del mes anterior al día ${CORTE_DIA} de este mes, ambos inclusive (el día ${CORTE_DIA} cuenta en el período que cierra, no en el que abre).</p>`
@@ -538,9 +539,9 @@ function resultadoHtml(d){
         : `Código <b>${esc(p.codigo||'—')}</b>${p.cedula?' · c.c. '+esc(p.cedula):''}<br>`
           + `${esc(p.cargo||'—')} · cuadrilla <b>${esc(p.cuadrilla||'—')}</b>`
           + (p.fecha_ingreso?`<br>Ingreso: ${esc(p.fecha_ingreso)}`:'')
-          + (p.fecha_retiro?` · <span style="color:var(--accent)">Retiro: ${esc(p.fecha_retiro)}</span> <small>(primer día que ya no trabaja)</small>`:''))
+          + (p.fecha_retiro?` · <span style="color:var(--accent-txt)">Retiro: ${esc(p.fecha_retiro)}</span> <small>(primer día que ya no trabaja)</small>`:''))
    + '</div>'
-   + `<div class="meta" style="margin-top:8px;color:var(--accent);">📅 ${esc(etiquetaPeriodo(d.desde, d.hasta))} · ${d.dias} día(s) · ${(d.filas||[]).length} registro(s)</div>`
+   + `<div class="meta" style="margin-top:8px;color:var(--accent-txt);">📅 ${esc(etiquetaPeriodo(d.desde, d.hasta))} · ${d.dias} día(s) · ${(d.filas||[]).length} registro(s)</div>`
    + '</div>';
   // D142: al eventual (D85) no se le esperan días, y decirlo aquí evita que "0 días sin reporte" se lea
   // como que faltó información. Al admin se le explica de dónde salen sus filas.

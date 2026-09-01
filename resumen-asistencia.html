@@ -8,62 +8,63 @@
 <!-- SheetJS (generador del Parte Navision): se carga BAJO DEMANDA, no aquí. Etiquetada en la cabecera
      bloqueaba el primer pintado con ~900 KB que solo hacen falta al pulsar "Excel 3701/3702" (ver
      ensureXLSX()). Misma librería y misma versión: no es una dependencia nueva. -->
+<link rel="stylesheet" href="tema.css">
+<script src="tema.js"></script>
 <style>
-  :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#7a80a0;--success:#2ecc71;--error:#e74c3c;--input-bg:#12151f;}
   *{box-sizing:border-box;margin:0;padding:0;}
   body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:0 0 60px;}
-  .header{background:linear-gradient(135deg,#1a1d27 0%,#0f1117 100%);border-bottom:3px solid var(--accent);padding:20px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20;}
-  .header-left .label{font-family:'Syne',sans-serif;font-size:10px;letter-spacing:3px;color:var(--accent);text-transform:uppercase;}
+  .header{background:var(--header-grad);border-bottom:3px solid var(--accent);padding:20px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:20;}
+  .header-left .label{font-family:'Syne',sans-serif;font-size:10px;letter-spacing:3px;color:var(--accent-txt);text-transform:uppercase;}
   .header-left h1{font-family:'Syne',sans-serif;font-size:19px;font-weight:800;}
   .header-user{font-size:12px;color:var(--muted);text-align:right;}
-  .header-user span{display:block;color:var(--accent);font-weight:600;}
+  .header-user span{display:block;color:var(--accent-txt);font-weight:600;}
   .logout-btn{background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;padding:4px 10px;cursor:pointer;margin-top:4px;font-family:'DM Sans',sans-serif;}
-  .logout-btn:hover{border-color:var(--error);color:var(--error);}
+  .logout-btn:hover{border-color:var(--error);color:var(--error-txt);}
   .container{max-width:760px;margin:0 auto;padding:20px 16px;}
   .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;margin-bottom:16px;}
   .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;}
   .field{flex:1;min-width:130px;}
   label{display:block;font-size:11px;font-weight:500;color:var(--muted);margin-bottom:5px;letter-spacing:0.5px;text-transform:uppercase;}
-  input[type="date"],input[type="text"],input[type="number"],input[type="file"],select{width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 12px;outline:none;color-scheme:dark;}
-  select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%237a80a0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px;cursor:pointer;}
+  input[type="date"],input[type="text"],input[type="number"],input[type="file"],select{width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:10px 12px;outline:none;}
+  select{appearance:none;background-image:var(--flecha);background-repeat:no-repeat;background-position:right 12px center;padding-right:32px;cursor:pointer;}
   input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,0.1);}
-  .btn{padding:10px 18px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:8px;color:#0f1117;font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;}
+  .btn{padding:10px 18px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:8px;color:var(--btn-txt);font-family:'Syne',sans-serif;font-size:13px;font-weight:700;cursor:pointer;white-space:nowrap;}
   .btn:hover{transform:translateY(-1px);}
   .btn-ghost{padding:10px 16px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Syne',sans-serif;font-size:12px;font-weight:700;cursor:pointer;}
-  .btn-ghost:hover{border-color:var(--accent);color:var(--accent);}
+  .btn-ghost:hover{border-color:var(--accent);color:var(--accent-txt);}
   .section-title{font-family:'Syne',sans-serif;font-size:12px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin:22px 0 10px;display:flex;align-items:center;gap:8px;}
   .section-title::after{content:'';flex:1;height:1px;background:var(--border);}
   .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:4px;}
   .kpi{background:linear-gradient(135deg,var(--surface2),var(--surface));border:1px solid var(--border);border-radius:14px;padding:14px;text-align:center;}
-  .kpi .k-val{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:var(--accent);}
+  .kpi .k-val{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:var(--accent-txt);}
   .kpi .k-lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-top:4px;}
   .cuad-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid rgba(46,52,80,0.5);font-size:13.5px;}
   .cuad-row:last-child{border-bottom:none;}
-  .cuad-row .ok{color:var(--success);} .cuad-row .no{color:var(--error);}
+  .cuad-row .ok{color:var(--success-txt);} .cuad-row .no{color:var(--error-txt);}
   .falt-row{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid rgba(46,52,80,0.5);font-size:13px;flex-wrap:wrap;}
   .falt-row:last-child{border-bottom:none;}
   .falt-row .nm b{display:block;} .falt-row .nm small{color:var(--muted);font-size:11px;}
   .badge{font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;border:1px solid var(--border);white-space:nowrap;}
-  .badge.sin{border-color:rgba(231,76,60,0.4);color:var(--error);}
-  .badge.aus{border-color:rgba(245,166,35,0.4);color:var(--accent);}
+  .badge.sin{border-color:rgba(231,76,60,0.4);color:var(--error-txt);}
+  .badge.aus{border-color:rgba(245,166,35,0.4);color:var(--accent-txt);}
   .export-card{background:var(--surface2);border:1px dashed var(--border);border-radius:14px;padding:18px;}
   .export-btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;}
-  .aviso{background:rgba(245,166,35,0.08);border:1px solid rgba(245,166,35,0.3);border-radius:10px;padding:10px 14px;font-size:12.5px;color:var(--accent);margin-top:12px;}
+  .aviso{background:rgba(245,166,35,0.08);border:1px solid rgba(245,166,35,0.3);border-radius:10px;padding:10px 14px;font-size:12.5px;color:var(--accent-txt);margin-top:12px;}
   .loading,.empty-state{text-align:center;padding:34px;color:var(--muted);font-size:14px;}
   table{width:100%;border-collapse:collapse;font-size:12.5px;}
   th,td{padding:7px 6px;text-align:left;border-bottom:1px solid rgba(46,52,80,0.5);}
   th{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:0.5px;}
   .tag{font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;border:1px solid var(--border);}
-  .tag.activo{border-color:rgba(46,204,113,0.4);color:var(--success);}
+  .tag.activo{border-color:rgba(46,204,113,0.4);color:var(--success-txt);}
   .tag.inactivo{border-color:rgba(122,128,160,0.4);color:var(--muted);}
   .mini-btn{background:none;border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer;margin-right:4px;}
-  .mini-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .mini-btn:hover{border-color:var(--accent);color:var(--accent-txt);}
   /* Buscador de CC (D78): mismo patrón visual que el del capataz, pero sobre TODO el catálogo */
   .cc-search{position:relative;}
   .cc-results{position:absolute;top:100%;left:0;right:0;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;max-height:240px;overflow-y:auto;z-index:30;margin-top:4px;}
   .cc-opt{padding:8px 12px;font-size:12.5px;cursor:pointer;border-bottom:1px solid var(--border);}
   .cc-opt:last-child{border-bottom:none;}
-  .cc-opt:hover{background:var(--surface2);color:var(--accent);}
+  .cc-opt:hover{background:var(--surface2);color:var(--accent-txt);}
   .cc-head{padding:5px 12px;font-size:9.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);background:var(--surface2);border-bottom:1px solid var(--border);position:sticky;top:0;}
   /* Indicador de carga NO bloqueante (mismo tema oscuro/acento): barrita bajo el header + contenido
      atenuado. Al cambiar de fecha ya no se borra la pantalla: se sigue viendo el día anterior hasta
@@ -87,8 +88,8 @@
     <!-- D112: entrada a "Horas por persona" (horas-persona.html). Es la vista INVERSA de esta pantalla
          (una persona × un período, en vez de un día × todas las cuadrillas) y la usa la misma gente,
          así que se entra desde aquí. Mismo guard y mismo filtro por área. -->
-    <a class="logout-btn" href="horas-persona.html" style="display:inline-block;text-decoration:none;border-color:var(--accent);color:var(--accent);margin-right:6px;" title="Horas de una persona en un período (para revisar un reclamo de pago)">🕐 Horas por persona</a>
-    <button class="logout-btn" id="btnBack" style="display:none;border-color:var(--accent);color:var(--accent);margin-right:6px;">← Volver</button>
+    <a class="logout-btn" href="horas-persona.html" style="display:inline-block;text-decoration:none;border-color:var(--accent);color:var(--accent-txt);margin-right:6px;" title="Horas de una persona en un período (para revisar un reclamo de pago)">🕐 Horas por persona</a>
+    <button class="logout-btn" id="btnBack" style="display:none;border-color:var(--accent);color:var(--accent-txt);margin-right:6px;">← Volver</button>
     <button class="logout-btn" onclick="logout()">Salir</button>
   </div>
 </div>
@@ -1047,7 +1048,7 @@ function render(){
   if(notas.length){
     html+='<div class="section-title">📝 Notas del día</div><div class="card">';
     notas.forEach(n=>{
-      html+=`<div class="cuad-row" style="align-items:flex-start;"><span style="flex:1;"><b style="color:var(--accent)">${esc(n.cuadrilla)}</b> <small style="color:var(--muted)">(${esc(n.reporta)})</small><br>${esc(n.nota)}</span></div>`;
+      html+=`<div class="cuad-row" style="align-items:flex-start;"><span style="flex:1;"><b style="color:var(--accent-txt)">${esc(n.cuadrilla)}</b> <small style="color:var(--muted)">(${esc(n.reporta)})</small><br>${esc(n.nota)}</span></div>`;
     });
     html+='</div>';
   }
@@ -1204,7 +1205,7 @@ function detalleCuadrillaHtml(c, filasCuad){
       if(cl.ord_domfest)  partes.push(`${fmtH(cl.ord_domfest)}h dom/fest`);
       if(cl.extra_domfest) partes.push(`${fmtH(cl.extra_domfest)}h extra dom/fest`);
       if(cl.recargo_noct_ord) partes.push(`${fmtH(cl.recargo_noct_ord)}h rec.noct`);
-      if(extra)  extraTag=`<span class="badge" style="border-color:rgba(245,166,35,0.5);color:var(--accent);">⏱️ +${fmtH(extra)}h extra${cl.avisoExtra?' (revisar)':''}</span>`;
+      if(extra)  extraTag=`<span class="badge" style="border-color:rgba(245,166,35,0.5);color:var(--accent-txt);">⏱️ +${fmtH(extra)}h extra${cl.avisoExtra?' (revisar)':''}</span>`;
       linea=`<small style="color:var(--muted)">T${esc(f.turno||'?')} · ${esc(f.hora_entrada||'')}–${esc(f.hora_salida||'')} · ${esc(f.cc||'')}</small>`
         + (partes.length?` <span style="color:var(--text)">${partes.join(' · ')}</span>`:'')
         + (extraTag?' '+extraTag:'');
@@ -1219,7 +1220,7 @@ function detalleCuadrillaHtml(c, filasCuad){
       + `</div>`;
   });
   const resumen=`<div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">`
-    + `${nPres} presente(s)${sumExtra?` · <span style="color:var(--accent)">Σ ${fmtH(sumExtra)}h extra</span>`:''}`
+    + `${nPres} presente(s)${sumExtra?` · <span style="color:var(--accent-txt)">Σ ${fmtH(sumExtra)}h extra</span>`:''}`
     + (nAus?` · ${nAus} ausente(s)`:'') + (nSinCC?` · <span class="no">${nSinCC} sin CC</span>`:'') + '</div>';
   return `<div class="card" style="background:var(--surface2);margin-bottom:8px;">${resumen}${filasHtml}</div>`;
 }
@@ -1367,7 +1368,7 @@ function completarListaHtml(d, comp){
   // ni al filtrar, y los revisa juntos antes de "Guardar". El buscador solo filtra los pendientes de
   // abajo (#compPendientes); los ya marcados nunca se ocultan.
   h+='<div id="compMarcados" style="display:none;border:1px solid rgba(245,166,35,0.4);border-radius:10px;padding:4px 10px 2px;margin-bottom:10px;">'
-    + '<div style="font-family:\'Syne\',sans-serif;font-size:11px;letter-spacing:1.5px;color:var(--accent);text-transform:uppercase;padding:6px 0 2px;">✓ Marcados para subir (<span id="compMarcadosN">0</span>)</div></div>';
+    + '<div style="font-family:\'Syne\',sans-serif;font-size:11px;letter-spacing:1.5px;color:var(--accent-txt);text-transform:uppercase;padding:6px 0 2px;">✓ Marcados para subir (<span id="compMarcadosN">0</span>)</div></div>';
   h+='<div id="compPendientes">';
   comp.forEach((p,i)=>{
     h+=`<div class="comp-item" id="comp-item-${i}" data-search="${esc((String(p.nombre)+' '+String(p.cargo)+' '+String(p.cuadrilla)).toLowerCase())}" style="border-bottom:1px solid rgba(46,52,80,0.5);padding:10px 0;">`
@@ -1582,8 +1583,8 @@ function renderAusFiltros(){
     +   `<input type="checkbox" style="width:auto;" ${a.incluirSinRep?'checked':''} onchange="ausSetSinRep(this.checked)"> `
     +   `Incluir días <b style="color:var(--text)">no reportados</b> (la cuadrilla reportó, pero a la persona no la incluyeron)</label>`
     + '<span style="flex:1;"></span>'
-    + `<button class="mini-btn" onclick="ausSetVista('persona')" style="${a.vista==='persona'?'border-color:var(--accent);color:var(--accent);':''}">Por persona</button>`
-    + `<button class="mini-btn" onclick="ausSetVista('fecha')" style="${a.vista==='fecha'?'border-color:var(--accent);color:var(--accent);':''}">Por fecha</button>`
+    + `<button class="mini-btn" onclick="ausSetVista('persona')" style="${a.vista==='persona'?'border-color:var(--accent);color:var(--accent-txt);':''}">Por persona</button>`
+    + `<button class="mini-btn" onclick="ausSetVista('fecha')" style="${a.vista==='fecha'?'border-color:var(--accent);color:var(--accent-txt);':''}">Por fecha</button>`
     + '</div>';
   box.innerHTML=h;
 }
@@ -1637,7 +1638,7 @@ function renderAusResultados(){
     + '<div class="card" style="background:var(--surface2);">';
   motivosOrd.forEach((m,i)=>{
     const sel=a.motivo===m;
-    h+=`<div class="cuad-row" style="cursor:pointer;${sel?'color:var(--accent);':''}" onclick="ausMotivoClick(${i})">`
+    h+=`<div class="cuad-row" style="cursor:pointer;${sel?'color:var(--accent-txt);':''}" onclick="ausMotivoClick(${i})">`
       + `<span>${esc(m)}${sel?' ✓':''}</span><b>${porMotivo[m]}</b></div>`;
   });
   h+='</div>';
@@ -1677,7 +1678,7 @@ function renderAusResultados(){
     h+='<div class="section-title" style="margin:16px 0 6px;">Por fecha ('+fechas.length+')</div><div class="card" style="background:var(--surface2);">';
     fechas.forEach(fe=>{
       h+=`<div style="border-bottom:1px solid rgba(46,52,80,0.5);padding:9px 0;"><div style="display:flex;justify-content:space-between;">`
-        + `<b style="color:var(--accent)">${esc(fe)}</b><span class="badge aus">${porFecha[fe].length} falta(s)</span></div>`;
+        + `<b style="color:var(--accent-txt)">${esc(fe)}</b><span class="badge aus">${porFecha[fe].length} falta(s)</span></div>`;
       porFecha[fe].forEach(f=>{
         h+=`<div class="falt-row" style="padding:5px 0;"><div class="nm"><b>${esc(f.nombre)}</b><small>${esc(f.cargo)} · ${esc(f.cuadrilla)}</small></div>`
          + `<span class="badge ${f.tipo==='sin_reportar'?'sin':'aus'}">${esc(f.motivo)}</span></div>`;
@@ -1713,7 +1714,7 @@ function exportCardHtml(){
     const nota = STATE.tplBundle ? '(incluida en la app — no hay que subir nada)'
                : STATE.tplRecordada ? '(recordada — no hay que volver a subirla)'
                : '(solo esta sesión)';
-    h+='<p style="font-size:12.5px;color:var(--success);margin-bottom:10px;">✓ Plantilla lista: <b>'+esc(STATE.tplName)+'</b>'
+    h+='<p style="font-size:12.5px;color:var(--success-txt);margin-bottom:10px;">✓ Plantilla lista: <b>'+esc(STATE.tplName)+'</b>'
       + ' <span style="color:var(--muted)">'+nota+'</span>'
       + ' &nbsp;<button class="mini-btn" onclick="olvidarPlantilla()">Cambiar plantilla</button></p>';
   } else {
@@ -2033,10 +2034,10 @@ async function generarExcel(proyecto){
 
     const nombre=`Parte_${proyecto}_${STATE.fecha}.xlsx`;
     XLSX.writeFile(wb, nombre);
-    let out=`<div class="aviso" style="color:var(--success);border-color:rgba(46,204,113,0.3);background:rgba(46,204,113,0.08);">✓ Generado <b>${nombre}</b> (${aoa.length} fila(s)).</div>`;
-    if(adminAgregadas) out+='<div class="aviso" style="color:var(--success);border-color:rgba(46,204,113,0.3);background:rgba(46,204,113,0.08);">✓ Incluida(s) '+adminAgregadas+' fila(s) de tus horas extra (admin) en este archivo.</div>';
+    let out=`<div class="aviso" style="color:var(--success-txt);border-color:rgba(46,204,113,0.3);background:rgba(46,204,113,0.08);">✓ Generado <b>${nombre}</b> (${aoa.length} fila(s)).</div>`;
+    if(adminAgregadas) out+='<div class="aviso" style="color:var(--success-txt);border-color:rgba(46,204,113,0.3);background:rgba(46,204,113,0.08);">✓ Incluida(s) '+adminAgregadas+' fila(s) de tus horas extra (admin) en este archivo.</div>';
     if(avisoAdminSinRecurso) out+='<div class="aviso">⚠️ Hay extras del admin para este proyecto pero <b>admin_recurso</b> está vacío en CONFIG: no se agregaron. Configúralo para exportarlas.</div>';
-    if(adminDomFest.length) out+='<div class="aviso" style="color:var(--success);border-color:rgba(46,204,113,0.3);background:rgba(46,204,113,0.08);">ℹ️ Extra del admin en domingo/festivo el <b>'+adminDomFest.map(esc).join(', ')+'</b>: se reportó en <b>D Horas ordinarias dom/fest</b> (tope 7h), no en extras.</div>';
+    if(adminDomFest.length) out+='<div class="aviso" style="color:var(--success-txt);border-color:rgba(46,204,113,0.3);background:rgba(46,204,113,0.08);">ℹ️ Extra del admin en domingo/festivo el <b>'+adminDomFest.map(esc).join(', ')+'</b>: se reportó en <b>D Horas ordinarias dom/fest</b> (tope 7h), no en extras.</div>';
     if(hayAvisoGN) out+='<div class="aviso">⚠️ Día domingo/festivo: alguien superó las 7h Dom/Fest + 2h de extras Dom/Fest (D81). El archivo registra 7h en la col D y máximo 2h en la col H; el excedente quedó por fuera — revísalo a mano.</div>';
     if(overExtra.length){ const mx=parseFloat(cfg.max_extras_dia)||2;
       out+='<div class="aviso">ℹ️ Estas personas trabajaron más de '+mx+' horas extra: <b>'+overExtra.map(esc).join(', ')+'</b>. El archivo reporta solo '+mx+' (el tope); el resto queda para que el residente lo sume a mano en los días que corresponda.</div>'; }
@@ -2081,7 +2082,7 @@ async function cargarPersonal(){
     STATE.personal=data;
     renderPersonal();
   }catch(err){
-    body.innerHTML='<p style="color:var(--error);font-size:13px;">⚠️ '+esc(err.message||err)+'</p>';
+    body.innerHTML='<p style="color:var(--error-txt);font-size:13px;">⚠️ '+esc(err.message||err)+'</p>';
   }
 }
 function renderPersonal(){
