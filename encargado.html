@@ -119,6 +119,29 @@
   .envio-estado.err{background:rgba(231,76,60,0.1);border-color:rgba(231,76,60,0.45);color:var(--error-txt);}
   .btn-action:disabled{opacity:0.6;cursor:default;}
   @media(max-width:480px){.estado-grid{grid-template-columns:1fr;}.add-grid{grid-template-columns:1fr 1fr;}}
+
+  /* ===== PC (D150) — dos columnas =====================================
+   * `render()` escupe una lista plana, así que las columnas salen de cuatro
+   * envoltorios. La clave es `display:contents` en móvil: los envoltorios
+   * DESAPARECEN para el layout y todo se apila exactamente en el mismo orden
+   * de siempre. Solo a partir de 1100px pasan a ser celdas de una rejilla.
+   * Las filas se fijan a mano porque la columna derecha son DOS bloques
+   * separados en el DOM (arriba estado/totales, abajo clima/novedades) con la
+   * bandeja entre medias; sin `grid-row` explícito, la izquierda se quedaría
+   * en una sola fila y la derecha se descolgaría.
+   * ==================================================================== */
+  .pc-zona,.pc-a,.pc-b,.pc-c,.pc-d{display:contents;}
+  @media(min-width:1100px){
+    .container{max-width:1240px;}
+    .pc-zona{display:grid;grid-template-columns:1.55fr 1fr;gap:0 20px;align-items:start;}
+    .pc-a{display:block;grid-column:2;grid-row:1;}
+    .pc-b{display:block;grid-column:1;grid-row:1 / span 2;}
+    .pc-d{display:block;grid-column:2;grid-row:2;}
+    .pc-c{display:block;grid-column:1 / -1;grid-row:3;}
+    /* En la columna derecha, ya estrecha, las dos cajas de estado van una debajo de otra. */
+    .pc-a .estado-grid{grid-template-columns:1fr;}
+    .actions{max-width:760px;margin-left:auto;margin-right:auto;}
+  }
 </style>
 </head>
 <body>
@@ -726,6 +749,7 @@ function render(){
   let html='';
   html+='<div id="envioBoxTop">'+renderEnvio()+'</div>';   // D110: estado del envío, lo primero que se ve
   html+='<div id="climaAvisoTop">'+renderAvisoClima()+'</div>';   // D130: clima obligatorio
+  html+='<div class="pc-zona"><div class="pc-a">';   // D150: columna derecha (arriba)
   html+='<div class="section-title">Estado de reportes</div><div class="estado-grid">';
   html+='<div class="estado-box"><h3>Reportaron</h3><div class="chips">'+
     ([...repC].length? [...repC].map(c=>`<span class="chip ok">✓ ${c}</span>`).join(''):'<span class="chip">—</span>')+'</div>'+
@@ -764,12 +788,14 @@ function render(){
 
   html+=renderChequeoTerraplen(tot);
 
+  html+='</div><div class="pc-b">';   // D150: columna izquierda — lo que se scrollea
   html+='<div class="section-title">Bandeja del día <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);font-size:11px;">(prende/apaga para incluir en DATA)</span></div>';
   html+='<div id="bandejaBox">'+renderBandeja()+'</div>';
   html+=renderAddCard();
 
   html+='<div class="section-title">Maquinaria reportada ('+STATE.maquinas.length+')</div>'+renderMaquinas();
 
+  html+='</div><div class="pc-c">';   // D150: pie a ancho completo
   html+='<div id="envioBoxBottom">'+renderEnvio()+'</div>';   // D110: el mismo estado, al pie, donde se pulsa
   html+='<div id="climaAvisoBottom">'+renderAvisoClima()+'</div>';   // D130: junto al botón que se bloquea
   html+='<div class="actions">'+
@@ -777,6 +803,7 @@ function render(){
     '<button class="btn-action primary" id="btnEnviar" onclick="enviar()">'+textoBotonEnviar()+'</button>'+
     '<button class="btn-action" onclick="generarMensaje()">📲 Generar WhatsApp</button>'+
     '</div>';
+  html+='</div><div class="pc-d">';   // D150: columna derecha (abajo) — clima y novedades
   html+='<div class="card" style="margin-top:16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">'+
     '<div class="section-title" style="margin-bottom:10px;">Clima del día <span style="color:var(--error-txt);">*</span></div>'+
     '<select id="clima" onchange="setClima(this.value)" style="width:100%;background:var(--input-bg);border:1px solid '+(STATE.clima?'var(--border)':'rgba(231,76,60,0.55)')+';border-radius:8px;color:var(--text);font-family:\'DM Sans\',sans-serif;font-size:13px;padding:10px 12px;outline:none;">'+
@@ -788,6 +815,7 @@ function render(){
     '<div class="section-title" style="margin-bottom:10px;">Equipos inoperativos / novedades</div>'+
     '<textarea id="inoperativos" placeholder="ej. Motoniveladora MO03: sin operador&#10;Minicargador: falla mecánica" style="width:100%;min-height:80px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:\'DM Sans\',sans-serif;font-size:13px;padding:10px 12px;outline:none;resize:vertical;"></textarea>'+
     '</div>';
+  html+='</div></div>';   // D150: cierra pc-d y pc-zona
   html+='<div class="msg-box" id="msgBox"></div>';
   cont.innerHTML=html;
 }
