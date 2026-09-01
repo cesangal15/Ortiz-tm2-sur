@@ -1,0 +1,227 @@
+/* ============================================================================
+ * TEMA — paleta única de TM2 Sur (D149)
+ *
+ * Hasta aquí, los nueve tokens vivían duplicados en el `:root` de las 18
+ * pantallas. Ahora viven SOLO aquí y cada pantalla los hereda.
+ *
+ * Los tres estados que hay que cubrir, no dos:
+ *   1. Sin elegir nada  -> manda el modo del teléfono (prefers-color-scheme).
+ *   2. `data-tema="claro"`  -> el usuario pidió claro, aunque el móvil esté oscuro.
+ *   3. `data-tema="oscuro"` -> el usuario pidió oscuro, aunque el móvil esté claro.
+ * El orden de los bloques ES la lógica: misma especificidad, gana el último.
+ * Por eso los dos `[data-tema]` van DESPUÉS del @media, o la preferencia del
+ * teléfono pisaría la elección de la persona.
+ *
+ * POR QUÉ HAY TOKENS `-txt` APARTE. El ámbar hacía dos oficios: rellenar
+ * botones y colorear texto. Sobre fondo oscuro cuela; sobre blanco, #f5a623
+ * como texto da 2,03:1 — ilegible. Así que el relleno y el texto se separan:
+ * `--accent` rellena, `--accent-txt` escribe. Igual con verde, rojo y los dos
+ * de UF. Los contrastes de abajo están medidos contra su superficie, no
+ * estimados; el mínimo exigible para texto pequeño es 4,5:1.
+ * ==========================================================================*/
+
+/* ---------- OSCURO (el de siempre, y el que se usa si no hay señal de nada) ---------- */
+:root{
+  --bg:#0f1117;
+  --surface:#1a1d27;
+  --surface2:#22263a;
+  --border:#2e3450;
+  --input-bg:#12151f;
+
+  --text:#e8eaf0;          /* 13,98:1 */
+  --muted:#a8aec8;         /*  7,65:1 */
+
+  --accent:#f5a623;
+  --accent2:#e8621a;
+  --btn-txt:#0f1117;       /*  9,31:1 sobre el ámbar */
+
+  /* Vivos: rellenos, bordes y fondos translúcidos. */
+  --success:#2ecc71;
+  --error:#ef6a5c;         /* antes #e74c3c: 4,40:1, por debajo del mínimo */
+  --warn:#f5a623;
+  --ok:#2ecc71;
+  --info:#3a9bdc;
+  --purple:#b47ccb;
+  --uf1:#3a9bdc;
+  --uf2:#b47ccb;           /* antes #9b59b6: 3,60:1, y se usa a 11px */
+
+  /* Los mismos, pero como TEXTO sobre --surface. */
+  --accent-txt:#f5a623;    /*  8,30:1 */
+  --success-txt:#2ecc71;   /*  8,00:1 */
+  --error-txt:#ef6a5c;     /*  5,51:1 */
+  --uf1-txt:#3a9bdc;       /*  5,53:1 */
+  --uf2-txt:#b47ccb;       /*  5,35:1 */
+
+  --header-grad:linear-gradient(135deg,#1a1d27 0%,#0f1117 100%);
+  --sombra:none;
+  /* La flecha de los <select>: va incrustada en un data-URI, así que no puede
+     leer var(--muted). Se declara entera en cada tema. */
+  --flecha:url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a8aec8' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+
+  /* La ilustración del login. Es SVG EN LÍNEA, así que puede leer variables CSS:
+     un solo dibujo, dos paletas. Oscuro = atardecer; claro = el mismo sitio de día. */
+  --esc-cielo-1:#141a2b; --esc-cielo-2:#1d2133; --esc-cielo-3:#54402a; --esc-cielo-4:#1a1c24;
+  --esc-cresta:#232739; --esc-banda-1:#33291d; --esc-banda-2:#29221a;
+  --esc-frente:#14161d; --esc-maquina:#0d0f15;
+  --velo:linear-gradient(180deg,rgba(15,17,23,0.30) 0%,rgba(15,17,23,0.50) 22%,rgba(15,17,23,0.58) 78%,rgba(15,17,23,0.86) 100%);
+  --velo-ancha:linear-gradient(90deg,rgba(15,17,23,0.18) 0%,rgba(15,17,23,0.30) 55%,rgba(15,17,23,0.94) 100%);
+  --card-velada:rgba(26,29,39,0.94);
+  --card-sombra:0 24px 60px rgba(0,0,0,0.55);
+  color-scheme:dark;
+}
+
+/* ---------- CLARO por preferencia del teléfono ---------- */
+@media (prefers-color-scheme: light){
+  :root:not([data-tema="oscuro"]){
+    --bg:#f2f4f8;
+    --surface:#ffffff;
+    --surface2:#e9ecf3;
+    --border:#d7dce8;
+    --input-bg:#f5f7fb;   /* NO blanco puro: sobre tarjeta blanca el campo desaparece */
+
+    --text:#131620;        /* 18,05:1 */
+    --muted:#59607a;       /*  6,21:1 */
+
+    --accent:#f5a623;      /* el ámbar de relleno no cambia: es la marca */
+    --accent2:#e8621a;
+    --btn-txt:#14161f;
+
+    --success:#157f45;
+    --error:#bd2418;
+    --warn:#9a6207;
+    --ok:#157f45;
+    --info:#1d6fa8;
+    --purple:#7237a0;
+    --uf1:#1d6fa8;
+    --uf2:#7237a0;
+
+    --accent-txt:#9a6207;  /*  5,09:1 */
+    --success-txt:#157f45; /*  5,06:1 */
+    --error-txt:#bd2418;   /*  6,12:1 */
+    --uf1-txt:#1d6fa8;     /*  5,40:1 */
+    --uf2-txt:#7237a0;     /*  7,58:1 */
+
+    --header-grad:linear-gradient(135deg,#ffffff 0%,#f2f4f8 100%);
+    --sombra:0 1px 2px rgba(19,22,32,.04), 0 6px 18px rgba(19,22,32,.06);
+    --flecha:url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2359607a' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+
+    --esc-cielo-1:#bcd6ea; --esc-cielo-2:#d4e3ee; --esc-cielo-3:#efe3cd; --esc-cielo-4:#f2f4f8;
+    --esc-cresta:#a9b4c4; --esc-banda-1:#cbb491; --esc-banda-2:#d8c7a9;
+    --esc-frente:#e6e9f0; --esc-maquina:#5c6577;
+    --velo:linear-gradient(180deg,rgba(242,244,248,0.10) 0%,rgba(242,244,248,0.42) 22%,rgba(242,244,248,0.58) 74%,rgba(242,244,248,0.88) 100%);
+    --velo-ancha:linear-gradient(90deg,rgba(242,244,248,0.10) 0%,rgba(242,244,248,0.28) 55%,rgba(242,244,248,0.95) 100%);
+    --card-velada:rgba(255,255,255,0.94);
+    --card-sombra:0 18px 44px rgba(19,22,32,0.13);
+    color-scheme:light;
+  }
+}
+
+/* ---------- CLARO porque la persona lo pidió ---------- */
+:root[data-tema="claro"]{
+  --bg:#f2f4f8;
+  --surface:#ffffff;
+  --surface2:#e9ecf3;
+  --border:#d7dce8;
+  --input-bg:#f5f7fb;
+
+  --text:#131620;
+  --muted:#59607a;
+
+  --accent:#f5a623;
+  --accent2:#e8621a;
+  --btn-txt:#14161f;
+
+  --success:#157f45;
+  --error:#bd2418;
+  --warn:#9a6207;
+  --ok:#157f45;
+  --info:#1d6fa8;
+  --purple:#7237a0;
+  --uf1:#1d6fa8;
+  --uf2:#7237a0;
+
+  --accent-txt:#9a6207;
+  --success-txt:#157f45;
+  --error-txt:#bd2418;
+  --uf1-txt:#1d6fa8;
+  --uf2-txt:#7237a0;
+
+  --header-grad:linear-gradient(135deg,#ffffff 0%,#f2f4f8 100%);
+  --sombra:0 1px 2px rgba(19,22,32,.04), 0 6px 18px rgba(19,22,32,.06);
+  --flecha:url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2359607a' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+
+  --esc-cielo-1:#bcd6ea; --esc-cielo-2:#d4e3ee; --esc-cielo-3:#efe3cd; --esc-cielo-4:#f2f4f8;
+  --esc-cresta:#a9b4c4; --esc-banda-1:#cbb491; --esc-banda-2:#d8c7a9;
+  --esc-frente:#e6e9f0; --esc-maquina:#5c6577;
+  --velo:linear-gradient(180deg,rgba(242,244,248,0.10) 0%,rgba(242,244,248,0.42) 22%,rgba(242,244,248,0.58) 74%,rgba(242,244,248,0.88) 100%);
+  --velo-ancha:linear-gradient(90deg,rgba(242,244,248,0.10) 0%,rgba(242,244,248,0.28) 55%,rgba(242,244,248,0.95) 100%);
+  --card-velada:rgba(255,255,255,0.94);
+  --card-sombra:0 18px 44px rgba(19,22,32,0.13);
+  color-scheme:light;
+}
+
+/* ---------- OSCURO porque la persona lo pidió (pisa un móvil en claro) ---------- */
+:root[data-tema="oscuro"]{
+  --bg:#0f1117;
+  --surface:#1a1d27;
+  --surface2:#22263a;
+  --border:#2e3450;
+  --input-bg:#12151f;
+
+  --text:#e8eaf0;
+  --muted:#a8aec8;
+
+  --accent:#f5a623;
+  --accent2:#e8621a;
+  --btn-txt:#0f1117;
+
+  --success:#2ecc71;
+  --error:#ef6a5c;
+  --warn:#f5a623;
+  --ok:#2ecc71;
+  --info:#3a9bdc;
+  --purple:#b47ccb;
+  --uf1:#3a9bdc;
+  --uf2:#b47ccb;
+
+  --accent-txt:#f5a623;
+  --success-txt:#2ecc71;
+  --error-txt:#ef6a5c;
+  --uf1-txt:#3a9bdc;
+  --uf2-txt:#b47ccb;
+
+  --header-grad:linear-gradient(135deg,#1a1d27 0%,#0f1117 100%);
+  --sombra:none;
+  --flecha:url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a8aec8' stroke-width='2'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+
+  /* La ilustración del login. Es SVG EN LÍNEA, así que puede leer variables CSS:
+     un solo dibujo, dos paletas. Oscuro = atardecer; claro = el mismo sitio de día. */
+  --esc-cielo-1:#141a2b; --esc-cielo-2:#1d2133; --esc-cielo-3:#54402a; --esc-cielo-4:#1a1c24;
+  --esc-cresta:#232739; --esc-banda-1:#33291d; --esc-banda-2:#29221a;
+  --esc-frente:#14161d; --esc-maquina:#0d0f15;
+  --velo:linear-gradient(180deg,rgba(15,17,23,0.30) 0%,rgba(15,17,23,0.50) 22%,rgba(15,17,23,0.58) 78%,rgba(15,17,23,0.86) 100%);
+  --velo-ancha:linear-gradient(90deg,rgba(15,17,23,0.18) 0%,rgba(15,17,23,0.30) 55%,rgba(15,17,23,0.94) 100%);
+  --card-velada:rgba(26,29,39,0.94);
+  --card-sombra:0 24px 60px rgba(0,0,0,0.55);
+  color-scheme:dark;
+}
+
+/* ---------- El interruptor ----------
+ * Lo inyecta tema.js dentro de `.header-user`, que es el sitio que ya existe en
+ * 16 de las 18 pantallas; donde no lo hay, se queda fijo arriba a la derecha.
+ * Mismo truco que usa offline.js con el chip de señal, y por eso no hay que
+ * tocar el marcado de ninguna cabecera. */
+.tm2-tema-grupo{display:flex;align-items:center;gap:10px;}
+.tm2-tema{display:inline-flex;border:1px solid var(--border);border-radius:24px;padding:3px;gap:3px;vertical-align:middle;flex-shrink:0;}
+.tm2-tema button{
+  background:none;border:none;cursor:pointer;color:var(--muted);
+  font-size:15px;line-height:1;padding:11px 13px;border-radius:20px;   /* 44px de alto: para un dedo con guante */
+  font-family:inherit;
+}
+.tm2-tema button[aria-pressed="true"]{background:var(--accent);color:#14161f;}
+.tm2-tema button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.tm2-tema.tm2-tema-fijo{position:fixed;top:10px;right:10px;z-index:61;background:var(--surface);}
+
+@media (max-width:600px){
+  .tm2-tema button{padding:11px;}
+}

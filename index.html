@@ -13,10 +13,11 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
 <script src="auth.js"></script>
 <script src="offline.js"></script>
+<link rel="stylesheet" href="tema.css">
+<script src="tema.js"></script>
 <style>
   /* --muted sube de #7a80a0 a #a8aec8: las etiquetas de 12px en mayúsculas se perdían
      bajo sol directo, que es donde el capataz usa esta pantalla. */
-  :root { --bg:#0f1117;--surface:#1a1d27;--border:#2e3450;--accent:#f5a623;--accent2:#e8621a;--text:#e8eaf0;--muted:#a8aec8;--error:#e74c3c;--input-bg:#12151f; }
   *{box-sizing:border-box;margin:0;padding:0;}
   body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
 
@@ -28,11 +29,11 @@
   .escena{position:fixed;inset:0;z-index:0;overflow:hidden;}
   .escena svg{width:100%;height:100%;display:block;}
   .escena-ancha{display:none;}
-  .velo{position:fixed;inset:0;z-index:1;background:linear-gradient(180deg,rgba(15,17,23,0.30) 0%,rgba(15,17,23,0.50) 22%,rgba(15,17,23,0.58) 78%,rgba(15,17,23,0.86) 100%);}
+  .velo{position:fixed;inset:0;z-index:1;background:var(--velo);}
   .marca{display:none;}
 
   .panel{position:relative;z-index:2;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
-  .card{background:rgba(26,29,39,0.94);border:1px solid var(--border);border-radius:20px;padding:40px 32px;width:100%;max-width:400px;box-shadow:0 24px 60px rgba(0,0,0,0.55);}
+  .card{background:var(--card-velada);border:1px solid var(--border);border-radius:20px;padding:40px 32px;width:100%;max-width:400px;box-shadow:var(--card-sombra);}
   .panel-titulo{display:none;}
   .logo{text-align:center;margin-bottom:32px;}
   .logo-icon{font-size:48px;margin-bottom:12px;}
@@ -42,12 +43,12 @@
   label{display:block;font-size:12px;font-weight:500;color:var(--muted);margin-bottom:6px;letter-spacing:0.5px;text-transform:uppercase;}
   input{width:100%;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:14px;padding:12px 14px;outline:none;transition:border-color 0.2s;}
   input:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,0.1);}
-  .btn{width:100%;padding:14px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:10px;color:#0f1117;font-family:'Syne',sans-serif;font-size:15px;font-weight:700;cursor:pointer;letter-spacing:1px;margin-top:8px;transition:all 0.2s;}
+  .btn{width:100%;padding:14px;background:linear-gradient(135deg,var(--accent),var(--accent2));border:none;border-radius:10px;color:var(--btn-txt);font-family:'Syne',sans-serif;font-size:15px;font-weight:700;cursor:pointer;letter-spacing:1px;margin-top:8px;transition:all 0.2s;}
   .btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(245,166,35,0.3);}
   .btn-sec{background:none;border:1px solid var(--border);color:var(--muted);box-shadow:none;margin-top:10px;}
-  .btn-sec:hover{transform:none;box-shadow:none;border-color:var(--accent);color:var(--accent);}
-  .aviso{background:rgba(245,166,35,0.08);border:1px solid rgba(245,166,35,0.35);border-radius:8px;padding:10px 14px;font-size:12.5px;color:var(--accent);margin-top:12px;line-height:1.5;}
-  .error{background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.3);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--error);margin-top:12px;display:none;}
+  .btn-sec:hover{transform:none;box-shadow:none;border-color:var(--accent);color:var(--accent-txt);}
+  .aviso{background:rgba(245,166,35,0.08);border:1px solid rgba(245,166,35,0.35);border-radius:8px;padding:10px 14px;font-size:12.5px;color:var(--accent-txt);margin-top:12px;line-height:1.5;}
+  .error{background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.3);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--error-txt);margin-top:12px;display:none;}
   .error.visible{display:block;}
   .divider{height:1px;background:var(--border);margin:24px 0;}
   .version{text-align:center;font-size:11px;color:var(--muted);}
@@ -58,9 +59,9 @@
     .escena{width:55%;}
     .escena-movil{display:none;}
     .escena-ancha{display:block;}
-    .velo{width:55%;background:linear-gradient(90deg,rgba(15,17,23,0.18) 0%,rgba(15,17,23,0.30) 55%,rgba(15,17,23,0.94) 100%);}
+    .velo{width:55%;background:var(--velo-ancha);}
     .marca{display:block;position:fixed;top:44px;left:48px;z-index:2;max-width:340px;}
-    .marca .m-sello{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;letter-spacing:3px;color:var(--accent);text-transform:uppercase;}
+    .marca .m-sello{font-family:'Syne',sans-serif;font-size:11px;font-weight:700;letter-spacing:3px;color:var(--accent-txt);text-transform:uppercase;}
     .marca h2{font-family:'Syne',sans-serif;font-size:30px;font-weight:800;color:var(--text);margin-top:8px;}
     .marca p{font-size:14px;color:var(--muted);margin-top:10px;line-height:1.5;}
     .panel{margin-left:55%;width:45%;padding:48px;}
@@ -78,10 +79,10 @@
   <svg viewBox="0 0 390 844" preserveAspectRatio="xMidYMid slice" style="position: absolute; inset: 0; width: 100%; height: 100%; display: block;">
     <defs>
       <linearGradient id="cieloA" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#141a2b"/>
-        <stop offset="12%" stop-color="#1d2133"/>
-        <stop offset="22%" stop-color="#54402a"/>
-        <stop offset="100%" stop-color="#1a1c24"/>
+        <stop offset="0%" stop-color="var(--esc-cielo-1)"/>
+        <stop offset="12%" stop-color="var(--esc-cielo-2)"/>
+        <stop offset="22%" stop-color="var(--esc-cielo-3)"/>
+        <stop offset="100%" stop-color="var(--esc-cielo-4)"/>
       </linearGradient>
       <radialGradient id="brilloA" cx="0.7" cy="0.15" r="0.44">
         <stop offset="0%" stop-color="#f5a623" stop-opacity="0.42"/>
@@ -90,11 +91,11 @@
     </defs>
     <rect x="0" y="0" width="390" height="844" fill="url(#cieloA)"/>
     <rect x="0" y="0" width="390" height="844" fill="url(#brilloA)"/>
-    <path d="M0,168 L92,150 L172,162 L252,140 L330,156 L390,146 L390,214 L0,214 Z" fill="#232739"/>
-    <path d="M0,214 L120,196 L240,212 L390,192 L390,470 L0,470 Z" fill="#33291d"/>
-    <path d="M0,470 L150,450 L300,468 L390,454 L390,700 L0,700 Z" fill="#29221a"/>
-    <path d="M0,700 L390,678 L390,844 L0,844 Z" fill="#1a1c24"/>
-    <g fill="#0d0f15" transform="translate(0,-57)">
+    <path d="M0,168 L92,150 L172,162 L252,140 L330,156 L390,146 L390,214 L0,214 Z" fill="var(--esc-cresta)"/>
+    <path d="M0,214 L120,196 L240,212 L390,192 L390,470 L0,470 Z" fill="var(--esc-banda-1)"/>
+    <path d="M0,470 L150,450 L300,468 L390,454 L390,700 L0,700 Z" fill="var(--esc-banda-2)"/>
+    <path d="M0,700 L390,678 L390,844 L0,844 Z" fill="var(--esc-frente)"/>
+    <g fill="var(--esc-maquina)" transform="translate(0,-57)">
       <rect x="248" y="188" width="48" height="9" rx="4.5"/>
       <rect x="256" y="173" width="28" height="15" rx="2"/>
       <rect x="258" y="164" width="13" height="10" rx="1.5"/>
@@ -108,9 +109,9 @@
   <svg viewBox="0 0 704 800" preserveAspectRatio="xMidYMid slice" style="position: absolute; inset: 0; width: 100%; height: 100%; display: block;">
       <defs>
         <linearGradient id="cieloC" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#0d1018"/>
-          <stop offset="58%" stop-color="#1b1c22"/>
-          <stop offset="100%" stop-color="#31281f"/>
+          <stop offset="0%" stop-color="var(--esc-cielo-1)"/>
+          <stop offset="58%" stop-color="var(--esc-cielo-2)"/>
+          <stop offset="100%" stop-color="var(--esc-cielo-3)"/>
         </linearGradient>
         <radialGradient id="brilloC" cx="0.68" cy="0.5" r="0.45">
           <stop offset="0%" stop-color="#f5a623" stop-opacity="0.24"/>
@@ -119,11 +120,11 @@
       </defs>
       <rect x="0" y="0" width="704" height="800" fill="url(#cieloC)"/>
       <rect x="0" y="0" width="704" height="800" fill="url(#brilloC)"/>
-      <path d="M0,404 L160,384 L306,398 L452,376 L596,392 L704,380 L704,446 L0,446 Z" fill="#1b1e29"/>
-      <path d="M0,446 L216,424 L432,442 L704,420 L704,540 L0,540 Z" fill="#262119"/>
-      <path d="M0,540 L270,516 L540,536 L704,520 L704,664 L0,664 Z" fill="#1e1a15"/>
-      <path d="M0,664 L704,640 L704,800 L0,800 Z" fill="#14161d"/>
-      <g fill="#0e1016">
+      <path d="M0,404 L160,384 L306,398 L452,376 L596,392 L704,380 L704,446 L0,446 Z" fill="var(--esc-cresta)"/>
+      <path d="M0,446 L216,424 L432,442 L704,420 L704,540 L0,540 Z" fill="var(--esc-banda-1)"/>
+      <path d="M0,540 L270,516 L540,536 L704,520 L704,664 L0,664 Z" fill="var(--esc-banda-2)"/>
+      <path d="M0,664 L704,640 L704,800 L0,800 Z" fill="var(--esc-frente)"/>
+      <g fill="var(--esc-maquina)">
         <rect x="452" y="426" width="66" height="12" rx="6"/>
         <rect x="463" y="405" width="38" height="21" rx="3"/>
         <rect x="466" y="393" width="18" height="13" rx="2"/>
