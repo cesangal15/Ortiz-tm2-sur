@@ -2477,6 +2477,12 @@ function setupUsuarios(){
     ['angel','','capataz','','seleccion-reporte.html','activo'],
     ['alejo','','capataz','','seleccion-reporte.html','activo'],
     ['robinson','','capataz','','seleccion-reporte.html','activo'],
+    // D145: `albert` vuelve de UF3 a tierras (UF1/UF2) con su rol de siempre. Va DIRECTO a su reporte
+    // de obra —no a `seleccion-reporte.html`— porque la asistencia de la cuadrilla ALBERT la siguen
+    // reportando `maleja`/`maria` (D84(3)/D134): la pantalla de selección le mostraría un solo tile
+    // útil y otro que no le traería a nadie. Si algún día recupera su cuadrilla, esta celda pasa a
+    // `seleccion-reporte.html` y se quita la exclusión que hay en esa pantalla.
+    ['albert','','capataz','','reporte-capataz.html','activo'],
     ['mauricio','','capataz_odt','odt,odl','seleccion-reporte.html','activo'],
     ['eduardo','','capataz_odt','odt,odl','seleccion-reporte.html','activo'],
     ['enrique','','capataz_odt','odt,odl','seleccion-reporte.html','activo'],

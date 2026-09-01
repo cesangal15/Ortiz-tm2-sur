@@ -152,8 +152,11 @@
 <script src="flota.js"></script>
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
-// D84: `albert` y `ariel` salieron a UF3 (fuera de este sistema); ya no se esperan en la bandeja.
-const CAPATACES_ESPERADOS = ['angel','alejo','robinson'];
+// D84: `albert` y `ariel` salieron a UF3 (fuera de este sistema); dejaron de esperarse en la bandeja.
+// D145: `albert` VUELVE a tierras (UF1/UF2) y se vuelve a esperar su reporte del día. `ariel` sigue
+// fuera. Los días en que estuvo en UF3 no cambian: esto solo alimenta el aviso de "falta por reportar"
+// de la fecha consultada, no toca nada de lo ya guardado.
+const CAPATACES_ESPERADOS = ['angel','alejo','robinson','albert'];
 // Flota viva para el chip "maquinaria sin reporte". D136: NH69, BL009, CS78B, NH404, NH420,
 // CAT900, NH421, EXC001, EXC013 y EXC014 se devolvieron/entregaron (ago-2026) y salen del listado.
 // D138: el chip "maquinaria sin reporte" se arma con la flota VIGENTE ese día (hoja MAQUINAS), que
