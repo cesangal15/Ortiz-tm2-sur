@@ -1,5 +1,5 @@
 /* ============================================================================
- * TEMA — claro / oscuro (D149)
+ * TEMA — claro / oscuro (D150)
  *
  * Dos trabajos, y el orden importa:
  *
@@ -14,7 +14,9 @@
  *      de señal (que se mete en `.header-left`), y gracias a eso NO hay que
  *      tocar el marcado de ninguna cabecera: basta con enlazar este archivo.
  *      Donde no hay cabecera —el login y Reparto— queda fijo arriba a la
- *      derecha, sin chocar con el chip porque ese va a la izquierda.
+ *      IZQUIERDA: en esas dos pantallas offline.js tampoco encuentra
+ *      `.header-left`, así que manda su chip de señal a la esquina superior
+ *      DERECHA. En la contraria no se pisan (se pisaban, y se vio en obra).
  *
  * SIN ELEGIR NADA no se escribe `data-tema`: manda el modo del teléfono, que
  * es lo que queremos en obra. Muchos Android lo cambian solos con la luz

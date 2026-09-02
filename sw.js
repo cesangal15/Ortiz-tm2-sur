@@ -26,7 +26,7 @@
 // las contraseñas dentro y sabe entrar sin señal con la sesión/credencial recordada. Sin subirla, un
 // teléfono podría seguir sirviendo el index.html viejo desde el precache.
 // (D84 la subió antes por el login sin ariel/albert/residente_odt y el reporte de drenajes multi-área.)
-const CACHE_V = 'tm2-v6';   // v6: entran tema.css y tema.js en la lista (D149)
+const CACHE_V = 'tm2-v6';   // v6: entran tema.css y tema.js en la lista (D150)
 const FONT_CACHE = CACHE_V + '-fonts';
 
 // Lista explícita: shell + capturas + app. NO precachear las páginas fuera de alcance

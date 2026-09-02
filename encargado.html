@@ -120,7 +120,7 @@
   .btn-action:disabled{opacity:0.6;cursor:default;}
   @media(max-width:480px){.estado-grid{grid-template-columns:1fr;}.add-grid{grid-template-columns:1fr 1fr;}}
 
-  /* ===== PC (D150) — dos columnas =====================================
+  /* ===== PC (D151) — dos columnas =====================================
    * `render()` escupe una lista plana, así que las columnas salen de cuatro
    * envoltorios. La clave es `display:contents` en móvil: los envoltorios
    * DESAPARECEN para el layout y todo se apila exactamente en el mismo orden
@@ -749,7 +749,7 @@ function render(){
   let html='';
   html+='<div id="envioBoxTop">'+renderEnvio()+'</div>';   // D110: estado del envío, lo primero que se ve
   html+='<div id="climaAvisoTop">'+renderAvisoClima()+'</div>';   // D130: clima obligatorio
-  html+='<div class="pc-zona"><div class="pc-a">';   // D150: columna derecha (arriba)
+  html+='<div class="pc-zona"><div class="pc-a">';   // D151: columna derecha (arriba)
   html+='<div class="section-title">Estado de reportes</div><div class="estado-grid">';
   html+='<div class="estado-box"><h3>Reportaron</h3><div class="chips">'+
     ([...repC].length? [...repC].map(c=>`<span class="chip ok">✓ ${c}</span>`).join(''):'<span class="chip">—</span>')+'</div>'+
@@ -788,14 +788,14 @@ function render(){
 
   html+=renderChequeoTerraplen(tot);
 
-  html+='</div><div class="pc-b">';   // D150: columna izquierda — lo que se scrollea
+  html+='</div><div class="pc-b">';   // D151: columna izquierda — lo que se scrollea
   html+='<div class="section-title">Bandeja del día <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);font-size:11px;">(prende/apaga para incluir en DATA)</span></div>';
   html+='<div id="bandejaBox">'+renderBandeja()+'</div>';
   html+=renderAddCard();
 
   html+='<div class="section-title">Maquinaria reportada ('+STATE.maquinas.length+')</div>'+renderMaquinas();
 
-  html+='</div><div class="pc-c">';   // D150: pie a ancho completo
+  html+='</div><div class="pc-c">';   // D151: pie a ancho completo
   html+='<div id="envioBoxBottom">'+renderEnvio()+'</div>';   // D110: el mismo estado, al pie, donde se pulsa
   html+='<div id="climaAvisoBottom">'+renderAvisoClima()+'</div>';   // D130: junto al botón que se bloquea
   html+='<div class="actions">'+
@@ -803,7 +803,7 @@ function render(){
     '<button class="btn-action primary" id="btnEnviar" onclick="enviar()">'+textoBotonEnviar()+'</button>'+
     '<button class="btn-action" onclick="generarMensaje()">📲 Generar WhatsApp</button>'+
     '</div>';
-  html+='</div><div class="pc-d">';   // D150: columna derecha (abajo) — clima y novedades
+  html+='</div><div class="pc-d">';   // D151: columna derecha (abajo) — clima y novedades
   html+='<div class="card" style="margin-top:16px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;">'+
     '<div class="section-title" style="margin-bottom:10px;">Clima del día <span style="color:var(--error-txt);">*</span></div>'+
     '<select id="clima" onchange="setClima(this.value)" style="width:100%;background:var(--input-bg);border:1px solid '+(STATE.clima?'var(--border)':'rgba(231,76,60,0.55)')+';border-radius:8px;color:var(--text);font-family:\'DM Sans\',sans-serif;font-size:13px;padding:10px 12px;outline:none;">'+
@@ -815,7 +815,7 @@ function render(){
     '<div class="section-title" style="margin-bottom:10px;">Equipos inoperativos / novedades</div>'+
     '<textarea id="inoperativos" placeholder="ej. Motoniveladora MO03: sin operador&#10;Minicargador: falla mecánica" style="width:100%;min-height:80px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:\'DM Sans\',sans-serif;font-size:13px;padding:10px 12px;outline:none;resize:vertical;"></textarea>'+
     '</div>';
-  html+='</div></div>';   // D150: cierra pc-d y pc-zona
+  html+='</div></div>';   // D151: cierra pc-d y pc-zona
   html+='<div class="msg-box" id="msgBox"></div>';
   cont.innerHTML=html;
 }

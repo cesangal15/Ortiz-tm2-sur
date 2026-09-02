@@ -141,6 +141,8 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
     <div id="hojaPick" style="margin-top:10px"></div>
   </div>
 
+  <div class="hint" id="cfgNota" style="margin:-6px 0 14px"></div>
+
   <!-- ---- 2 · Parámetros ---- -->
   <div class="card">
     <h3>2 · Parámetros</h3>
@@ -250,6 +252,8 @@ details.cfg-sec summary{cursor:pointer;font-weight:600;font-size:12.5px;padding:
     <div style="margin-top:14px" class="flexrow">
       <button class="btn" id="btnProc" disabled>⚙️ Procesar</button>
       <span class="note" id="procNote">Carga los dos archivos.</span>
+      <span style="flex:1"></span>
+      <button class="btn sec" id="btnCfgReset" title="Vuelve a la lista y a los parámetros que trae la herramienta de fábrica">↺ Valores de fábrica</button>
     </div>
   </div>
 
@@ -630,7 +634,96 @@ function initParams(){
   document.getElementById('desde').value=iso(new Date(y,m-1,16));
   document.getElementById('hasta').value=iso(new Date(y,m,15));
 }
+
+/* ============================ CONFIGURACIÓN GUARDADA ============================
+   Enmienda D86, que dejó esta herramienta **sin `localStorage`** a propósito («mismo patrón que
+   la Bitácora de Transporte»). Era una decisión de estilo, no técnica, y el coste lo pagaba el
+   usuario: las estancias de la flota —fechas que ya no cambian— había que volver a pegarlas
+   desde un bloc de notas en cada sesión.
+   Se guarda **solo la configuración**, en el navegador de quien la usa. NUNCA se guardan los
+   archivos cargados ni nada de sus datos: siguen sin salir de la memoria de la pestaña.
+   El **corte tampoco se guarda**: cambia cada mes y lo detecta el parte del jefe; recordarlo
+   solo serviría para pelearse con `detectarCorte()`. */
+const CFG_KEY='tm2_reparto_cfg_v1';
+const CFG_TXT=['hojaProd','hojaClima','hojaJefe','propias','soloHorasMaq','mapaAct','pctBull','minDia','minHorasProd'];
+const CFG_CHK=['repartoDiario','separarUF','soloHoras','rellenarDias'];
+
+function guardarCfg(){
+  try{
+    const c={v:1};
+    CFG_TXT.forEach(id=>{ const e=document.getElementById(id); if(e) c[id]=e.value; });
+    CFG_CHK.forEach(id=>{ const e=document.getElementById(id); if(e) c[id]=!!e.checked; });
+    localStorage.setItem(CFG_KEY,JSON.stringify(c));
+    return true;
+  }catch(e){ return false; }     // modo privado, almacenamiento bloqueado, file:// en algunos navegadores
+}
+function leerCfg(){
+  try{
+    const raw=localStorage.getItem(CFG_KEY);
+    if(!raw) return null;
+    const c=JSON.parse(raw);
+    return (c && typeof c==='object') ? c : null;
+  }catch(e){ return null; }
+}
+function aplicarCfg(c){
+  if(!c) return false;
+  CFG_TXT.forEach(id=>{ const e=document.getElementById(id); if(e && typeof c[id]==='string') e.value=c[id]; });
+  CFG_CHK.forEach(id=>{ const e=document.getElementById(id); if(e && typeof c[id]==='boolean') e.checked=c[id]; });
+  return true;
+}
+function borrarCfg(){ try{ localStorage.removeItem(CFG_KEY); return true; }catch(e){ return false; } }
+
+/* Lista de máquinas → mapa cod → retiro declarado. Sirve para comparar lo guardado con lo que
+   trae la herramienta de fábrica: si el catálogo de flota se actualiza en el código (una máquina
+   nueva, una entrega nueva) y el usuario tiene su lista guardada, no se enteraría nunca. */
+function mapaEstancias(texto){
+  const m=new Map();
+  String(texto||'').split(/\n+/).forEach(linea=>{
+    const t=linea.replace(/(#|\/\/).*$/,'').trim();
+    if(!t) return;
+    t.split(/[,;]+/).forEach(tok=>{
+      const p=tok.trim().split(/[:=]/);
+      const cod=normCod(p[0]); if(!cod) return;
+      let ret='';
+      for(let i=1;i<p.length;i++){ const q=String(p[i]).trim().match(RE_ESTANCIA); if(q&&q[2]) ret=q[2]; }
+      if(!m.has(cod)) m.set(cod,ret);
+    });
+  });
+  return m;
+}
+function difEstancias(guardada){
+  const fab=mapaEstancias(MAQUINAS_PROPIAS.join('\n')), mia=mapaEstancias(guardada);
+  const faltan=[], distintas=[];
+  for(const [cod,ret] of fab){
+    if(!mia.has(cod)) faltan.push(cod);
+    else if((mia.get(cod)||'')!==(ret||'')) distintas.push(cod+': tuya '+(mia.get(cod)||'sin retiro')+' · fábrica '+(ret||'sin retiro'));
+  }
+  return { faltan:faltan, distintas:distintas };
+}
+
+function pintarCfgNota(estado){
+  const n=document.getElementById('cfgNota');
+  if(!n) return;
+  if(estado==='sin-soporte'){
+    n.innerHTML='⚠️ Este navegador no me deja guardar la configuración (modo privado o almacenamiento bloqueado): '+
+      'los parámetros vuelven a los de fábrica cada vez que abras.';
+    return;
+  }
+  let h='💾 Tu configuración —lista de máquinas con sus fechas, parámetros y nombres de hoja— <b>queda guardada en este navegador</b> '+
+        'y se recupera sola al abrir. <b>No se guarda</b> ni el corte (lo detecta el parte cada mes) ni nada de los archivos que cargas.';
+  const d=difEstancias(document.getElementById('propias').value);
+  if(d.faltan.length || d.distintas.length){
+    h+='<div style="margin-top:6px"><b>Ojo:</b> tu lista guardada no coincide con la que trae la herramienta'+
+       (d.faltan.length?' — le faltan <b>'+escapeHtml(d.faltan.join(', '))+'</b>':'')+
+       (d.distintas.length?' — fechas distintas en <b>'+escapeHtml(d.distintas.join(' | '))+'</b>':'')+
+       '. Si es a propósito, ignóralo; si se entregó una máquina y el catálogo se actualizó, con <b>↺ Valores de fábrica</b> recuperas la lista al día.</div>';
+  }
+  n.innerHTML=h;
+}
+
 initParams();
+// El arranque de la configuración guardada va al FINAL del script: `difEstancias()` usa
+// `RE_ESTANCIA`, que se declara más abajo, y llamarlo aquí rompía la página entera.
 
 // El "← Menú" solo tiene sentido servida desde el sitio: al abrir el archivo desde el
 // disco (file://) no hay menu.html al lado y el enlace quedaría roto.
@@ -1845,6 +1938,34 @@ document.getElementById('btnCopy').addEventListener('click',async ()=>{
   try{ await navigator.clipboard.writeText(tsv); toast('📋 '+S.out.rep.filas.length+' filas copiadas (sin encabezado). Pega sobre la tabla fact_jefe.'); }
   catch(e){ toast('⚠️ No se pudo copiar al portapapeles.'); }
 });
+
+/* ---- Arranque de la configuración guardada ----
+   Va aquí, al final, a propósito: necesita `RE_ESTANCIA` y `normCod`, declarados más arriba
+   pero después de `initParams()`. Ejecutarlo antes lanzaba ReferenceError y dejaba la página
+   en blanco — y no se veía en las pruebas, donde no hay `localStorage` y se tomaba la otra rama. */
+{
+  const cfg=leerCfg();
+  if(cfg) aplicarCfg(cfg);
+  document.getElementById('pctMotoLbl').textContent=
+    String(round(100-(parseFloat(document.getElementById('pctBull').value)||0),2));
+  pintarCfgNota(guardarCfg()?'ok':'sin-soporte');
+  // Cualquier cambio en un campo de configuración se guarda solo. El corte queda fuera a propósito.
+  CFG_TXT.concat(CFG_CHK).forEach(id=>{
+    const e=document.getElementById(id); if(!e) return;
+    ['input','change'].forEach(ev=>e.addEventListener(ev,()=>{ guardarCfg(); pintarCfgNota('ok'); }));
+  });
+  document.getElementById('btnCfgReset').addEventListener('click',()=>{
+    borrarCfg();
+    initParams();
+    [['hojaProd','dia suelto'],['hojaClima','DATOS'],['hojaJefe','BASE MAQUINARIA'],['soloHorasMaq',''],
+     ['pctBull','80'],['minDia','50'],['minHorasProd','1']].forEach(([id,v])=>{ document.getElementById(id).value=v; });
+    [['repartoDiario',true],['separarUF',false],['soloHoras',true],['rellenarDias',true]]
+      .forEach(([id,v])=>{ document.getElementById(id).checked=v; });
+    document.getElementById('pctMotoLbl').textContent='20';
+    guardarCfg(); pintarCfgNota('ok');
+    toast('↺ Parámetros de fábrica restaurados.');
+  });
+}
 
 refrescarBoton();
 </script>

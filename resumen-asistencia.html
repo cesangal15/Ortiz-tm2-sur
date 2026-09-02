@@ -75,7 +75,7 @@
   @keyframes loadslide{0%{transform:translateX(-100%);}100%{transform:translateX(365%);}}
   .cargando{opacity:0.5;transition:opacity .15s ease;pointer-events:none;}
 
-  /* ===== PC (D150) — dos columnas ====================================
+  /* ===== PC (D151) — dos columnas ====================================
    * Izquierda el día (cuadrillas, notas, faltantes); derecha las herramientas
    * (Excel Navision y gestión de personal). El seguimiento de ausencias no
    * entra aquí: vive fuera de #container, así que se queda a ancho completo
@@ -1040,7 +1040,7 @@ function render(){
   // Una sola pasada por `filas` para agrupar por cuadrilla (antes era un filter por cuadrilla = N×M).
   const porCuadrilla={}; filas.forEach(f=>{ (porCuadrilla[f.cuadrilla]=porCuadrilla[f.cuadrilla]||[]).push(f); });
   STATE._porCuadrilla=porCuadrilla;
-  html+='<div class="pc-zona"><div class="pc-izq">';   // D150: columna izquierda — el día
+  html+='<div class="pc-zona"><div class="pc-izq">';   // D151: columna izquierda — el día
   html+='<div class="section-title">Cuadrillas</div><div class="card">';
   cuadrillas.forEach((c,ci)=>{
     const detId='detCuad'+ci;
@@ -1104,9 +1104,9 @@ function render(){
 
   html+=seccionCompletar(d);
 
-  html+='</div><div class="pc-pie">';   // D150: el seguimiento de ausencias va a ancho completo:
+  html+='</div><div class="pc-pie">';   // D151: el seguimiento de ausencias va a ancho completo:
   html+=seccionAusencias();              // su tabla no cabe en una columna estrecha.
-  html+='</div><div class="pc-der">';   // D150: columna derecha — herramientas y administración
+  html+='</div><div class="pc-der">';   // D151: columna derecha — herramientas y administración
   html+='<div class="section-title">Descargar Excel Navision</div>';
   html+=exportCardHtml();
 
@@ -1125,7 +1125,7 @@ function render(){
       + '</div><div id="gestionBody" style="margin-top:12px;"></div></div>';
   }
 
-  html+='</div></div>';   // D150: cierra pc-der y pc-zona
+  html+='</div></div>';   // D151: cierra pc-der y pc-zona
   document.getElementById('container').innerHTML=html;
   if(STATE.personal) renderPersonal();
   renderAusFiltros(); renderAusResultados();   // D94: repinta lo ya consultado tras un re-render
