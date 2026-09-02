@@ -24,7 +24,36 @@
 │  Admin: botón "← Menú" en toda pantalla interna vuelve a menu.html sin cerrar sesión.    │
 └────────────────────────────────────┬─────────────────────────────────────────────────--┘
 
-**Offline (D82, backlog 2.8/2.8b/2.9):** archivos nuevos `offline.js` (cola localStorage `tm2_cola_envios` + sync FIFO + caché-fallback de catálogos + chip/panel de estado), `sw.js` (service worker network-first, precache del shell + capturas; NUNCA intercepta Apps Script; fuentes Google cache-first; subir `CACHE_V` solo si cambia la lista de precache), `manifest.json`, `icons/` (192/512/180) y `OFFLINE_README.md` (instalación + checklist de pruebas). Flujo de envío de las 4 capturas (capataz, chequeadora, drenajes, asistencia) con rama offline: intento directo (timeout ~15 s) → si no hay red, encola y muestra confirmación NARANJA (distinta del verde de servidor); al volver la señal la cola sube en orden y `Codigo.gs` deduplica por `id_registro` UUID de cliente (asistencia no lo necesita: upsert fecha+cuadrilla idempotente). Encargado/residente/jefe/resúmenes quedan FUERA del offline (D49): sin señal muestran "Esta pantalla necesita conexión".
+**Offline (D82, backlog 2.8/2.8b/2.9):** archivos nuevos `offline.js` (cola localStorage `tm2_cola_envios` + sync FIFO + caché-fallback de catálogos + chip/panel de estado), `sw.js` (service worker network-first, precache del shell + capturas; NUNCA intercepta Apps Script; fuentes Google cache-first; subir `CACHE_V` solo si cambia la lista de precache), `manifest.json`, `icons/` (192/512/180) y `OFFLINE_README.md`; **D150 suma `tema.css` y `tema.js` al PRECACHE** (por eso `CACHE_V` subió a `tm2-v6`: sin ese salto, el primer arranque sin señal tras desplegar se queda sin tema) (instalación + checklist de pruebas). Flujo de envío de las 4 capturas (capataz, chequeadora, drenajes, asistencia) con rama offline: intento directo (timeout ~15 s) → si no hay red, encola y muestra confirmación NARANJA (distinta del verde de servidor); al volver la señal la cola sube en orden y `Codigo.gs` deduplica por `id_registro` UUID de cliente (asistencia no lo necesita: upsert fecha+cuadrilla idempotente). Encargado/residente/jefe/resúmenes quedan FUERA del offline (D49): sin señal muestran "Esta pantalla necesita conexión".
+
+**Presentación (D150/D151/D153/D155).** Dos archivos compartidos que cuelgan de TODAS las pantallas:
+
+```
+tema.css   Los ~25 tokens de color, en cuatro bloques: :root (oscuro) · @media
+           prefers-color-scheme:light · [data-tema="claro"] · [data-tema="oscuro"].
+           El ORDEN es la lógica: a igual especificidad gana el último, así que
+           los [data-tema] van después del @media o la preferencia del teléfono
+           pisaría la elección de la persona.
+           Separa RELLENO de TEXTO: --accent rellena, --accent-txt escribe.
+           Sobre blanco, #f5a623 como texto da 2,03:1 (ilegible). Igual con
+           --success/--error/--uf1/--uf2.
+tema.js    Bloqueante en el <head> a propósito: aplica data-tema ANTES del primer
+           pintado (si no, parpadeo en cada carga de cada pantalla). Monta el
+           interruptor —UN botón que alterna— en #tm2-tema-slot si la pantalla lo
+           declara, si no en .header-user, y como último recurso fijo abajo a la
+           izquierda (arriba está ocupado: el chip de señal de offline.js).
+```
+
+Los `:root` locales de las 18 pantallas DESAPARECIERON: la paleta vive solo en `tema.css`.
+
+**Versiones de PC (D151/D155):** `encargado.html`, `asistencia.html` y `resumen-asistencia.html`
+se reparten en dos columnas a partir de 1100px (además de `digitadora.html`, que ya era de PC
+por D83). Como los tres `render()` escupen una lista plana, las columnas salen de envoltorios
+(`.pc-*`) insertados en esa lista, y **por debajo de 1100px llevan `display:contents`**: los
+envoltorios no existen para el layout y el orden en el teléfono queda EXACTAMENTE igual que
+antes — esa es la garantía de no-regresión para la gente de campo. Toda celda de la rejilla
+lleva `min-width:0`, o un hijo ancho ensancha su columna en vez de hacer scroll dentro.
+
                                      │ fetch GET/POST (Content-Type: text/plain)
                                      ▼
 ┌──────────────────── GOOGLE APPS SCRIPT v6 (API, una sola URL) ──────────────────────────┐
