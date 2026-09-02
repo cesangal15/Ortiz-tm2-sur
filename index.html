@@ -52,6 +52,9 @@
   .error.visible{display:block;}
   .divider{height:1px;background:var(--border);margin:24px 0;}
   .version{text-align:center;font-size:11px;color:var(--muted);}
+  /* Autoría. Solo aquí, en el login: en las pantallas de trabajo estorba. */
+  .autoria{display:block;margin-top:5px;font-size:11px;color:var(--muted);}
+  .autoria b{font-weight:600;color:var(--accent-txt);}
 
   /* ESCRITORIO — mismo HTML, otra composición: la ilustración pasa a ser una columna a sangre
      y el formulario se va al panel derecho. No hay segunda plantilla ni JS: solo este bloque. */
@@ -170,7 +173,9 @@
   </div>
   <div class="error" id="errorMsg">Usuario o contraseña incorrectos</div>
   <div class="divider"></div>
-  <div class="version">Sistema de Reporte v2.0</div>
+  <div class="version">Sistema de Reporte v2.0
+    <span class="autoria">Desarrollado por <b>C&eacute;sar Sandino</b></span>
+  </div>
 </div>
 </div>
 <script>
