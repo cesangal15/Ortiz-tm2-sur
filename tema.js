@@ -9,14 +9,18 @@
  *      el parpadeo de blanco a negro (o al revés) en cada carga de cada
  *      pantalla. Son ~40 líneas: el bloqueo es despreciable y el parpadeo no.
  *
- *   2. EL INTERRUPTOR. Se inyecta dentro de `.header-user`, que ya existe en
- *      16 de las 18 pantallas. Es el mismo truco que usa offline.js con el chip
- *      de señal (que se mete en `.header-left`), y gracias a eso NO hay que
- *      tocar el marcado de ninguna cabecera: basta con enlazar este archivo.
- *      Donde no hay cabecera —el login y Reparto— queda fijo arriba a la
- *      IZQUIERDA: en esas dos pantallas offline.js tampoco encuentra
- *      `.header-left`, así que manda su chip de señal a la esquina superior
- *      DERECHA. En la contraria no se pisan (se pisaban, y se vio en obra).
+ *   2. EL INTERRUPTOR. Es UN SOLO botón que alterna, como en cualquier app:
+ *      se pulsa donde sea y cambia. Muestra el icono del modo AL QUE VA a
+ *      cambiar, no el actual — la luna significa «pásame a oscuro».
+ *
+ *      Dónde se coloca, por orden: si la pantalla declara un `#tm2-tema-slot`,
+ *      ahí (el login lo usa para meterlo en su pie); si no, dentro de
+ *      `.header-user`, que existe en 16 de las 18 pantallas — el mismo truco
+ *      que usa offline.js con el chip de señal, y por eso no hay que tocar el
+ *      marcado de ninguna cabecera; y si no hay nada de eso, fijo abajo a la
+ *      izquierda. Arriba NO: la esquina superior derecha se la queda el chip
+ *      de señal cuando tampoco encuentra `.header-left`, y la izquierda la
+ *      ocupa la marca del login.
  *
  * SIN ELEGIR NADA no se escribe `data-tema`: manda el modo del teléfono, que
  * es lo que queremos en obra. Muchos Android lo cambian solos con la luz
@@ -50,48 +54,47 @@
     }catch(e){ return 'oscuro'; }
   }
 
+  var pintar = function(){};   // lo define montar(); montarEscucha() lo necesita fuera
+
   function montar(){
     if(document.querySelector('.tm2-tema')) return;
 
     var caja = document.createElement('div');
     caja.className = 'tm2-tema';
 
-    var sol  = document.createElement('button');
-    var luna = document.createElement('button');
-    sol.type = luna.type = 'button';
-    sol.textContent  = '☀';   // ☀
-    luna.textContent = '☾';   // ☾
-    sol.title  = 'Modo claro';
-    luna.title = 'Modo oscuro';
-    sol.setAttribute('aria-label','Modo claro');
-    luna.setAttribute('aria-label','Modo oscuro');
+    var boton = document.createElement('button');
+    boton.type = 'button';
 
-    function pintar(){
-      var t = temaEfectivo();
-      sol.setAttribute('aria-pressed',  t === 'claro'  ? 'true' : 'false');
-      luna.setAttribute('aria-pressed', t === 'oscuro' ? 'true' : 'false');
-    }
+    // El icono es el DESTINO, no el estado actual: en claro se ve la luna
+    // («pásame a oscuro»), en oscuro el sol. Es la convención que espera la
+    // gente y evita la duda de «¿esto me dice dónde estoy o adónde voy?».
+    pintar = function(){
+      var voyA = (temaEfectivo() === 'claro') ? 'oscuro' : 'claro';
+      boton.textContent = (voyA === 'oscuro') ? '\u263E' : '\u2600';
+      boton.title = (voyA === 'oscuro') ? 'Cambiar a modo oscuro' : 'Cambiar a modo claro';
+      boton.setAttribute('aria-label', boton.title);
+    };
 
-    function elegir(t){
-      try{ localStorage.setItem(LLAVE, t); }catch(e){}
-      aplicar(t);
+    boton.addEventListener('click', function(){
+      var voyA = (temaEfectivo() === 'claro') ? 'oscuro' : 'claro';
+      try{ localStorage.setItem(LLAVE, voyA); }catch(e){}
+      aplicar(voyA);
       pintar();
-    }
+    });
 
-    sol.addEventListener('click',  function(){ elegir('claro');  });
-    luna.addEventListener('click', function(){ elegir('oscuro'); });
-
-    caja.appendChild(sol);
-    caja.appendChild(luna);
+    caja.appendChild(boton);
     pintar();
 
-    // Junto al usuario, arriba a la derecha. Ojo: `.header` es flex con
-    // `space-between`, así que meter el interruptor como TERCER hermano lo
-    // dejaría flotando en mitad de la cabecera. Por eso se envuelve junto a
-    // `.header-user` en un grupo: la cabecera vuelve a tener dos hijos y el
-    // interruptor queda pegado al usuario, que es donde lo dibujamos.
-    // El envoltorio no rompe nada: `querySelector('.header-user')` sigue
-    // encontrándolo, y `#btnMenu` y «Salir» siguen dentro de él.
+    // 1) La pantalla manda: si declara un hueco, ahí va. Lo usa el login para
+    //    meterlo en su pie, donde no tapa la marca ni choca con el chip.
+    var hueco = document.getElementById('tm2-tema-slot');
+    if(hueco){ hueco.appendChild(caja); montarEscucha(); return; }
+
+    // 2) Si no, junto al usuario en la cabecera. Ojo: `.header` es flex con
+    //    `space-between`, así que como TERCER hermano quedaría flotando en
+    //    mitad de la cabecera; por eso se envuelve junto a `.header-user`.
+    //    El envoltorio no rompe nada: `querySelector('.header-user')` sigue
+    //    encontrándolo, y `#btnMenu` y «Salir» siguen dentro de él.
     var casa = document.querySelector('.header-user');
     if(casa && casa.parentNode){
       var grupo = document.createElement('div');
@@ -100,11 +103,16 @@
       grupo.appendChild(caja);
       grupo.appendChild(casa);
     } else {
+      // 3) Último recurso: fijo ABAJO a la izquierda. Arriba está ocupado —
+      //    derecha el chip de señal, izquierda la marca.
       caja.classList.add('tm2-tema-fijo');
       document.body.appendChild(caja);
     }
+    montarEscucha();
+  }
 
-    // Si nadie ha elegido, el interruptor sigue al teléfono en vivo.
+  // Sin elección guardada, el botón sigue al teléfono en vivo.
+  function montarEscucha(){
     try{
       var mq = window.matchMedia('(prefers-color-scheme: light)');
       var alCambiar = function(){ if(!leer()) pintar(); };

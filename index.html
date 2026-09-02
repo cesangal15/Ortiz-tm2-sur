@@ -51,7 +51,8 @@
   .error{background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.3);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--error-txt);margin-top:12px;display:none;}
   .error.visible{display:block;}
   .divider{height:1px;background:var(--border);margin:24px 0;}
-  .version{text-align:center;font-size:11px;color:var(--muted);}
+  .pie{display:flex;align-items:center;justify-content:space-between;gap:14px;}
+  .version{text-align:left;font-size:11px;color:var(--muted);}
   /* Autoría. Solo aquí, en el login: en las pantallas de trabajo estorba. */
   .autoria{display:block;margin-top:5px;font-size:11px;color:var(--muted);}
   .autoria b{font-weight:600;color:var(--accent-txt);}
@@ -73,7 +74,7 @@
     .panel-titulo{display:block;margin-bottom:28px;}
     .panel-titulo h2{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;color:var(--text);}
     .panel-titulo p{font-size:13px;color:var(--muted);margin-top:6px;}
-    .version{text-align:left;}
+
   }
 </style>
 </head>
@@ -173,8 +174,13 @@
   </div>
   <div class="error" id="errorMsg">Usuario o contraseña incorrectos</div>
   <div class="divider"></div>
-  <div class="version">Sistema de Reporte v2.0
-    <span class="autoria">Desarrollado por <b>C&eacute;sar Sandino</b></span>
+  <div class="pie">
+    <div class="version">Sistema de Reporte v2.0
+      <span class="autoria">Desarrollado por <b>C&eacute;sar Sandino</b></span>
+    </div>
+    <!-- tema.js monta aquí el interruptor. Antes quedaba flotando en una esquina
+         y tapaba la marca «TM2 SUR» en pantalla ancha. -->
+    <div id="tm2-tema-slot"></div>
   </div>
 </div>
 </div>
