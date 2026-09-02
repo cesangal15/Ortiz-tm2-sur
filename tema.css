@@ -1,5 +1,5 @@
 /* ============================================================================
- * TEMA — paleta única de TM2 Sur (D149)
+ * TEMA — paleta única de TM2 Sur (D150)
  *
  * Hasta aquí, los nueve tokens vivían duplicados en el `:root` de las 18
  * pantallas. Ahora viven SOLO aquí y cada pantalla los hereda.
@@ -220,7 +220,11 @@
 }
 .tm2-tema button[aria-pressed="true"]{background:var(--accent);color:#14161f;}
 .tm2-tema button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
-.tm2-tema.tm2-tema-fijo{position:fixed;top:10px;right:10px;z-index:61;background:var(--surface);}
+/* Sin cabecera (login y Reparto) el interruptor queda fijo. Va a la IZQUIERDA
+   a propósito: `offline.js` manda su chip de señal a `position:fixed` arriba
+   a la DERECHA cuando tampoco encuentra `.header-left`, que es justo el caso
+   de esas dos pantallas. En la esquina contraria no se pisan. */
+.tm2-tema.tm2-tema-fijo{position:fixed;top:10px;left:10px;z-index:61;background:var(--surface);}
 
 @media (max-width:600px){
   .tm2-tema button{padding:11px;}

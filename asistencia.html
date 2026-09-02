@@ -83,6 +83,21 @@
   .confirm-ok{background:rgba(46,204,113,0.1);border:1px solid rgba(46,204,113,0.3);border-radius:10px;padding:12px 14px;color:var(--success-txt);font-size:13px;margin-bottom:14px;}
   /* D82: confirmación NARANJA de encolado (guardado local, NO es confirmación de servidor) */
   .confirm-cola{background:rgba(245,166,35,0.1);border:1px solid rgba(245,166,35,0.4);border-radius:10px;padding:12px 14px;color:var(--accent-txt);font-size:13px;margin-bottom:14px;}
+
+  /* ===== PC (D151) — dos columnas ====================================
+   * Izquierda el listado de personal, que es el bloque largo (42 personas en
+   * una cuadrilla); derecha los bloques de CC y la nota del día, que es donde
+   * se teclea. Así se marca asistencia sin perder de vista el bloque al que se
+   * asigna la gente. `display:contents` mantiene intacto el orden en móvil.
+   * ================================================================== */
+  .pc-zona,.pc-izq,.pc-der{display:contents;}
+  @media(min-width:1100px){
+    .container{max-width:1240px;}
+    .pc-zona{display:grid;grid-template-columns:1.35fr 1fr;gap:0 20px;align-items:start;}
+    .pc-izq{display:block;}
+    .pc-der{display:block;}
+    .btn-enviar{max-width:520px;margin-left:auto;margin-right:auto;display:block;}
+  }
 </style>
 </head>
 <body>
@@ -553,6 +568,7 @@ function render(){
   }
 
   // ---- Personal (presente/ausente) ----
+  html+='<div class="pc-zona"><div class="pc-izq">';   // D151: columna izquierda — el listado largo
   html+='<div class="section-title">Personal de la cuadrilla</div>';
   html+='<div class="card">';
   if(!personas.length){ html+='<p style="color:var(--muted);font-size:13px;">Sin personas activas en esta cuadrilla.</p>'; }
@@ -599,6 +615,7 @@ function render(){
   html+='</div>';
 
   // ---- Bloques ----
+  html+='</div><div class="pc-der">';   // D151: columna derecha — bloques de CC y nota
   html+='<div class="section-title">Bloques de actividad (CC)</div>';
   STATE.bloques.filter(b=>b.cuadrilla===STATE.cuadrillaActual).forEach(b=>{ html+=bloqueHtml(b, personas); });
   html+='<button class="btn-add-bloque" onclick="agregarBloque()">+ Agregar bloque</button>';
@@ -607,6 +624,7 @@ function render(){
   html+='<div class="section-title">Nota del día (opcional)</div>';
   html+=`<div class="card"><textarea id="notaDia" rows="2" placeholder="¿Alguien nuevo? ¿Alguna novedad o anomalía del día? (opcional)" oninput="STATE.nota=this.value" style="resize:vertical;">${esc(STATE.nota||'')}</textarea></div>`;
 
+  html+='</div></div>';   // D151: cierra pc-der y pc-zona
   html+='<div style="margin-top:22px;"><button class="btn-enviar" id="btnEnviar" onclick="enviar()" '+(STATE.enviando?'disabled':'')+'>'
     + (STATE.enviando?'Enviando…':'ENVIAR ASISTENCIA →') + '</button></div>';
   html+='<div id="confirmBox"></div>';
