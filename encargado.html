@@ -133,11 +133,13 @@
   .pc-zona,.pc-a,.pc-b,.pc-c,.pc-d{display:contents;}
   @media(min-width:1100px){
     .container{max-width:1240px;}
+    /* min-width:0 en las celdas: sin él, un hijo ancho (la tabla de personal)
+       ensancha su columna en vez de hacer scroll dentro, y descuadra la rejilla. */
     .pc-zona{display:grid;grid-template-columns:1.55fr 1fr;gap:0 20px;align-items:start;}
-    .pc-a{display:block;grid-column:2;grid-row:1;}
-    .pc-b{display:block;grid-column:1;grid-row:1 / span 2;}
-    .pc-d{display:block;grid-column:2;grid-row:2;}
-    .pc-c{display:block;grid-column:1 / -1;grid-row:3;}
+    .pc-a{display:block;grid-column:2;grid-row:1;min-width:0;}
+    .pc-b{display:block;grid-column:1;grid-row:1 / span 2;min-width:0;}
+    .pc-d{display:block;grid-column:2;grid-row:2;min-width:0;}
+    .pc-c{display:block;grid-column:1 / -1;grid-row:3;min-width:0;}
     /* En la columna derecha, ya estrecha, las dos cajas de estado van una debajo de otra. */
     .pc-a .estado-grid{grid-template-columns:1fr;}
     .actions{max-width:760px;margin-left:auto;margin-right:auto;}
