@@ -82,15 +82,35 @@
    * por sí solo, que es lo que le conviene — tiene su propia tabla.
    * `display:contents` deja el orden del teléfono intacto.
    * ================================================================== */
-  .pc-zona,.pc-izq,.pc-der,.pc-pie{display:contents;}
+  .pc-zona,.pc-izq,.pc-der,.pc-pie,.pc-gestion{display:contents;}
   @media(min-width:1100px){
     .container{max-width:1240px;}
+    /* min-width:0 en las celdas: sin él, un hijo ancho (la tabla de personal)
+       ensancha su columna en vez de hacer scroll dentro, y descuadra la rejilla. */
     .pc-zona{display:grid;grid-template-columns:1.3fr 1fr;gap:0 20px;align-items:start;}
-    .pc-izq{display:block;grid-column:1;grid-row:1;}
-    .pc-der{display:block;grid-column:2;grid-row:1;}
-    .pc-pie{display:block;grid-column:1 / -1;grid-row:2;}
+    .pc-izq{display:block;grid-column:1;grid-row:1;min-width:0;}
+    .pc-der{display:block;grid-column:2;grid-row:1;min-width:0;}
+    .pc-pie{display:block;grid-column:1 / -1;grid-row:2;min-width:0;}
+    .pc-gestion{display:block;grid-column:1 / -1;grid-row:3;min-width:0;}
     .kpis{grid-template-columns:repeat(4,1fr);}
   }
+
+  /* ===== Tabla de personal (D155) =========================================
+   * Cinco columnas dentro de la columna estrecha de PC. El <select> de
+   * cuadrilla heredaba `width:100%` de la regla global de arriba, así que en
+   * una celda comprimida se quedaba en «JA▾» — el nombre de la cuadrilla no
+   * se leía. Ahora el select tiene ancho propio y la tabla toma el suyo en vez
+   * de encogerse; cuando no cabe, el contenedor que ya la envuelve hace scroll
+   * horizontal en lugar de aplastar las columnas.
+   * ====================================================================== */
+  #persTablaWrap table{width:auto;min-width:100%;}
+  #persTablaWrap th,#persTablaWrap td{white-space:nowrap;}
+  #persTablaWrap td:first-child{white-space:normal;min-width:160px;}   /* el nombre sí envuelve */
+  #persTablaWrap select{
+    width:auto;min-width:158px;font-size:12.5px;
+    padding:6px 30px 6px 10px;background-position:right 10px center;
+  }
+  #persTablaWrap td{vertical-align:middle;}
 </style>
 </head>
 <body>
@@ -1114,6 +1134,9 @@ function render(){
   // la limita a su área (jeisson = tierras, mismos permisos que el residente de tierras).
   // D88: duvan (asistencia_plus_dren) igual pero acotado por el backend a ODT+ODL.
   if(['residente','admin','asistencia_plus','asistencia_plus_dren','asistencia_plus_uf3','asistencia_plus_tm2','residente_odt','residente_odl','residente_dren'].indexOf(STATE.rol)>=0){
+  html+='</div><div class="pc-gestion">';   // D155: la tabla de personal tiene cinco columnas
+                                            // y no cabe en la columna estrecha: fila entera.
+  if(true){
     html+='<div class="section-title">Gestión de personal</div>';
     html+='<div class="card" id="gestionCard"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">'
       + '<button class="btn-ghost" onclick="cargarPersonal()">Cargar personal ↻</button>'
@@ -1124,8 +1147,9 @@ function render(){
       + '<span id="cacheMsg" style="font-size:12px;color:var(--muted);"></span>'
       + '</div><div id="gestionBody" style="margin-top:12px;"></div></div>';
   }
+  }
 
-  html+='</div></div>';   // D151: cierra pc-der y pc-zona
+  html+='</div></div>';   // D155: cierra pc-gestion y pc-zona
   document.getElementById('container').innerHTML=html;
   if(STATE.personal) renderPersonal();
   renderAusFiltros(); renderAusResultados();   // D94: repinta lo ya consultado tras un re-render
