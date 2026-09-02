@@ -2076,7 +2076,7 @@ async function generarExcel(proyecto){
 async function refrescarCatalogos(btn){
   const msg=document.getElementById('cacheMsg');
   if(btn) btn.disabled=true;
-  if(msg) msg.textContent='⏳ Refrescando…';
+  if(msg){ msg.textContent='⏳ Refrescando…'; msg.style.color='var(--muted)'; msg.style.fontWeight=''; }
   try{
     const data=await perfFetch('cache_reset', `${APPS_SCRIPT_URL}?action=cache_reset&usuario=${encodeURIComponent(STATE.usuario)}`);
     if(!data.ok) throw new Error(data.error||'cache_reset');
@@ -2162,6 +2162,30 @@ async function postPersonal(payload){
   perfTabla('gestión de personal · '+(payload.op||''));
   return data;
 }
+/* D154 — Las cinco acciones de gestión de personal recargaban la lista y no decían
+ * NADA. Como el formulario se limpia solo al repintar, el resultado era idéntico a
+ * no haber hecho nada: reportado en obra («el botón de agregar no funciona»), cuando
+ * en realidad sí había guardado. Se reutiliza `#cacheMsg` —la línea de estado que ya
+ * tiene la tarjeta de gestión— porque vive FUERA de `#gestionBody`, que es lo único
+ * que repinta `cargarPersonal()`; un aviso puesto dentro se borraría solo. */
+function avisoPersonal(txt, ok){
+  const msg=document.getElementById('cacheMsg');
+  if(!msg) return;
+  msg.textContent=txt;
+  msg.style.color = ok===false ? 'var(--error-txt)' : 'var(--success-txt)';
+  msg.style.fontWeight='600';
+  clearTimeout(avisoPersonal._t);
+  avisoPersonal._t=setTimeout(()=>{
+    if(msg.textContent!==txt) return;        // ya lo pisó otro aviso: no tocar
+    msg.textContent=''; msg.style.color='var(--muted)'; msg.style.fontWeight='';
+  }, 8000);
+}
+// Nombre de una persona por su fila, para que el aviso diga a quién afectó.
+function nombrePorFila(row){
+  const l=((STATE.personal||{}).personal)||[];
+  const p=l.find(x=>String(x._row)===String(row));
+  return p&&p.nombre ? p.nombre : 'la persona';
+}
 async function altaPersona(){
   const codigo=document.getElementById('altaCodigo').value.trim();
   const nombre=document.getElementById('altaNombre').value.trim();
@@ -2171,7 +2195,8 @@ async function altaPersona(){
   const fecha_ingreso=document.getElementById('altaIngreso').value;
   if(!nombre || !cuadrilla){ alert('Nombre y cuadrilla son obligatorios.'); return; }
   const r=await postPersonal({op:'alta', codigo, nombre, cargo, cuadrilla, cedula, fecha_ingreso});
-  if(r.ok) cargarPersonal(); else alert('Error: '+(r.error||'desconocido'));
+  if(r.ok){ avisoPersonal('\u2713 '+nombre+' agregada a '+cuadrilla+'.'); cargarPersonal(); }
+  else alert('Error: '+(r.error||'desconocido'));
 }
 async function retirarPersona(row){
   // D72: el retiro lleva la fecha efectiva que elige el residente. Es el PRIMER día NO trabajado:
@@ -2180,12 +2205,16 @@ async function retirarPersona(row){
   const fecha_retiro=prompt('Retirar desde qué fecha (primer día que YA NO trabaja)?\nFormato AAAA-MM-DD:', hoy);
   if(fecha_retiro===null) return;                       // canceló
   if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha_retiro)){ alert('Fecha inválida. Usa el formato AAAA-MM-DD.'); return; }
+  const nom=nombrePorFila(row);
   const r=await postPersonal({op:'retiro', _row:row, fecha_retiro});
-  if(r.ok) cargarPersonal(); else alert('Error: '+(r.error||'desconocido'));
+  if(r.ok){ avisoPersonal('\u2713 '+nom+' retirada desde '+fecha_retiro+'.'); cargarPersonal(); }
+  else alert('Error: '+(r.error||'desconocido'));
 }
 async function reactivarPersona(row){
+  const nom=nombrePorFila(row);
   const r=await postPersonal({op:'reactivar', _row:row});
-  if(r.ok) cargarPersonal(); else alert('Error: '+(r.error||'desconocido'));
+  if(r.ok){ avisoPersonal('\u2713 '+nom+' reactivada.'); cargarPersonal(); }
+  else alert('Error: '+(r.error||'desconocido'));
 }
 async function reingresarPersona(row){
   // D72: crea una fila NUEVA con los datos de la persona (sin re-digitar) desde la fecha de reingreso;
@@ -2194,12 +2223,16 @@ async function reingresarPersona(row){
   const fecha_ingreso=prompt('¿Desde qué fecha reingresa? (primer día que vuelve a trabajar)\nFormato AAAA-MM-DD:', hoy);
   if(fecha_ingreso===null) return;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha_ingreso)){ alert('Fecha inválida. Usa el formato AAAA-MM-DD.'); return; }
+  const nom=nombrePorFila(row);
   const r=await postPersonal({op:'reingreso', _row:row, fecha_ingreso});
-  if(r.ok) cargarPersonal(); else alert('Error: '+(r.error||'desconocido'));
+  if(r.ok){ avisoPersonal('\u2713 '+nom+' reingresa desde '+fecha_ingreso+'.'); cargarPersonal(); }
+  else alert('Error: '+(r.error||'desconocido'));
 }
 async function moverPersona(row, cuadrilla){
+  const nom=nombrePorFila(row);
   const r=await postPersonal({op:'mover', _row:row, cuadrilla});
-  if(r.ok) cargarPersonal(); else alert('Error: '+(r.error||'desconocido'));
+  if(r.ok){ avisoPersonal('\u2713 '+nom+' movida a '+cuadrilla+'.'); cargarPersonal(); }
+  else alert('Error: '+(r.error||'desconocido'));
 }
 </script>
 </body>
