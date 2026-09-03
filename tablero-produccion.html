@@ -974,7 +974,12 @@ function pintaEstado(){
   let s='Datos de '+g;
   if(TM2.corte_horas) s+=' · horas de máquina hasta <b>'+TM2.corte_horas+'</b> '+
     '(el parte del digitador va ~'+TM2.atraso_horas+' días por detrás)';
+  if(TM2.leidoDe) s+=' · leído de <b>'+TM2.leidoDe+'</b>';
   estado(s,false);
+  leeH('prod').then(h=>{
+    if(h) $('btnAct').title='Relee «'+h.name+'» y el de maquinaria sin volver a preguntar';
+    else if(HAY_FS) $('btnAct').title='Elige los dos Excel una vez; después basta este botón';
+  }).catch(()=>{});
 }
 function guardaDatos(d){
   try{ localStorage.setItem(LS_DAT,JSON.stringify(d)); }
@@ -1000,6 +1005,7 @@ async function recalcular(oProd,oMaq){
     const wp=await leerLibro(oProd,['DATOS','CALCULOS']);
     const wm=oMaq?await leerLibro(oMaq,['BASE MAQUINARIA']):null;
     const d=MOTOR.construir(wp,wm);
+    d.leidoDe = (oProd instanceof File) ? oProd.name : 'enlace configurado';
     TM2=d; guardaDatos(d);
     sel=TM2.per.length-1; abierto=null;
     pinta();
@@ -1013,7 +1019,78 @@ async function recalcular(oProd,oMaq){
   }
 }
 
-/* Elegir archivos: primero producción, luego maquinaria. */
+
+/* ---------------------------------------------------------------------------
+ * ARCHIVOS RECORDADOS (File System Access API)
+ *
+ * Lo que se pedía era «darle a actualizar y que él busque», con los archivos
+ * siempre en el mismo sitio. Un enlace de SharePoint NO sirve: `:x:` abre el
+ * visor y devuelve HTML, y aunque devolviera el .xlsx el navegador bloquea la
+ * respuesta por CORS —Microsoft no manda `Access-Control-Allow-Origin`—.
+ *
+ * La vía buena es al revés: se eligen los dos archivos UNA vez y el navegador
+ * guarda el permiso. A partir de ahí «Actualizar» los relee del disco solo. Como
+ * la carpeta de SharePoint está sincronizada con OneDrive, son los mismos
+ * archivos y siempre al día.
+ *
+ * Chrome y Edge, servida por https. En lo demás cae al selector de siempre.
+ * ------------------------------------------------------------------------ */
+const HAY_FS = typeof window.showOpenFilePicker === 'function';
+const DB='tm2-fs', ALM='handles';
+
+function abreDB(){
+  return new Promise((ok,err)=>{
+    const q=indexedDB.open(DB,1);
+    q.onupgradeneeded=()=>q.result.createObjectStore(ALM);
+    q.onsuccess=()=>ok(q.result); q.onerror=()=>err(q.error);
+  });
+}
+function guardaH(k,v){
+  return abreDB().then(db=>new Promise((ok,err)=>{
+    const t=db.transaction(ALM,'readwrite'); t.objectStore(ALM).put(v,k);
+    t.oncomplete=ok; t.onerror=()=>err(t.error);
+  })).catch(()=>{});
+}
+function leeH(k){
+  return abreDB().then(db=>new Promise(ok=>{
+    const r=db.transaction(ALM,'readonly').objectStore(ALM).get(k);
+    r.onsuccess=()=>ok(r.result||null); r.onerror=()=>ok(null);
+  })).catch(()=>null);
+}
+async function permiso(h,pedir){
+  if(!h||!h.queryPermission) return false;
+  const o={mode:'read'};
+  if(await h.queryPermission(o)==='granted') return true;
+  if(!pedir) return false;
+  return await h.requestPermission(o)==='granted';
+}
+/* Elegir los dos archivos y recordarlos. */
+async function elegirRecordando(){
+  try{
+    estado('Elige el Excel de PRODUCCIÓN (TM2_SUR_REPORTE_DIARIO_OBRA)…',false);
+    const [hp]=await showOpenFilePicker({multiple:false,types:[{description:'Excel',
+      accept:{'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx','.xlsm']}}]});
+    estado('Ahora el Excel de MAQUINARIA (partes diarios)…',false);
+    const [hm]=await showOpenFilePicker({multiple:false,types:[{description:'Excel',
+      accept:{'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':['.xlsx','.xlsm']}}]});
+    await guardaH('prod',hp); await guardaH('maq',hm);
+    await recalcular(await hp.getFile(), await hm.getFile());
+  }catch(e){
+    if(e && e.name==='AbortError'){ pintaEstado(); return; }
+    estado('No se pudieron abrir los archivos: '+e.message,true);
+  }
+}
+/* Releerlos sin preguntar nada. */
+async function releerRecordados(pedir){
+  const hp=await leeH('prod'); if(!hp) return false;
+  const hm=await leeH('maq');
+  if(!await permiso(hp,pedir)) return false;
+  if(hm && !await permiso(hm,pedir)) return false;
+  await recalcular(await hp.getFile(), hm?await hm.getFile():null);
+  return true;
+}
+
+/* Selector clásico, para navegadores sin la API de arriba. */
 function pedirArchivos(){
   const fp=$('filProd'), fm=$('filMaq');
   fp.value=''; fm.value='';
@@ -1040,11 +1117,13 @@ function wire(){
     estado(v.prod?'Enlaces guardados. Pulsa «Actualizar».'
                  :'Enlaces borrados: «Actualizar» pedirá los archivos.',false);
   };
-  $('btnArch').onclick=pedirArchivos;
-  $('btnAct').onclick=()=>{
+  $('btnArch').onclick=()=>HAY_FS?elegirRecordando():pedirArchivos();
+  $('btnAct').onclick=async ()=>{
+    if(HAY_FS && await releerRecordados(true)) return;   // los de siempre, un clic
     const v=enlaces();
-    if(v.prod) recalcular(v.prod, v.maq||null);
-    else{ estado('No hay enlaces configurados — elige los archivos.',true); pedirArchivos(); }
+    if(v.prod){ recalcular(v.prod, v.maq||null); return; }
+    estado('Aún no hay archivos recordados — elígelos una vez y ya no vuelvo a preguntar.',true);
+    HAY_FS?elegirRecordando():pedirArchivos();
   };
 }
 
