@@ -186,19 +186,6 @@ body{background:var(--bg);color:var(--text);font-size:14px;
   background:var(--bg);border:1px solid var(--rule);}
 .cfg input:focus{outline:none;border-color:var(--amb);}
 .cfg .fila{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
-/* ---------- panel de centros de coste ---------- */
-.ccTab{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px;}
-.ccTab th,.ccTab td{padding:5px 9px;text-align:right;border-bottom:1px solid var(--rule);
-  white-space:nowrap;font-variant-numeric:tabular-nums;}
-.ccTab th:first-child,.ccTab td:first-child,
-.ccTab th:nth-child(2),.ccTab td:nth-child(2){text-align:left;}
-.ccTab thead th{font-size:10px;letter-spacing:.07em;text-transform:uppercase;
-  color:var(--mut);font-weight:500;}
-.ccTab tr.no td{color:var(--mut);}
-.chip{display:inline-block;font-size:10px;letter-spacing:.05em;text-transform:uppercase;
-  padding:1px 7px;border:1px solid var(--rule);color:var(--mut);}
-.chip.act{border-color:var(--ambtx);color:var(--ambtx);}
-
 /* ---------- clima ---------- */
 .clima{display:flex;gap:6px;padding-top:10px;}
 .clima>span{flex:1;height:13px;border:1px solid var(--border);}
@@ -350,15 +337,6 @@ body{background:var(--bg);color:var(--text);font-size:14px;
       <div class="syne colH">Aprovechamiento de la excavación</div>
       <div id="aprov"></div>
     </div>
-  </div>
-
-  <div class="blk" style="padding-top:14px">
-    <div class="blkH">
-      <div class="syne" style="font-size:17px;font-weight:700">Centros de coste de las horas</div>
-      <div style="font-size:11.5px;color:var(--mut)">Lo que el tablero encontró en los partes
-      · si tu jefe usa un centro nuevo, aparece aquí marcado como no mapeado</div>
-    </div>
-    <div id="ccPanel"></div>
   </div>
 
   <div class="pie" id="pie"></div>
@@ -981,6 +959,16 @@ function estado(txt,warn){
   e.innerHTML=txt;
   e.className='est'+(warn?' warn':'');
 }
+/* El detalle de centros de coste no se pinta —esta página se proyecta ante
+   directivos, no es una pantalla de diagnóstico—, pero se deja en la consola:
+   si algún día las horas bailan, ahí está sin ensuciar la presentación. */
+function logCC(){
+  if(!TM2.cc||!TM2.cc.length||!window.console||!console.table) return;
+  try{ console.groupCollapsed('TM2 · centros de coste de las horas');
+       console.table(TM2.cc.map(x=>({centro:x.cc,actividad:x.act||'(no mapeado)',
+         horas_flota:x.flota,horas_totales:x.horas,partes:x.filas})));
+       console.groupEnd(); }catch(e){}
+}
 function pintaEstado(){
   const g=TM2.generado?('<b>'+TM2.generado+'</b>'):'la copia incluida';
   let s='Datos de '+g;
@@ -1039,43 +1027,6 @@ function pedirArchivos(){
   fp.click();
 }
 
-/* --------------------------------------------- panel de centros de coste */
-function panelCC(){
-  const c=$('ccPanel'); c.innerHTML='';
-  const cc=TM2.cc||[];
-  if(!cc.length){
-    c.appendChild(el('div','nota','La copia cargada no trae el detalle de centros de coste. '+
-      'Pulsa «Actualizar» leyendo los Excel y aparecerá.'));
-    return;
-  }
-  const conAct=cc.filter(x=>x.act), sinAct=cc.filter(x=>!x.act&&x.flota>0);
-  const t=el('table','ccTab');
-  t.innerHTML='<thead><tr><th>Centro de coste</th><th>Actividad</th>'+
-    '<th>Horas de la flota</th><th>Horas totales</th><th>Partes</th></tr></thead>';
-  const tb=el('tbody');
-  const fila=x=>{
-    const tr=el('tr',x.act?null:'no');
-    const c1=el('td',null,x.cc);c1.style.fontWeight='700';
-    const c2=el('td');
-    const ch=el('span','chip'+(x.act?' act':''),x.act?NOMBRES_ACT[x.act]:'no mapeado');
-    c2.appendChild(ch);
-    tr.append(c1,c2,el('td',null,f1(x.flota)),el('td',null,f1(x.horas)),el('td',null,String(x.filas)));
-    return tr;
-  };
-  conAct.forEach(x=>tb.appendChild(fila(x)));
-  sinAct.slice(0,12).forEach(x=>tb.appendChild(fila(x)));
-  t.appendChild(tb);
-  const tw=el('div');tw.style.overflowX='auto';tw.appendChild(t);
-  c.appendChild(tw);
-  const nt=el('div','nota');
-  nt.innerHTML='«Horas de la flota» son las de las máquinas del reparto; «horas totales» '+
-    'incluyen todo lo que reportó ese centro. Sólo entran al tablero los mapeados, y '+
-    'únicamente con la máquina coherente. Los <b>no mapeados</b> que se listan son centros '+
-    'donde SÍ trabajó la flota pero que no alimentan ninguna partida — '+
-    'si tu jefe reasigna las horas a uno de éstos, dímelo y lo añado al mapa.';
-  c.appendChild(nt);
-}
-const NOMBRES_ACT={excavacion:'Excavación',terraplen:'Terraplén',subbase:'Subbase',base:'BTC / Base'};
 
 /* ------------------------------------------------------------- arranque */
 function wire(){
@@ -1101,7 +1052,7 @@ function pinta(){
   const p=TM2.per[sel];
   document.getElementById('perT').textContent=eti(p.p);
   document.getElementById('perR').textContent=rango(p.p)+' · '+p.d.length+' días registrados';
-  controles();evolucion();cadena(p);diaria(p);avance();aprov(p);panelCC();pintaEstado();
+  controles();evolucion();cadena(p);diaria(p);avance();aprov(p);pintaEstado();
   document.getElementById('pie').innerHTML=
     'Producción de <b>'+TM2.fuente+'</b> · horas de <b>'+TM2.fuente_horas+'</b>. '+
     'Producción en '+TM2.unidad+'; el rendimiento por máquina en '+TM2.unidad_mh+'. '+
@@ -1114,6 +1065,7 @@ try{const s=localStorage.getItem(LS_DAT);
 sel=TM2.per.length-1;
 wire();
 pinta();
+logCC();
 </script>
 </body>
 </html>
