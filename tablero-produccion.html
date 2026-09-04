@@ -215,6 +215,7 @@ body{background:var(--bg);color:var(--text);font-size:14px;
   font-weight:400;color:var(--ink);font-variant-numeric:tabular-nums;
   white-space:nowrap;pointer-events:none;}
 
+
 /* ---------- clima ---------- */
 .clima{display:flex;gap:6px;padding-top:10px;}
 .clima>span{flex:1;height:13px;border:1px solid var(--border);}
@@ -332,7 +333,7 @@ body{background:var(--bg);color:var(--text);font-size:14px;
   <div class="blk" style="padding-top:14px">
     <div class="blkH">
       <div class="syne" style="font-size:17px;font-weight:700" id="capDia">Producción diaria del período</div>
-      <div style="font-size:11.5px;color:var(--muted)">Curva punteada = media acumulada día a día de cada partida</div>
+      <div style="font-size:11.5px;color:var(--muted)" id="capCurva">Curva punteada = media acumulada día a día</div>
     </div>
     <div class="plot">
       <div class="ymax" id="maxDia"></div>
@@ -890,15 +891,32 @@ function diaria(p){
     x.appendChild(el('span',null,d.f.slice(8)));
     const c=el('span',(CLIMA[d.t]||CLIMA[''])[1]);c.title=col.title;cl.appendChild(c);
   });
-  // curvas punteadas: media acumulada día a día
+  /* Curvas punteadas: media acumulada día a día, en SU PROPIA ESCALA.
+     Las medias viven en un orden de magnitud por debajo del pico de las barras
+     —la media de la subbase ronda los 460 m³ frente a picos de 6.000—, y sobre
+     el mismo eje quedaban pegadas al suelo, ilegibles. Con eje secundario
+     recorren toda la altura y se leen a la par de las barras, como en la hoja
+     del jefe.
+     EL PRECIO, y por eso el eje va ROTULADO a la derecha: la curva ya no es
+     comparable con las barras. Que suba por encima de una barra NO significa
+     que la media supere ese día; significa que va alta dentro de su escala.
+     Es admisible aquí porque ambas son la misma magnitud —m³ por día— y la
+     curva sale de esos mismos datos; sería inadmisible entre medidas distintas. */
   const svg=document.getElementById('curvas');svg.innerHTML='';
   const n=p.d.length;
-  vis.forEach((a,j)=>{
+  const medias=vis.map((a,j)=>{
     let acc=0;
-    const pts=p.d.map((d,i)=>{
-      acc+=vals[i][j];
+    return p.d.map((d,i)=>{ acc+=vals[i][j]; return acc/(i+1); });
+  });
+  const maxMedia=Math.max(1,...medias.flat());
+  /* La segunda escala se DECLARA en la leyenda, no en un rótulo flotante que
+     se pisaba con ella. Sin declararla, dos escalas en un gráfico son trampa. */
+  document.getElementById('capCurva').textContent=
+    'Curva punteada = media acumulada día a día · escala propia, máx '+f0(maxMedia)+' m³';
+  vis.forEach((a,j)=>{
+    const pts=medias[j].map((v,i)=>{
       const px=n>1?(i+.5)/n*100:50;
-      const py=100-Math.min(100,acc/(i+1)/max*100);
+      const py=100-Math.min(100,v/maxMedia*100);
       return px.toFixed(2)+','+py.toFixed(2);
     }).join(' ');
     const pl=document.createElementNS('http://www.w3.org/2000/svg','polyline');
