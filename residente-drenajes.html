@@ -97,6 +97,30 @@
   .wa-sub{margin-bottom:14px;}
   .wa-sub pre{white-space:pre-wrap;font-size:12.5px;line-height:1.6;margin-top:8px;background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:12px;overflow:auto;max-height:260px;}
   @media(max-width:480px){.estado-grid{grid-template-columns:1fr;}.add-grid{grid-template-columns:1fr 1fr;}}
+
+  /* ===== PC (D151) — dos columnas =====================================
+   * Mismo mecanismo que encargado.html: `render()` escupe una lista plana y
+   * las columnas salen de tres envoltorios con `display:contents`, que en móvil
+   * DESAPARECEN para el layout (todo se apila en el mismo orden de siempre) y
+   * solo a partir de 1100px pasan a ser celdas de una rejilla. La bandeja (lo
+   * que se scrollea) va a la izquierda, ancha; estado/totales/notas a la
+   * derecha; los botones de envío/WhatsApp al pie a ancho completo. Los chips
+   * de filtro de área (D84) quedan FUERA de la rejilla, arriba a ancho completo.
+   * `min-width:0` en cada celda: sin él, un hijo ancho (una línea larga de la
+   * bandeja) ensancha su columna en vez de hacer scroll dentro y descuadra todo.
+   * ==================================================================== */
+  .pc-zona,.pc-a,.pc-b,.pc-c{display:contents;}
+  @media(min-width:1100px){
+    .container{max-width:1240px;}
+    .pc-zona{display:grid;grid-template-columns:1.55fr 1fr;gap:0 20px;align-items:start;}
+    .pc-b{display:block;grid-column:1;grid-row:1;min-width:0;}
+    .pc-a{display:block;grid-column:2;grid-row:1;min-width:0;}
+    .pc-c{display:block;grid-column:1 / -1;grid-row:2;min-width:0;}
+    /* En la columna derecha, ya estrecha, las dos cajas de estado van apiladas. */
+    .pc-a .estado-grid{grid-template-columns:1fr;}
+    .actions{max-width:760px;margin-left:auto;margin-right:auto;}
+    .wa-toggle-row{max-width:760px;margin-left:auto;margin-right:auto;}
+  }
 </style>
 </head>
 <body>
@@ -298,9 +322,12 @@ function render(){
   if(MULTI){
     const nOdt=STATE.cantidades.filter(c=>c._area==='odt').length, nOdl=STATE.cantidades.filter(c=>c._area==='odl').length;
     const chip=(val,lbl,n)=>`<button class="fchip ${FILTRO===val?'act':''}" onclick="setFiltro('${val}')">${lbl} (${n})</button>`;
+    // D151: los chips van FUERA de la rejilla PC, a ancho completo arriba.
     html+='<div class="filtro-chips">'+chip('all','Todas',STATE.cantidades.length)+chip('odt','ODT',nOdt)+chip('odl','ODL',nOdl)+'</div>';
   }
 
+  // D151: pc-a = columna derecha (estado · totales · notas). En móvil el envoltorio desaparece.
+  html+='<div class="pc-zona"><div class="pc-a">';
   // Estado de reportes — por área visible
   vis.forEach(ar=>{ html+=renderEstadoArea(ar); });
 
@@ -313,6 +340,8 @@ function render(){
   // muestran también en el panel para que el residente las lea antes de enviar a DATA.
   html+='<div class="section-title">Notas generales del día</div>'+renderObsGenerales(vis);
 
+  // D151: pc-b = columna izquierda — la bandeja y las máquinas (lo que se scrollea).
+  html+='</div><div class="pc-b">';
   html+='<div class="section-title">Bandeja del día <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);font-size:11px;">(prende/apaga para incluir en DATA)</span></div>';
   html+='<div id="bandejaBox">'+renderBandeja()+'</div>';
   html+=renderAddCard();
@@ -320,6 +349,8 @@ function render(){
   const maqVis=STATE.maquinas.filter(m=>vis.indexOf(m._area)>=0);
   html+='<div class="section-title">Máquinas'+(MULTI?'':' del área')+' ('+maqVis.length+')</div>'+renderMaquinas();
 
+  // D151: pc-c = pie a ancho completo — los botones de envío/WhatsApp y el mensaje.
+  html+='</div><div class="pc-c">';
   html+='<div class="actions">'+
     '<button class="btn-action primary" onclick="enviar()">📤 Enviar a DATA ('+(MULTI?'ODT + ODL':AREA.toUpperCase())+')<span class="saved-flag" id="savedFlag">enviado ✓</span></button>'+
     '<button class="btn-action" onclick="generarMensaje()">📲 Generar WhatsApp</button>'+
@@ -329,6 +360,7 @@ function render(){
     html+='<div class="wa-toggle-row"><label class="wa-toggle"><input type="checkbox" onchange="toggleWa()" '+(porArea?'checked':'')+'> WhatsApp: uno por área (si no, un solo mensaje)</label></div>';
   }
   html+='<div class="msg-box" id="msgBox"></div>';
+  html+='</div></div>';   // cierra pc-c y pc-zona
   cont.innerHTML=html;
 }
 
