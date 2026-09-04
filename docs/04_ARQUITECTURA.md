@@ -46,13 +46,16 @@ tema.js    Bloqueante en el <head> a propósito: aplica data-tema ANTES del prim
 
 Los `:root` locales de las 18 pantallas DESAPARECIERON: la paleta vive solo en `tema.css`.
 
-**Versiones de PC (D151/D155):** `encargado.html`, `asistencia.html` y `resumen-asistencia.html`
+**Versiones de PC (D151/D155/D156):** `encargado.html`, `asistencia.html` y `resumen-asistencia.html`
 se reparten en dos columnas a partir de 1100px (además de `digitadora.html`, que ya era de PC
 por D83). Como los tres `render()` escupen una lista plana, las columnas salen de envoltorios
 (`.pc-*`) insertados en esa lista, y **por debajo de 1100px llevan `display:contents`**: los
 envoltorios no existen para el layout y el orden en el teléfono queda EXACTAMENTE igual que
 antes — esa es la garantía de no-regresión para la gente de campo. Toda celda de la rejilla
 lleva `min-width:0`, o un hijo ancho ensancha su columna en vez de hacer scroll dentro.
+`menu.html` (D156) aplica el mismo patrón sobre su HTML estático: los cuatro grupos de accesos
+se envuelven en `.pc-panels`/`.pc-group`/`.pc-tiles` (en `display:contents` bajo 1100px) y a
+partir de 1100px pasan a un tablero bento con hero de bienvenida — mismos 12 accesos, solo estilo.
 
                                      │ fetch GET/POST (Content-Type: text/plain)
                                      ▼

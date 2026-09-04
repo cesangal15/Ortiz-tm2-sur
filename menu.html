@@ -26,13 +26,86 @@
   .logout-btn:hover{border-color:var(--error);color:var(--error-txt);}
   .container{max-width:560px;margin:0 auto;padding:28px 16px;}
   .intro{color:var(--muted);font-size:13px;margin-bottom:20px;}
+  .pc-note{color:var(--muted);font-size:13px;margin:-4px 0 12px;}
   .group-label{font-family:'Syne',sans-serif;font-size:10px;letter-spacing:2px;color:var(--muted);text-transform:uppercase;margin:20px 0 10px;}
   .tile{display:flex;align-items:center;gap:16px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;margin-bottom:12px;cursor:pointer;text-decoration:none;color:var(--text);transition:all 0.2s;}
   .tile:hover{border-color:var(--accent);transform:translateY(-1px);box-shadow:0 6px 20px rgba(245,166,35,0.12);}
   .tile .ico{font-size:34px;}
+  .tile .t-main{min-width:0;}
   .tile .t-main h2{font-family:'Syne',sans-serif;font-size:16px;font-weight:800;}
   .tile .t-main p{font-size:12px;color:var(--muted);margin-top:3px;}
   .tile .arrow{margin-left:auto;color:var(--accent-txt);font-family:'Syne',sans-serif;font-size:18px;}
+
+  /* ============================================================================
+   * VERSIÓN DE PC (D156) — el menú del admin se vuelve un tablero.
+   * Es la pantalla donde el admin se mantiene: en móvil sigue igual (protege a
+   * quien la abre en el teléfono), y a partir de 1100px pasa a un "centro de
+   * mando" tipo bento con hero, paneles por área y rieles de acento.
+   * El mecanismo es el de D151: `display:contents` en los envoltorios por
+   * debajo de 1100px — desaparecen para el layout y el orden en el móvil queda
+   * EXACTAMENTE como estaba. Solo arriba de 1100px son celdas de una rejilla.
+   * ==========================================================================*/
+  .pc-hero{display:none;}
+  .pc-panels,.pc-group,.pc-tiles{display:contents;}
+
+  @media(min-width:1100px){
+    .container{max-width:1200px;padding:26px 24px 48px;}
+    .intro{display:none;}                 /* el hero lo sustituye en ancho */
+
+    /* ---- Hero / bienvenida ---- */
+    .pc-hero{
+      display:flex;align-items:center;justify-content:space-between;gap:24px;
+      position:relative;overflow:hidden;
+      background:var(--header-grad);border:1px solid var(--border);border-left:4px solid var(--accent);
+      border-radius:22px;padding:28px 32px;margin-bottom:26px;box-shadow:var(--sombra);
+    }
+    .pc-hero::after{content:"";position:absolute;top:-70px;right:-50px;width:280px;height:280px;
+      background:radial-gradient(circle,rgba(245,166,35,0.16),transparent 70%);pointer-events:none;}
+    .pc-hero .hero-txt{position:relative;z-index:1;min-width:0;}
+    .pc-hero .hero-eyebrow{font-family:'Syne',sans-serif;font-size:11px;letter-spacing:3px;text-transform:uppercase;color:var(--accent-txt);}
+    .pc-hero .hero-title{font-family:'Syne',sans-serif;font-size:27px;font-weight:800;margin-top:6px;}
+    .pc-hero .hero-sub{font-size:13px;color:var(--muted);margin-top:7px;}
+    .pc-hero .hero-meta{position:relative;z-index:1;text-align:right;flex-shrink:0;}
+    .pc-hero .hero-date{font-family:'Syne',sans-serif;font-size:15px;font-weight:700;color:var(--text);}
+    .pc-hero .hero-count{font-size:12px;color:var(--muted);margin-top:5px;}
+
+    /* ---- Tablero bento ---- */
+    .pc-panels{display:grid;grid-template-columns:repeat(12,1fr);gap:22px;align-items:start;}
+    .pc-group{
+      display:flex;flex-direction:column;min-width:0;
+      background:var(--surface);border:1px solid var(--border);border-radius:22px;
+      padding:22px;box-shadow:var(--sombra);
+    }
+    .pc-g1{grid-column:span 12;}
+    .pc-g2{grid-column:span 6;}
+    .pc-g3{grid-column:span 6;}
+    .pc-g4{grid-column:span 12;}
+
+    /* etiqueta de área como cabecera de panel */
+    .pc-group .group-label{
+      margin:0 0 16px;font-size:11px;letter-spacing:2.5px;color:var(--accent-txt);
+      position:relative;padding-left:13px;
+    }
+    .pc-group .group-label::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:3px;background:var(--accent);}
+    .pc-group .pc-note{display:block;margin:-6px 0 16px;font-size:12px;}
+
+    /* rejillas internas de accesos */
+    .pc-tiles{display:grid;gap:12px;}
+    .pc-g1 .pc-tiles{grid-template-columns:1fr 1fr;}
+    .pc-g2 .pc-tiles,.pc-g3 .pc-tiles{grid-template-columns:1fr;}
+    .pc-g4 .pc-tiles{grid-template-columns:1fr 1fr;}
+
+    /* accesos dentro del panel: fondo propio, riel de acento y chip de ícono */
+    .pc-group .tile{margin:0;background:var(--surface2);position:relative;overflow:hidden;padding-left:22px;}
+    .pc-group .tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:0;background:var(--accent);transition:width .18s;}
+    .pc-group .tile:hover::before{width:4px;}
+    .pc-group .tile .ico{
+      font-size:26px;width:52px;height:52px;flex-shrink:0;
+      display:flex;align-items:center;justify-content:center;
+      background:var(--surface);border:1px solid var(--border);border-radius:13px;transition:border-color .18s;
+    }
+    .pc-group .tile:hover .ico{border-color:var(--accent);}
+  }
 </style>
 </head>
 <body>
@@ -49,95 +122,132 @@
 <div class="container">
   <p class="intro">Como admin tienes acceso a todas las pantallas:</p>
 
-  <div class="group-label">Revisión y consolidado</div>
-  <a class="tile" href="encargado.html">
-    <div class="ico">🗂️</div>
-    <div class="t-main"><h2>Panel del Encargado</h2><p>Bandeja del día, totales, envío a DATA y WhatsApp</p></div>
-    <div class="arrow">→</div>
-  </a>
-  <a class="tile" href="produccion-maquinaria.html">
-    <div class="ico">⚙️</div>
-    <div class="t-main"><h2>Maquinaria</h2><p>Producción del día (volumen oficial) y <b>flota</b>: altas, bajas y reingresos de máquinas</p></div>
-    <div class="arrow">→</div>
-  </a>
-  <a class="tile" href="jefe.html">
-    <div class="ico">📈</div>
-    <div class="t-main"><h2>Resumen de Obra (Jefe)</h2><p>Consulta por rango de fechas y copiado del bloque diario para el maestro</p></div>
-    <div class="arrow">→</div>
-  </a>
-  <a class="tile" href="residente-drenajes.html">
-    <div class="ico">🚧</div>
-    <div class="t-main"><h2>Panel de Drenajes</h2><p>Bandeja ODT + ODL juntas: totales, envío a DATA y WhatsApp</p></div>
-    <div class="arrow">→</div>
-  </a>
+  <div class="pc-hero">
+    <div class="hero-txt">
+      <div class="hero-eyebrow">Centro de mando</div>
+      <div class="hero-title">Hola, <span id="heroUser">admin</span></div>
+      <div class="hero-sub">Todas las pantallas de la obra, en un solo tablero.</div>
+    </div>
+    <div class="hero-meta">
+      <div class="hero-date" id="heroDate">—</div>
+      <div class="hero-count">12 accesos · 4 áreas</div>
+    </div>
+  </div>
 
-  <div class="group-label">Asistencia de personal</div>
-  <a class="tile" href="asistencia.html">
-    <div class="ico">👷</div>
-    <div class="t-main"><h2>Asistencia (formulario)</h2><p>Reporta la asistencia de una cuadrilla (admin puede elegir cuál)</p></div>
-    <div class="arrow">→</div>
-  </a>
-  <a class="tile" href="resumen-asistencia.html">
-    <div class="ico">📋</div>
-    <div class="t-main"><h2>Resumen de asistencias</h2><p>Resumen del día, faltantes, Excel Navision y gestión de personal</p></div>
-    <div class="arrow">→</div>
-  </a>
-  <a class="tile" href="horas-persona.html">
-    <div class="ico">🕐</div>
-    <div class="t-main"><h2>Horas por persona</h2><p>Una persona y un período (corte 11→10): su detalle día a día y los totales que fueron al Parte de Navision</p></div>
-    <div class="arrow">→</div>
-  </a>
-  <a class="tile" href="mis-extras.html">
-    <div class="ico">⏱️</div>
-    <div class="t-main"><h2>Mis horas extra</h2><p>Registra tus horas extra de días puntuales para el Excel Navision (solo admin)</p></div>
-    <div class="arrow">→</div>
-  </a>
+  <div class="pc-panels">
 
-  <div class="group-label">Reportes de campo</div>
-  <a class="tile" href="reporte-capataz.html">
-    <div class="ico">📋</div>
-    <div class="t-main"><h2>Reporte de Capataz</h2><p>Actividades del día con producción y maquinaria</p></div>
-    <div class="arrow">→</div>
-  </a>
-  <a class="tile" href="reporte-chequeadora.html">
-    <div class="ico">🚛</div>
-    <div class="t-main"><h2>Reporte de Chequeadora</h2><p>Viajes por PK destino con origen del material</p></div>
-    <div class="arrow">→</div>
-  </a>
-  <a class="tile" href="digitadora.html">
-    <div class="ico">📋</div>
-    <div class="t-main"><h2>Digitación de Volquetas</h2><p>Pre-llena la BASE de transporte desde VOLQUETAS y exporta para pegar en TERRAPLEN.xlsx</p></div>
-    <div class="arrow">→</div>
-  </a>
-  <a class="tile" href="reporte-drenajes.html">
-    <div class="ico">🕳️</div>
-    <div class="t-main"><h2>Reporte de Drenajes</h2><p>ODT + ODL en una sola pantalla: marcador o PK con cantidad directa</p></div>
-    <div class="arrow">→</div>
-  </a>
+    <div class="pc-group pc-g1">
+      <div class="group-label">Revisión y consolidado</div>
+      <div class="pc-tiles">
+        <a class="tile" href="encargado.html">
+          <div class="ico">🗂️</div>
+          <div class="t-main"><h2>Panel del Encargado</h2><p>Bandeja del día, totales, envío a DATA y WhatsApp</p></div>
+          <div class="arrow">→</div>
+        </a>
+        <a class="tile" href="produccion-maquinaria.html">
+          <div class="ico">⚙️</div>
+          <div class="t-main"><h2>Maquinaria</h2><p>Producción del día (volumen oficial) y <b>flota</b>: altas, bajas y reingresos de máquinas</p></div>
+          <div class="arrow">→</div>
+        </a>
+        <a class="tile" href="jefe.html">
+          <div class="ico">📈</div>
+          <div class="t-main"><h2>Resumen de Obra (Jefe)</h2><p>Consulta por rango de fechas y copiado del bloque diario para el maestro</p></div>
+          <div class="arrow">→</div>
+        </a>
+        <a class="tile" href="residente-drenajes.html">
+          <div class="ico">🚧</div>
+          <div class="t-main"><h2>Panel de Drenajes</h2><p>Bandeja ODT + ODL juntas: totales, envío a DATA y WhatsApp</p></div>
+          <div class="arrow">→</div>
+        </a>
+      </div>
+    </div>
 
-  <div class="group-label">Herramientas de Excel (escritorio)</div>
-  <p class="intro" style="margin:-4px 0 12px">Trabajan con los Excel del maestro, 100% en el navegador y sin tocar el Sheet. Se abren en una pestaña nueva.</p>
-  <a class="tile" href="Reparto_Produccion_Maquinaria.html" target="_blank" rel="noopener">
-    <div class="ico">🚜</div>
-    <div class="t-main"><h2>Reparto de Producción (mensual)</h2><p>Cruza <code>dia suelto</code> con los partes del jefe y reparte la producción del mes entre las máquinas</p></div>
-    <div class="arrow">↗</div>
-  </a>
-  <a class="tile" href="tablero-produccion.html" target="_blank" rel="noopener">
-    <div class="ico">📊</div>
-    <div class="t-main"><h2>Tablero de Producción (mensual)</h2><p>Reemplaza la hoja <code>GRAFICOS</code> para la presentación a directivos: velocidad contra meta, rendimiento de maquinaria, avance del contrato y clima. Lee los dos Excel al pulsar <b>Actualizar</b></p></div>
-    <div class="arrow">↗</div>
-  </a>
-  <a class="tile" href="conciliador/index.html" target="_blank" rel="noopener">
-    <div class="ico">🧾</div>
-    <div class="t-main"><h2>Conciliador de Actas</h2><p>Cortes quincenales de transporte (viajes) y acta de maquinaria alquilada día a día</p></div>
-    <div class="arrow">↗</div>
-  </a>
+    <div class="pc-group pc-g2">
+      <div class="group-label">Asistencia de personal</div>
+      <div class="pc-tiles">
+        <a class="tile" href="asistencia.html">
+          <div class="ico">👷</div>
+          <div class="t-main"><h2>Asistencia (formulario)</h2><p>Reporta la asistencia de una cuadrilla (admin puede elegir cuál)</p></div>
+          <div class="arrow">→</div>
+        </a>
+        <a class="tile" href="resumen-asistencia.html">
+          <div class="ico">📋</div>
+          <div class="t-main"><h2>Resumen de asistencias</h2><p>Resumen del día, faltantes, Excel Navision y gestión de personal</p></div>
+          <div class="arrow">→</div>
+        </a>
+        <a class="tile" href="horas-persona.html">
+          <div class="ico">🕐</div>
+          <div class="t-main"><h2>Horas por persona</h2><p>Una persona y un período (corte 11→10): su detalle día a día y los totales que fueron al Parte de Navision</p></div>
+          <div class="arrow">→</div>
+        </a>
+        <a class="tile" href="mis-extras.html">
+          <div class="ico">⏱️</div>
+          <div class="t-main"><h2>Mis horas extra</h2><p>Registra tus horas extra de días puntuales para el Excel Navision (solo admin)</p></div>
+          <div class="arrow">→</div>
+        </a>
+      </div>
+    </div>
+
+    <div class="pc-group pc-g3">
+      <div class="group-label">Reportes de campo</div>
+      <div class="pc-tiles">
+        <a class="tile" href="reporte-capataz.html">
+          <div class="ico">📋</div>
+          <div class="t-main"><h2>Reporte de Capataz</h2><p>Actividades del día con producción y maquinaria</p></div>
+          <div class="arrow">→</div>
+        </a>
+        <a class="tile" href="reporte-chequeadora.html">
+          <div class="ico">🚛</div>
+          <div class="t-main"><h2>Reporte de Chequeadora</h2><p>Viajes por PK destino con origen del material</p></div>
+          <div class="arrow">→</div>
+        </a>
+        <a class="tile" href="digitadora.html">
+          <div class="ico">📋</div>
+          <div class="t-main"><h2>Digitación de Volquetas</h2><p>Pre-llena la BASE de transporte desde VOLQUETAS y exporta para pegar en TERRAPLEN.xlsx</p></div>
+          <div class="arrow">→</div>
+        </a>
+        <a class="tile" href="reporte-drenajes.html">
+          <div class="ico">🕳️</div>
+          <div class="t-main"><h2>Reporte de Drenajes</h2><p>ODT + ODL en una sola pantalla: marcador o PK con cantidad directa</p></div>
+          <div class="arrow">→</div>
+        </a>
+      </div>
+    </div>
+
+    <div class="pc-group pc-g4">
+      <div class="group-label">Herramientas de Excel (escritorio)</div>
+      <p class="pc-note">Trabajan con los Excel del maestro, 100% en el navegador y sin tocar el Sheet. Se abren en una pestaña nueva.</p>
+      <div class="pc-tiles">
+        <a class="tile" href="Reparto_Produccion_Maquinaria.html" target="_blank" rel="noopener">
+          <div class="ico">🚜</div>
+          <div class="t-main"><h2>Reparto de Producción (mensual)</h2><p>Cruza <code>dia suelto</code> con los partes del jefe y reparte la producción del mes entre las máquinas</p></div>
+          <div class="arrow">↗</div>
+        </a>
+        <a class="tile" href="tablero-produccion.html" target="_blank" rel="noopener">
+          <div class="ico">📊</div>
+          <div class="t-main"><h2>Tablero de Producción (mensual)</h2><p>Reemplaza la hoja <code>GRAFICOS</code> para la presentación a directivos: velocidad contra meta, rendimiento de maquinaria, avance del contrato y clima. Lee los dos Excel al pulsar <b>Actualizar</b></p></div>
+          <div class="arrow">↗</div>
+        </a>
+        <a class="tile" href="conciliador/index.html" target="_blank" rel="noopener">
+          <div class="ico">🧾</div>
+          <div class="t-main"><h2>Conciliador de Actas</h2><p>Cortes quincenales de transporte (viajes) y acta de maquinaria alquilada día a día</p></div>
+          <div class="arrow">↗</div>
+        </a>
+      </div>
+    </div>
+
+  </div>
 </div>
 <script>
   // D82: sesión en localStorage (sobrevive cierre del navegador en zona muerta)
   const rol=localStorage.getItem('rol');
   if(!rol || rol!=='admin'){ window.location.href='index.html'; }
-  document.getElementById('userDisplay').textContent=localStorage.getItem('usuario')||'admin';
+  const usuario=localStorage.getItem('usuario')||'admin';
+  document.getElementById('userDisplay').textContent=usuario;
+  // Hero de PC: mismo dato de sesión y la fecha de hoy (solo presentación)
+  document.getElementById('heroUser').textContent=usuario;
+  const hoy=new Date().toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'});
+  document.getElementById('heroDate').textContent=hoy.charAt(0).toUpperCase()+hoy.slice(1);
   // solo la sesión: la cola de envíos pendientes NO se borra al cerrar sesión (D82)
   function logout(){ localStorage.removeItem('usuario'); localStorage.removeItem('rol'); localStorage.removeItem('tm2_token'); window.location.href='index.html'; }
 </script>
