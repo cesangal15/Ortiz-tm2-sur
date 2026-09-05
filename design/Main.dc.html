@@ -30,10 +30,42 @@
       <div class="syne" style="font-weight:800;font-size:44px;line-height:.98;letter-spacing:-.02em">TM2 SUR</div>
       <div style="font-size:14px;color:{{t.mut}}">Movimiento de tierras · Unidades funcionales UF1 y UF2</div>
     </div>
-    <div style="text-align:right;display:flex;flex-direction:column;gap:4px">
-      <div class="syne" style="font-weight:800;font-size:40px;line-height:1;letter-spacing:-.02em">Agosto 2026</div>
-      <div style="font-size:13px;color:{{t.mut}}">Período 16 jul — 15 ago 2026 · 27 días registrados</div>
-      <div style="font-size:12px;color:{{acento}};letter-spacing:.04em">Fecha de corte 15 · ago · 2026</div>
+    <div style="display:flex;align-items:flex-end;gap:26px">
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:{{t.mut}}">Unidad funcional</div>
+        <div style="display:flex">
+          <sc-for list="{{ufs}}" as="u" hint-placeholder-count="3">
+            <div onClick="{{u.pick}}" style="cursor:pointer;user-select:none;padding:8px 17px;font-size:13px;font-weight:{{u.fw}};color:{{u.fg}};background:{{u.bg}};border:1px solid {{u.bd}};border-right-width:{{u.brw}}">{{u.n}}</div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="text-align:right;display:flex;flex-direction:column;gap:4px">
+        <div class="syne" style="font-weight:800;font-size:40px;line-height:1;letter-spacing:-.02em">{{sel.titulo}}</div>
+        <div style="font-size:13px;color:{{t.mut}}">Período {{sel.rango}} · {{sel.dias}} días registrados</div>
+        <div style="font-size:12px;color:{{acento}};letter-spacing:.04em">Fecha de corte {{sel.corte}}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 0 · selector de período ============ -->
+  <div style="display:flex;flex-direction:column;gap:11px">
+    <div style="display:flex;align-items:baseline;gap:14px">
+      <div class="syne" style="font-weight:700;font-size:13px;letter-spacing:.16em;text-transform:uppercase">Período</div>
+      <div style="flex:1;height:1px;background:{{t.rule}}"></div>
+      <div style="font-size:12px;color:{{t.mut}}">clic en un mes para verlo · la barra es su producción total</div>
+    </div>
+    <div style="display:flex;gap:7px;align-items:flex-end;height:62px">
+      <sc-for list="{{periodos}}" as="p" hint-placeholder-count="16">
+        <div onClick="{{p.pick}}" style="flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;gap:5px;cursor:pointer;padding:0 2px;background:{{p.bg}}">
+          <div class="tnum" style="font-size:10px;text-align:center;color:{{p.numC}};font-weight:{{p.fw}}">{{p.tot}}</div>
+          <div style="height:{{p.h}};background:{{p.c}}"></div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="display:flex;gap:7px">
+      <sc-for list="{{periodos}}" as="p" hint-placeholder-count="16">
+        <div onClick="{{p.pick}}" style="flex:1;text-align:center;font-size:11px;cursor:pointer;color:{{p.labC}};font-weight:{{p.fw}};border-top:2px solid {{p.marca}};padding-top:5px">{{p.lab}}</div>
+      </sc-for>
     </div>
   </div>
 
@@ -261,6 +293,12 @@
 
 <script data-dc-script data-props='{"acento":{"editor":"color","default":"#8a5200","options":["#8a5200","#1d6fa8","#2f6b4f","#8c3b52"]},"tema":{"editor":"enum","options":["claro","oscuro"],"default":"claro","tsType":"&#39;claro&#39;|&#39;oscuro&#39;"}}'>
 class Component extends DCLogic {
+  /* La maqueta trae los 16 períodos reales para que el selector se pueda usar.
+     Al elegir otro mes se mueve la marca y cambia la cabecera; el resto de la
+     pantalla se queda en agosto, que es el mes que esta maqueta ilustra. En la
+     página real cambia todo. */
+  state = { per: 14, uf: 'Todo' };
+
   renderVals() {
     const oscuro = (this.props.tema ?? 'claro') === 'oscuro';
     const t = oscuro
@@ -270,6 +308,45 @@ class Component extends DCLogic {
     const C = { exc:'#e9a034', ter:'#2e8bb4', sub:'#66ad56', bas:'#93527f' };
     const LBL = { exc:'#191512', ter:'#ffffff', sub:'#0d2b16', bas:'#ffffff' };
     const f0 = n => Math.round(n).toLocaleString('es-CO');
+
+    // ---- selector de período: los 16 reales, con su producción total
+    const MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    const P = [['2506',32444],['2507',42772],['2508',3392],['2509',103100],['2510',67267],
+      ['2511',67443],['2512',50628],['2601',32544],['2602',80889],['2603',71034],['2604',92944],
+      ['2605',92712],['2606',135353],['2607',131890],['2608',67592],['2609',9139]];
+    const DIAS = [26,26,4,26,26,25,25,23,24,22,22,24,28,26,27,11];
+    const maxP = Math.max(...P.map(x => x[1]));
+    const iSel = this.state.per;
+    const nombre = k => {
+      const y = 2000 + Number(k.slice(0, 2)), m = Number(k.slice(2));
+      return { corto: MES[m - 1] + ' ' + String(y).slice(2),
+               largo: MES[m - 1][0].toUpperCase() + MES[m - 1].slice(1) + ' ' + y,
+               mes: m, anio: y };
+    };
+    const periodos = P.map(([k, tot], i) => {
+      const s = i === iSel, n = nombre(k);
+      return {
+        lab: n.corto, tot: f0(tot), pick: () => this.setState({ per: i }),
+        h: Math.max(3, tot / maxP * 100) + '%',
+        c: s ? C.exc : t.mut, bg: s ? t.card : 'transparent',
+        fw: s ? 700 : 400, marca: s ? t.ink : 'transparent',
+        labC: s ? t.ink : t.mut, numC: s ? t.ink : t.mut
+      };
+    });
+    const nSel = nombre(P[iSel][0]);
+    const pm = nSel.mes === 1 ? 12 : nSel.mes - 1, py = nSel.mes === 1 ? nSel.anio - 1 : nSel.anio;
+    const sel = {
+      titulo: nSel.largo,
+      rango: '16 ' + MES[pm - 1] + ' ' + py + ' — 15 ' + MES[nSel.mes - 1] + ' ' + nSel.anio,
+      dias: DIAS[iSel],
+      corte: '15 · ' + MES[nSel.mes - 1] + ' · ' + nSel.anio
+    };
+    const ufs = ['Todo', 'UF1', 'UF2'].map((n, i) => {
+      const s = this.state.uf === n;
+      return { n, pick: () => this.setState({ uf: n }),
+        fg: s ? t.bg : t.mut, bg: s ? t.ink : 'transparent',
+        bd: s ? t.ink : t.rule, fw: s ? 700 : 400, brw: i === 2 ? '1px' : '0' };
+    });
 
     const avance = [
       { n:'Excavación', pct:'83%', w:'83%', c:C.exc, eje:'513.731', plan:'620.671' },
@@ -344,7 +421,7 @@ class Component extends DCLogic {
     }));
 
     return {
-      t, acento, avance, plan, vel, chain, dias,
+      t, acento, avance, plan, vel, chain, dias, periodos, sel, ufs,
       leyenda: [
         { n:'Excavación', c:C.exc }, { n:'Terraplén', c:C.ter },
         { n:'Subbase', c:C.sub }, { n:'BTC / Base', c:C.bas }

@@ -1,15 +1,50 @@
 {
   "artboards": [
-    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1440, "h": 1860, "title": "Informe · versión larga", "print": "flow" },
-    { "file": "UnaPantalla.dc.html", "x": 1600, "y": 0, "w": 1440, "h": 900, "title": "Una sola pantalla", "print": "fixed" }
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 2010,
+      "title": "Informe · versión larga",
+      "print": "flow",
+      "is_interactive": true
+    },
+    {
+      "file": "UnaPantalla.dc.html",
+      "x": 1600,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "Una sola pantalla",
+      "print": "fixed",
+      "is_interactive": true
+    }
   ],
   "annotations": [
-    { "id": "nota-informe", "x": 0, "y": -190, "w": 620,
-      "text": "INFORME · VERSIÓN LARGA — la propuesta principal.\n\nEl orden es el de la reunión: dónde vamos (contrato) → cómo fue el mes → por qué → el día a día. Los números mandan y hay aire entre secciones.\n\nA favor: se recorre hablando, exporta a PDF paginado y aguanta letra grande.\nEn contra: no cabe en una pantalla; hay que bajar." },
-    { "id": "nota-pantalla", "x": 1600, "y": -190, "w": 620,
-      "text": "UNA SOLA PANTALLA — la alternativa.\n\nTodo en 1440×900, sin scroll: se proyecta como una diapositiva y nadie pierde el hilo. Arranca en oscuro, que es lo que mejor se ve en sala a media luz.\n\nA favor: una sola imagen, cero desplazamiento.\nEn contra: la letra baja y el detalle se aprieta." },
-    { "id": "nota-datos", "x": 0, "y": 1940, "w": 900,
-      "text": "Datos reales de agosto 2026 (16 jul — 15 ago), el último período cerrado con partes de maquinaria. Nada aquí es relleno: salen del mismo cálculo verificado contra la hoja GRAFICOS.\n\nArriba de cada artboard hay dos palancas: el color de acento y claro/oscuro." }
+    {
+      "id": "nota-informe",
+      "x": 0,
+      "y": -190,
+      "w": 620,
+      "text": "INFORME · VERSIÓN LARGA — la propuesta principal.\n\nEl orden es el de la reunión: dónde vamos (contrato) → cómo fue el mes → por qué → el día a día. Los números mandan y hay aire entre secciones.\n\nA favor: se recorre hablando, exporta a PDF paginado y aguanta letra grande.\nEn contra: no cabe en una pantalla; hay que bajar."
+    },
+    {
+      "id": "nota-pantalla",
+      "x": 1600,
+      "y": -190,
+      "w": 620,
+      "text": "UNA SOLA PANTALLA — la alternativa.\n\nTodo en 1440×900, sin scroll: se proyecta como una diapositiva y nadie pierde el hilo. Arranca en oscuro, que es lo que mejor se ve en sala a media luz.\n\nA favor: una sola imagen, cero desplazamiento.\nEn contra: la letra baja y el detalle se aprieta."
+    },
+    {
+      "id": "nota-datos",
+      "x": 0,
+      "y": 2090,
+      "w": 900,
+      "text": "Datos reales de agosto 2026 (16 jul — 15 ago), el último período cerrado con partes de maquinaria. Nada aquí es relleno: salen del mismo cálculo verificado contra la hoja GRAFICOS.\n\nEl selector de período y las pestañas UF SÍ funcionan: pulsa un mes y verás moverse la marca y la cabecera. El resto de la pantalla se queda en agosto, que es el mes que ilustra la maqueta; en la página real cambia todo.\n\nArriba de cada artboard hay dos palancas: color de acento y claro/oscuro."
+    }
   ],
-  "launch": { "view": "canvas" }
+  "launch": {
+    "view": "canvas"
+  }
 }
