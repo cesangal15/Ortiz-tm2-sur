@@ -89,7 +89,7 @@
       <div class="syne" style="font-weight:700;font-size:19px">Por qué vamos así</div>
       <div style="font-size:13px;color:{{t.mut}}">horas × utilización × eficiencia = m³ por día</div>
       <div style="flex:1;height:1px;background:{{t.rule}};min-width:40px"></div>
-      <div style="font-size:11.5px;color:{{acento}};text-align:right;max-width:430px">Sólo cuentan las máquinas coherentes con cada actividad, por centro de coste</div>
+      <div style="font-size:11.5px;color:{{acento}};text-align:right;max-width:430px">Misma información que la otra versión · la velocidad va en anillo en vez de barra</div>
     </div>
     <div>
       <div style="display:grid;grid-template-columns:224px 1.05fr 1fr 1fr 236px;gap:0 26px;padding-bottom:8px;border-bottom:1px solid {{t.rule}}">
@@ -127,14 +127,21 @@
             <div style="height:5px;background:{{t.grid}}"><div style="height:100%;width:{{r.efw}};background:{{r.c}}"></div></div>
             <div class="tnum" style="font-size:10.5px;color:{{t.mut}}">{{r.mh}} de {{r.meta}} m³ hora-máquina</div>
           </div>
-          <div style="position:relative;padding-left:26px;border-left:1px solid {{t.rule}}">
+          <div style="position:relative;padding-left:26px;border-left:1px solid {{t.rule}};display:flex;align-items:center;gap:16px">
             <div style="position:absolute;left:7px;top:1px;font-size:15px;color:{{acento}}">=</div>
-            <div style="display:flex;align-items:baseline;gap:6px">
-              <div class="syne tnum" style="font-weight:800;font-size:34px;line-height:1">{{r.vel}}</div>
-              <div style="font-size:11.5px;color:{{t.mut}}">de la meta</div>
+            <div style="position:relative;width:86px;height:86px;flex:none">
+              <svg viewBox="0 0 42 42" style="width:86px;height:86px;transform:rotate(-90deg)">
+                <circle cx="21" cy="21" r="15.9" fill="none" stroke="{{t.grid}}" stroke-width="5.5"></circle>
+                <circle cx="21" cy="21" r="15.9" fill="none" stroke="{{r.c}}" stroke-width="5.5"
+                        stroke-dasharray="{{r.dash}}" stroke-linecap="butt"></circle>
+              </svg>
+              <div class="syne tnum" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:21px;letter-spacing:-.02em">{{r.vel}}</div>
             </div>
-            <div style="height:10px;background:{{t.grid}};margin-top:7px"><div style="height:100%;width:{{r.vel}};background:{{acento}}"></div></div>
-            <div class="tnum" style="font-size:10.5px;color:{{t.mut}};margin-top:5px">{{r.diaria}} m³ al día</div>
+            <div style="display:flex;flex-direction:column;gap:3px">
+              <div style="font-size:11.5px;color:{{t.mut}}">de la meta</div>
+              <div class="tnum" style="font-size:11.5px;color:{{t.mut}}">{{r.diaria}} m³ al día</div>
+              <div class="tnum" style="font-size:11.5px;color:{{t.mut}}">{{r.dias}} días · {{r.eq}} equipos</div>
+            </div>
           </div>
         </div>
         <sc-if value="{{r.open}}" hint-placeholder-val="{{ false }}">
@@ -324,7 +331,11 @@
 
 <script data-dc-script data-props='{"acento":{"editor":"color","default":"#8a5200","options":["#8a5200","#1d6fa8","#2f6b4f","#8c3b52"]},"tema":{"editor":"enum","options":["claro","oscuro"],"default":"claro","tsType":"&#39;claro&#39;|&#39;oscuro&#39;"}}'>
 class Component extends DCLogic {
-  /* Maqueta con TODO el contenido de la página real, sólo que rediseñado.
+  /* Variante: idéntica a Main salvo la columna de VELOCIDAD, que va en anillo
+     en lugar de barra — es lo que usa la hoja del jefe. Todo lo demás igual,
+     para que la comparación sea limpia y sólo se decida esa pieza.
+
+     Maqueta con TODO el contenido de la página real, sólo que rediseñado.
      El selector de período, las pestañas de UF y el desglose por equipo
      funcionan; el resto de las cifras se quedan en agosto 2026, que es el mes
      que ilustra. Datos reales, ninguno inventado (ver datos.js.txt). */
@@ -398,6 +409,7 @@ class Component extends DCLogic {
         ut: ut + '%', ef: ef + '%', efw: Math.min(100, ef) + '%',
         efc: mh >= meta ? C[i] : t.ink,
         mh: f1(mh), meta: f1(meta), vel: vel + '%', diaria: f0(diaria),
+        dash: (Math.min(100, vel) / 100 * 99.9).toFixed(1) + ' 99.9',
         bd: abierta ? 'transparent' : t.rule, bg: abierta ? t.grid : 'transparent',
         hint: abierta ? 'Cerrar desglose' : 'Ver ' + (i === 0 ? 3 : eq) + ' equipos',
         maq: i === 0

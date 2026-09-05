@@ -1,0 +1,46 @@
+NOTA — este archivo NO es un artboard ni entra al lienzo. Es la chuleta de datos
+reales de agosto 2026 que llevan las maquetas escritos dentro, para no tener que
+volver a sacarlos del Excel si hay que retocarlas.
+
+Todo sale del mismo cálculo verificado contra la hoja GRAFICOS (56 celdas de
+CALCULOS sin discrepancia, avance a 0,0).
+
+PERÍODOS (16) — [clave, excavación, terraplén, subbase, base] en m³ compactos
+[["2506",20251,12192,1,1],["2507",26232,15862,679,0],["2508",1997,840,555,0],
+ ["2509",54959,45093,3048,0],["2510",36470,28035,2762,0],["2511",37463,27439,2542,0],
+ ["2512",28075,18545,3899,109],["2601",15742,11889,1766,3147],["2602",40053,32606,4364,3866],
+ ["2603",35379,27312,4060,4284],["2604",46449,38886,2869,4740],["2605",48385,36242,1705,6381],
+ ["2606",67453,56582,6752,4566],["2607",64977,54565,5321,7027],["2608",33451,22705,7829,3606],
+ ["2609",2879,1761,1740,2760]]
+
+DÍAS DEL PERÍODO ago-26 — [día, exc, ter, sub, bas, clima] · clima: s|p|l
+[["16",2342,1708,265,650,"s"],["17",2952,2025,0,645,"s"],["18",1501,1177,912,317,"s"],
+ ["21",0,0,497,281,"l"],["22",2539,2464,231,402,"s"],["23",0,0,0,410,"l"],["24",2581,2264,0,318,"s"],
+ ["25",2046,1679,0,0,"p"],["27",718,938,683,0,"l"],["28",1562,1664,1026,0,"s"],["29",1957,2360,1357,0,"s"],
+ ["30",2717,1991,300,0,"s"],["31",2514,723,989,0,"s"],["01",1052,398,0,0,"p"],["03",1585,1629,0,0,"s"],
+ ["04",1630,973,0,0,"l"],["05",1068,908,315,439,"s"],["06",1896,1700,0,800,"l"],["07",2404,946,1804,427,"s"],
+ ["08",1147,74,398,0,"s"],["09",942,28,0,0,"s"],["10",1561,883,446,0,"s"],["11",2800,440,86,0,"s"],
+ ["12",937,476,428,0,"s"],["13",1110,800,390,0,"s"],["14",1608,964,52,0,"p"],["15",318,304,0,0,"p"]]
+máx barra diaria: 2952
+
+CADENA ago-26 — actividad: prod, equipos, horas, utilización, perdidas, m³/h, meta, velocidad
+excavación  33.451  3 eq  354,6 h  100%  0,0 h            122,7 / 106,3   52%  25 días
+terraplén   22.705  2 eq  212,4 h   96%  10,0 h lluvia    139,0 /  85,0   67%  25 días
+subbase      7.829  2 eq  245,6 h   86%  41,3 h lluvia     41,4 /  43,8   53%  17 días
+BTC/base     3.606  1 eq   43,0 h  100%  0,0 h            109,0 /  58,8   84%  10 días
+
+EQUIPOS de excavación ago-26
+EXC001 EXCAVADORA UF1·UF2 228,6 h · EXC015 EXCAVADORA UF1·UF2 102,2 h · EXC014 EXCAVADORA UF1 23,8 h
+
+PLANIFICADO vs EJECUTADO ago-26
+excavación 33.451/35.000 · terraplén 22.705/24.500 · subbase 7.829/6.600
+BTC 3.606/4.500 · no aprovechable 10.420/9.500
+
+AVANCE DEL CONTRATO (acumulado desde ago-2025)
+excavación 513.731/620.671 83% · terraplén 402.499/480.586 84%
+subbase 49.211/86.552 57% · BTC 40.486/43.759 93%
+
+APROVECHAMIENTO ago-26 — aprov. común 23.032 · préstamo 0 · no aprov. 10.420 → 69%
+
+CLIMA ago-26 — 18 soleados, 4 parciales, 5 lluvias
+Los 5 días de lluvia promedian 1.192 m³ frente a 4.717 en los 18 soleados.

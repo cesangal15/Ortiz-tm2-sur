@@ -5,43 +5,43 @@
       "x": 0,
       "y": 0,
       "w": 1440,
-      "h": 2010,
-      "title": "Informe · versión larga",
+      "h": 2080,
+      "title": "A · velocidad en barra (como está hoy)",
       "print": "flow",
       "is_interactive": true
     },
     {
-      "file": "UnaPantalla.dc.html",
+      "file": "Anillos.dc.html",
       "x": 1600,
       "y": 0,
       "w": 1440,
-      "h": 900,
-      "title": "Una sola pantalla",
-      "print": "fixed",
+      "h": 2080,
+      "title": "B · velocidad en anillo",
+      "print": "flow",
       "is_interactive": true
     }
   ],
   "annotations": [
     {
-      "id": "nota-informe",
+      "id": "nota-a",
       "x": 0,
-      "y": -190,
-      "w": 620,
-      "text": "INFORME · VERSIÓN LARGA — la propuesta principal.\n\nEl orden es el de la reunión: dónde vamos (contrato) → cómo fue el mes → por qué → el día a día. Los números mandan y hay aire entre secciones.\n\nA favor: se recorre hablando, exporta a PDF paginado y aguanta letra grande.\nEn contra: no cabe en una pantalla; hay que bajar."
+      "y": -230,
+      "w": 700,
+      "text": "A · VELOCIDAD EN BARRA — como la tiene hoy la página.\n\nMismo contenido que B, letra por letra. La única diferencia es la última columna de la cadena: la velocidad va como barra horizontal.\n\nA favor: ocupa poco, se compara de un vistazo entre actividades y no rompe el ritmo de la fila.\nEn contra: es menos vistosa que un anillo."
     },
     {
-      "id": "nota-pantalla",
+      "id": "nota-b",
       "x": 1600,
-      "y": -190,
-      "w": 620,
-      "text": "UNA SOLA PANTALLA — la alternativa.\n\nTodo en 1440×900, sin scroll: se proyecta como una diapositiva y nadie pierde el hilo. Arranca en oscuro, que es lo que mejor se ve en sala a media luz.\n\nA favor: una sola imagen, cero desplazamiento.\nEn contra: la letra baja y el detalle se aprieta."
+      "y": -230,
+      "w": 700,
+      "text": "B · VELOCIDAD EN ANILLO — como el Excel del jefe.\n\nMismo contenido que A, letra por letra. La velocidad va en anillo, y de paso caben al lado los días trabajados y los equipos.\n\nA favor: es la forma que los directivos ya reconocen del Excel.\nEn contra: pide más alto de fila y compararlas entre sí cuesta más que con barras."
     },
     {
-      "id": "nota-datos",
+      "id": "nota-contenido",
       "x": 0,
-      "y": 2090,
-      "w": 900,
-      "text": "Datos reales de agosto 2026 (16 jul — 15 ago), el último período cerrado con partes de maquinaria. Nada aquí es relleno: salen del mismo cálculo verificado contra la hoja GRAFICOS.\n\nEl selector de período y las pestañas UF SÍ funcionan: pulsa un mes y verás moverse la marca y la cabecera. El resto de la pantalla se queda en agosto, que es el mes que ilustra la maqueta; en la página real cambia todo.\n\nArriba de cada artboard hay dos palancas: color de acento y claro/oscuro."
+      "y": 2160,
+      "w": 1000,
+      "text": "LAS DOS LLEVAN TODO LO QUE HOY TIENE LA PÁGINA, nada recortado:\n\n· Evolución período a período con las CUATRO barras por mes, una por actividad — y hace de selector.\n· Filtro Todo / UF1 / UF2.\n· Cadena completa: horas × utilización × eficiencia = velocidad, con el desglose por equipo (pulsa una actividad para abrirlo o cerrarlo).\n· Producción diaria con el valor de cada barra escrito en vertical dentro, las curvas punteadas de media acumulada en su propia escala, y la franja de clima.\n· Planificado vs ejecutado del período, las cinco filas.\n· Avance acumulado contra el contrato.\n· Aprovechamiento con sus tres componentes y la divisoria.\n\nDatos reales de agosto 2026, del mismo cálculo verificado contra GRAFICOS. El selector de período, las pestañas UF y el desglose por equipo funcionan; el resto de cifras se queda en agosto, que es el mes que ilustra la maqueta."
     }
   ],
   "launch": {
