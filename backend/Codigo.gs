@@ -1035,6 +1035,7 @@ function doGet(e){
   if(a==='flota')       return flotaLeer(e);        // D139: estancias + avisos para la pestaña Flota
   if(a==='acumulado_drenajes') return acumuladoDrenajes(e);
   if(a==='maquinaria_produccion') return maquinariaProduccion(e);
+  if(a==='tablero')     return tableroLeer();       // D158: foto del tablero de producción
   if(a==='debug')       return debug(e);
   return json({ok:true, msg:'API viva', version:'v11'});
 }
@@ -1056,6 +1057,7 @@ function doPost(e){
     if(body.action==='enviar_data') return enviarData(body);
     if(body.action==='maquinaria_produccion') return maquinariaProduccionGuardar(body);
     if(body.action==='flota_guardar') return flotaGuardar(body);   // D139: alta/baja de máquinas
+    if(body.action==='tablero_guardar') return tableroGuardar(body); // D158: publica la foto del tablero
     return guardarReporte(body);
   }catch(err){ return json({ok:false, error:String(err)}); }
 }
@@ -2525,6 +2527,82 @@ function endurecerClaves(){
   invalidarHoja_('USUARIOS');
   Logger.log('Claves endurecidas: '+n+'. Las que ya eran hash se dejaron igual.');
   return n;
+}
+
+/* ===========================================================================
+ * TABLERO DE PRODUCCIÓN — la foto, compartida (D158)
+ *
+ * POR QUÉ EXISTE ESTO. `tablero-produccion.html` calcula la foto en el
+ * navegador leyendo los dos Excel. Eso servía para quien pulsaba el botón y
+ * para nadie más: el resultado se quedaba en SU localStorage. El jefe y los
+ * residentes seguían viendo la copia que venía dentro del archivo.
+ *
+ * Aquí la foto pasa a estar en el Sheet, así que quien la publica la publica
+ * PARA TODOS y en el momento. Es el mismo patrón del resto del sistema —
+ * GitHub Pages + Apps Script + Sheets—; no hay pieza nueva de infraestructura.
+ *
+ * POR QUÉ EN TROZOS. Una celda de Sheets admite 50.000 caracteres y la foto
+ * ronda los 95.000, así que se parte en trozos de 40.000. Cada trozo va
+ * prefijado con `~`: sin eso, un trozo que empezara por `=` lo guardaría Sheets
+ * como FÓRMULA y se perdería en silencio. El prefijo se quita al leer.
+ *
+ * QUIÉN PUEDE PUBLICAR: admin y jefe. Los dos manejan los Excel de origen. El
+ * guard es el del servidor (D109), no el del cliente: el rol sale del token
+ * firmado, así que escribir `rol: admin` en el navegador no sirve de nada.
+ * =========================================================================*/
+const TABLERO_HEADERS = ['orden','texto'];
+const TABLERO_TROZO   = 40000;
+const TABLERO_ROLES_PUBLICAN = ['admin','jefe'];
+
+function puedePublicarTablero_(body){
+  return _permiso_(body, TABLERO_ROLES_PUBLICAN, [], 'publicar la foto del tablero');
+}
+
+// GET ?action=tablero -> {ok, foto:{...}|null, meta:{...}}
+// Sin foto publicada devuelve foto:null y el tablero se queda con la suya: nunca una pantalla vacía.
+function tableroLeer(){
+  const ss=ss_(), sh=ss.getSheetByName('TABLERO');
+  if(!sh || sh.getLastRow()<2) return json({ok:true, foto:null, meta:null});
+  const v=leerRango_(sh, 2, 1, sh.getLastRow()-1, TABLERO_HEADERS.length);
+  const trozos=[]; let meta=null;
+  for(let i=0;i<v.length;i++){
+    const orden=Number(v[i][0]), txt=String(v[i][1]==null?'':v[i][1]);
+    const limpio = txt.charAt(0)==='~' ? txt.slice(1) : txt;
+    if(orden===0){ try{ meta=JSON.parse(limpio); }catch(err){ meta=null; } continue; }
+    if(orden>0) trozos[orden-1]=limpio;
+  }
+  // Un trozo que falte deja un JSON roto: mejor no devolver nada que devolver medio.
+  for(let i=0;i<trozos.length;i++) if(trozos[i]==null) return json({ok:true, foto:null, meta:meta, error:'foto incompleta'});
+  const crudo=trozos.join('');
+  if(!crudo) return json({ok:true, foto:null, meta:meta});
+  let foto=null;
+  try{ foto=JSON.parse(crudo); }catch(err){ return json({ok:true, foto:null, meta:meta, error:'foto ilegible'}); }
+  return json({ok:true, foto:foto, meta:meta});
+}
+
+// POST {action:'tablero_guardar', foto:{...}} -> {ok, meta}
+function tableroGuardar(body){
+  const permiso=puedePublicarTablero_(body);
+  if(!permiso.ok) return json({ok:false, error:permiso.error});
+  const foto=body && body.foto;
+  if(!foto || !foto.per || !foto.per.length) return json({ok:false, error:'La foto llegó vacía o sin períodos. No se guardó nada.'});
+  const crudo=JSON.stringify(foto);
+  const trozos=[];
+  for(let i=0;i<crudo.length;i+=TABLERO_TROZO) trozos.push(crudo.slice(i, i+TABLERO_TROZO));
+  const meta={ generado:String(foto.generado||''), publicado:fdate(new Date()),
+               usuario:String(body.usuario||''), periodos:foto.per.length,
+               caracteres:crudo.length, trozos:trozos.length };
+  const sh=getSheet('TABLERO', TABLERO_HEADERS);
+  // Se limpia lo anterior ANTES de escribir: una foto nueva más corta que la vieja dejaría
+  // trozos huérfanos al final y el JSON saldría con basura pegada.
+  const last=sh.getLastRow();
+  if(last>1) sh.getRange(2,1,last-1,TABLERO_HEADERS.length).clearContent();
+  const filas=[[0, '~'+JSON.stringify(meta)]];
+  for(let i=0;i<trozos.length;i++) filas.push([i+1, '~'+trozos[i]]);
+  ensureRows_(sh, filas.length);
+  sh.getRange(2,1,filas.length,TABLERO_HEADERS.length).setValues(filas);
+  invalidarHoja_('TABLERO');
+  return json({ok:true, meta:meta});
 }
 
 /* ---------- debug ---------- */

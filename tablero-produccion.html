@@ -657,9 +657,20 @@ function construir(wbProd, wbMaq){
          Si trae horas perdidas SÍ cuenta —estuvo asignada y no produjo, que es
          justo lo que la velocidad tiene que reflejar. */
       const _mq = ((hAgg[p]||{})[act]||{}).maq;
-      const eq = _mq ? Object.values(_mq).filter(q=>(q.h+q.perd)>0).length : 0;
-      const den = META_D[act] * eq * nd;
+      const _vivas = _mq ? Object.values(_mq).filter(q=>(q.h+q.perd)>0) : [];
+      const eq = _vivas.length;
+      /* LA META SE PROYECTA SOBRE DÍAS-MÁQUINA, no sobre máquinas × días.
+         Contar máquinas enteras le exige a una máquina que estuvo 1 de los 17
+         días la producción de los 17: en el período en curso eso partía la
+         velocidad por la mitad —39% en vez de 79%— por una excavadora con dos
+         horas. El día-máquina es la unidad de lo que de verdad se tuvo.
+         `equiv` es ese mismo número dicho en máquinas: días-máquina ÷ días de
+         la actividad. Con la flota estable coincide con el conteo de siempre;
+         cuando una máquina entra o sale a mitad de mes, no. */
+      const dm = _vivas.reduce((s,q)=>s+q.dias.size,0);
+      const den = dm>0 ? META_D[act]*dm : META_D[act]*eq*nd;
       a[act] = { prod:+prod.toFixed(1), dias:nd, equipos:eq,
+                 dias_maq:dm, equiv:nd>0&&dm>0 ? +(dm/nd).toFixed(2) : eq,
                  meta_dia:+META_D[act].toFixed(2), proy:+den.toFixed(1),
                  vel: den>0 ? +(prod/den).toFixed(4) : null,
                  rend: nd>0 ? +(prod/nd).toFixed(1) : 0,
@@ -938,8 +949,15 @@ function cadena(sel_p){
        el número que venga en la foto: las fotos guardadas antes de esta
        corrección contaban las máquinas con el parte en cero. Con el mismo
        criterio que el motor, así las dos vías dan lo mismo. */
-    const eqReal=m.maq.filter(q=>(q.h+q.perd)>0).length || m.equipos;
-    const den=(r.meta_dia||0)*eqReal*(r.dias||0);
+    const vivas=m.maq.filter(q=>(q.h+q.perd)>0);
+    const eqReal=vivas.length || m.equipos;
+    /* Días-máquina: lo que de verdad hubo. Si la foto es anterior a que se
+       guardaran los días por máquina, se cae al conteo entero de siempre y la
+       línea de abajo lo dice, en vez de dar por bueno un número que no se puede
+       calcular con lo que hay. */
+    const dmaq=vivas.reduce((s,q)=>s+(q.dias||0),0);
+    const equiv=(dmaq>0&&r.dias>0)?dmaq/r.dias:eqReal;
+    const den=(r.meta_dia||0)*(dmaq>0?dmaq:eqReal*(r.dias||0));
     const vel=den>0?r.prod/den:null;
 
     const row=el('div','chainR');row.tabIndex=0;row.setAttribute('role','button');
@@ -953,7 +971,13 @@ function cadena(sel_p){
        fila habla de lo que movió la máquina. El compacto aparece abajo, en la
        velocidad y en el plan del período. */
     const eqs=k=>k+(k===1?' equipo':' equipos');
-    box.append(nm,el('div','sub',f0(m.prod)+' m³ sueltos · '+eqs(eqReal)),
+    /* «2 máquinas · 1,0 equipo medio» dice las dos cosas que hacen falta: cuántas
+       pasaron por la actividad y a cuántas equivalen por el tiempo que estuvieron.
+       Con la flota estable los dos números coinciden y no distrae. */
+    const subEq = (dmaq>0 && Math.abs(equiv-eqReal)>0.05)
+      ? eqReal+' máquinas · '+f1(equiv)+' equipo medio'
+      : eqs(eqReal);
+    box.append(nm,el('div','sub',f0(m.prod)+' m³ sueltos · '+subEq),
       el('div','hint',abierta?'Cerrar desglose':(m.maq.length?'Ver '+eqs(m.maq.length):'')));
     ac.append(sw,box);
     // --- eslabones
@@ -995,7 +1019,8 @@ function cadena(sel_p){
     const vb=el('div','velBar');const vi=el('i');
     vi.style.width=Math.min(100,(vel||0)*100)+'%';vb.appendChild(vi);
     vc.append(vv,vb,el('div','s',vel==null?'sin partes de equipos'
-      :f0(r.prod/r.dias)+' de '+f0(r.meta_dia*eqReal)+' m³ al día'));
+      :f0(r.prod/r.dias)+' de '+f0(den/r.dias)+' m³ al día'+
+       (dmaq>0?' · '+dmaq+' días-máquina':' · equipos enteros, foto sin días por máquina')));
 
     row.append(ac,l1,l2,l3,vc);
     const abrir=()=>{abierto=abierta?null:a.k;pinta();};
@@ -1011,18 +1036,30 @@ function cadena(sel_p){
       d.appendChild(h);
       const tot=Math.max(1,...m.maq.map(x=>x.h));
       m.maq.forEach(q=>{
+        /* PARTE VACÍO: cero operadas y cero perdidas. No entra en el standby de
+           la actividad —eso ya lo hace el motor—, así que tampoco puede
+           enseñarse aquí con su standby y un 0% como si contara: la fila decía
+           «6,4 h de standby, 0% de utilización» mientras el total de arriba la
+           ignoraba, y las dos cosas no podían ser ciertas a la vez. Se muestra
+           igual, porque saber que el digitador la cargó es útil, pero dicha
+           como lo que es: descartada. */
+        const vacia = (q.h+q.perd)===0;
         /* Standby de ESTA máquina: sus días de parte por sus horas programadas,
            menos su mantenimiento y sus paradas. La celda lleva la cuenta en el
            title para que nadie tenga que fiarse: «17 días × 6,4 h propia». */
-        const sbq = q.sb_aj!=null ? q.sb_aj : null;
+        const sbq = (!vacia && q.sb_aj!=null) ? q.sb_aj : null;
         const u = (sbq!=null && sbq>0) ? Math.min(1, q.h/sbq) : null;
         const t=el('div','mtR');
-        const cSb=el('div','num', sbq!=null?f1(sbq):'—');
-        if(q.dias!=null) cSb.title=q.dias+' días × '+f1(q.hprog)+' h ('+
+        if(vacia) t.style.opacity='.5';
+        const cSb=el('div','num', vacia?'—':(sbq!=null?f1(sbq):'—'));
+        if(!vacia && q.dias!=null) cSb.title=q.dias+' días × '+f1(q.hprog)+' h ('+
           (q.hprog>=6?'propia':'alquilada')+')'+(q.ajuste>0?' − '+f1(q.ajuste)+' h de mtto y paradas':'');
+        const cUt=el('div','num', vacia?'no cuenta':(u!=null?pct(u):'—'));
+        if(vacia){ cUt.style.fontSize='10.5px'; cUt.style.color='var(--accent-txt)';
+                   cUt.title='Parte sin horas operadas ni perdidas: no suma standby '+
+                     'ni cuenta como equipo. Casi siempre es un parte repetido por error.'; }
         t.append(el('div','syne cod',q.cod),el('div','dim',q.tipo),el('div','dim',q.uf),
-          el('div','num',f1(q.h)),cSb,el('div','num',q.perd>0?f1(q.perd):'—'),
-          el('div','num',u!=null?pct(u):'—'));
+          el('div','num',vacia?'—':f1(q.h)),cSb,el('div','num',q.perd>0?f1(q.perd):'—'),cUt);
         const bw=el('div','mtBar');const bi=el('i');
         bi.style.width=(q.h/tot*100)+'%';bi.style.background=a.c;bw.appendChild(bi);
         t.appendChild(bw);
@@ -1036,6 +1073,11 @@ function cadena(sel_p){
         'aprovechó, así que se nombra pero se queda dentro. '+
         'Una máquina con el parte en cero (cero operadas y cero perdidas) no suma standby ni '+
         'cuenta como equipo: casi siempre es un parte repetido por error.<br><br>'+
+        '<b>La velocidad se proyecta sobre DÍAS-MÁQUINA</b>, no sobre máquinas enteras × días '+
+        'del período. Una máquina que estuvo 1 de 17 días aporta 1 día-máquina, no 17: exigirle '+
+        'la producción de los 17 partía la velocidad por la mitad por una máquina con dos horas. '+
+        'El «equipo medio» es ese total dividido entre los días de la actividad — con la flota '+
+        'estable da lo mismo que contar máquinas; cuando una entra o sale a mitad de mes, no.<br><br>'+
         'Peso en las horas de '+a.n.toLowerCase()+' sobre <b>'+f1(m.horas)+' h</b> del período. '+
         'Sólo cuentan las máquinas coherentes con la actividad, por centro de coste: excavación '+
         'excavadoras (02.05/02.06), terraplén bulldozer y motoniveladora (02.07), subbase '+
@@ -1046,9 +1088,25 @@ function cadena(sel_p){
           m.grupos.map(g=>'<b>'+g.tipo.toLowerCase()+'</b> '+pct(g.cuota)+' → '+f1(g.mh)+' m³/h en '+
           f1(g.horas)+' h').join(' · ')+'.';
       }
-      if(m.dudoso) txt+='<br><br><b>Horas incompletas.</b> El cálculo daría '+f1(m.mh)+
-        ' m³/h, más de dos veces y media la meta: faltan partes con este centro de coste. '+
-        'La eficiencia se deja sin cifra a propósito.';
+      /* Cuando la eficiencia se deja sin cifra hay que decir POR QUÉ con números,
+         no con una etiqueta. Y desde que existe el standby se puede enseñar la
+         prueba directa: cuántas horas trae el parte por día trabajado frente a
+         las que la máquina está programada para hacer. */
+      if(m.dudoso){
+        txt+='<br><br><b>Por qué la eficiencia se queda sin cifra.</b> Con estas horas el '+
+          'cálculo daría <b>'+f1(m.mh)+' m³/h</b>, '+f1(m.mh/m.meta_hora)+' veces la meta de '+
+          f1(m.meta_hora)+'. Una máquina no hace eso: lo que falla es el divisor, no la máquina.';
+        /* Solo los días de las máquinas que cuentan: si se suman también los del
+           parte vacío, el promedio sale diluido y las horas programadas por día
+           dejan de ser 6,4 o 5 para caer en un número que no es de nadie. */
+        const dm=(m.maq||[]).filter(q=>(q.h+q.perd)>0).reduce((s,q)=>s+(q.dias||0),0);
+        if(dm>0) txt+=' El parte trae <b>'+f1(m.horas)+' h</b> repartidas en <b>'+dm+
+          ' días</b> de máquina — '+f1(m.horas/dm)+' h por día, cuando lo programado son '+
+          f1(m.sb/dm)+' h. Faltan horas por anotar, o la produjeron máquinas cargadas a otro '+
+          'centro de coste.';
+        txt+=' Se deja sin cifra a propósito: un porcentaje de eficiencia salido de un '+
+          'divisor incompleto es peor que un hueco, porque se cree.';
+      }
       nt.innerHTML=txt;
       d.appendChild(nt);
       c.appendChild(d);
@@ -1359,8 +1417,20 @@ async function recalcular(oProd,oMaq){
     TM2=d; guardaDatos(d);
     sel=TM2.per.length-1; abierto=null;
     pinta();
-    estado('Actualizado en '+((Date.now()-t0)/1000).toFixed(1)+' s · '+
-      TM2.per.length+' períodos · horas hasta <b>'+(TM2.corte_horas||'—')+'</b>',false);
+    const seg=((Date.now()-t0)/1000).toFixed(1);
+    /* Se publica DESPUÉS de pintar: si el Apps Script falla, quien actualizó ya
+       tiene sus datos en pantalla y solo le falta compartirlos. Se le dice, en
+       vez de dejarle creer que todo el mundo los está viendo. */
+    estado('Actualizado en '+seg+' s · '+TM2.per.length+' períodos · publicando…',false);
+    try{
+      await publicar(d);
+      estado('Actualizado en '+seg+' s · '+TM2.per.length+' períodos · horas hasta <b>'+
+        (TM2.corte_horas||'—')+'</b> · <b>publicado</b>: el jefe y los residentes ya lo ven',false);
+    }catch(err){
+      estado('Datos actualizados en tu pantalla, pero NO se pudieron publicar: '+err.message+
+        '. Los demás siguen viendo la foto anterior. Vuelve a pulsar «Actualizar» '+
+        'cuando haya conexión.',true);
+    }
   }catch(err){
     estado('No se pudo actualizar: '+err.message+
       '. Prueba con «Elegir archivos» — el resultado es el mismo.',true);
@@ -1369,6 +1439,71 @@ async function recalcular(oProd,oMaq){
   }
 }
 
+
+/* ===========================================================================
+ * LA FOTO ES COMPARTIDA (D158)
+ *
+ * Antes, «Actualizar» recalculaba y guardaba en el localStorage DE ESE
+ * NAVEGADOR. Servía a quien pulsaba el botón y a nadie más: el jefe y los
+ * residentes seguían viendo la copia que venía dentro del archivo. Eso no es un
+ * tablero, es una hoja de cálculo con más pasos.
+ *
+ * Ahora la foto vive en el Sheet, por el mismo camino que el resto del sistema
+ * (Apps Script). Quien publica, publica para todos y en el momento.
+ *
+ * CÓMO ABRE LA PÁGINA, en este orden y sin esperar a nadie:
+ *   1. pinta YA con lo que tenga a mano — la foto embebida o la última vista;
+ *   2. pide la compartida en segundo plano y, si llega y es distinta, repinta.
+ * Así nunca hay pantalla en blanco delante de una sala, ni siquiera si el Apps
+ * Script tarda o no hay red.
+ *
+ * PUBLICAR es cosa de admin y jefe, y lo decide el SERVIDOR con el token
+ * firmado (D109): escribir `rol: admin` en el navegador no sirve de nada.
+ * =========================================================================*/
+const API = 'https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec';
+
+/* El token de sesión (D109) va a mano en las dos únicas llamadas de esta página,
+   en vez de cargar `auth.js`: son dos, y así el tablero sigue siendo UN archivo
+   que se puede abrir suelto. Es el mismo token firmado que emite el login; sin
+   él el servidor no deja publicar. */
+function token(){ try{ return localStorage.getItem('tm2_token')||''; }catch(e){ return ''; } }
+
+/* Trae la foto publicada. Nunca lanza: si algo falla, la página se queda con la
+   que ya está pintada, que es siempre mejor que un hueco. */
+async function fotoCompartida(){
+  try{
+    const t = token();
+    const r = await fetch(API+'?action=tablero'+(t?'&token='+encodeURIComponent(t):''),
+                          { cache:'no-store' });
+    if(!r.ok) return null;
+    const d = await r.json();
+    if(!d || d.ok===false || !d.foto || !d.foto.per || !d.foto.per.length) return null;
+    return d.foto;
+  }catch(e){ return null; }
+}
+
+/* Al abrir: se pide en segundo plano y solo se repinta si trae algo MÁS NUEVO,
+   comparando el sello de generación. Repintar por repintar movería la pantalla
+   debajo de quien ya está mirando. */
+async function sincronizar(){
+  const f = await fotoCompartida();
+  if(!f) return;
+  if(TM2.generado && f.generado && f.generado <= TM2.generado) return;
+  TM2 = f; guardaDatos(f);
+  sel = TM2.per.length-1; abierto = null;
+  pinta();
+}
+
+/* Publicar: sube la foto que está en pantalla. El token lo pega auth.js. */
+async function publicar(d){
+  const r = await fetch(API, { method:'POST',
+    headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action:'tablero_guardar', foto:d, token:token() }) });
+  if(!r.ok) throw new Error('el servidor respondió '+r.status);
+  const j = await r.json();
+  if(!j || j.ok===false) throw new Error((j&&j.error)||'no se pudo publicar');
+  return j.meta||{};
+}
 
 /* ---------------------------------------------------------------------------
  * ARCHIVOS RECORDADOS (File System Access API)
@@ -1566,6 +1701,7 @@ if(ROL!==null){
   wire();
   pinta();
   logCC();
+  sincronizar();          // en segundo plano; si no hay red, no pasa nada
 }
 </script>
 </body>
