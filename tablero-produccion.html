@@ -631,7 +631,13 @@ function construir(wbProd, wbMaq){
       const k = KEY[act];
       const prod = dd.reduce((s,d)=>s+d[k],0) / FC;          // compacto
       const nd = dd.filter(d=>d[k]>0).length;
-      const eq = ((hAgg[p]||{})[act]||{}).maq ? Object.keys(hAgg[p][act].maq).length : 0;
+      /* EQUIPOS = los que de verdad estuvieron. Una máquina cuyo parte trae CERO
+         horas operadas y CERO horas perdidas no estuvo: es un parte vacío, y
+         contarla infla el denominador de la velocidad y hunde el porcentaje.
+         Si trae horas perdidas SÍ cuenta —estuvo asignada y no produjo, que es
+         justo lo que la velocidad tiene que reflejar. */
+      const _mq = ((hAgg[p]||{})[act]||{}).maq;
+      const eq = _mq ? Object.values(_mq).filter(q=>(q.h+q.perd)>0).length : 0;
       const den = META_D[act] * eq * nd;
       a[act] = { prod:+prod.toFixed(1), dias:nd, equipos:eq,
                  meta_dia:+META_D[act].toFixed(2), proy:+den.toFixed(1),
@@ -664,7 +670,7 @@ function construir(wbProd, wbMaq){
           mh = +(suelto/g.horas).toFixed(2);
         }
         m[act] = { nombre:NOMBRE[act], prod:Math.round(suelto), horas:+g.horas.toFixed(1),
-          equipos:maq.length, meta_hora:META_H[act], mh, grupos, maq,
+          equipos:maq.filter(q=>(q.h+q.perd)>0).length, meta_hora:META_H[act], mh, grupos, maq,
           mtto:+g.mtto.toFixed(1), varada:+g.varada.toFixed(1),
           lluvia:+g.lluvia.toFixed(1), averia:+g.averia.toFixed(1),
           perd:+(g.mtto+g.varada+g.lluvia+g.averia).toFixed(1),
@@ -874,6 +880,13 @@ function cadena(sel_p){
     const ut=(m.horas+perd)>0?m.horas/(m.horas+perd):0;
     const ef=m.meta_hora?m.mh/m.meta_hora:0;
     const abierta=abierto===a.k;
+    /* Los equipos se cuentan AQUÍ, sobre el detalle por máquina, y no se toma
+       el número que venga en la foto: las fotos guardadas antes de esta
+       corrección contaban las máquinas con el parte en cero. Con el mismo
+       criterio que el motor, así las dos vías dan lo mismo. */
+    const eqReal=m.maq.filter(q=>(q.h+q.perd)>0).length || m.equipos;
+    const den=(r.meta_dia||0)*eqReal*(r.dias||0);
+    const vel=den>0?r.prod/den:null;
 
     const row=el('div','chainR');row.tabIndex=0;row.setAttribute('role','button');
     if(abierta)row.style.background='var(--grid)';
@@ -886,7 +899,7 @@ function cadena(sel_p){
        fila habla de lo que movió la máquina. El compacto aparece abajo, en la
        velocidad y en el plan del período. */
     const eqs=k=>k+(k===1?' equipo':' equipos');
-    box.append(nm,el('div','sub',f0(m.prod)+' m³ sueltos · '+eqs(m.equipos)),
+    box.append(nm,el('div','sub',f0(m.prod)+' m³ sueltos · '+eqs(eqReal)),
       el('div','hint',abierta?'Cerrar desglose':(m.maq.length?'Ver '+eqs(m.maq.length):'')));
     ac.append(sw,box);
     // --- eslabones
@@ -911,12 +924,12 @@ function cadena(sel_p){
     const vc=el('div','velC');
     vc.appendChild(el('div','eq','='));
     const vv=el('div','v');
-    const big=el('div','syne big',r.vel==null?'—':pct(r.vel));
+    const big=el('div','syne big',vel==null?'—':pct(vel));
     vv.append(big,el('div','u','de la meta'));
     const vb=el('div','velBar');const vi=el('i');
-    vi.style.width=Math.min(100,(r.vel||0)*100)+'%';vb.appendChild(vi);
-    vc.append(vv,vb,el('div','s',r.vel==null?'sin partes de equipos'
-      :f0(r.prod/r.dias)+' de '+f0(r.meta_dia*r.equipos)+' m³ al día'));
+    vi.style.width=Math.min(100,(vel||0)*100)+'%';vb.appendChild(vi);
+    vc.append(vv,vb,el('div','s',vel==null?'sin partes de equipos'
+      :f0(r.prod/r.dias)+' de '+f0(r.meta_dia*eqReal)+' m³ al día'));
 
     row.append(ac,l1,l2,l3,vc);
     const abrir=()=>{abierto=abierta?null:a.k;pinta();};
