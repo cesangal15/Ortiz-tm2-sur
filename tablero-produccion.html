@@ -343,6 +343,7 @@ body{background:var(--bg);color:var(--text);font-size:14px;
       <div class="est" id="estado">—</div>
       <button type="button" id="btnAct">Actualizar</button>
       <button type="button" id="btnArch">Elegir archivos</button>
+      <button type="button" id="btnPub" title="Descarga esta misma página con los datos de ahora dentro, lista para subir al repositorio">Publicar foto</button>
       <button type="button" id="btnCfg">Enlaces</button>
     </div>
     <div class="cfg" id="cfg" hidden>
@@ -1428,6 +1429,52 @@ async function recalcular(oProd,oMaq){
 }
 
 
+/* ===========================================================================
+ * PUBLICAR LA FOTO
+ *
+ * «Actualizar» recalcula y guarda en el localStorage DE ESTE NAVEGADOR. No sale
+ * de ahí: ni al navegador del jefe, ni al de los residentes, ni al archivo del
+ * repositorio. Quien no pulsa el botón sigue viendo la foto que trae el archivo
+ * — y los residentes ni siquiera tienen el botón.
+ *
+ * Esto cierra el círculo sin depender de nadie: descarga ESTA MISMA PÁGINA con
+ * los datos de ahora escritos dentro. Se sube el archivo al repositorio y ya
+ * todo el mundo ve lo mismo. Es un archivo, no un backend: no hay más piezas.
+ *
+ * Se lee la propia página con fetch (mismo origen) en vez de reconstruirla, así
+ * que lo que se descarga es el código vigente y no una copia que envejece aquí
+ * dentro. Sólo se sustituye la línea de datos.
+ * =========================================================================*/
+const MARCA_DATOS = 'const TM2_' + 'EMBEBIDO=';   // partido para no encontrarse a sí mismo
+
+async function publicarFoto(){
+  const b=$('btnPub');
+  if(b) b.disabled=true;
+  try{
+    estado('Preparando el archivo…',false);
+    const r=await fetch(location.href,{cache:'no-store'});
+    if(!r.ok) throw new Error('no se pudo releer la página ('+r.status+')');
+    const html=await r.text();
+    const i=html.indexOf(MARCA_DATOS);
+    if(i<0) throw new Error('no se encontró la línea de datos');
+    const j=html.indexOf('\n', i);
+    if(j<0) throw new Error('la línea de datos está incompleta');
+    const salida=html.slice(0,i)+MARCA_DATOS+JSON.stringify(TM2)+';'+html.slice(j);
+    const url=URL.createObjectURL(new Blob([salida],{type:'text/html;charset=utf-8'}));
+    const a=document.createElement('a');
+    a.href=url; a.download='tablero-produccion.html';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),5000);
+    estado('Archivo descargado con los datos de <b>'+(TM2.generado||'ahora')+
+      '</b>. Súbelo al repositorio reemplazando <b>tablero-produccion.html</b> y '+
+      'todos verán esta misma foto.',false);
+  }catch(e){
+    estado('No se pudo preparar el archivo: '+e.message,true);
+  }finally{
+    if(b) b.disabled=false;
+  }
+}
+
 /* ---------------------------------------------------------------------------
  * ARCHIVOS RECORDADOS (File System Access API)
  *
@@ -1568,7 +1615,7 @@ function segunRol(rol){
   /* Se retiran los tres botones de la barra de datos y el panel de enlaces.
      El renglón de estado se queda: dice de cuándo es la foto, que es
      justamente lo que hay que saber antes de proyectarla. */
-  ['btnAct','btnArch','btnCfg'].forEach(id=>{ const b=$(id); if(b) b.remove(); });
+  ['btnAct','btnArch','btnPub','btnCfg'].forEach(id=>{ const b=$(id); if(b) b.remove(); });
   const c=$('cfg'); if(c) c.remove();
 }
 
@@ -1586,6 +1633,7 @@ function wire(){
                  :'Enlaces borrados: «Actualizar» pedirá los archivos.',false);
   };
   $('btnArch').onclick=()=>HAY_FS?elegirRecordando():pedirArchivos();
+  $('btnPub').onclick=publicarFoto;
   $('btnAct').onclick=async ()=>{
     if(HAY_FS && await releerRecordados(true)) return;   // los de siempre, un clic
     const v=enlaces();
