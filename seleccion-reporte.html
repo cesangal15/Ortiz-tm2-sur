@@ -114,8 +114,14 @@ const TILES = {
                     {href:'resumen-asistencia.html', ico:'📋', t:'Resumen de asistencias ODL', p:'Resumen del día y Excel Navision de tu área'}],
   // D84: residente de drenajes UNIFICADO (ODT + ODL en un solo usuario). El panel y el resumen le
   // muestran las dos áreas juntas.
+  // D157: además, el TABLERO DE PRODUCCIÓN mensual — el mismo que ven el jefe y
+  // el residente de tierras. Es de tierras, no de drenajes, y aun así entra:
+  // el residente de drenajes ya consulta el resumen de obra completo (D131), y
+  // en la reunión mensual se le pregunta por las mismas cifras. Solo lectura:
+  // el tablero le esconde los botones de actualizar a todo el que no es admin.
   'residente_dren': [{href:'residente-drenajes.html', ico:'🌧️', t:'Panel de Drenajes', p:'Bandeja combinada ODT + ODL, envío a DATA y WhatsApp'},
-                     {href:'resumen-asistencia.html', ico:'📋', t:'Resumen de asistencias', p:'Resumen del día y Excel Navision de ODT y ODL'}]
+                     {href:'resumen-asistencia.html', ico:'📋', t:'Resumen de asistencias', p:'Resumen del día y Excel Navision de ODT y ODL'},
+                     {href:'tablero-produccion.html', ico:'📊', t:'Tablero de Producción (mensual)', p:'Velocidad contra meta, avance del contrato y clima de la obra'}]
 };
 const ASISTENCIA_TILE = {href:'asistencia.html', ico:'👷', t:'Asistencia de personal', p:'Reporta la asistencia de tu cuadrilla'};
 // Admin tiene acceso a todo el sistema (D65): si llega aquí (p. ej. con "atrás" del navegador en vez

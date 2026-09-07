@@ -26,7 +26,13 @@
 // las contraseñas dentro y sabe entrar sin señal con la sesión/credencial recordada. Sin subirla, un
 // teléfono podría seguir sirviendo el index.html viejo desde el precache.
 // (D84 la subió antes por el login sin ariel/albert/residente_odt y el reporte de drenajes multi-área.)
-const CACHE_V = 'tm2-v6';   // v6: entran tema.css y tema.js en la lista (D150)
+// D157: v7 porque `seleccion-reporte.html` —que SÍ está en el precache— cambió para
+// darle al residente de drenajes el tile del tablero. Sin subir la versión, un teléfono
+// sin señal seguiría sirviendo la copia vieja desde el precache y ese tile no aparecería.
+// El tablero NO entra en la lista: son 400 KB y no pinta nada en el teléfono de un
+// capataz. Se cachea solo, en la primera visita, por la vía network-first de abajo —
+// que es justo lo que hace falta para proyectarlo en sala sin señal.
+const CACHE_V = 'tm2-v7';   // v7: seleccion-reporte con el tablero (D157)
 const FONT_CACHE = CACHE_V + '-fonts';
 
 // Lista explícita: shell + capturas + app. NO precachear las páginas fuera de alcance

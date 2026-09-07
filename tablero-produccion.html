@@ -332,6 +332,7 @@ body{background:var(--bg);color:var(--text);font-size:14px;
         <div class="perR" id="perR">—</div>
         <div class="perC" id="perC"></div>
       </div>
+      <button class="tbtn" id="volver" type="button" hidden></button>
       <button class="tbtn" id="tema" type="button"></button>
     </div>
   </div>
@@ -1229,9 +1230,11 @@ function pintaEstado(){
     '(el parte del digitador va ~'+TM2.atraso_horas+' días por detrás)';
   if(TM2.leidoDe) s+=' · leído de <b>'+TM2.leidoDe+'</b>';
   estado(s,false);
+  if(!$('btnAct')) return;        // solo lectura: los botones ni existen
   leeH('prod').then(h=>{
-    if(h) $('btnAct').title='Relee «'+h.name+'» y el de maquinaria sin volver a preguntar';
-    else if(HAY_FS) $('btnAct').title='Elige los dos Excel una vez; después basta este botón';
+    const b=$('btnAct'); if(!b) return;
+    if(h) b.title='Relee «'+h.name+'» y el de maquinaria sin volver a preguntar';
+    else if(HAY_FS) b.title='Elige los dos Excel una vez; después basta este botón';
   }).catch(()=>{});
 }
 function guardaDatos(d){
@@ -1253,7 +1256,8 @@ async function leerLibro(origen,hojas){
 async function recalcular(oProd,oMaq){
   const t0=Date.now();
   estado('Leyendo los Excel…',false);
-  $('btnAct').disabled=$('btnArch').disabled=true;
+  const bA=$('btnAct'), bE=$('btnArch');
+  if(bA) bA.disabled=true; if(bE) bE.disabled=true;
   try{
     const wp=await leerLibro(oProd,['DATOS','CALCULOS']);
     const wm=oMaq?await leerLibro(oMaq,['BASE MAQUINARIA']):null;
@@ -1268,7 +1272,7 @@ async function recalcular(oProd,oMaq){
     estado('No se pudo actualizar: '+err.message+
       '. Prueba con «Elegir archivos» — el resultado es el mismo.',true);
   }finally{
-    $('btnAct').disabled=$('btnArch').disabled=false;
+    if(bA) bA.disabled=false; if(bE) bE.disabled=false;
   }
 }
 
@@ -1358,8 +1362,62 @@ function pedirArchivos(){
 }
 
 
+/* ===========================================================================
+ * QUIÉN ENTRA Y QUÉ PUEDE TOCAR (D157)
+ *
+ * El tablero deja de ser solo del admin: lo ven también el jefe y los dos
+ * residentes, tierras y drenajes. Cada uno vuelve a SU panel con el botón de
+ * la cabecera, así que no hace falta una pantalla de decisión intermedia —
+ * jefe.html, residente.html y seleccion-reporte.html ya hacen ese papel.
+ *
+ * QUÉ ES ESTE PORTERO Y QUÉ NO ES. Es de cortesía, no de seguridad: los datos
+ * van EMBEBIDOS en este archivo, así que quien tenga la URL o el archivo los
+ * tiene. No hay forma de evitarlo en una página estática, y por eso mismo no
+ * se finge lo contrario. Lo que sí hace: evita que alguien caiga aquí sin
+ * sesión y mantiene el patrón del resto del sitio.
+ *
+ * SIN SESIÓN Y FUERA DEL SITIO (file://) NO EXPULSA. La página tiene que
+ * abrirse en la sala aunque no haya red y aunque sea una copia suelta del
+ * archivo — es su razón de ser. Si no hay servidor, no hay a dónde mandar.
+ *
+ * SOLO LECTURA PARA QUIEN NO ES ADMIN. Los botones de «Actualizar» y «Elegir
+ * archivos» releen los dos Excel y sustituyen la foto. Eso es tarea de quien
+ * mantiene los datos: si un residente elige el archivo equivocado en mitad de
+ * una reunión, ve cifras que no son y no tiene cómo saberlo. Los demás se
+ * quedan con la foto que trae el archivo, que es la que se presenta.
+ * =========================================================================*/
+const PANEL={ admin:'menu.html', jefe:'jefe.html', residente:'residente.html',
+              residente_dren:'seleccion-reporte.html',
+              residente_odt:'seleccion-reporte.html',
+              residente_odl:'seleccion-reporte.html' };
+function sesion(){
+  try{ return { rol:localStorage.getItem('rol')||'', usuario:localStorage.getItem('usuario')||'' }; }
+  catch(e){ return { rol:'', usuario:'' }; }
+}
+function portero(){
+  const {rol}=sesion();
+  if(PANEL[rol]) return rol;
+  if(location.protocol==='http:'||location.protocol==='https:'){ location.href='index.html'; return null; }
+  return '';                     // copia suelta del archivo: se abre igual
+}
+function segunRol(rol){
+  const v=$('volver');
+  if(v && PANEL[rol]){
+    v.textContent='← Volver';
+    v.onclick=()=>{ location.href=PANEL[rol]; };
+    v.hidden=false;
+  }
+  if(rol==='admin') return;
+  /* Se retiran los tres botones de la barra de datos y el panel de enlaces.
+     El renglón de estado se queda: dice de cuándo es la foto, que es
+     justamente lo que hay que saber antes de proyectarla. */
+  ['btnAct','btnArch','btnCfg'].forEach(id=>{ const b=$(id); if(b) b.remove(); });
+  const c=$('cfg'); if(c) c.remove();
+}
+
 /* ------------------------------------------------------------- arranque */
 function wire(){
+  if(!$('btnCfg')) return;        // solo lectura: no hay nada que cablear
   const u=enlaces();
   $('urlProd').value=u.prod||''; $('urlMaq').value=u.maq||'';
   $('btnCfg').onclick=()=>{ $('cfg').hidden=!$('cfg').hidden; };
@@ -1403,9 +1461,13 @@ try{const g=localStorage.getItem('tm2-tema');if(g)document.documentElement.setAt
 try{const s=localStorage.getItem(LS_DAT);
     if(s){const d=JSON.parse(s); if(d&&d.per&&d.per.length) TM2=d;}}catch(e){}
 sel=TM2.per.length-1;
-wire();
-pinta();
-logCC();
+const ROL=portero();
+if(ROL!==null){
+  segunRol(ROL);
+  wire();
+  pinta();
+  logCC();
+}
 </script>
 </body>
 </html>
