@@ -657,9 +657,20 @@ function construir(wbProd, wbMaq){
          Si trae horas perdidas SÍ cuenta —estuvo asignada y no produjo, que es
          justo lo que la velocidad tiene que reflejar. */
       const _mq = ((hAgg[p]||{})[act]||{}).maq;
-      const eq = _mq ? Object.values(_mq).filter(q=>(q.h+q.perd)>0).length : 0;
-      const den = META_D[act] * eq * nd;
+      const _vivas = _mq ? Object.values(_mq).filter(q=>(q.h+q.perd)>0) : [];
+      const eq = _vivas.length;
+      /* LA META SE PROYECTA SOBRE DÍAS-MÁQUINA, no sobre máquinas × días.
+         Contar máquinas enteras le exige a una máquina que estuvo 1 de los 17
+         días la producción de los 17: en el período en curso eso partía la
+         velocidad por la mitad —39% en vez de 79%— por una excavadora con dos
+         horas. El día-máquina es la unidad de lo que de verdad se tuvo.
+         `equiv` es ese mismo número dicho en máquinas: días-máquina ÷ días de
+         la actividad. Con la flota estable coincide con el conteo de siempre;
+         cuando una máquina entra o sale a mitad de mes, no. */
+      const dm = _vivas.reduce((s,q)=>s+q.dias.size,0);
+      const den = dm>0 ? META_D[act]*dm : META_D[act]*eq*nd;
       a[act] = { prod:+prod.toFixed(1), dias:nd, equipos:eq,
+                 dias_maq:dm, equiv:nd>0&&dm>0 ? +(dm/nd).toFixed(2) : eq,
                  meta_dia:+META_D[act].toFixed(2), proy:+den.toFixed(1),
                  vel: den>0 ? +(prod/den).toFixed(4) : null,
                  rend: nd>0 ? +(prod/nd).toFixed(1) : 0,
@@ -938,8 +949,15 @@ function cadena(sel_p){
        el número que venga en la foto: las fotos guardadas antes de esta
        corrección contaban las máquinas con el parte en cero. Con el mismo
        criterio que el motor, así las dos vías dan lo mismo. */
-    const eqReal=m.maq.filter(q=>(q.h+q.perd)>0).length || m.equipos;
-    const den=(r.meta_dia||0)*eqReal*(r.dias||0);
+    const vivas=m.maq.filter(q=>(q.h+q.perd)>0);
+    const eqReal=vivas.length || m.equipos;
+    /* Días-máquina: lo que de verdad hubo. Si la foto es anterior a que se
+       guardaran los días por máquina, se cae al conteo entero de siempre y la
+       línea de abajo lo dice, en vez de dar por bueno un número que no se puede
+       calcular con lo que hay. */
+    const dmaq=vivas.reduce((s,q)=>s+(q.dias||0),0);
+    const equiv=(dmaq>0&&r.dias>0)?dmaq/r.dias:eqReal;
+    const den=(r.meta_dia||0)*(dmaq>0?dmaq:eqReal*(r.dias||0));
     const vel=den>0?r.prod/den:null;
 
     const row=el('div','chainR');row.tabIndex=0;row.setAttribute('role','button');
@@ -953,7 +971,13 @@ function cadena(sel_p){
        fila habla de lo que movió la máquina. El compacto aparece abajo, en la
        velocidad y en el plan del período. */
     const eqs=k=>k+(k===1?' equipo':' equipos');
-    box.append(nm,el('div','sub',f0(m.prod)+' m³ sueltos · '+eqs(eqReal)),
+    /* «2 máquinas · 1,0 equipo medio» dice las dos cosas que hacen falta: cuántas
+       pasaron por la actividad y a cuántas equivalen por el tiempo que estuvieron.
+       Con la flota estable los dos números coinciden y no distrae. */
+    const subEq = (dmaq>0 && Math.abs(equiv-eqReal)>0.05)
+      ? eqReal+' máquinas · '+f1(equiv)+' equipo medio'
+      : eqs(eqReal);
+    box.append(nm,el('div','sub',f0(m.prod)+' m³ sueltos · '+subEq),
       el('div','hint',abierta?'Cerrar desglose':(m.maq.length?'Ver '+eqs(m.maq.length):'')));
     ac.append(sw,box);
     // --- eslabones
@@ -995,7 +1019,8 @@ function cadena(sel_p){
     const vb=el('div','velBar');const vi=el('i');
     vi.style.width=Math.min(100,(vel||0)*100)+'%';vb.appendChild(vi);
     vc.append(vv,vb,el('div','s',vel==null?'sin partes de equipos'
-      :f0(r.prod/r.dias)+' de '+f0(r.meta_dia*eqReal)+' m³ al día'));
+      :f0(r.prod/r.dias)+' de '+f0(den/r.dias)+' m³ al día'+
+       (dmaq>0?' · '+dmaq+' días-máquina':' · equipos enteros, foto sin días por máquina')));
 
     row.append(ac,l1,l2,l3,vc);
     const abrir=()=>{abierto=abierta?null:a.k;pinta();};
@@ -1048,6 +1073,11 @@ function cadena(sel_p){
         'aprovechó, así que se nombra pero se queda dentro. '+
         'Una máquina con el parte en cero (cero operadas y cero perdidas) no suma standby ni '+
         'cuenta como equipo: casi siempre es un parte repetido por error.<br><br>'+
+        '<b>La velocidad se proyecta sobre DÍAS-MÁQUINA</b>, no sobre máquinas enteras × días '+
+        'del período. Una máquina que estuvo 1 de 17 días aporta 1 día-máquina, no 17: exigirle '+
+        'la producción de los 17 partía la velocidad por la mitad por una máquina con dos horas. '+
+        'El «equipo medio» es ese total dividido entre los días de la actividad — con la flota '+
+        'estable da lo mismo que contar máquinas; cuando una entra o sale a mitad de mes, no.<br><br>'+
         'Peso en las horas de '+a.n.toLowerCase()+' sobre <b>'+f1(m.horas)+' h</b> del período. '+
         'Sólo cuentan las máquinas coherentes con la actividad, por centro de coste: excavación '+
         'excavadoras (02.05/02.06), terraplén bulldozer y motoniveladora (02.07), subbase '+
