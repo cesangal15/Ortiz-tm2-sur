@@ -1011,18 +1011,30 @@ function cadena(sel_p){
       d.appendChild(h);
       const tot=Math.max(1,...m.maq.map(x=>x.h));
       m.maq.forEach(q=>{
+        /* PARTE VACÍO: cero operadas y cero perdidas. No entra en el standby de
+           la actividad —eso ya lo hace el motor—, así que tampoco puede
+           enseñarse aquí con su standby y un 0% como si contara: la fila decía
+           «6,4 h de standby, 0% de utilización» mientras el total de arriba la
+           ignoraba, y las dos cosas no podían ser ciertas a la vez. Se muestra
+           igual, porque saber que el digitador la cargó es útil, pero dicha
+           como lo que es: descartada. */
+        const vacia = (q.h+q.perd)===0;
         /* Standby de ESTA máquina: sus días de parte por sus horas programadas,
            menos su mantenimiento y sus paradas. La celda lleva la cuenta en el
            title para que nadie tenga que fiarse: «17 días × 6,4 h propia». */
-        const sbq = q.sb_aj!=null ? q.sb_aj : null;
+        const sbq = (!vacia && q.sb_aj!=null) ? q.sb_aj : null;
         const u = (sbq!=null && sbq>0) ? Math.min(1, q.h/sbq) : null;
         const t=el('div','mtR');
-        const cSb=el('div','num', sbq!=null?f1(sbq):'—');
-        if(q.dias!=null) cSb.title=q.dias+' días × '+f1(q.hprog)+' h ('+
+        if(vacia) t.style.opacity='.5';
+        const cSb=el('div','num', vacia?'—':(sbq!=null?f1(sbq):'—'));
+        if(!vacia && q.dias!=null) cSb.title=q.dias+' días × '+f1(q.hprog)+' h ('+
           (q.hprog>=6?'propia':'alquilada')+')'+(q.ajuste>0?' − '+f1(q.ajuste)+' h de mtto y paradas':'');
+        const cUt=el('div','num', vacia?'no cuenta':(u!=null?pct(u):'—'));
+        if(vacia){ cUt.style.fontSize='10.5px'; cUt.style.color='var(--accent-txt)';
+                   cUt.title='Parte sin horas operadas ni perdidas: no suma standby '+
+                     'ni cuenta como equipo. Casi siempre es un parte repetido por error.'; }
         t.append(el('div','syne cod',q.cod),el('div','dim',q.tipo),el('div','dim',q.uf),
-          el('div','num',f1(q.h)),cSb,el('div','num',q.perd>0?f1(q.perd):'—'),
-          el('div','num',u!=null?pct(u):'—'));
+          el('div','num',vacia?'—':f1(q.h)),cSb,el('div','num',q.perd>0?f1(q.perd):'—'),cUt);
         const bw=el('div','mtBar');const bi=el('i');
         bi.style.width=(q.h/tot*100)+'%';bi.style.background=a.c;bw.appendChild(bi);
         t.appendChild(bw);
@@ -1046,9 +1058,25 @@ function cadena(sel_p){
           m.grupos.map(g=>'<b>'+g.tipo.toLowerCase()+'</b> '+pct(g.cuota)+' → '+f1(g.mh)+' m³/h en '+
           f1(g.horas)+' h').join(' · ')+'.';
       }
-      if(m.dudoso) txt+='<br><br><b>Horas incompletas.</b> El cálculo daría '+f1(m.mh)+
-        ' m³/h, más de dos veces y media la meta: faltan partes con este centro de coste. '+
-        'La eficiencia se deja sin cifra a propósito.';
+      /* Cuando la eficiencia se deja sin cifra hay que decir POR QUÉ con números,
+         no con una etiqueta. Y desde que existe el standby se puede enseñar la
+         prueba directa: cuántas horas trae el parte por día trabajado frente a
+         las que la máquina está programada para hacer. */
+      if(m.dudoso){
+        txt+='<br><br><b>Por qué la eficiencia se queda sin cifra.</b> Con estas horas el '+
+          'cálculo daría <b>'+f1(m.mh)+' m³/h</b>, '+f1(m.mh/m.meta_hora)+' veces la meta de '+
+          f1(m.meta_hora)+'. Una máquina no hace eso: lo que falla es el divisor, no la máquina.';
+        /* Solo los días de las máquinas que cuentan: si se suman también los del
+           parte vacío, el promedio sale diluido y las horas programadas por día
+           dejan de ser 6,4 o 5 para caer en un número que no es de nadie. */
+        const dm=(m.maq||[]).filter(q=>(q.h+q.perd)>0).reduce((s,q)=>s+(q.dias||0),0);
+        if(dm>0) txt+=' El parte trae <b>'+f1(m.horas)+' h</b> repartidas en <b>'+dm+
+          ' días</b> de máquina — '+f1(m.horas/dm)+' h por día, cuando lo programado son '+
+          f1(m.sb/dm)+' h. Faltan horas por anotar, o la produjeron máquinas cargadas a otro '+
+          'centro de coste.';
+        txt+=' Se deja sin cifra a propósito: un porcentaje de eficiencia salido de un '+
+          'divisor incompleto es peor que un hueco, porque se cree.';
+      }
       nt.innerHTML=txt;
       d.appendChild(nt);
       c.appendChild(d);
