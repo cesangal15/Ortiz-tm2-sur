@@ -240,8 +240,9 @@ body{background:var(--bg);color:var(--text);font-size:14px;
 .drop{border-bottom:1px solid var(--border);padding:6px 0 20px 36px;
   display:flex;flex-direction:column;gap:8px;}
 .mtH,.mtR{display:grid;gap:0 14px;align-items:center;
-  grid-template-columns:minmax(84px,.9fr) minmax(96px,1.5fr) 56px minmax(58px,.7fr)
-                        minmax(58px,.7fr) minmax(64px,.8fr) minmax(70px,1.6fr);}
+  grid-template-columns:minmax(78px,.85fr) minmax(90px,1.35fr) 54px minmax(54px,.65fr)
+                        minmax(58px,.7fr) minmax(58px,.65fr) minmax(62px,.75fr)
+                        minmax(64px,1.4fr);}
 .mtH{padding-bottom:6px;border-bottom:1px solid var(--border);
   font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);}
 .mtR{font-size:12.5px;padding:2px 0;}
@@ -480,6 +481,16 @@ const TIPO = { EXC001:'EXC', EXC013:'EXC', EXC014:'EXC', EXC015:'EXC', CAT320:'E
                MO03:'MOTO', MO04:'MOTO', MO09:'MOTO', MC705:'MOTO', FNG002:'FIN' };
 const NOMTIPO = { EXC:'EXCAVADORA', BULL:'BULLDOZER', MOTO:'MOTONIVELADORA', FIN:'FINISHER' };
 
+/* HORAS PROGRAMADAS AL DÍA — el «standby» del que habla el jefe.
+   NO se lee del libro: su columna Standby viene vacía o mal. Se calcula con la
+   regla de siempre (D10, y ya está por máquina en la hoja MAQUINAS):
+   6,4 h/día las PROPIAS de Ortiz, 5 h/día las ALQUILADAS a terceros.
+   De esta flota son alquiladas NH69, CAT320 y MC705; el resto, propias. */
+const HPROG = { EXC001:6.4, EXC013:6.4, EXC014:6.4, EXC015:6.4, CAT320:5,
+                BL005:6.4, BL009:6.4, NH69:5,
+                MO03:6.4, MO04:6.4, MO09:6.4, MC705:5, FNG002:6.4 };
+const HPROG_DEF = 6.4;              // una máquina nueva se supone propia
+
 /* Centro de coste -> actividad. Es la regla; lo que cambia cada mes es qué CC
    lleva cada parte, y eso se lee del archivo, así que las correcciones del jefe
    entran solas al actualizar. */
@@ -587,7 +598,7 @@ function leerHoras(wb){
     const act = CC_ACT[m[2]];
     if (!act) continue;
     if (COH[act].indexOf(TIPO[cod]) < 0) continue;   // máquina incoherente
-    out.push({ p:periodoDe(f), act, cod, tipo:NOMTIPO[TIPO[cod]],
+    out.push({ p:periodoDe(f), f:iso(f), act, cod, tipo:NOMTIPO[TIPO[cod]],
       uf: m[1]==='3701' ? 'UF1' : 'UF2', h,
       /* Horas perdidas REALES: mantenimiento, varada, lluvia y avería/cama baja.
          `Standby` (c19) viene vacía en todo el libro, así que no suma nada. La
@@ -620,8 +631,17 @@ function construir(wbProd, wbMaq){
       { horas:0, mtto:0, varada:0, lluvia:0, averia:0, maq:{} });
     a.horas += x.h; a.mtto += x.mtto; a.varada += x.varada;
     a.lluvia += x.lluvia; a.averia += x.averia;
-    const q = (a.maq[x.cod] = a.maq[x.cod] || { cod:x.cod, tipo:x.tipo, h:0, perd:0, uf:new Set() });
+    const q = (a.maq[x.cod] = a.maq[x.cod] || { cod:x.cod, tipo:x.tipo, h:0, perd:0,
+                                                uf:new Set(), dias:new Set(),
+                                                lluvia:0, ajuste:0 });
     q.h += x.h; q.perd += x.mtto + x.varada + x.lluvia + x.averia; q.uf.add(x.uf);
+    q.lluvia += x.lluvia;                       // se nombra, no se descuenta
+    q.ajuste += x.mtto + x.varada + x.averia;   // esto sí sale del standby
+    /* Días DISTINTOS en que esta máquina tuvo parte en esta actividad: es lo que
+       multiplica a sus horas programadas para dar su standby del período. Un
+       mismo día con dos partes (dos centros de coste de la misma actividad) es
+       UN día, no dos: por eso un Set y no un contador. */
+    q.dias.add(x.f);
   }
 
   const per = pers.map(p => {
@@ -631,7 +651,13 @@ function construir(wbProd, wbMaq){
       const k = KEY[act];
       const prod = dd.reduce((s,d)=>s+d[k],0) / FC;          // compacto
       const nd = dd.filter(d=>d[k]>0).length;
-      const eq = ((hAgg[p]||{})[act]||{}).maq ? Object.keys(hAgg[p][act].maq).length : 0;
+      /* EQUIPOS = los que de verdad estuvieron. Una máquina cuyo parte trae CERO
+         horas operadas y CERO horas perdidas no estuvo: es un parte vacío, y
+         contarla infla el denominador de la velocidad y hunde el porcentaje.
+         Si trae horas perdidas SÍ cuenta —estuvo asignada y no produjo, que es
+         justo lo que la velocidad tiene que reflejar. */
+      const _mq = ((hAgg[p]||{})[act]||{}).maq;
+      const eq = _mq ? Object.values(_mq).filter(q=>(q.h+q.perd)>0).length : 0;
       const den = META_D[act] * eq * nd;
       a[act] = { prod:+prod.toFixed(1), dias:nd, equipos:eq,
                  meta_dia:+META_D[act].toFixed(2), proy:+den.toFixed(1),
@@ -646,7 +672,11 @@ function construir(wbProd, wbMaq){
         const g = hAgg[p][act]; if (!g || g.horas<=0) continue;
         const suelto = dd.reduce((s,d)=>s+d[KEY[act]],0);     // los m³/h van en suelto
         const maq = Object.values(g.maq).map(q=>({ cod:q.cod, tipo:q.tipo,
-          uf:[...q.uf].sort().join('·')||'—', h:+q.h.toFixed(1), perd:+q.perd.toFixed(1) }))
+          uf:[...q.uf].sort().join('·')||'—', h:+q.h.toFixed(1), perd:+q.perd.toFixed(1),
+          lluvia:+q.lluvia.toFixed(1), ajuste:+q.ajuste.toFixed(1),
+          dias:q.dias.size, hprog:HPROG[q.cod]||HPROG_DEF,
+          sb:+(q.dias.size*(HPROG[q.cod]||HPROG_DEF)).toFixed(1),
+          sb_aj:+Math.max(0, q.dias.size*(HPROG[q.cod]||HPROG_DEF)-q.ajuste).toFixed(1) }))
           .sort((x,y)=>y.h-x.h);
         let mh, grupos = null;
         if (SPLIT[act]){
@@ -663,11 +693,32 @@ function construir(wbProd, wbMaq){
         } else {
           mh = +(suelto/g.horas).toFixed(2);
         }
+        /* STANDBY DEL PERÍODO = suma de (días × horas programadas) de cada
+           máquina que de verdad estuvo. La del parte vacío —cero operadas y
+           cero perdidas— NO suma standby: casi siempre es el digitador
+           repitiendo la máquina un fin de semana, y cargarle 6,4 h de standby
+           a algo que nunca se usó hunde la utilización por un error de tecleo. */
+        const vivas = maq.filter(q=>(q.h+q.perd)>0);
+        const sb = +vivas.reduce((s,q)=>s+q.sb,0).toFixed(1);
+        /* Al standby se le RESTAN mantenimiento y paradas (varada y avería/cama
+           baja): esas horas no recaen en nuestro centro de coste, se le
+           repercuten al dueño o al alquilador, así que no se nos pueden contar
+           como máquina que no usamos.
+           LA LLUVIA NO SE RESTA (decisión del usuario): no se le cobra a nadie,
+           y una máquina parada por lluvia es tiempo que la obra no aprovechó.
+           Se nombra aparte en pantalla para explicar el hueco, pero no lo tapa. */
+        const ajuste = +(g.mtto+g.varada+g.averia).toFixed(1);
+        const sbAj = +Math.max(0, sb-ajuste).toFixed(1);
         m[act] = { nombre:NOMBRE[act], prod:Math.round(suelto), horas:+g.horas.toFixed(1),
-          equipos:maq.length, meta_hora:META_H[act], mh, grupos, maq,
+          equipos:vivas.length, meta_hora:META_H[act], mh, grupos, maq,
           mtto:+g.mtto.toFixed(1), varada:+g.varada.toFixed(1),
           lluvia:+g.lluvia.toFixed(1), averia:+g.averia.toFixed(1),
           perd:+(g.mtto+g.varada+g.lluvia+g.averia).toFixed(1),
+          sb, ajuste, sb_aj:sbAj,
+          /* Por encima del standby la utilización es 100% y lo que sobra es
+             GANANCIA: se guarda para poder decirlo, no para inflar el %. */
+          util: sbAj>0 ? +Math.min(1, g.horas/sbAj).toFixed(4) : null,
+          ganancia: +Math.max(0, g.horas-sbAj).toFixed(1),
           dudoso: mh > 2.5*META_H[act] };
       }
       if (!Object.keys(m).length) m = null;
@@ -871,9 +922,25 @@ function cadena(sel_p){
     const m=p.m[a.k], r=p.a[a.k];
     if(!m) return;
     const perd=m.perd||0;
-    const ut=(m.horas+perd)>0?m.horas/(m.horas+perd):0;
+    /* UTILIZACIÓN = horas operadas ÷ standby ajustado, donde el standby son las
+       horas programadas de cada máquina (6,4 propia / 5 alquilada) por sus días
+       de parte, menos mantenimiento y paradas. Por encima del standby es 100% y
+       lo que sobra se dice como ganancia.
+       `m.util` sólo viene en las fotos generadas a partir de este cambio; en una
+       anterior no hay días por máquina y el standby NO se puede reconstruir, así
+       que se dice que falta en vez de enseñar el número viejo con la etiqueta
+       nueva, que sería lo peor de las dos cosas. */
+    const hayU = m.util!=null || (m.sb_aj!=null && m.sb_aj>0);
+    const ut = hayU ? (m.util!=null ? m.util : Math.min(1, m.horas/m.sb_aj)) : null;
     const ef=m.meta_hora?m.mh/m.meta_hora:0;
     const abierta=abierto===a.k;
+    /* Los equipos se cuentan AQUÍ, sobre el detalle por máquina, y no se toma
+       el número que venga en la foto: las fotos guardadas antes de esta
+       corrección contaban las máquinas con el parte en cero. Con el mismo
+       criterio que el motor, así las dos vías dan lo mismo. */
+    const eqReal=m.maq.filter(q=>(q.h+q.perd)>0).length || m.equipos;
+    const den=(r.meta_dia||0)*eqReal*(r.dias||0);
+    const vel=den>0?r.prod/den:null;
 
     const row=el('div','chainR');row.tabIndex=0;row.setAttribute('role','button');
     if(abierta)row.style.background='var(--grid)';
@@ -886,7 +953,7 @@ function cadena(sel_p){
        fila habla de lo que movió la máquina. El compacto aparece abajo, en la
        velocidad y en el plan del período. */
     const eqs=k=>k+(k===1?' equipo':' equipos');
-    box.append(nm,el('div','sub',f0(m.prod)+' m³ sueltos · '+eqs(m.equipos)),
+    box.append(nm,el('div','sub',f0(m.prod)+' m³ sueltos · '+eqs(eqReal)),
       el('div','hint',abierta?'Cerrar desglose':(m.maq.length?'Ver '+eqs(m.maq.length):'')));
     ac.append(sw,box);
     // --- eslabones
@@ -901,8 +968,20 @@ function cadena(sel_p){
       return d;
     };
     const l1=mk('',f0(m.horas),'h',r.dias+' días con registro',m.horas/maxH);
-    const l2=mk('×',(m.horas+perd)>0?pct(ut):'—','',
-      f1(perd)+' h perdidas'+(m.lluvia>0?', '+f1(m.lluvia)+' por lluvia':''),ut);
+    /* Debajo de la cifra se dice DE DÓNDE sale: cuánto standby había, si sobró
+       o faltó, y qué explica el hueco. Un porcentaje de utilización sin su
+       standby al lado no se puede discutir en una reunión. */
+    let subU;
+    if(!hayU){
+      subU='sin standby en esta foto — pulsa «Actualizar»';
+    } else {
+      const falta=+(m.sb_aj-m.horas).toFixed(1);
+      subU = falta<=0
+        ? f1(m.horas)+' de '+f1(m.sb_aj)+' h de standby · '+f1(m.ganancia||-falta)+' h de más'
+        : f1(m.horas)+' de '+f1(m.sb_aj)+' h de standby · faltaron '+f1(falta)+' h'+
+          (m.lluvia>0?', '+f1(m.lluvia)+' por lluvia':'');
+    }
+    const l2=mk('×',hayU?pct(ut):'—','',subU,ut||0);
     const l3=mk('×',m.dudoso?'—':pct(ef),'',
       m.dudoso?'horas incompletas en este centro de coste'
              :f1(m.mh)+' de '+f1(m.meta_hora)+' m³ hora-máquina',
@@ -911,12 +990,12 @@ function cadena(sel_p){
     const vc=el('div','velC');
     vc.appendChild(el('div','eq','='));
     const vv=el('div','v');
-    const big=el('div','syne big',r.vel==null?'—':pct(r.vel));
+    const big=el('div','syne big',vel==null?'—':pct(vel));
     vv.append(big,el('div','u','de la meta'));
     const vb=el('div','velBar');const vi=el('i');
-    vi.style.width=Math.min(100,(r.vel||0)*100)+'%';vb.appendChild(vi);
-    vc.append(vv,vb,el('div','s',r.vel==null?'sin partes de equipos'
-      :f0(r.prod/r.dias)+' de '+f0(r.meta_dia*r.equipos)+' m³ al día'));
+    vi.style.width=Math.min(100,(vel||0)*100)+'%';vb.appendChild(vi);
+    vc.append(vv,vb,el('div','s',vel==null?'sin partes de equipos'
+      :f0(r.prod/r.dias)+' de '+f0(r.meta_dia*eqReal)+' m³ al día'));
 
     row.append(ac,l1,l2,l3,vc);
     const abrir=()=>{abierto=abierta?null:a.k;pinta();};
@@ -927,23 +1006,37 @@ function cadena(sel_p){
     if(abierta){
       const d=el('div','drop');
       const h=el('div','mtH');
-      ['Equipo','Tipo','UF','Horas','Perdidas','Utilización','Peso en las horas']
-        .forEach((x,i)=>{const s=el('div',null,x);if(i>=3&&i<=5)s.style.textAlign='right';h.appendChild(s);});
+      ['Equipo','Tipo','UF','Horas','Standby','Perdidas','Utilización','Peso en las horas']
+        .forEach((x,i)=>{const s=el('div',null,x);if(i>=3&&i<=6)s.style.textAlign='right';h.appendChild(s);});
       d.appendChild(h);
       const tot=Math.max(1,...m.maq.map(x=>x.h));
       m.maq.forEach(q=>{
-        const u=(q.h+q.perd)>0?q.h/(q.h+q.perd):0;
+        /* Standby de ESTA máquina: sus días de parte por sus horas programadas,
+           menos su mantenimiento y sus paradas. La celda lleva la cuenta en el
+           title para que nadie tenga que fiarse: «17 días × 6,4 h propia». */
+        const sbq = q.sb_aj!=null ? q.sb_aj : null;
+        const u = (sbq!=null && sbq>0) ? Math.min(1, q.h/sbq) : null;
         const t=el('div','mtR');
+        const cSb=el('div','num', sbq!=null?f1(sbq):'—');
+        if(q.dias!=null) cSb.title=q.dias+' días × '+f1(q.hprog)+' h ('+
+          (q.hprog>=6?'propia':'alquilada')+')'+(q.ajuste>0?' − '+f1(q.ajuste)+' h de mtto y paradas':'');
         t.append(el('div','syne cod',q.cod),el('div','dim',q.tipo),el('div','dim',q.uf),
-          el('div','num',f1(q.h)),el('div','num',q.perd>0?f1(q.perd):'—'),
-          el('div','num',(q.h+q.perd)>0?pct(u):'—'));
+          el('div','num',f1(q.h)),cSb,el('div','num',q.perd>0?f1(q.perd):'—'),
+          el('div','num',u!=null?pct(u):'—'));
         const bw=el('div','mtBar');const bi=el('i');
         bi.style.width=(q.h/tot*100)+'%';bi.style.background=a.c;bw.appendChild(bi);
         t.appendChild(bw);
         d.appendChild(t);
       });
       const nt=el('div','nota');
-      let txt='Peso en las horas de '+a.n.toLowerCase()+' sobre <b>'+f1(m.horas)+' h</b> del período. '+
+      let txt='<b>Standby</b> = días con parte de cada máquina × sus horas programadas al día '+
+        '(<b>6,4 h</b> si es propia de Ortiz, <b>5 h</b> si es alquilada), menos su mantenimiento '+
+        'y sus paradas —esas horas se le repercuten al dueño o al alquilador, no a la obra—. '+
+        'La <b>lluvia no se descuenta</b>: no se le cobra a nadie y es tiempo que la obra no '+
+        'aprovechó, así que se nombra pero se queda dentro. '+
+        'Una máquina con el parte en cero (cero operadas y cero perdidas) no suma standby ni '+
+        'cuenta como equipo: casi siempre es un parte repetido por error.<br><br>'+
+        'Peso en las horas de '+a.n.toLowerCase()+' sobre <b>'+f1(m.horas)+' h</b> del período. '+
         'Sólo cuentan las máquinas coherentes con la actividad, por centro de coste: excavación '+
         'excavadoras (02.05/02.06), terraplén bulldozer y motoniveladora (02.07), subbase '+
         'motoniveladora (03.01), BTC motoniveladora y finisher (03.03). Vibros, minicargadores, '+
