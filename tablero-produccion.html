@@ -343,7 +343,6 @@ body{background:var(--bg);color:var(--text);font-size:14px;
       <div class="est" id="estado">—</div>
       <button type="button" id="btnAct">Actualizar</button>
       <button type="button" id="btnArch">Elegir archivos</button>
-      <button type="button" id="btnPub" title="Descarga esta misma página con los datos de ahora dentro, lista para subir al repositorio">Publicar foto</button>
       <button type="button" id="btnCfg">Enlaces</button>
     </div>
     <div class="cfg" id="cfg" hidden>
@@ -1418,8 +1417,20 @@ async function recalcular(oProd,oMaq){
     TM2=d; guardaDatos(d);
     sel=TM2.per.length-1; abierto=null;
     pinta();
-    estado('Actualizado en '+((Date.now()-t0)/1000).toFixed(1)+' s · '+
-      TM2.per.length+' períodos · horas hasta <b>'+(TM2.corte_horas||'—')+'</b>',false);
+    const seg=((Date.now()-t0)/1000).toFixed(1);
+    /* Se publica DESPUÉS de pintar: si el Apps Script falla, quien actualizó ya
+       tiene sus datos en pantalla y solo le falta compartirlos. Se le dice, en
+       vez de dejarle creer que todo el mundo los está viendo. */
+    estado('Actualizado en '+seg+' s · '+TM2.per.length+' períodos · publicando…',false);
+    try{
+      await publicar(d);
+      estado('Actualizado en '+seg+' s · '+TM2.per.length+' períodos · horas hasta <b>'+
+        (TM2.corte_horas||'—')+'</b> · <b>publicado</b>: el jefe y los residentes ya lo ven',false);
+    }catch(err){
+      estado('Datos actualizados en tu pantalla, pero NO se pudieron publicar: '+err.message+
+        '. Los demás siguen viendo la foto anterior. Vuelve a pulsar «Actualizar» '+
+        'cuando haya conexión.',true);
+    }
   }catch(err){
     estado('No se pudo actualizar: '+err.message+
       '. Prueba con «Elegir archivos» — el resultado es el mismo.',true);
@@ -1430,49 +1441,68 @@ async function recalcular(oProd,oMaq){
 
 
 /* ===========================================================================
- * PUBLICAR LA FOTO
+ * LA FOTO ES COMPARTIDA (D158)
  *
- * «Actualizar» recalcula y guarda en el localStorage DE ESTE NAVEGADOR. No sale
- * de ahí: ni al navegador del jefe, ni al de los residentes, ni al archivo del
- * repositorio. Quien no pulsa el botón sigue viendo la foto que trae el archivo
- * — y los residentes ni siquiera tienen el botón.
+ * Antes, «Actualizar» recalculaba y guardaba en el localStorage DE ESE
+ * NAVEGADOR. Servía a quien pulsaba el botón y a nadie más: el jefe y los
+ * residentes seguían viendo la copia que venía dentro del archivo. Eso no es un
+ * tablero, es una hoja de cálculo con más pasos.
  *
- * Esto cierra el círculo sin depender de nadie: descarga ESTA MISMA PÁGINA con
- * los datos de ahora escritos dentro. Se sube el archivo al repositorio y ya
- * todo el mundo ve lo mismo. Es un archivo, no un backend: no hay más piezas.
+ * Ahora la foto vive en el Sheet, por el mismo camino que el resto del sistema
+ * (Apps Script). Quien publica, publica para todos y en el momento.
  *
- * Se lee la propia página con fetch (mismo origen) en vez de reconstruirla, así
- * que lo que se descarga es el código vigente y no una copia que envejece aquí
- * dentro. Sólo se sustituye la línea de datos.
+ * CÓMO ABRE LA PÁGINA, en este orden y sin esperar a nadie:
+ *   1. pinta YA con lo que tenga a mano — la foto embebida o la última vista;
+ *   2. pide la compartida en segundo plano y, si llega y es distinta, repinta.
+ * Así nunca hay pantalla en blanco delante de una sala, ni siquiera si el Apps
+ * Script tarda o no hay red.
+ *
+ * PUBLICAR es cosa de admin y jefe, y lo decide el SERVIDOR con el token
+ * firmado (D109): escribir `rol: admin` en el navegador no sirve de nada.
  * =========================================================================*/
-const MARCA_DATOS = 'const TM2_' + 'EMBEBIDO=';   // partido para no encontrarse a sí mismo
+const API = 'https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec';
 
-async function publicarFoto(){
-  const b=$('btnPub');
-  if(b) b.disabled=true;
+/* El token de sesión (D109) va a mano en las dos únicas llamadas de esta página,
+   en vez de cargar `auth.js`: son dos, y así el tablero sigue siendo UN archivo
+   que se puede abrir suelto. Es el mismo token firmado que emite el login; sin
+   él el servidor no deja publicar. */
+function token(){ try{ return localStorage.getItem('tm2_token')||''; }catch(e){ return ''; } }
+
+/* Trae la foto publicada. Nunca lanza: si algo falla, la página se queda con la
+   que ya está pintada, que es siempre mejor que un hueco. */
+async function fotoCompartida(){
   try{
-    estado('Preparando el archivo…',false);
-    const r=await fetch(location.href,{cache:'no-store'});
-    if(!r.ok) throw new Error('no se pudo releer la página ('+r.status+')');
-    const html=await r.text();
-    const i=html.indexOf(MARCA_DATOS);
-    if(i<0) throw new Error('no se encontró la línea de datos');
-    const j=html.indexOf('\n', i);
-    if(j<0) throw new Error('la línea de datos está incompleta');
-    const salida=html.slice(0,i)+MARCA_DATOS+JSON.stringify(TM2)+';'+html.slice(j);
-    const url=URL.createObjectURL(new Blob([salida],{type:'text/html;charset=utf-8'}));
-    const a=document.createElement('a');
-    a.href=url; a.download='tablero-produccion.html';
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),5000);
-    estado('Archivo descargado con los datos de <b>'+(TM2.generado||'ahora')+
-      '</b>. Súbelo al repositorio reemplazando <b>tablero-produccion.html</b> y '+
-      'todos verán esta misma foto.',false);
-  }catch(e){
-    estado('No se pudo preparar el archivo: '+e.message,true);
-  }finally{
-    if(b) b.disabled=false;
-  }
+    const t = token();
+    const r = await fetch(API+'?action=tablero'+(t?'&token='+encodeURIComponent(t):''),
+                          { cache:'no-store' });
+    if(!r.ok) return null;
+    const d = await r.json();
+    if(!d || d.ok===false || !d.foto || !d.foto.per || !d.foto.per.length) return null;
+    return d.foto;
+  }catch(e){ return null; }
+}
+
+/* Al abrir: se pide en segundo plano y solo se repinta si trae algo MÁS NUEVO,
+   comparando el sello de generación. Repintar por repintar movería la pantalla
+   debajo de quien ya está mirando. */
+async function sincronizar(){
+  const f = await fotoCompartida();
+  if(!f) return;
+  if(TM2.generado && f.generado && f.generado <= TM2.generado) return;
+  TM2 = f; guardaDatos(f);
+  sel = TM2.per.length-1; abierto = null;
+  pinta();
+}
+
+/* Publicar: sube la foto que está en pantalla. El token lo pega auth.js. */
+async function publicar(d){
+  const r = await fetch(API, { method:'POST',
+    headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+    body: JSON.stringify({ action:'tablero_guardar', foto:d, token:token() }) });
+  if(!r.ok) throw new Error('el servidor respondió '+r.status);
+  const j = await r.json();
+  if(!j || j.ok===false) throw new Error((j&&j.error)||'no se pudo publicar');
+  return j.meta||{};
 }
 
 /* ---------------------------------------------------------------------------
@@ -1615,7 +1645,7 @@ function segunRol(rol){
   /* Se retiran los tres botones de la barra de datos y el panel de enlaces.
      El renglón de estado se queda: dice de cuándo es la foto, que es
      justamente lo que hay que saber antes de proyectarla. */
-  ['btnAct','btnArch','btnPub','btnCfg'].forEach(id=>{ const b=$(id); if(b) b.remove(); });
+  ['btnAct','btnArch','btnCfg'].forEach(id=>{ const b=$(id); if(b) b.remove(); });
   const c=$('cfg'); if(c) c.remove();
 }
 
@@ -1633,7 +1663,6 @@ function wire(){
                  :'Enlaces borrados: «Actualizar» pedirá los archivos.',false);
   };
   $('btnArch').onclick=()=>HAY_FS?elegirRecordando():pedirArchivos();
-  $('btnPub').onclick=publicarFoto;
   $('btnAct').onclick=async ()=>{
     if(HAY_FS && await releerRecordados(true)) return;   // los de siempre, un clic
     const v=enlaces();
@@ -1672,6 +1701,7 @@ if(ROL!==null){
   wire();
   pinta();
   logCC();
+  sincronizar();          // en segundo plano; si no hay red, no pasa nada
 }
 </script>
 </body>
