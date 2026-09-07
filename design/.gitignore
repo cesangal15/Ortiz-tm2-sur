@@ -1,0 +1,4 @@
+# El lienzo sembrado (2,5 MB) es un producto de compilación: lleva dentro el
+# editor de Claude Design y se regenera de Main.dc.html, UnaPantalla.dc.html y
+# canvas.json. Lo que se versiona son esas fuentes, no el resultado.
+tablero-tm2-sur-presentacion.html

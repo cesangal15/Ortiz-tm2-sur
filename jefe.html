@@ -156,12 +156,13 @@
     <div class="empty-state"><div class="icon">🗓️</div><p>Elige un rango de fechas y consulta el resumen de obra.</p></div>
   </div>
 
-  <!-- D139: enlace a la pantalla de Maquinaria (producción del día + flota). El jefe la ve en SOLO
-       LECTURA: la propia pantalla esconde todo lo editable al detectar su rol, y el servidor lo
-       rechaza además si llegara por otra vía (D109). -->
-  <a class="tile-link" id="tileMaquinaria" href="produccion-maquinaria.html">
-    <div class="ico">⚙️</div>
-    <div><h2>Maquinaria</h2><p id="tileMaqSub">Producción del día por máquina y flota de la obra · solo lectura</p></div>
+  <!-- D158: el TABLERO DE PRODUCCIÓN ocupa el lugar que tenía Maquinaria.
+       Maquinaria sale de aquí (ver D158 abajo): es una pantalla de captura, no
+       de consulta, y sigue estando donde le sirve a quien la usa — el panel del
+       residente de tierras y el menú del admin. -->
+  <a class="tile-link" id="tileTablero" href="tablero-produccion.html">
+    <div class="ico">📊</div>
+    <div><h2>Tablero de Producción (mensual)</h2><p>Velocidad contra meta, rendimiento de maquinaria, avance del contrato y clima. Es lo que reemplaza la hoja <code>GRAFICOS</code> de la presentación mensual</p></div>
     <div class="arrow">→</div>
   </a>
 </div>
@@ -214,15 +215,18 @@ window.onload = function(){
   // D131: quien viene de drenajes arranca con el filtro en ODT+ODL — su alcance real. No es un cerrojo
   // (puede cambiarlo y mirar tierras: la pantalla es de solo lectura), es el punto de partida útil.
   if(ROLES_DREN.indexOf(rol)>=0){ const fa=document.getElementById('fArea'); if(fa) fa.value='drenajes'; }
-  // D139: la puerta a Maquinaria es para quien esa pantalla deja entrar — jefe (solo lectura), admin y
-  // residente de tierras (editan). Los roles de drenajes no la usan (allá las máquinas van en texto
-  // libre, D70), así que no se les ofrece un enlace que su propio guard rechazaría.
-  const _tm=document.getElementById('tileMaquinaria');
-  if(_tm && (rol==='jefe' || rol==='admin' || rol==='residente')){
-    _tm.style.display='flex';
-    if(rol!=='jefe'){ const sb=document.getElementById('tileMaqSub');
-      if(sb) sb.textContent='Producción del día por máquina y flota: altas, bajas y reingresos'; }
-  }
+  /* D158 — el TABLERO se ofrece a los cuatro roles que ya entran aquí (jefe,
+     admin, residente de tierras y residente de drenajes), que son exactamente
+     los que su propio portero deja pasar. Como el guard de arriba ya expulsó a
+     cualquier otro, no hace falta repetir la lista.
+
+     Y MAQUINARIA SALE DE ESTE PANEL (enmienda a D139). El jefe la tenía en
+     SOLO LECTURA y no la usaba para nada que no le diera ya el resumen; para
+     el residente de tierras y para el admin era un duplicado del enlace que
+     tienen en su propio panel. Nadie pierde acceso: `residente.html` y
+     `menu.html` la siguen llevando, y el portero de la pantalla no se toca. */
+  const _tt=document.getElementById('tileTablero');
+  if(_tt) _tt.style.display='flex';
   // Fecha por defecto = HOY en zona horaria Colombia (D50), nunca toISOString().
   const hoy=new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'});
   document.getElementById('desde').value=hoy;

@@ -1,0 +1,503 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&display=swap" rel="stylesheet" />
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{margin:0;font-family:'DM Sans',system-ui,sans-serif;}
+    a{color:#8a5200;text-decoration:none;} a:hover{color:#e9a034;}
+    .syne{font-family:'Syne',Futura,'Trebuchet MS',sans-serif;}
+    .tnum{font-variant-numeric:tabular-nums;}
+    /* el valor de cada barra, en vertical dentro de ella */
+    .vlab{writing-mode:vertical-rl;transform:rotate(180deg);font-size:8px;line-height:1;
+          font-weight:500;letter-spacing:-.2px;white-space:nowrap;}
+  </style>
+</helmet>
+
+<div style="background:{{t.bg}};color:{{t.ink}};padding:42px 50px 50px;min-height:100%">
+<div style="max-width:1340px;margin:0 auto;display:flex;flex-direction:column;gap:34px">
+
+  <!-- ══════════ cabecera ══════════ -->
+  <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:38px;border-bottom:2px solid {{t.ink}};padding-bottom:16px">
+    <div style="display:flex;flex-direction:column;gap:5px">
+      <div style="font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:{{t.mut}}">Grupo Ortiz · Informe de producción</div>
+      <div class="syne" style="font-weight:800;font-size:42px;line-height:.98;letter-spacing:-.02em">TM2 SUR</div>
+      <div style="font-size:13.5px;color:{{t.mut}}">Movimiento de tierras · Unidades funcionales UF1 y UF2</div>
+    </div>
+    <div style="display:flex;align-items:flex-end;gap:24px">
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:{{t.mut}}">Unidad funcional</div>
+        <div style="display:flex">
+          <sc-for list="{{ufs}}" as="u" hint-placeholder-count="3">
+            <div onClick="{{u.pick}}" style="cursor:pointer;user-select:none;padding:7px 16px;font-size:12.5px;font-weight:{{u.fw}};color:{{u.fg}};background:{{u.bg}};border:1px solid {{u.bd}};border-right-width:{{u.brw}}">{{u.n}}</div>
+          </sc-for>
+        </div>
+      </div>
+      <div style="text-align:right;display:flex;flex-direction:column;gap:3px">
+        <div class="syne" style="font-weight:800;font-size:38px;line-height:1;letter-spacing:-.02em">{{sel.titulo}}</div>
+        <div style="font-size:12.5px;color:{{t.mut}}">{{sel.rango}} · {{sel.dias}} días registrados</div>
+        <div style="font-size:11.5px;color:{{acento}};letter-spacing:.04em">Corte {{sel.corte}} · horas de máquina al 15 ago</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ evolución período a período (y selector) ══════════ -->
+  <div style="display:flex;flex-direction:column;gap:11px">
+    <div style="display:flex;align-items:baseline;gap:14px">
+      <div class="syne" style="font-weight:700;font-size:13px;letter-spacing:.16em;text-transform:uppercase">Evolución período a período</div>
+      <div style="flex:1;height:1px;background:{{t.rule}}"></div>
+      <div style="display:flex;gap:18px">
+        <sc-for list="{{leyenda}}" as="l" hint-placeholder-count="4">
+          <div style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:{{t.mut}}">
+            <div style="width:11px;height:11px;background:{{l.c}}"></div>{{l.n}}
+          </div>
+        </sc-for>
+      </div>
+      <div style="font-size:11.5px;color:{{t.mut}}">clic para ver el mes</div>
+    </div>
+    <div style="display:grid;grid-template-columns:58px 1fr;gap:0 12px;align-items:end">
+      <div class="tnum" style="font-size:10px;color:{{t.mut}};text-align:right;padding-bottom:3px">67.453<br><span style="font-size:9.5px">m³ máx</span></div>
+      <div style="display:flex;gap:6px;align-items:flex-end;height:96px;border-bottom:1px solid {{t.rule}}">
+        <sc-for list="{{periodos}}" as="p" hint-placeholder-count="16">
+          <div onClick="{{p.pick}}" style="flex:1;height:100%;display:flex;align-items:flex-end;gap:1.5px;cursor:pointer;background:{{p.bg}}">
+            <sc-for list="{{p.bars}}" as="s" hint-placeholder-count="4">
+              <div style="flex:1;height:{{s.h}};background:{{s.c}}"></div>
+            </sc-for>
+          </div>
+        </sc-for>
+      </div>
+      <div></div>
+      <div style="display:flex;gap:6px">
+        <sc-for list="{{periodos}}" as="p" hint-placeholder-count="16">
+          <div onClick="{{p.pick}}" style="flex:1;text-align:center;font-size:10.5px;cursor:pointer;color:{{p.labC}};font-weight:{{p.fw}};border-top:2px solid {{p.marca}};padding-top:4px">{{p.lab}}</div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ por qué vamos así — la cadena completa ══════════ -->
+  <div style="display:flex;flex-direction:column;gap:13px">
+    <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
+      <div class="syne" style="font-weight:700;font-size:19px">Por qué vamos así</div>
+      <div style="font-size:13px;color:{{t.mut}}">horas × utilización × eficiencia = m³ por día</div>
+      <div style="flex:1;height:1px;background:{{t.rule}};min-width:40px"></div>
+      <div style="font-size:11.5px;color:{{acento}};text-align:right;max-width:430px">Sólo cuentan las máquinas coherentes con cada actividad, por centro de coste</div>
+    </div>
+    <div>
+      <div style="display:grid;grid-template-columns:224px 1.05fr 1fr 1fr 236px;gap:0 26px;padding-bottom:8px;border-bottom:1px solid {{t.rule}}">
+        <div style="font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:{{t.mut}}">Actividad</div>
+        <div style="font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:{{t.mut}}">Horas operadas</div>
+        <div style="font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:{{t.mut}}">Utilización</div>
+        <div style="font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:{{t.mut}}">Eficiencia</div>
+        <div style="font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:{{acento}}">Velocidad</div>
+      </div>
+      <sc-for list="{{chain}}" as="r" hint-placeholder-count="4">
+        <div onClick="{{r.pick}}" style="display:grid;grid-template-columns:224px 1.05fr 1fr 1fr 236px;gap:0 26px;align-items:center;padding:17px 0;border-bottom:1px solid {{r.bd}};cursor:pointer;background:{{r.bg}}">
+          <div style="display:flex;align-items:flex-start;gap:11px">
+            <div style="width:11px;height:11px;background:{{r.c}};margin-top:8px;flex:none"></div>
+            <div style="display:flex;flex-direction:column;gap:2px">
+              <div class="syne" style="font-weight:700;font-size:21px;line-height:1.05">{{r.n}}</div>
+              <div class="tnum" style="font-size:12px;color:{{t.mut}}">{{r.prod}} m³ · {{r.eq}} equipos</div>
+              <div style="font-size:10.5px;color:{{acento}};letter-spacing:.04em">{{r.hint}}</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="display:flex;align-items:baseline;gap:5px">
+              <div class="syne tnum" style="font-weight:700;font-size:25px;line-height:1">{{r.h}}</div>
+              <div style="font-size:11.5px;color:{{t.mut}}">h</div>
+            </div>
+            <div style="height:5px;background:{{t.grid}}"><div style="height:100%;width:{{r.hw}};background:{{t.mut}};opacity:.55"></div></div>
+            <div style="font-size:10.5px;color:{{t.mut}}">{{r.dias}} días con registro</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div class="syne tnum" style="font-weight:700;font-size:25px;line-height:1">{{r.ut}}</div>
+            <div style="height:5px;background:{{t.grid}}"><div style="height:100%;width:{{r.ut}};background:{{t.mut}};opacity:.55"></div></div>
+            <div style="font-size:10.5px;color:{{t.mut}}">{{r.perd}}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div class="syne tnum" style="font-weight:700;font-size:25px;line-height:1;color:{{r.efc}}">{{r.ef}}</div>
+            <div style="height:5px;background:{{t.grid}}"><div style="height:100%;width:{{r.efw}};background:{{r.c}}"></div></div>
+            <div class="tnum" style="font-size:10.5px;color:{{t.mut}}">{{r.mh}} de {{r.meta}} m³ hora-máquina</div>
+          </div>
+          <div style="position:relative;padding-left:26px;border-left:1px solid {{t.rule}}">
+            <div style="position:absolute;left:7px;top:1px;font-size:15px;color:{{acento}}">=</div>
+            <div style="display:flex;align-items:baseline;gap:6px">
+              <div class="syne tnum" style="font-weight:800;font-size:34px;line-height:1">{{r.vel}}</div>
+              <div style="font-size:11.5px;color:{{t.mut}}">de la meta</div>
+            </div>
+            <div style="height:10px;background:{{t.grid}};margin-top:7px"><div style="height:100%;width:{{r.vel}};background:{{acento}}"></div></div>
+            <div class="tnum" style="font-size:10.5px;color:{{t.mut}};margin-top:5px">{{r.diaria}} m³ al día</div>
+          </div>
+        </div>
+        <sc-if value="{{r.open}}" hint-placeholder-val="{{ false }}">
+          <div style="border-bottom:1px solid {{t.rule}};padding:6px 0 20px 36px;display:flex;flex-direction:column;gap:8px">
+            <div style="display:grid;grid-template-columns:100px 150px 78px 84px 90px 1fr;gap:0 14px;padding-bottom:6px;border-bottom:1px solid {{t.rule}};font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:{{t.mut}}">
+              <div>Equipo</div><div>Tipo</div><div>UF</div>
+              <div style="text-align:right">Horas</div><div style="text-align:right">Perdidas</div><div>Peso en las horas</div>
+            </div>
+            <sc-for list="{{r.maq}}" as="m" hint-placeholder-count="3">
+              <div style="display:grid;grid-template-columns:100px 150px 78px 84px 90px 1fr;gap:0 14px;align-items:center;font-size:12.5px">
+                <div class="syne" style="font-weight:700;font-size:14px">{{m.cod}}</div>
+                <div style="color:{{t.mut}};font-size:11.5px">{{m.tipo}}</div>
+                <div style="color:{{t.mut}};font-size:11.5px">{{m.uf}}</div>
+                <div class="tnum" style="text-align:right">{{m.h}}</div>
+                <div class="tnum" style="text-align:right;color:{{t.mut}}">{{m.perd}}</div>
+                <div style="height:7px;background:{{t.grid}}"><div style="height:100%;width:{{m.w}};background:{{r.c}}"></div></div>
+              </div>
+            </sc-for>
+            <div style="font-size:11.5px;color:{{t.mut}};max-width:760px;line-height:1.5">
+              Peso en las horas de {{r.nmin}} sobre {{r.h}} h del período. Excavación la hacen
+              excavadoras (02.05/02.06), terraplén bulldozer y motoniveladora (02.07), subbase
+              motoniveladora (03.01), BTC motoniveladora y finisher (03.03). Vibros, minicargadores,
+              volquetas y la RT-02 quedan fuera: mueven obra, pero no producen estos m³.
+            </div>
+          </div>
+        </sc-if>
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- ══════════ producción diaria ══════════ -->
+  <div style="display:flex;flex-direction:column;gap:13px">
+    <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
+      <div class="syne" style="font-weight:700;font-size:19px">Producción diaria del período</div>
+      <div style="flex:1;height:1px;background:{{t.rule}};min-width:40px"></div>
+      <div style="font-size:11.5px;color:{{t.mut}}">Curva punteada = media acumulada día a día · <b style="color:{{acento}}">eje propio, logarítmico 132 → 2.647 m³</b></div>
+    </div>
+    <div style="display:grid;grid-template-columns:58px 1fr 46px;gap:0 12px;align-items:end">
+      <div class="tnum" style="font-size:10px;color:{{t.mut}};text-align:right;padding-bottom:3px">2.952<br><span style="font-size:9.5px">m³ máx</span></div>
+      <div style="position:relative;height:212px;border-bottom:1px solid {{t.ink}}" id="plot">
+        <div style="position:absolute;inset:0;display:flex;gap:5px">
+          <sc-for list="{{dias}}" as="d" hint-placeholder-count="27">
+            <div style="flex:1;background:{{d.bg}}"></div>
+          </sc-for>
+        </div>
+        <div style="display:flex;align-items:flex-end;gap:5px;height:100%;position:relative">
+          <sc-for list="{{dias}}" as="d" hint-placeholder-count="27">
+            <div style="flex:1;height:100%;display:flex;align-items:flex-end;gap:1.5px">
+              <sc-for list="{{d.bars}}" as="s" hint-placeholder-count="4">
+                <div style="flex:1;height:{{s.h}};background:{{s.c}};position:relative">
+                  <div class="vlab tnum" style="position:absolute;left:50%;bottom:{{s.lb}};transform:translateX(-50%) rotate(180deg);color:{{s.lc}}">{{s.v}}</div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-for>
+        </div>
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"
+             style="position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none">
+          <sc-for list="{{ejeMed}}" as="e" hint-placeholder-count="4">
+            <line x1="0" y1="{{e.y}}" x2="100" y2="{{e.y}}" stroke="{{t.rule}}" stroke-width="1"
+                  stroke-dasharray="2 6" vector-effect="non-scaling-stroke" opacity="0.7"></line>
+          </sc-for>
+          <sc-for list="{{curvas}}" as="c" hint-placeholder-count="4">
+            <polyline points="{{c.pts}}" fill="none" stroke="{{c.c}}" stroke-width="1.6"
+                      stroke-dasharray="3 2.4" vector-effect="non-scaling-stroke" stroke-linejoin="round"></polyline>
+          </sc-for>
+        </svg>
+      </div>
+      <div style="position:relative">
+        <sc-for list="{{ejeMed}}" as="e" hint-placeholder-count="4">
+          <div class="tnum" style="position:absolute;right:0;top:{{e.top}};font-size:9.5px;color:{{t.mut}};transform:translateY(-50%)">{{e.v}}</div>
+        </sc-for>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;padding-top:5px">
+        <div style="display:flex;gap:5px">
+          <sc-for list="{{dias}}" as="d" hint-placeholder-count="27">
+            <div class="tnum" style="flex:1;text-align:center;font-size:10px;color:{{t.mut}}">{{d.dia}}</div>
+          </sc-for>
+        </div>
+        <div style="font-size:11px;color:{{t.mut}};padding-top:5px">Clima del día</div>
+        <div style="display:flex;gap:5px">
+          <sc-for list="{{dias}}" as="d" hint-placeholder-count="27">
+            <div style="flex:1;height:11px;background:{{d.clima}};border:1px solid {{t.rule}}"></div>
+          </sc-for>
+        </div>
+        <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap;padding-top:5px">
+          <sc-for list="{{climaLeg}}" as="c" hint-placeholder-count="4">
+            <div style="display:flex;align-items:center;gap:7px;font-size:11.5px;color:{{t.mut}}">
+              <div style="width:17px;height:11px;background:{{c.c}};border:1px solid {{t.rule}}"></div>{{c.n}}
+            </div>
+          </sc-for>
+          <div style="font-size:11.5px;color:{{acento}}">5 días de lluvia promedian 1.192 m³ frente a 4.717 en los 18 soleados</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ planificado / avance / aprovechamiento ══════════ -->
+  <div style="display:grid;grid-template-columns:1.08fr 1fr;gap:44px;align-items:start">
+
+    <div style="display:flex;flex-direction:column;gap:30px">
+      <div style="display:flex;flex-direction:column;gap:13px">
+        <div style="display:flex;align-items:baseline;gap:14px">
+          <div class="syne" style="font-weight:700;font-size:17px">Planificado vs ejecutado del período</div>
+          <div style="flex:1;height:1px;background:{{t.rule}}"></div>
+        </div>
+        <sc-for list="{{plan}}" as="p" hint-placeholder-count="5">
+          <div style="display:grid;grid-template-columns:126px 1fr 80px;gap:0 13px;align-items:center">
+            <div style="font-size:13px">{{p.n}}</div>
+            <div style="position:relative;height:24px;background:{{t.grid}}">
+              <div style="height:100%;width:{{p.w}};background:{{p.c}};opacity:{{p.op}}"></div>
+              <div class="tnum" style="position:absolute;left:8px;top:0;line-height:24px;font-size:12px;color:{{p.lbl}}">{{p.v}} · {{p.pct}}</div>
+            </div>
+            <div class="tnum" style="font-size:12px;color:{{t.mut}};text-align:right">{{p.plan}}</div>
+          </div>
+        </sc-for>
+        <div style="font-size:11.5px;color:{{t.mut}};line-height:1.5">La cifra de la derecha es el plan del período, de la hoja CALCULOS. El no aprovechable no es partida del contrato, pero se planifica igual porque sale de la excavación.</div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:13px">
+        <div style="display:flex;align-items:baseline;gap:14px">
+          <div class="syne" style="font-weight:700;font-size:17px">Avance acumulado contra el contrato</div>
+          <div style="flex:1;height:1px;background:{{t.rule}}"></div>
+        </div>
+        <sc-for list="{{avance}}" as="a" hint-placeholder-count="4">
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="display:flex;align-items:baseline;justify-content:space-between">
+              <div style="font-size:13.5px">{{a.n}}</div>
+              <div style="display:flex;align-items:baseline;gap:9px">
+                <div class="syne tnum" style="font-weight:700;font-size:20px">{{a.pct}}</div>
+                <div class="tnum" style="font-size:11.5px;color:{{t.mut}}">{{a.eje}} / {{a.plan}} m³</div>
+              </div>
+            </div>
+            <div style="height:13px;background:{{t.grid}}"><div style="height:100%;width:{{a.w}};background:{{a.c}}"></div></div>
+          </div>
+        </sc-for>
+        <div style="font-size:11.5px;color:{{t.mut}}">Acumulado desde ago 2025, que es donde arranca el acta.</div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:30px">
+      <div style="display:flex;flex-direction:column;gap:13px">
+        <div style="display:flex;align-items:baseline;gap:14px">
+          <div class="syne" style="font-weight:700;font-size:17px">Aprovechamiento de la excavación</div>
+          <div style="flex:1;height:1px;background:{{t.rule}}"></div>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:12px">
+          <div class="syne tnum" style="font-weight:800;font-size:52px;line-height:.9;letter-spacing:-.03em;color:{{acento}}">69%</div>
+          <div style="font-size:13px;color:{{t.mut}};max-width:230px;line-height:1.45">de lo excavado es aprovechable: común más préstamo</div>
+        </div>
+        <div style="display:flex;height:30px;position:relative">
+          <div style="width:69%;background:{{acento}}"></div>
+          <div style="width:0%;background:repeating-linear-gradient(135deg,{{acento}} 0 5px,{{t.bg}} 5px 9px)"></div>
+          <div style="width:31%;background:{{t.mut}};opacity:.55"></div>
+          <div style="position:absolute;top:-4px;bottom:-4px;left:69%;width:2px;background:{{t.ink}}"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:{{t.mut}}">
+          <div>← Aprovechable</div><div>No aprovechable →</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:7px;padding-top:3px">
+          <sc-for list="{{comp}}" as="c" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;border-bottom:1px solid {{t.rule}};padding-bottom:6px">
+              <div style="display:flex;align-items:center;gap:10px;font-size:12.5px;color:{{t.mut}}">
+                <div style="width:14px;height:12px;background:{{c.sw}};border:1px solid {{t.rule}}"></div>{{c.n}}
+              </div>
+              <div style="display:flex;align-items:baseline;gap:9px">
+                <div class="syne tnum" style="font-weight:700;font-size:15px">{{c.v}}</div>
+                <div class="tnum" style="font-size:11.5px;color:{{t.mut}};width:38px;text-align:right">{{c.p}}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="font-size:11.5px;color:{{t.mut}};line-height:1.5">El préstamo se compra e ingresa a la obra, pero cuenta del lado aprovechable.</div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:13px">
+        <div style="display:flex;align-items:baseline;gap:14px">
+          <div class="syne" style="font-weight:700;font-size:17px">De dónde salen los números</div>
+          <div style="flex:1;height:1px;background:{{t.rule}}"></div>
+        </div>
+        <div style="font-size:12px;color:{{t.mut}};line-height:1.65">
+          Producción de <b style="color:{{t.ink}}">TM2_SUR_REPORTE_DIARIO_OBRA</b>, hojas DATOS y CALCULOS.
+          Horas de máquina de <b style="color:{{t.ink}}">BASE MAQUINARIA</b>, por centro de coste.
+          Producción en m³ compactos (suelto ÷ 1,3); el rendimiento por máquina en m³ sueltos por hora
+          de operación. Reproduce la hoja GRAFICOS con diferencia 0,0 en las cuatro partidas.
+          <b style="color:{{t.ink}}">Equipos por período tomados de los partes reales</b>, no de la flota de hoy.
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"acento":{"editor":"color","default":"#8a5200","options":["#8a5200","#1d6fa8","#2f6b4f","#8c3b52"]},"tema":{"editor":"enum","options":["claro","oscuro"],"default":"claro","tsType":"&#39;claro&#39;|&#39;oscuro&#39;"}}'>
+class Component extends DCLogic {
+  /* Maqueta con TODO el contenido de la página real, sólo que rediseñado.
+     El selector de período, las pestañas de UF y el desglose por equipo
+     funcionan; el resto de las cifras se quedan en agosto 2026, que es el mes
+     que ilustra. Datos reales, ninguno inventado (ver datos.js.txt). */
+  state = { per: 14, uf: 'Todo', abierto: 'excavacion' };
+
+  renderVals() {
+    const oscuro = (this.props.tema ?? 'claro') === 'oscuro';
+    const t = oscuro
+      ? { bg:'#15120e', ink:'#f4eee4', mut:'#9c9387', rule:'#332c23', grid:'#262019', card:'#1d1913' }
+      : { bg:'#f4f1ea', ink:'#191512', mut:'#7c7469', rule:'#ded6c9', grid:'#e7e0d3', card:'#ece7dc' };
+    const acento = this.props.acento ?? (oscuro ? '#e9a034' : '#8a5200');
+    const C = ['#e9a034', '#2e8bb4', '#66ad56', '#93527f'];
+    const LBL = ['#191512', '#ffffff', '#0d2b16', '#ffffff'];
+    const NOM = ['Excavación', 'Terraplén', 'Subbase', 'BTC / Base'];
+    const f0 = n => Math.round(n).toLocaleString('es-CO');
+    const f1 = n => n.toLocaleString('es-CO', { minimumFractionDigits:1, maximumFractionDigits:1 });
+
+    // ---------- evolución: CUATRO barras por período, una por actividad ----------
+    const MES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    const P = [['2506',20251,12192,1,1],['2507',26232,15862,679,0],['2508',1997,840,555,0],
+      ['2509',54959,45093,3048,0],['2510',36470,28035,2762,0],['2511',37463,27439,2542,0],
+      ['2512',28075,18545,3899,109],['2601',15742,11889,1766,3147],['2602',40053,32606,4364,3866],
+      ['2603',35379,27312,4060,4284],['2604',46449,38886,2869,4740],['2605',48385,36242,1705,6381],
+      ['2606',67453,56582,6752,4566],['2607',64977,54565,5321,7027],['2608',33451,22705,7829,3606],
+      ['2609',2879,1761,1740,2760]];
+    const DIAS_P = [26,26,4,26,26,25,25,23,24,22,22,24,28,26,27,11];
+    const maxP = Math.max(...P.flatMap(x => x.slice(1)));
+    const iSel = this.state.per;
+    const nombre = k => {
+      const y = 2000 + Number(k.slice(0, 2)), m = Number(k.slice(2));
+      return { corto: MES[m-1] + ' ' + String(y).slice(2),
+               largo: MES[m-1][0].toUpperCase() + MES[m-1].slice(1) + ' ' + y, mes: m, anio: y };
+    };
+    const periodos = P.map(([k, ...v], i) => {
+      const s = i === iSel;
+      return { lab: nombre(k).corto, pick: () => this.setState({ per: i }),
+        bg: s ? t.card : 'transparent', fw: s ? 700 : 400,
+        marca: s ? t.ink : 'transparent', labC: s ? t.ink : t.mut,
+        bars: v.map((n, j) => ({ c: C[j], h: (n / maxP * 100) + '%' })) };
+    });
+    const nS = nombre(P[iSel][0]);
+    const pm = nS.mes === 1 ? 12 : nS.mes - 1, py = nS.mes === 1 ? nS.anio - 1 : nS.anio;
+    const sel = { titulo: nS.largo, dias: DIAS_P[iSel],
+      rango: '16 ' + MES[pm-1] + ' ' + py + ' — 15 ' + MES[nS.mes-1] + ' ' + nS.anio,
+      corte: '15 ago 2026' };
+    const ufs = ['Todo','UF1','UF2'].map((n, i) => {
+      const s = this.state.uf === n;
+      return { n, pick: () => this.setState({ uf: n }),
+        fg: s ? t.bg : t.mut, bg: s ? t.ink : 'transparent',
+        bd: s ? t.ink : t.rule, fw: s ? 700 : 400, brw: i === 2 ? '1px' : '0' };
+    });
+
+    // ---------- la cadena, con su columna de velocidad ----------
+    const MAQ = [['EXC001','EXCAVADORA','UF1·UF2',228.6],['EXC015','EXCAVADORA','UF1·UF2',102.2],
+                 ['EXC014','EXCAVADORA','UF1',23.8]];
+    const CH = [
+      ['excavacion',33451,3,354.6,100,'0,0 h perdidas',            122.7,106.3,52,1338,25],
+      ['terraplen', 22705,2,212.4, 96,'10,0 h perdidas por lluvia',139.0, 85.0,67, 908,25],
+      ['subbase',    7829,2,245.6, 86,'41,3 h perdidas por lluvia', 41.4, 43.8,53, 461,17],
+      ['base',       3606,1, 43.0,100,'0,0 h perdidas',            109.0, 58.8,84, 361,10]
+    ];
+    const maxH = Math.max(...CH.map(r => r[3]));
+    const maxMH = Math.max(...MAQ.map(m => m[3]));
+    const chain = CH.map(([k, prod, eq, h, ut, perd, mh, meta, vel, diaria, dias], i) => {
+      const abierta = this.state.abierto === k;
+      const ef = Math.round(mh / meta * 100);
+      return {
+        n: NOM[i], nmin: NOM[i].toLowerCase(), c: C[i], eq, perd, dias, open: abierta,
+        pick: () => this.setState({ abierto: abierta ? null : k }),
+        prod: f0(prod), h: f1(h), hw: (h / maxH * 100) + '%',
+        ut: ut + '%', ef: ef + '%', efw: Math.min(100, ef) + '%',
+        efc: mh >= meta ? C[i] : t.ink,
+        mh: f1(mh), meta: f1(meta), vel: vel + '%', diaria: f0(diaria),
+        bd: abierta ? 'transparent' : t.rule, bg: abierta ? t.grid : 'transparent',
+        hint: abierta ? 'Cerrar desglose' : 'Ver ' + (i === 0 ? 3 : eq) + ' equipos',
+        maq: i === 0
+          ? MAQ.map(([cod, tipo, uf, hh]) => ({ cod, tipo, uf, h: f1(hh), perd: '—',
+              w: (hh / maxMH * 100) + '%' }))
+          : []
+      };
+    });
+
+    // ---------- producción diaria: barras rotuladas + curvas de media ----------
+    const CL = oscuro ? { s:'#6b5a34', p:'#3f5f76', l:'#22374a', n:'transparent' }
+                      : { s:'#e7d7ac', p:'#7ba3bd', l:'#22374a', n:'transparent' };
+    const D = [["16",2342,1708,265,650,"s"],["17",2952,2025,0,645,"s"],["18",1501,1177,912,317,"s"],
+      ["21",0,0,497,281,"l"],["22",2539,2464,231,402,"s"],["23",0,0,0,410,"l"],["24",2581,2264,0,318,"s"],
+      ["25",2046,1679,0,0,"p"],["27",718,938,683,0,"l"],["28",1562,1664,1026,0,"s"],["29",1957,2360,1357,0,"s"],
+      ["30",2717,1991,300,0,"s"],["31",2514,723,989,0,"s"],["01",1052,398,0,0,"p"],["03",1585,1629,0,0,"s"],
+      ["04",1630,973,0,0,"l"],["05",1068,908,315,439,"s"],["06",1896,1700,0,800,"l"],["07",2404,946,1804,427,"s"],
+      ["08",1147,74,398,0,"s"],["09",942,28,0,0,"s"],["10",1561,883,446,0,"s"],["11",2800,440,86,0,"s"],
+      ["12",937,476,428,0,"s"],["13",1110,800,390,0,"s"],["14",1608,964,52,0,"p"],["15",318,304,0,0,"p"]];
+    const maxD = 2952, ALTO = 212;
+    const dias = D.map(([dia, ...v]) => {
+      const cl = v.pop();
+      return { dia, clima: CL[cl],
+        bg: cl === 'l' ? (oscuro ? 'rgba(120,170,210,.10)' : 'rgba(34,55,74,.07)') : 'transparent',
+        bars: v.map((n, j) => {
+          const px = n / maxD * ALTO;
+          const txt = f0(n);
+          /* si el número no cabe dentro de la barra sale justo encima */
+          const cabe = txt.length * 5.2 + 7 <= px;
+          return { c: C[j], h: (n / maxD * 100) + '%',
+            v: n >= 0.5 ? txt : '', lc: cabe ? LBL[j] : t.mut, lb: cabe ? '3px' : '100%' };
+        })
+      };
+    });
+    // medias acumuladas, en su propia escala (eje secundario)
+    const MED = {
+      0:[2342,2647,2265,1699,1867,1556,1702,1745,1631,1624,1654,1743,1802,1749,1738,1731,1692,1703,1740,1711,1674,1669,1718,1685,1662,1660,1611],
+      1:[1708,1867,1637,1228,1475,1229,1377,1415,1362,1392,1480,1523,1461,1385,1401,1375,1347,1367,1345,1281,1221,1206,1173,1144,1130,1124,1093],
+      2:[265,132,392,418,381,317,272,238,287,361,452,439,482,447,417,391,387,365,441,439,418,419,405,406,405,391,377],
+      3:[650,647,537,473,459,451,432,378,336,302,275,252,232,216,201,189,204,237,247,234,223,213,204,195,188,180,174]
+    };
+    /* EJE SECUNDARIO LOGARÍTMICO para las medias.
+       Las cuatro medias van de 132 a 2.647 m³ — un factor de 20 —, así que en
+       un eje lineal, sea el de las barras o uno secundario propio, subbase y
+       BTC quedan aplastadas contra el suelo y no se lee su tendencia. En
+       agosto el eje secundario lineal ni siquiera ampliaba: la media mayor
+       (2.647) es el 90% de la barra mayor (2.952).
+       En logarítmico las cuatro reparten la altura y se cruzan. Se conserva
+       el ORDEN y las PROPORCIONES —el doble sigue dibujándose por encima—,
+       pero la distancia vertical ya no es proporcional a la diferencia: por
+       eso el eje va rotulado con sus dos extremos. */
+    const medLo = 132, medHi = 2647, nD = D.length;
+    const logR = Math.log(medHi) - Math.log(medLo);
+    const yLog = v => 100 - (Math.log(Math.max(v, medLo)) - Math.log(medLo)) / logR * 100;
+    const curvas = [0,1,2,3].map(j => ({
+      c: C[j],
+      pts: MED[j].map((v, i) => ((i + .5) / nD * 100).toFixed(2) + ',' +
+             yLog(v).toFixed(2)).join(' ')
+    }));
+
+    // ---------- planificado, avance, aprovechamiento ----------
+    const plan = [
+      ['Excavación',      33451,35000,C[0],LBL[0],1], ['Terraplén', 22705,24500,C[1],LBL[1],1],
+      ['Subbase',          7829, 6600,C[2],LBL[2],1], ['BTC / Base', 3606, 4500,C[3],LBL[3],1],
+      ['Excav. no aprov.',10420, 9500,t.mut,t.bg,   0.6]
+    ].map(([n, v, p, c, lbl, op]) => ({ n, c, lbl, op:String(op), v:f0(v), plan:f0(p),
+      pct: Math.round(v/p*100) + '%', w: Math.min(100, v/p*100) + '%' }));
+
+    const avance = [
+      ['Excavación',513731,620671,C[0]], ['Terraplén',402499,480586,C[1]],
+      ['Subbase',    49211, 86552,C[2]], ['BTC / Base', 40486, 43759,C[3]]
+    ].map(([n, e, p, c]) => ({ n, c, eje:f0(e), plan:f0(p),
+      pct: Math.round(e/p*100) + '%', w: Math.min(100, e/p*100) + '%' }));
+
+    const comp = [
+      { n:'Excavación común', v:'23.032 m³', p:'69%', sw:acento },
+      { n:'Préstamo (comprado)', v:'0 m³', p:'0%',
+        sw:'repeating-linear-gradient(135deg,' + acento + ' 0 4px,' + t.bg + ' 4px 7px)' },
+      { n:'No aprovechable', v:'10.420 m³', p:'31%', sw:t.mut }
+    ];
+
+    // marcas del eje logarítmico, para que la escala se pueda leer
+    const ejeMed = [2647, 1000, 400, 132].map(v => ({
+      v: f0(v), y: yLog(v).toFixed(1), top: yLog(v).toFixed(1) + '%'
+    }));
+
+    return { t, acento, periodos, sel, ufs, chain, dias, curvas, ejeMed, plan, avance, comp,
+      leyenda: NOM.map((n, i) => ({ n, c: C[i] })),
+      climaLeg: [{ n:'Soleado', c:CL.s }, { n:'Lluvias parciales', c:CL.p },
+                 { n:'Lluvias', c:CL.l }, { n:'Sin registro', c:'transparent' }] };
+  }
+}
+</script>
+</body>
+</html>
