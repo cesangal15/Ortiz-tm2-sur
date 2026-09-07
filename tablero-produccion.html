@@ -1380,12 +1380,18 @@ function pedirArchivos(){
  * abrirse en la sala aunque no haya red y aunque sea una copia suelta del
  * archivo — es su razón de ser. Si no hay servidor, no hay a dónde mandar.
  *
- * SOLO LECTURA PARA QUIEN NO ES ADMIN. Los botones de «Actualizar» y «Elegir
- * archivos» releen los dos Excel y sustituyen la foto. Eso es tarea de quien
- * mantiene los datos: si un residente elige el archivo equivocado en mitad de
- * una reunión, ve cifras que no son y no tiene cómo saberlo. Los demás se
- * quedan con la foto que trae el archivo, que es la que se presenta.
+ * QUIÉN PUEDE ACTUALIZAR. Los botones de «Actualizar» y «Elegir archivos»
+ * releen los dos Excel y sustituyen la foto de datos. Los tienen el ADMIN y el
+ * JEFE, que son los dos que manejan esos archivos; los residentes no, porque
+ * quien elige el Excel equivocado antes de una reunión ve cifras que no son y
+ * no tiene cómo notarlo. Ellos se quedan con la foto que trae el archivo, que
+ * es la que se presenta, y con el renglón que dice de cuándo es.
+ *
+ * Actualizar NO le cambia los datos a nadie más: la foto nueva se guarda en el
+ * navegador de quien pulsó el botón. Para que la vea el resto hay que volver a
+ * publicar la página.
  * =========================================================================*/
+const PUEDEN_ACTUALIZAR=['admin','jefe'];
 const PANEL={ admin:'menu.html', jefe:'jefe.html', residente:'residente.html',
               residente_dren:'seleccion-reporte.html',
               residente_odt:'seleccion-reporte.html',
@@ -1407,7 +1413,7 @@ function segunRol(rol){
     v.onclick=()=>{ location.href=PANEL[rol]; };
     v.hidden=false;
   }
-  if(rol==='admin') return;
+  if(PUEDEN_ACTUALIZAR.indexOf(rol)>=0) return;
   /* Se retiran los tres botones de la barra de datos y el panel de enlaces.
      El renglón de estado se queda: dice de cuándo es la foto, que es
      justamente lo que hay que saber antes de proyectarla. */
