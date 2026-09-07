@@ -156,8 +156,8 @@
     <div class="empty-state"><div class="icon">🗓️</div><p>Elige un rango de fechas y consulta el resumen de obra.</p></div>
   </div>
 
-  <!-- D157: el TABLERO DE PRODUCCIÓN ocupa el lugar que tenía Maquinaria.
-       Maquinaria sale de aquí (ver D157 abajo): es una pantalla de captura, no
+  <!-- D158: el TABLERO DE PRODUCCIÓN ocupa el lugar que tenía Maquinaria.
+       Maquinaria sale de aquí (ver D158 abajo): es una pantalla de captura, no
        de consulta, y sigue estando donde le sirve a quien la usa — el panel del
        residente de tierras y el menú del admin. -->
   <a class="tile-link" id="tileTablero" href="tablero-produccion.html">
@@ -215,7 +215,7 @@ window.onload = function(){
   // D131: quien viene de drenajes arranca con el filtro en ODT+ODL — su alcance real. No es un cerrojo
   // (puede cambiarlo y mirar tierras: la pantalla es de solo lectura), es el punto de partida útil.
   if(ROLES_DREN.indexOf(rol)>=0){ const fa=document.getElementById('fArea'); if(fa) fa.value='drenajes'; }
-  /* D157 — el TABLERO se ofrece a los cuatro roles que ya entran aquí (jefe,
+  /* D158 — el TABLERO se ofrece a los cuatro roles que ya entran aquí (jefe,
      admin, residente de tierras y residente de drenajes), que son exactamente
      los que su propio portero deja pasar. Como el guard de arriba ya expulsó a
      cualquier otro, no hace falta repetir la lista.
