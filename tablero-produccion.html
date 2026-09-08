@@ -128,23 +128,20 @@ body{background:var(--bg);color:var(--text);font-size:14px;
 .mt{margin-top:26px;}
 
 /* ---------- zonas de gráfico ---------- */
-.plot,.plot3{display:grid;gap:0 12px;align-items:end;}
-.plot{grid-template-columns:58px 1fr;}
-.plot3{grid-template-columns:58px 1fr 46px;}
+.plot{display:grid;grid-template-columns:58px 1fr;gap:0 12px;align-items:end;}
 /* Sin esto la columna 1fr no encoge por debajo del ancho «natural» de la tira
    de barras, y en el móvil la página se salía por la derecha. */
-.plot>*,.plot3>*{min-width:0;}
-.plot3 .ymax{grid-column:1;} .plot3 .zona{grid-column:2;}
-.plot3 .eje{grid-column:3;}  .plot3 .bajo{grid-column:2;}
-@media(max-width:760px){
-  .plot{grid-template-columns:44px 1fr;}
-  .plot3{grid-template-columns:44px 1fr 34px;}
-}
+.plot>*{min-width:0;}
+.plot>.ymax{grid-column:1;} .plot>.zona,.plot>.bajo{grid-column:2;}
+@media(max-width:760px){ .plot{grid-template-columns:44px 1fr;} }
 .ymax{font-size:10.5px;color:var(--muted);text-align:right;padding-bottom:3px;line-height:1.25;
   font-variant-numeric:tabular-nums;}
 .ymax span{display:block;font-size:9.5px;}
 .bars{display:flex;align-items:flex-end;gap:6px;}
-.blk .plot .bars{height:var(--altoEvo);border-bottom:1px solid var(--border);}
+/* Solo la tira de evolución, que cuelga DIRECTAMENTE de .plot. La diaria vive
+   dentro de .zona y toma de ella su altura: sin el `>` esta regla se la comía
+   y las barras quedaban flotando a media altura del recuadro. */
+.plot>.bars{height:var(--altoEvo);border-bottom:1px solid var(--border);}
 .col{flex:1;min-width:0;height:100%;display:flex;align-items:flex-end;gap:1.5px;cursor:pointer;}
 .col i{flex:1;min-width:0;display:block;position:relative;transition:height .9s cubic-bezier(.2,.85,.25,1);}
 .xlab{display:flex;gap:6px;padding-top:4px;}
@@ -180,11 +177,6 @@ body{background:var(--bg);color:var(--text);font-size:14px;
 .zona .fondo>span{flex:1;min-width:0;}
 .zona .bars{height:100%;position:relative;}
 .zona svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;}
-/* Eje secundario de las medias: rotulado. Una segunda escala sin rótulo es una
-   trampa; rotulada es una lupa declarada. */
-.eje{position:relative;height:var(--altoDia);}
-.eje>b{position:absolute;right:0;font-size:9.5px;font-weight:400;color:var(--muted);
-  font-variant-numeric:tabular-nums;transform:translateY(-50%);white-space:nowrap;}
 .bajo{display:flex;flex-direction:column;gap:6px;padding-top:5px;}
 .climaT{font-size:11px;color:var(--muted);padding-top:6px;}
 .clima{display:flex;gap:6px;}
@@ -401,14 +393,13 @@ body{background:var(--bg);color:var(--text);font-size:14px;
       <div class="rule"></div>
       <div class="secN" id="capCurva"></div>
     </div>
-    <div class="plot3">
+    <div class="plot">
       <div class="ymax" id="maxDia"></div>
       <div class="zona">
         <div class="fondo" id="diaBg"></div>
         <div class="bars" id="dia"></div>
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" id="curvas"></svg>
       </div>
-      <div class="eje" id="ejeMed"></div>
       <div class="bajo">
         <div class="xlab" id="diaX"></div>
         <div class="climaT">Clima del día</div>
@@ -1020,7 +1011,7 @@ function cadena(sel_p){
     vi.style.width=Math.min(100,(vel||0)*100)+'%';vb.appendChild(vi);
     vc.append(vv,vb,el('div','s',vel==null?'sin partes de equipos'
       :f0(r.prod/r.dias)+' de '+f0(den/r.dias)+' m³ al día'+
-       (dmaq>0?' · '+dmaq+' días-máquina':' · equipos enteros, foto sin días por máquina')));
+       (dmaq>0?' · '+dmaq+' días-máquina':' · equipos enteros (foto sin días)')));
 
     row.append(ac,l1,l2,l3,vc);
     const abrir=()=>{abierto=abierta?null:a.k;pinta();};
@@ -1142,85 +1133,39 @@ function diaria(p){
     x.appendChild(el('span',null,d.f.slice(8)));
     const c=el('span',(CLIMA[d.t]||CLIMA[''])[1]);c.title=col.title;cl.appendChild(c);
   });
-  /* Curvas punteadas: media acumulada día a día, en SU PROPIA ESCALA.
+  /* Curvas punteadas: media acumulada día a día, EN LA MISMA ESCALA DE LAS
+     BARRAS. Sin eje secundario, ni lineal ni logarítmico.
 
-     Por qué un eje aparte: las medias viven un orden de magnitud por debajo del
-     pico de las barras —la media de subbase ronda los 460 m³ frente a picos de
-     6.000—, y sobre el eje de las barras quedaban pegadas al suelo, ilegibles.
+     Por qué se quitó el eje propio —y antes de él, el logarítmico—: los dos
+     resolvían un problema que no existía. Servían para comparar la curva de
+     una actividad con la de OTRA, y esa comparación no dice nada: excavación y
+     subbase mueven volúmenes distintos, con metas distintas y flotas distintas.
+     Que la media de excavación sea veinte veces la de subbase no es un dato de
+     desempeño, es la escala de cada partida.
 
-     Por qué LOGARÍTMICO: las cuatro medias se separan entre sí hasta un factor
-     de 20 (en agosto van de 132 a 2.647 m³). Con eso, ningún eje lineal las
-     reparte: subbase y BTC se aplastan contra el suelo aunque el eje sea suyo.
-     En logarítmico las cuatro ocupan la altura y se cruzan, que es como se leen
-     en la hoja del jefe. Se conservan el ORDEN y las PROPORCIONES —el doble se
-     sigue dibujando por encima—, pero la distancia vertical ya no es
-     proporcional a la diferencia. Por eso el eje va ROTULADO con sus marcas a
-     la derecha y declarado en la leyenda: una segunda escala sin rótulo es una
-     trampa; rotulada es una lupa declarada.
+     La comparación que SÍ importa es la de cada curva con SUS PROPIAS BARRAS:
+     ¿este día produjo por encima o por debajo de lo que va promediando el mes?
+     Esa lectura solo es exacta si comparten escala, y entonces es exacta sin
+     explicar nada. En agosto, cada curva cae en medio de su propia franja de
+     barras —subbase entre el 4% y el 16% de altura, con sus barras entre el 0%
+     y el 61%—, que es justo donde tiene que estar.
 
-     Y sólo se usa cuando hace falta: si las medias no se separan lo suficiente,
-     el eje se queda lineal y no se le pide a la sala que entienda una escala
-     que no necesita.
-
-     EL OTRO PRECIO, común a las dos: la curva no es comparable con las barras.
-     Que suba por encima de una barra NO significa que la media supere ese día;
-     significa que va alta dentro de su escala. Es admisible aquí porque ambas
-     son la misma magnitud —m³ por día— y la curva sale de esos mismos datos;
-     sería inadmisible entre medidas distintas. */
+     El coste es real y se acepta: las curvas de subbase y BTC van por abajo.
+     Es que van por abajo. */
   const SVGNS='http://www.w3.org/2000/svg';
   const svg=document.getElementById('curvas');svg.innerHTML='';
-  const ejeD=document.getElementById('ejeMed');ejeD.innerHTML='';
   const n=p.d.length;
   const medias=vis.map((a,j)=>{
     let acc=0;
     return p.d.map((d,i)=>{ acc+=vals[i][j]; return acc/(i+1); });
   });
-  const pos=medias.flat().filter(v=>v>0);
-  const medHi=Math.max(1,...pos);
-  /* EL SUELO SALE DE LAS MEDIAS FINALES, no del mínimo de todos los puntos.
-     El primer día de una partida que apenas arranca deja una media de 4 m³ que
-     no significa nada —es el arranque, no el nivel—, y si el eje se apoya ahí,
-     las cuatro curvas se van al techo y el rótulo anuncia una escala falsa.
-     La media del ÚLTIMO día sí es el nivel del período, y ésa manda. Los puntos
-     que caigan por debajo se apoyan en el suelo del eje, que está rotulado.
-     Además se limita el reparto a un factor de 60: más allá, el logaritmo deja
-     de ser una lupa y pasa a ser un truco. */
-  const fin=medias.map(m=>m[m.length-1]).filter(v=>v>0);
-  const suelo=fin.length?Math.min(...fin):medHi;
-  const minTodos=pos.length?Math.min(...pos):medHi;
-  /* Si el mínimo real cabe dentro del factor 60, el suelo baja hasta él y no se
-     aplasta ninguna curva; si no cabe —un arranque de 4 m³—, se queda arriba y
-     ese punto se apoya en el suelo rotulado. */
-  const medLo=Math.min(suelo, minTodos>=medHi/60 ? minTodos : suelo);
-  const LOG=medHi/medLo>=4;
-  const lnR=Math.log(medHi)-Math.log(medLo);
-  const yMed=LOG
-    ? v=>100-(Math.log(Math.max(v,medLo))-Math.log(medLo))/lnR*100
-    : v=>100-Math.min(100,v/medHi*100);
-  document.getElementById('capCurva').innerHTML=
-    'Curva punteada = media acumulada día a día · '+
-    '<b style="color:var(--accent-txt);font-weight:700">eje propio, '+
-    (LOG?('logarítmico '+f0(medLo)+' → '+f0(medHi)):('máx '+f0(medHi)))+' m³</b>';
-  /* Marcas del eje con su línea de guía. Sin ellas la segunda escala no se
-     puede leer, y un gráfico que no deja leer su escala miente por omisión. */
-  const marcas=LOG
-    ? [0,1,2,3].map(i=>Math.exp(Math.log(medLo)+lnR*i/3))
-    : [medHi,medHi*2/3,medHi/3].filter(v=>v>0);
-  marcas.forEach(v=>{
-    const y=yMed(v);
-    const ln=document.createElementNS(SVGNS,'line');
-    ln.setAttribute('x1','0');ln.setAttribute('x2','100');
-    ln.setAttribute('y1',y.toFixed(2));ln.setAttribute('y2',y.toFixed(2));
-    ln.setAttribute('stroke','var(--rule)');ln.setAttribute('stroke-width','1');
-    ln.setAttribute('stroke-dasharray','2 6');
-    ln.setAttribute('vector-effect','non-scaling-stroke');ln.setAttribute('opacity','.75');
-    svg.appendChild(ln);
-    const b=el('b',null,f0(v));b.style.top=y.toFixed(2)+'%';ejeD.appendChild(b);
-  });
+  document.getElementById('capCurva').textContent=
+    'Curva punteada = media acumulada día a día, en la misma escala de las barras';
   vis.forEach((a,j)=>{
     const pts=medias[j].map((v,i)=>{
       const px=n>1?(i+.5)/n*100:50;
-      return px.toFixed(2)+','+yMed(v).toFixed(2);
+      const py=100-Math.min(100, v/max*100);
+      return px.toFixed(2)+','+py.toFixed(2);
     }).join(' ');
     const pl=document.createElementNS(SVGNS,'polyline');
     pl.setAttribute('points',pts);pl.setAttribute('fill','none');
