@@ -375,13 +375,13 @@ body{background:var(--bg);color:var(--text);font-size:14px;
   <div class="blk">
     <div class="secH">
       <div class="syne secT">Por qué vamos así</div>
-      <div style="font-size:13px;color:var(--muted)">horas · utilización · eficiencia · y cuánto del plan se cumplió</div>
+      <div style="font-size:13px;color:var(--muted)">horas · utilización · eficiencia · y a qué ritmo avanzamos</div>
       <div class="rule"></div>
       <div class="secA" style="text-align:right;max-width:470px" id="chainNote"></div>
     </div>
     <div class="chainH">
       <div>Actividad</div><div>Horas operadas</div><div>Utilización</div>
-      <div>Eficiencia</div><div>Cumplimiento del plan</div>
+      <div>Eficiencia</div><div>Velocidad</div>
     </div>
     <div id="chain"></div>
   </div>
@@ -888,6 +888,44 @@ function evolucion(){
   });
 }
 
+/* VELOCIDAD = a qué ritmo va la obra contra el ritmo que fijó el plan.
+ *
+ *     avance real     = ejecutado acumulado desde el acta ÷ contrato
+ *     avance previsto = plan acumulado hasta esa fecha    ÷ contrato
+ *     VELOCIDAD       = avance real ÷ avance previsto
+ *
+ * 100% = se va al ritmo pactado. 83% = se lleva el 83% del avance que a estas
+ * alturas debería haberse llevado. Es una medida de ATRASO, que es lo que se
+ * pregunta en la reunión, y no depende de lo ambicioso que fuera el mes: un mes
+ * flojo no la sube y un mes exigente no la hunde.
+ *
+ * Por qué NO es el cumplimiento del mes: cumplir el 100% de un plan mensual
+ * modesto no recupera nada del atraso acumulado. Son dos preguntas distintas y
+ * las dos están en la página — el mes, en «planificado vs ejecutado»; el ritmo,
+ * aquí.
+ *
+ * El previsto se topa en 100%: la suma de los planes mensuales pasa del contrato
+ * (105–110% según la partida), y sin tope el ritmo previsto seguiría subiendo
+ * después de que el contrato ya estuviera cumplido.
+ *
+ * Se calcula sobre `TM2.per` en el PINTADO, no en el motor, para que funcione
+ * igual con cualquier foto, vieja o nueva, sin volver a leer los Excel.
+ */
+function ritmo(pk, act){
+  const con=((TM2.avance||[]).find(a=>a.k===act)||{}).plan||0;
+  if(!con) return null;
+  let eje=0, plan=0, visto=false;
+  for(const x of TM2.per){
+    if(x.p < TM2.desde) continue;
+    const r=x.a[act]||{};
+    eje += r.prod||0; plan += r.plan_per||0;
+    if(x.p===pk){ visto=true; break; }
+  }
+  if(!visto) return null;
+  const real=eje/con, esp=Math.min(1, plan/con);
+  return { real, esp, vel: esp>0 ? real/esp : null };
+}
+
 /* ------------------------------------------- cadena «Por qué vamos así» */
 function cadena(sel_p){
   const c=document.getElementById('chain');c.innerHTML='';
@@ -1038,25 +1076,23 @@ function cadena(sel_p){
        de la maquinaria del mes. */
     const plan = r.plan_per || 0;
     const cumpl = plan>0 ? r.prod/plan : null;
-    const exig  = (plan>0 && den>0) ? plan/den : null;
+    const rt = ritmo(p.p, a.k);
     const vc=el('div','velC');
     vc.appendChild(el('div','eq','→'));
     const vv=el('div','v');
-    const principal = cumpl!=null ? cumpl : vel;
+    const principal = (rt && rt.vel!=null) ? rt.vel : null;
     const big=el('div','syne big', principal==null?'—':pct(principal));
-    vv.append(big,el('div','u', cumpl!=null?'del plan':'de la capacidad'));
+    vv.append(big,el('div','u','del ritmo previsto'));
     const vb=el('div','velBar');const vi=el('i');
     vi.style.width=Math.min(100,(principal||0)*100)+'%';vb.appendChild(vi);
     vc.append(vv,vb);
-    if(cumpl!=null){
-      vc.append(el('div','s', f0(r.prod)+' de '+f0(plan)+' m³ del plan'));
-      if(exig!=null && vel!=null)
-        vc.append(el('div','s','el plan pedía el '+pct(exig)+' de la maquinaria · se usó el '+pct(vel)));
-    } else if(vel!=null){
-      vc.append(el('div','s','este período no trae plan en CALCULOS'));
-      vc.append(el('div','s', f0(r.prod/r.dias)+' de '+f0(den/r.dias)+' m³ al día con la máquina que hubo'));
+    if(rt && rt.vel!=null){
+      vc.append(el('div','s','avance '+pct(rt.real)+' del contrato · a esta fecha tocaba '+pct(rt.esp)));
+      vc.append(el('div','s', cumpl!=null
+        ? 'este período cumplió el '+pct(cumpl)+' de su plan'
+        : 'este período no trae plan en CALCULOS'));
     } else {
-      vc.append(el('div','s','sin partes de equipos'));
+      vc.append(el('div','s','sin plan acumulado para medir el ritmo'));
     }
 
     row.append(ac,l1,l2,l3,vc);
