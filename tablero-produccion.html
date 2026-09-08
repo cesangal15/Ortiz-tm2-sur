@@ -225,9 +225,16 @@ body{background:var(--bg);color:var(--text);font-size:14px;
 .velC .eq{position:absolute;left:7px;top:1px;font-size:15px;color:var(--accent-txt);}
 .velC .v{display:flex;align-items:baseline;gap:6px;}
 .velC .big{font-size:34px;line-height:1;}
-.velBar{height:10px;background:var(--grid);margin-top:7px;overflow:hidden;}
+.velBar{position:relative;height:10px;background:var(--grid);margin-top:7px;}
 .velBar>i{display:block;height:100%;background:var(--accent);
   transition:width .9s cubic-bezier(.2,.85,.25,1);}
+/* Marca del 100%. Las barras llegaban hasta el borde y ahí se cortaban, así que
+   cumplir justo y superar el objetivo se dibujaban idénticos — y 11 de los 52
+   meses con plan lo superan. Ahora la barra tiene holgura hasta el 150% y esta
+   marca dice dónde está el objetivo: quedarse corto y pasarse se distinguen de
+   un vistazo, sin leer la cifra. */
+.velBar>u,.ppBar>u{position:absolute;top:-2px;bottom:-2px;width:2px;
+  background:var(--ink);opacity:.5;pointer-events:none;}
 .velC .s{font-size:10.5px;color:var(--muted);margin-top:5px;font-variant-numeric:tabular-nums;}
 .drop{border-bottom:1px solid var(--border);padding:6px 0 20px 36px;
   display:flex;flex-direction:column;gap:8px;}
@@ -272,7 +279,7 @@ body{background:var(--bg);color:var(--text);font-size:14px;
   margin-bottom:9px;}
 .pp .nm{font-size:13px;}
 .pp .plan{font-size:12px;color:var(--mut);text-align:right;font-variant-numeric:tabular-nums;}
-.ppBar{position:relative;height:24px;background:var(--grid);overflow:hidden;}
+.ppBar{position:relative;height:24px;background:var(--grid);}
 .ppBar>i{display:block;height:100%;transition:width 1s cubic-bezier(.2,.85,.25,1);}
 .ppBar>b{position:absolute;top:0;left:8px;line-height:24px;font-size:12px;
   font-weight:400;color:var(--ink);font-variant-numeric:tabular-nums;
@@ -789,6 +796,16 @@ const CLIMA={'SOLEADO':['Soleado','c-sol'],'LLUVIAS PARCIALES':['Lluvias parcial
 const f0=n=>Math.round(n||0).toLocaleString('es-CO');
 const f1=n=>(n||0).toLocaleString('es-CO',{minimumFractionDigits:1,maximumFractionDigits:1});
 const pct=n=>Math.round((n||0)*100)+'%';
+/* Las barras de objetivo llegan al 150% y llevan la marca del 100% al 66,7%.
+   El 150% sale de los datos: el mes más alto del libro cumplió el 154% del plan,
+   así que con este tope casi todo cabe dentro y lo que se pase satura la barra
+   con su cifra al lado diciendo la verdad. */
+const TOPE_OBJ=1.5;
+const anchoObj=v=>Math.min(100, (v||0)/TOPE_OBJ*100)+'%';
+function marca100(barra, texto){
+  const u=el('u'); u.style.left=(100/TOPE_OBJ)+'%';
+  u.title=texto||'objetivo: 100%'; barra.appendChild(u);
+}
 
 /* Etiqueta el segmento con SU valor, en vertical dentro de la barra. Si la
    barra no da de alto para el número —a 8 px, cada dígito pide ~5,2 px más
@@ -1084,7 +1101,8 @@ function cadena(sel_p){
     const big=el('div','syne big', principal==null?'—':pct(principal));
     vv.append(big,el('div','u','del ritmo previsto'));
     const vb=el('div','velBar');const vi=el('i');
-    vi.style.width=Math.min(100,(principal||0)*100)+'%';vb.appendChild(vi);
+    vi.style.width=anchoObj(principal);vb.appendChild(vi);
+    marca100(vb,'ritmo previsto: 100%');
     vc.append(vv,vb);
     if(rt && rt.vel!=null){
       vc.append(el('div','s','avance '+pct(rt.real)+' del contrato · a esta fecha tocaba '+pct(rt.esp)));
@@ -1301,17 +1319,19 @@ function planPeriodo(p){
     const w=el('div','pp');
     w.append(el('div','nm',nom));
     const bar=el('div','ppBar');
-    const i=el('i');i.style.width=Math.min(100,rel*100)+'%';i.style.background=col;
+    const i=el('i');i.style.width=plan>0?anchoObj(rel):'0';i.style.background=col;
     i.style.opacity=k==='noaprov'?'.55':'1';
     const b=el('b',null,plan>0?f0(r.prod)+' · '+pct(rel):f0(r.prod)+' m³');
     bar.append(i,b);
+    if(plan>0) marca100(bar,'plan del período: 100%');
     w.append(bar,el('div','plan',plan>0?f0(plan):'—'));
     c.appendChild(w);
   });
   const nt=el('div','nota');
   nt.innerHTML=hay
     ? 'Ejecutado del período contra lo planificado para él, en m³ compactos. '+
-      'La cifra de la derecha es el plan. Sale de la hoja <b>CALCULOS</b>.'
+      'La cifra de la derecha es el plan; la marca vertical, el <b>100%</b> — la barra '+
+      'sigue hasta el 150% para que pasarse del plan se vea. Sale de la hoja <b>CALCULOS</b>.'
     : 'Este período no trae planificado en la hoja <b>CALCULOS</b>, así que sólo se ve lo ejecutado.';
   c.appendChild(nt);
 }
