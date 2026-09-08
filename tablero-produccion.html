@@ -128,23 +128,20 @@ body{background:var(--bg);color:var(--text);font-size:14px;
 .mt{margin-top:26px;}
 
 /* ---------- zonas de gráfico ---------- */
-.plot,.plot3{display:grid;gap:0 12px;align-items:end;}
-.plot{grid-template-columns:58px 1fr;}
-.plot3{grid-template-columns:58px 1fr 46px;}
+.plot{display:grid;grid-template-columns:58px 1fr;gap:0 12px;align-items:end;}
 /* Sin esto la columna 1fr no encoge por debajo del ancho «natural» de la tira
    de barras, y en el móvil la página se salía por la derecha. */
-.plot>*,.plot3>*{min-width:0;}
-.plot3 .ymax{grid-column:1;} .plot3 .zona{grid-column:2;}
-.plot3 .eje{grid-column:3;}  .plot3 .bajo{grid-column:2;}
-@media(max-width:760px){
-  .plot{grid-template-columns:44px 1fr;}
-  .plot3{grid-template-columns:44px 1fr 34px;}
-}
+.plot>*{min-width:0;}
+.plot>.ymax{grid-column:1;} .plot>.zona,.plot>.bajo{grid-column:2;}
+@media(max-width:760px){ .plot{grid-template-columns:44px 1fr;} }
 .ymax{font-size:10.5px;color:var(--muted);text-align:right;padding-bottom:3px;line-height:1.25;
   font-variant-numeric:tabular-nums;}
 .ymax span{display:block;font-size:9.5px;}
 .bars{display:flex;align-items:flex-end;gap:6px;}
-.blk .plot .bars{height:var(--altoEvo);border-bottom:1px solid var(--border);}
+/* Solo la tira de evolución, que cuelga DIRECTAMENTE de .plot. La diaria vive
+   dentro de .zona y toma de ella su altura: sin el `>` esta regla se la comía
+   y las barras quedaban flotando a media altura del recuadro. */
+.plot>.bars{height:var(--altoEvo);border-bottom:1px solid var(--border);}
 .col{flex:1;min-width:0;height:100%;display:flex;align-items:flex-end;gap:1.5px;cursor:pointer;}
 .col i{flex:1;min-width:0;display:block;position:relative;transition:height .9s cubic-bezier(.2,.85,.25,1);}
 .xlab{display:flex;gap:6px;padding-top:4px;}
@@ -180,11 +177,6 @@ body{background:var(--bg);color:var(--text);font-size:14px;
 .zona .fondo>span{flex:1;min-width:0;}
 .zona .bars{height:100%;position:relative;}
 .zona svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;}
-/* Eje secundario de las medias: rotulado. Una segunda escala sin rótulo es una
-   trampa; rotulada es una lupa declarada. */
-.eje{position:relative;height:var(--altoDia);}
-.eje>b{position:absolute;right:0;font-size:9.5px;font-weight:400;color:var(--muted);
-  font-variant-numeric:tabular-nums;transform:translateY(-50%);white-space:nowrap;}
 .bajo{display:flex;flex-direction:column;gap:6px;padding-top:5px;}
 .climaT{font-size:11px;color:var(--muted);padding-top:6px;}
 .clima{display:flex;gap:6px;}
@@ -383,13 +375,13 @@ body{background:var(--bg);color:var(--text);font-size:14px;
   <div class="blk">
     <div class="secH">
       <div class="syne secT">Por qué vamos así</div>
-      <div style="font-size:13px;color:var(--muted)">horas × utilización × eficiencia = m³ por día</div>
+      <div style="font-size:13px;color:var(--muted)">horas · utilización · eficiencia · y cuánto del plan se cumplió</div>
       <div class="rule"></div>
       <div class="secA" style="text-align:right;max-width:470px" id="chainNote"></div>
     </div>
     <div class="chainH">
       <div>Actividad</div><div>Horas operadas</div><div>Utilización</div>
-      <div>Eficiencia</div><div>Velocidad</div>
+      <div>Eficiencia</div><div>Cumplimiento del plan</div>
     </div>
     <div id="chain"></div>
   </div>
@@ -401,14 +393,13 @@ body{background:var(--bg);color:var(--text);font-size:14px;
       <div class="rule"></div>
       <div class="secN" id="capCurva"></div>
     </div>
-    <div class="plot3">
+    <div class="plot">
       <div class="ymax" id="maxDia"></div>
       <div class="zona">
         <div class="fondo" id="diaBg"></div>
         <div class="bars" id="dia"></div>
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" id="curvas"></svg>
       </div>
-      <div class="eje" id="ejeMed"></div>
       <div class="bajo">
         <div class="xlab" id="diaX"></div>
         <div class="climaT">Clima del día</div>
@@ -1000,10 +991,22 @@ function cadena(sel_p){
       subU='sin standby en esta foto — pulsa «Actualizar»';
     } else {
       const falta=+(m.sb_aj-m.horas).toFixed(1);
-      subU = falta<=0
-        ? f1(m.horas)+' de '+f1(m.sb_aj)+' h de standby · '+f1(m.ganancia||-falta)+' h de más'
-        : f1(m.horas)+' de '+f1(m.sb_aj)+' h de standby · faltaron '+f1(falta)+' h'+
-          (m.lluvia>0?', '+f1(m.lluvia)+' por lluvia':'');
+      if(falta<=0){
+        subU = f1(m.horas)+' de '+f1(m.sb_aj)+' h de standby · '+f1(m.ganancia||-falta)+' h de más';
+      } else {
+        /* El hueco NO es la columna «perdidas», y decirlo así confundía: se
+           buscaba el total en la tabla y no aparecía. El hueco son horas que la
+           máquina estuvo disponible y no trabajó; la lluvia explica una parte y
+           el RESTO no tiene motivo anotado en el parte, que es un dato en sí
+           mismo — le señala al digitador lo que falta por llenar. */
+        const llu=Math.min(m.lluvia||0, falta);
+        const mudo=+(falta-llu).toFixed(1);
+        const trozos=[];
+        if(llu>0)  trozos.push(f1(llu)+' por lluvia');
+        if(mudo>0) trozos.push(f1(mudo)+' sin motivo anotado');
+        subU = f1(m.horas)+' de '+f1(m.sb_aj)+' h de standby · faltaron '+f1(falta)+' h'+
+               (trozos.length?': '+trozos.join(' y '):'');
+      }
     }
     const l2=mk('×',hayU?pct(ut):'—','',subU,ut||0);
     const l3=mk('×',m.dudoso?'—':pct(ef),'',
@@ -1011,16 +1014,50 @@ function cadena(sel_p){
              :f1(m.mh)+' de '+f1(m.meta_hora)+' m³ hora-máquina',
       m.dudoso?0:Math.min(1,ef));
     // --- velocidad
+    /* CUMPLIMIENTO DEL PLAN, no «velocidad contra la meta de la máquina».
+    
+       Lo que había medía la producción contra lo que las máquinas PODRÍAN hacer
+       a su rendimiento nominal. Eso castiga por algo que no se decide en obra:
+       si el plan del mes solo pide el 23% de la capacidad de la maquinaria
+       —porque hay poco terreno, o hay frentes por liberar—, ni haciendo el plan
+       entero se pasa del 23%. En marzo-2026 el BTC cumplió el 103% del plan y la
+       pantalla decía 24%. Ese número no informa: desanima.
+    
+       La aritmética explica por qué, y se cumple en las 46 filas con plan:
+    
+           velocidad vieja = (plan ÷ capacidad) × (ejecutado ÷ plan)
+                           =    exigencia       ×    cumplimiento
+    
+       O sea, la cifra mezclaba lo ambicioso que fue el PLAN con lo bien que se
+       ejecutó. Aquí se separan y manda el cumplimiento, que es lo que el equipo
+       controla y lo que cuadra con «planificado vs ejecutado» de más abajo.
+    
+       LA MEDICIÓN DE MAQUINARIA NO SE PIERDE —el jefe pidió conservarla— y de
+       hecho se lee mejor partida en dos: cuánto pidió el plan de la máquina y
+       cuánto se usó de verdad. La distancia entre esas dos cifras ES la historia
+       de la maquinaria del mes. */
+    const plan = r.plan_per || 0;
+    const cumpl = plan>0 ? r.prod/plan : null;
+    const exig  = (plan>0 && den>0) ? plan/den : null;
     const vc=el('div','velC');
-    vc.appendChild(el('div','eq','='));
+    vc.appendChild(el('div','eq','→'));
     const vv=el('div','v');
-    const big=el('div','syne big',vel==null?'—':pct(vel));
-    vv.append(big,el('div','u','de la meta'));
+    const principal = cumpl!=null ? cumpl : vel;
+    const big=el('div','syne big', principal==null?'—':pct(principal));
+    vv.append(big,el('div','u', cumpl!=null?'del plan':'de la capacidad'));
     const vb=el('div','velBar');const vi=el('i');
-    vi.style.width=Math.min(100,(vel||0)*100)+'%';vb.appendChild(vi);
-    vc.append(vv,vb,el('div','s',vel==null?'sin partes de equipos'
-      :f0(r.prod/r.dias)+' de '+f0(den/r.dias)+' m³ al día'+
-       (dmaq>0?' · '+dmaq+' días-máquina':' · equipos enteros, foto sin días por máquina')));
+    vi.style.width=Math.min(100,(principal||0)*100)+'%';vb.appendChild(vi);
+    vc.append(vv,vb);
+    if(cumpl!=null){
+      vc.append(el('div','s', f0(r.prod)+' de '+f0(plan)+' m³ del plan'));
+      if(exig!=null && vel!=null)
+        vc.append(el('div','s','el plan pedía el '+pct(exig)+' de la maquinaria · se usó el '+pct(vel)));
+    } else if(vel!=null){
+      vc.append(el('div','s','este período no trae plan en CALCULOS'));
+      vc.append(el('div','s', f0(r.prod/r.dias)+' de '+f0(den/r.dias)+' m³ al día con la máquina que hubo'));
+    } else {
+      vc.append(el('div','s','sin partes de equipos'));
+    }
 
     row.append(ac,l1,l2,l3,vc);
     const abrir=()=>{abierto=abierta?null:a.k;pinta();};
@@ -1031,7 +1068,7 @@ function cadena(sel_p){
     if(abierta){
       const d=el('div','drop');
       const h=el('div','mtH');
-      ['Equipo','Tipo','UF','Horas','Standby','Perdidas','Utilización','Peso en las horas']
+      ['Equipo','Tipo','UF','Horas','Standby','Sin usar','Utilización','Peso en las horas']
         .forEach((x,i)=>{const s=el('div',null,x);if(i>=3&&i<=6)s.style.textAlign='right';h.appendChild(s);});
       d.appendChild(h);
       const tot=Math.max(1,...m.maq.map(x=>x.h));
@@ -1058,27 +1095,34 @@ function cadena(sel_p){
         if(vacia){ cUt.style.fontSize='10.5px'; cUt.style.color='var(--accent-txt)';
                    cUt.title='Parte sin horas operadas ni perdidas: no suma standby '+
                      'ni cuenta como equipo. Casi siempre es un parte repetido por error.'; }
+        /* «Sin usar» = standby − horas operadas, que es lo que faltó por usar de
+           esa máquina. Antes esta celda decía «perdidas» y traía las horas de
+           lluvia/mantenimiento del parte: no cuadraba con el hueco de arriba y
+           obligaba a buscar un total que no existía en ninguna columna. El
+           desglose de por qué faltaron va en el title. */
+        const sinUsar = (!vacia && sbq!=null) ? Math.max(0, +(sbq-q.h).toFixed(1)) : null;
+        const cSu=el('div','num', sinUsar==null?'—':(sinUsar>0?f1(sinUsar):'—'));
+        if(sinUsar>0){
+          const llu=Math.min(q.lluvia||0, sinUsar), mudo=+(sinUsar-llu).toFixed(1), tr=[];
+          if(llu>0)  tr.push(f1(llu)+' h por lluvia');
+          if(mudo>0) tr.push(f1(mudo)+' h sin motivo anotado en el parte');
+          cSu.title = tr.length ? tr.join(' · ') : 'sin motivo anotado en el parte';
+        }
         t.append(el('div','syne cod',q.cod),el('div','dim',q.tipo),el('div','dim',q.uf),
-          el('div','num',vacia?'—':f1(q.h)),cSb,el('div','num',q.perd>0?f1(q.perd):'—'),cUt);
+          el('div','num',vacia?'—':f1(q.h)),cSb,cSu,cUt);
         const bw=el('div','mtBar');const bi=el('i');
         bi.style.width=(q.h/tot*100)+'%';bi.style.background=a.c;bw.appendChild(bi);
         t.appendChild(bw);
         d.appendChild(t);
       });
       const nt=el('div','nota');
-      let txt='<b>Standby</b> = días con parte de cada máquina × sus horas programadas al día '+
-        '(<b>6,4 h</b> si es propia de Ortiz, <b>5 h</b> si es alquilada), menos su mantenimiento '+
-        'y sus paradas —esas horas se le repercuten al dueño o al alquilador, no a la obra—. '+
-        'La <b>lluvia no se descuenta</b>: no se le cobra a nadie y es tiempo que la obra no '+
-        'aprovechó, así que se nombra pero se queda dentro. '+
-        'Una máquina con el parte en cero (cero operadas y cero perdidas) no suma standby ni '+
-        'cuenta como equipo: casi siempre es un parte repetido por error.<br><br>'+
-        '<b>La velocidad se proyecta sobre DÍAS-MÁQUINA</b>, no sobre máquinas enteras × días '+
-        'del período. Una máquina que estuvo 1 de 17 días aporta 1 día-máquina, no 17: exigirle '+
-        'la producción de los 17 partía la velocidad por la mitad por una máquina con dos horas. '+
-        'El «equipo medio» es ese total dividido entre los días de la actividad — con la flota '+
-        'estable da lo mismo que contar máquinas; cuando una entra o sale a mitad de mes, no.<br><br>'+
-        'Peso en las horas de '+a.n.toLowerCase()+' sobre <b>'+f1(m.horas)+' h</b> del período. '+
+      /* Las definiciones de standby y de días-máquina vivían aquí en dos
+         parrafadas. Fuera: esto se proyecta ante directivos y ahí no aportan —
+         quedan en los comentarios del código y en el registro de decisiones,
+         que es donde se consultan. Se conserva sólo lo que cambia mes a mes y
+         responde a la pregunta que sí se hace en la sala: por qué esta máquina
+         y no aquella. */
+      let txt='Peso en las horas de '+a.n.toLowerCase()+' sobre <b>'+f1(m.horas)+' h</b> del período. '+
         'Sólo cuentan las máquinas coherentes con la actividad, por centro de coste: excavación '+
         'excavadoras (02.05/02.06), terraplén bulldozer y motoniveladora (02.07), subbase '+
         'motoniveladora (03.01), BTC motoniveladora y finisher (03.03). Vibros, minicargadores, '+
@@ -1142,85 +1186,39 @@ function diaria(p){
     x.appendChild(el('span',null,d.f.slice(8)));
     const c=el('span',(CLIMA[d.t]||CLIMA[''])[1]);c.title=col.title;cl.appendChild(c);
   });
-  /* Curvas punteadas: media acumulada día a día, en SU PROPIA ESCALA.
+  /* Curvas punteadas: media acumulada día a día, EN LA MISMA ESCALA DE LAS
+     BARRAS. Sin eje secundario, ni lineal ni logarítmico.
 
-     Por qué un eje aparte: las medias viven un orden de magnitud por debajo del
-     pico de las barras —la media de subbase ronda los 460 m³ frente a picos de
-     6.000—, y sobre el eje de las barras quedaban pegadas al suelo, ilegibles.
+     Por qué se quitó el eje propio —y antes de él, el logarítmico—: los dos
+     resolvían un problema que no existía. Servían para comparar la curva de
+     una actividad con la de OTRA, y esa comparación no dice nada: excavación y
+     subbase mueven volúmenes distintos, con metas distintas y flotas distintas.
+     Que la media de excavación sea veinte veces la de subbase no es un dato de
+     desempeño, es la escala de cada partida.
 
-     Por qué LOGARÍTMICO: las cuatro medias se separan entre sí hasta un factor
-     de 20 (en agosto van de 132 a 2.647 m³). Con eso, ningún eje lineal las
-     reparte: subbase y BTC se aplastan contra el suelo aunque el eje sea suyo.
-     En logarítmico las cuatro ocupan la altura y se cruzan, que es como se leen
-     en la hoja del jefe. Se conservan el ORDEN y las PROPORCIONES —el doble se
-     sigue dibujando por encima—, pero la distancia vertical ya no es
-     proporcional a la diferencia. Por eso el eje va ROTULADO con sus marcas a
-     la derecha y declarado en la leyenda: una segunda escala sin rótulo es una
-     trampa; rotulada es una lupa declarada.
+     La comparación que SÍ importa es la de cada curva con SUS PROPIAS BARRAS:
+     ¿este día produjo por encima o por debajo de lo que va promediando el mes?
+     Esa lectura solo es exacta si comparten escala, y entonces es exacta sin
+     explicar nada. En agosto, cada curva cae en medio de su propia franja de
+     barras —subbase entre el 4% y el 16% de altura, con sus barras entre el 0%
+     y el 61%—, que es justo donde tiene que estar.
 
-     Y sólo se usa cuando hace falta: si las medias no se separan lo suficiente,
-     el eje se queda lineal y no se le pide a la sala que entienda una escala
-     que no necesita.
-
-     EL OTRO PRECIO, común a las dos: la curva no es comparable con las barras.
-     Que suba por encima de una barra NO significa que la media supere ese día;
-     significa que va alta dentro de su escala. Es admisible aquí porque ambas
-     son la misma magnitud —m³ por día— y la curva sale de esos mismos datos;
-     sería inadmisible entre medidas distintas. */
+     El coste es real y se acepta: las curvas de subbase y BTC van por abajo.
+     Es que van por abajo. */
   const SVGNS='http://www.w3.org/2000/svg';
   const svg=document.getElementById('curvas');svg.innerHTML='';
-  const ejeD=document.getElementById('ejeMed');ejeD.innerHTML='';
   const n=p.d.length;
   const medias=vis.map((a,j)=>{
     let acc=0;
     return p.d.map((d,i)=>{ acc+=vals[i][j]; return acc/(i+1); });
   });
-  const pos=medias.flat().filter(v=>v>0);
-  const medHi=Math.max(1,...pos);
-  /* EL SUELO SALE DE LAS MEDIAS FINALES, no del mínimo de todos los puntos.
-     El primer día de una partida que apenas arranca deja una media de 4 m³ que
-     no significa nada —es el arranque, no el nivel—, y si el eje se apoya ahí,
-     las cuatro curvas se van al techo y el rótulo anuncia una escala falsa.
-     La media del ÚLTIMO día sí es el nivel del período, y ésa manda. Los puntos
-     que caigan por debajo se apoyan en el suelo del eje, que está rotulado.
-     Además se limita el reparto a un factor de 60: más allá, el logaritmo deja
-     de ser una lupa y pasa a ser un truco. */
-  const fin=medias.map(m=>m[m.length-1]).filter(v=>v>0);
-  const suelo=fin.length?Math.min(...fin):medHi;
-  const minTodos=pos.length?Math.min(...pos):medHi;
-  /* Si el mínimo real cabe dentro del factor 60, el suelo baja hasta él y no se
-     aplasta ninguna curva; si no cabe —un arranque de 4 m³—, se queda arriba y
-     ese punto se apoya en el suelo rotulado. */
-  const medLo=Math.min(suelo, minTodos>=medHi/60 ? minTodos : suelo);
-  const LOG=medHi/medLo>=4;
-  const lnR=Math.log(medHi)-Math.log(medLo);
-  const yMed=LOG
-    ? v=>100-(Math.log(Math.max(v,medLo))-Math.log(medLo))/lnR*100
-    : v=>100-Math.min(100,v/medHi*100);
-  document.getElementById('capCurva').innerHTML=
-    'Curva punteada = media acumulada día a día · '+
-    '<b style="color:var(--accent-txt);font-weight:700">eje propio, '+
-    (LOG?('logarítmico '+f0(medLo)+' → '+f0(medHi)):('máx '+f0(medHi)))+' m³</b>';
-  /* Marcas del eje con su línea de guía. Sin ellas la segunda escala no se
-     puede leer, y un gráfico que no deja leer su escala miente por omisión. */
-  const marcas=LOG
-    ? [0,1,2,3].map(i=>Math.exp(Math.log(medLo)+lnR*i/3))
-    : [medHi,medHi*2/3,medHi/3].filter(v=>v>0);
-  marcas.forEach(v=>{
-    const y=yMed(v);
-    const ln=document.createElementNS(SVGNS,'line');
-    ln.setAttribute('x1','0');ln.setAttribute('x2','100');
-    ln.setAttribute('y1',y.toFixed(2));ln.setAttribute('y2',y.toFixed(2));
-    ln.setAttribute('stroke','var(--rule)');ln.setAttribute('stroke-width','1');
-    ln.setAttribute('stroke-dasharray','2 6');
-    ln.setAttribute('vector-effect','non-scaling-stroke');ln.setAttribute('opacity','.75');
-    svg.appendChild(ln);
-    const b=el('b',null,f0(v));b.style.top=y.toFixed(2)+'%';ejeD.appendChild(b);
-  });
+  document.getElementById('capCurva').textContent=
+    'Curva punteada = media acumulada día a día, en la misma escala de las barras';
   vis.forEach((a,j)=>{
     const pts=medias[j].map((v,i)=>{
       const px=n>1?(i+.5)/n*100:50;
-      return px.toFixed(2)+','+yMed(v).toFixed(2);
+      const py=100-Math.min(100, v/max*100);
+      return px.toFixed(2)+','+py.toFixed(2);
     }).join(' ');
     const pl=document.createElementNS(SVGNS,'polyline');
     pl.setAttribute('points',pts);pl.setAttribute('fill','none');
