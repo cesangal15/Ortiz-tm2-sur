@@ -385,7 +385,7 @@ body{background:var(--bg);color:var(--text);font-size:14px;
       <div class="syne secK" id="capEvo">Evolución período a período</div>
       <div class="rule"></div>
       <div class="leyenda" id="legEvo"></div>
-      <div class="secN">m³ sueltos · clic para ver el mes</div>
+      <div class="secN">m³ compactos · clic para ver el mes</div>
     </div>
     <div class="plot">
       <div class="ymax" id="maxEvo"></div>
@@ -412,7 +412,7 @@ body{background:var(--bg);color:var(--text);font-size:14px;
   <div class="blk">
     <div class="secH">
       <div class="syne secT" id="capDia">Producción diaria del período</div>
-      <div class="secN">m³ sueltos</div>
+      <div class="secN">m³ compactos</div>
       <div class="rule"></div>
       <div class="secN" id="capCurva"></div>
     </div>
@@ -771,7 +771,7 @@ function construir(wbProd, wbMaq){
     descartes: { fuera_flota:H.descartadas, horas_negativas:H.negativas },
     fuente:'TM2_SUR_REPORTE_DIARIO_OBRA · hojas DATOS y CALCULOS',
     fuente_horas:'BASE MAQUINARIA (partes diarios) · horas por centro de coste',
-    unidad:'m³ compactos (suelto ÷ 1,3)', unidad_mh:'m³ sueltos por hora de operación',
+    unidad:'m³ compactos (suelto ÷ 1,3)', unidad_mh:'m³ compactos por hora de operación',
     generado: new Date().toISOString().slice(0,16).replace('T',' ') };
 }
 
@@ -812,6 +812,11 @@ const CLIMA={'SOLEADO':['Soleado','c-sol'],'LLUVIAS PARCIALES':['Lluvias parcial
              'LLUVIAS':['Lluvias','c-llu'],'':['Sin registro','c-nd']};
 const f0=n=>Math.round(n||0).toLocaleString('es-CO');
 const f1=n=>(n||0).toLocaleString('es-CO',{minimumFractionDigits:1,maximumFractionDigits:1});
+/* TODO lo que se MUESTRA va en m³ compactos (decisión del jefe: una sola unidad, sin
+   confusiones). Los datos siguen guardándose en suelto tal cual el Excel; se dividen por
+   el factor SÓLO al pintar. Como numerador y denominador de la eficiencia se dividen por
+   el mismo factor, el porcentaje no cambia: sólo cambian las cifras absolutas. */
+const comp=v=>(v||0)/(TM2.fc||1.3);
 const pct=n=>Math.round((n||0)*100)+'%';
 /* Las barras de objetivo llegan al 150% y llevan la marca del 100% al 66,7%.
    El 150% sale de los datos: el mes más alto del libro cumplió el 154% del plan,
@@ -846,21 +851,19 @@ let sel=TM2.per.length-1, uf='Todo', abierto=null;
 /* La excavación no viene desglosada por UF en el origen (DATOS trae una sola
    columna). Con filtro de UF se omite en vez de repetir el total en las dos. */
 const visibles=()=>uf==='Todo'?ACT:ACT.filter(a=>a.k!=='excavacion');
-/* EN SUELTO, tal cual lo registra la hoja DATOS y tal cual sale en el Excel:
-   decisión del usuario, y estas dos gráficas se dejan intactas.
-
-   OJO, LA PÁGINA MANEJA DOS UNIDADES, y por eso las dos van rotuladas:
-     · barras de evolución y de producción diaria → m³ SUELTOS (el Excel)
-     · plan del período, avance del contrato y velocidad → m³ COMPACTOS
-   Entre una y otra hay un factor de 1,3, así que la misma partida aparece como
-   43.487 arriba y 33.451 abajo. No es un descuadre: son dos medidas de lo
-   mismo, la del parte y la del acta. Sin rotularlas sí lo parecería, que es
-   justo lo que no puede pasar proyectando ante directivos. */
+/* Devuelve la producción del día EN COMPACTO. El Excel la registra en suelto y así
+   se guarda; aquí se divide por el factor para que TODA la página hable en una sola
+   unidad —la del acta— y no haya que preguntarse nunca si un número es suelto o
+   compacto. Antes estas dos gráficas iban en suelto y el resto en compacto, con la
+   misma partida apareciendo con dos cifras; el jefe pidió unificar y esto lo hace en
+   un solo punto: todo lo que pasa por aquí sale ya convertido. */
 function valDia(d,a){
-  if(a.k==='excavacion') return d.exc||0;
-  if(uf==='UF1') return d[a.d+'1']||0;
-  if(uf==='UF2') return d[a.d+'2']||0;
-  return d[a.d]||0;
+  let v;
+  if(a.k==='excavacion') v=d.exc||0;
+  else if(uf==='UF1') v=d[a.d+'1']||0;
+  else if(uf==='UF2') v=d[a.d+'2']||0;
+  else v=d[a.d]||0;
+  return comp(v);
 }
 const valPer=(p,a)=>p.d.reduce((s,d)=>s+valDia(d,a),0);
 const eti=k=>{const[y,m]=k.split('-').map(Number);return MES[m-1]+' '+String(y).slice(2);};
@@ -1030,9 +1033,8 @@ function cadena(sel_p){
     const sw=el('span','sw');sw.style.background=a.c;
     const box=el('div');box.style.cssText='display:flex;flex-direction:column;gap:2px;';
     const nm=el('div','syne nm',a.n);nm.style.fontWeight='700';
-    /* Suelto, como las barras y como el m³/h de la columna de eficiencia: esta
-       fila habla de lo que movió la máquina. El compacto aparece abajo, en la
-       velocidad y en el plan del período. */
+    /* En compacto, como todo lo que se muestra ahora (decisión del jefe: una sola
+       unidad). El dato se guarda en suelto y se convierte aquí al pintar. */
     const eqs=k=>k+(k===1?' equipo':' equipos');
     /* «2 máquinas · 1,0 equipo medio» dice las dos cosas que hacen falta: cuántas
        pasaron por la actividad y a cuántas equivalen por el tiempo que estuvieron.
@@ -1040,7 +1042,7 @@ function cadena(sel_p){
     const subEq = (dmaq>0 && Math.abs(equiv-eqReal)>0.05)
       ? eqReal+' máquinas · '+f1(equiv)+' equipo medio'
       : eqs(eqReal);
-    box.append(nm,el('div','sub',f0(m.prod)+' m³ sueltos · '+subEq),
+    box.append(nm,el('div','sub',f0(comp(m.prod))+' m³ · '+subEq),
       el('div','hint',abierta?'Cerrar desglose':(m.maq.length?'Ver '+eqs(m.maq.length):'')));
     ac.append(sw,box);
     // --- eslabones
@@ -1083,7 +1085,7 @@ function cadena(sel_p){
     const l2=mk('×',hayU?pct(ut):'—','',subU,ut||0);
     const l3=mk('×',m.dudoso?'—':pct(ef),'',
       m.dudoso?'horas incompletas en este centro de coste'
-             :f1(m.mh)+' de '+f1(m.meta_hora)+' m³ hora-máquina',
+             :f1(comp(m.mh))+' de '+f1(comp(m.meta_hora))+' m³ hora-máquina',
       m.dudoso?0:Math.min(1,ef));
     // --- velocidad
     /* CUMPLIMIENTO DEL PLAN, no «velocidad contra la meta de la máquina».
@@ -1122,10 +1124,17 @@ function cadena(sel_p){
     marca100(vb,'ritmo previsto: 100%');
     vc.append(vv,vb);
     if(rt && rt.vel!=null){
-      vc.append(el('div','s','avance '+pct(rt.real)+' del contrato · a esta fecha tocaba '+pct(rt.esp)));
+      /* Dos lecturas distintas, y por eso van rotuladas «acumulado» y «este mes»:
+         el ritmo mide TODA la carrera desde el acta —avance real contra el que a
+         esta fecha tocaba llevar—, mientras que el cumplimiento mira SÓLO el mes.
+         Pueden ir en sentidos distintos sin contradicción: cumplir el 100% del
+         plan de un mes no borra el atraso que se arrastra de los meses anteriores,
+         sólo evita que crezca. Sin los rótulos, un 98% de ritmo junto a un 100%
+         de cumplimiento se lee como un error, y no lo es. */
+      vc.append(el('div','s','acumulado: avance '+pct(rt.real)+' del contrato · a esta fecha tocaba '+pct(rt.esp)));
       vc.append(el('div','s', cumpl!=null
-        ? 'este período cumplió el '+pct(cumpl)+' de su plan'
-        : 'este período no trae plan en CALCULOS'));
+        ? 'este mes cumplió el '+pct(cumpl)+' de su plan'
+        : 'este mes no trae plan en CALCULOS'));
     } else {
       vc.append(el('div','s','sin plan acumulado para medir el ritmo'));
     }
@@ -1209,8 +1218,8 @@ function cadena(sel_p){
          las que la máquina está programada para hacer. */
       if(m.dudoso){
         txt+='<br><br><b>Por qué la eficiencia se queda sin cifra.</b> Con estas horas el '+
-          'cálculo daría <b>'+f1(m.mh)+' m³/h</b>, '+f1(m.mh/m.meta_hora)+' veces la meta de '+
-          f1(m.meta_hora)+'. Una máquina no hace eso: lo que falla es el divisor, no la máquina.';
+          'cálculo daría <b>'+f1(comp(m.mh))+' m³/h</b>, '+f1(m.mh/m.meta_hora)+' veces la meta de '+
+          f1(comp(m.meta_hora))+'. Una máquina no hace eso: lo que falla es el divisor, no la máquina.';
         /* Solo los días de las máquinas que cuentan: si se suman también los del
            parte vacío, el promedio sale diluido y las horas programadas por día
            dejan de ser 6,4 o 5 para caer en un número que no es de nadie. */
@@ -1436,7 +1445,7 @@ function aprov(p){
     const l=el('div','l');const sw=el('span','sw');sw.style.background=col;
     l.append(sw,el('span',null,nm));
     const rr=el('div','r');
-    rr.append(el('div','syne v',f0(s[k])+' m³'),el('div','p',tot>0?pct(s[k]/tot):'—'));
+    rr.append(el('div','syne v',f0(comp(s[k]))+' m³'),el('div','p',tot>0?pct(s[k]/tot):'—'));
     r.append(l,rr);c.appendChild(r);
   });
   const nt=el('div','nota');nt.style.marginTop='10px';
@@ -1792,13 +1801,11 @@ function pinta(){
   controles();evolucion();cadena(p);diaria(p);planPeriodo(p);avance();aprov(p);pintaEstado();
   document.getElementById('pie').innerHTML=
     'Producción de <b>'+TM2.fuente+'</b> · horas de <b>'+TM2.fuente_horas+'</b>. '+
-    '<b>Dos unidades, y cada gráfico dice la suya:</b> las barras de evolución y '+
-    'de producción diaria van en <b>m³ sueltos</b>, tal cual los registra el '+
-    'Excel; el plan del período, el avance del contrato y la velocidad van en '+
-    '<b>m³ compactos</b> (suelto ÷ '+f1(TM2.fc||1.3)+'), que es como los mide el '+
-    'acta. Entre las dos hay ese factor, así que la misma partida aparece con '+
-    'dos cifras: son dos medidas de lo mismo, la del parte y la del acta. '+
-    'El rendimiento por máquina, en '+TM2.unidad_mh+'. '+
+    '<b>Todo en m³ compactos</b>, que es como los mide el acta. El Excel registra '+
+    'la producción en suelto; aquí se divide por el factor de '+f1(TM2.fc||1.3)+
+    ' para hablar en una sola unidad y que no haya que preguntarse nunca si un '+
+    'número es suelto o compacto. El rendimiento por máquina va en la misma '+
+    'unidad, m³ compactos por hora de operación. '+
     'Reproduce la hoja GRAFICOS con diferencia 0,0 en las cuatro partidas. '+
     '<b>Equipos por período tomados de los partes reales</b>, no de la flota de hoy.';
 }
