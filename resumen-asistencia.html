@@ -1870,6 +1870,40 @@ function mapTrabajadoresDeWb(wb){
   });
   return map;
 }
+/* ---------- Tope de 10 h/día del sistema externo (Navigation/Navision) — SOLO EL EXPORT ----------
+ * El sistema donde el dueño SUBE las horas no acepta más de 10 horas trabajadas en un día para una
+ * persona. Es una limitación de ESE sistema (no lo tienen actualizado), no de nuestra nómina ni de la
+ * ley: nuestro cálculo está bien y por eso NO se toca `clasificarHoras`/horas-persona/el detalle por
+ * cuadrilla — esas siguen mostrando lo REALMENTE trabajado. Solo el archivo que se sube va topado.
+ *
+ * Dónde aprieta: el turno 1 (7.5 base + 2 extra = 9.5) nunca llega; los turnos nocturnos de 8.5 h base
+ * + 2 h de extra dan 10.5 y el sistema los rechaza. Se recorta SILENCIOSAMENTE la EXTRA (la base es
+ * fija) hasta dejar el total en 10, quitando desde la ÚLTIMA hora trabajada: primero la extra diurna
+ * (la que cae tras el corte nocturno de las 06:00), luego la nocturna. Ej.: turno hasta 04:30 + 2 h
+ * hasta 06:30 → 1.5 noct + 0.5 diurna; se quita la 0.5 diurna → queda 1.5 noct. Turno hasta 02:30 + 2 h
+ * hasta 04:30 (todo nocturno) → la nocturna baja de 2 a 1.5.
+ *
+ * El RECARGO nocturno (col G) NO cuenta para el total: son las MISMAS horas ordinarias con recargo
+ * (van en otra columna pero no se suman dos veces). Dom/Fest tampoco llega al tope (7+2 = 9).
+ *
+ * Devuelve el objeto de horas ajustado y `recorte` = las horas que se quitaron, para AVISARLO en el
+ * resumen: hay que sumar esas horas extra en OTRO día del corte para no dejar de pagarlas. */
+const TOPE_HORAS_DIA = 10;
+function aplicarTope10(cl){
+  const total=(cl.ordinarias||0)+(cl.ord_domfest||0)+(cl.extra_diurna||0)+(cl.extra_nocturna||0)+(cl.extra_domfest||0);
+  if(total <= TOPE_HORAS_DIA + 0.001) return { cl, recorte:0 };
+  let sobra=round2(total-TOPE_HORAS_DIA);
+  const out=Object.assign({}, cl);
+  // Recorta desde la última hora trabajada: extra diurna (post-06:00) → nocturna → dom/fest (respaldo).
+  ['extra_diurna','extra_nocturna','extra_domfest'].forEach(function(k){
+    if(sobra<=0.001) return;
+    const v=out[k]||0, quita=Math.min(v, sobra);
+    out[k]=round2(v-quita); sobra=round2(sobra-quita);
+  });
+  const recorte=round2((total-TOPE_HORAS_DIA)-Math.max(0,sobra));
+  return { cl:out, recorte };
+}
+
 // Fila A–R (18 columnas) de la hoja Parte para una persona del día. Ausente: TODAS las horas en 0 (§6).
 function buildParteRow(f, proyectoStr, cfg, tipoJornada, catTrabajadores, turnoRow){
   const row=new Array(18).fill('');
@@ -1879,13 +1913,16 @@ function buildParteRow(f, proyectoStr, cfg, tipoJornada, catTrabajadores, turnoR
   if(ausente){
     row[2]=0; row[3]=0; row[4]=0; row[5]=0; row[6]=0;       // C–G en 0
   } else {
-    const cl=clasificarHoras(tipoJornada, f.hora_entrada, f.hora_salida, cfg, turnoRow);
+    // Tope de 10 h/día del sistema externo — SOLO aquí, en el archivo que se sube (ver aplicarTope10).
+    const clReal=clasificarHoras(tipoJornada, f.hora_entrada, f.hora_salida, cfg, turnoRow);
+    const cap=aplicarTope10(clReal); const cl=cap.cl;
     row[2]=cl.ordinarias; row[3]=cl.ord_domfest; row[4]=cl.extra_diurna; row[5]=cl.extra_nocturna;
-    row[6]=cl.recargo_noct_ord;                             // G Recargo hora nocturna ord (D72)
+    row[6]=cl.recargo_noct_ord;                             // G Recargo hora nocturna ord (D72) — no se topa
     if(cl.extra_domfest) row[7]=cl.extra_domfest;           // H Horas extras diurnas Dom/Fest (D81, máx 2h)
     if(cl.domfest_diurna_scomp) row[11]=cl.domfest_diurna_scomp;   // L Hora Diurna Ord. Dom/Fest s/Comp (criterio nómina)
     row._aviso = cl.avisoDomFest;      // Dom/Fest: solo avisa si hubo MÁS de la jornada base (posibles extras H–N)
     row._avisoExtra = cl.avisoExtra;   // extras > max_extras_dia en día normal: revisar a mano
+    row._recorte10 = cap.recorte;      // horas de extra que se quitaron por el tope de 10 h (avisar en resumen)
     row._nombre = f.nombre;
   }
   // Resto de H–N (I–K, M–N) vacías: Dom/Fest c/comp s/comp — revisión manual solo en domingo/festivo (§6)
@@ -2036,12 +2073,13 @@ async function generarExcel(proyecto){
       msg.innerHTML='<div class="aviso">No hay filas para el proyecto '+proyecto+' en esta fecha.</div>';
       return;
     }
-    let hayAvisoGN=false; const overExtra=[]; const sinCodigo=[];
+    let hayAvisoGN=false; const overExtra=[]; const sinCodigo=[]; const recorte10=[];
     const aoa=filasProyecto.map(f=>{
       const turnoRow=turnoRowFor(f.turno, STATE.fecha, turnos, tipoJornada);   // D72: jornada programada del reporte
       const row=buildParteRow(f, proyectoStr, cfg, tipoJornada, catTrabajadores, turnoRow);
       if(row._aviso) hayAvisoGN=true;
       if(row._avisoExtra) overExtra.push(row._nombre);
+      if(row._recorte10>0.001) recorte10.push({nombre:row._nombre, horas:row._recorte10});   // extra quitada por el tope de 10h
       if(!String(f.codigo||'').trim()) sinCodigo.push(f.nombre);  // sin código Navision (col A queda "| NOMBRE")
       return row;
     });
@@ -2085,6 +2123,14 @@ async function generarExcel(proyecto){
     if(hayAvisoGN) out+='<div class="aviso">⚠️ Día domingo/festivo: alguien superó las 7h Dom/Fest + 2h de extras Dom/Fest (D81). El archivo registra 7h en la col D y máximo 2h en la col H; el excedente quedó por fuera — revísalo a mano.</div>';
     if(overExtra.length){ const mx=parseFloat(cfg.max_extras_dia)||2;
       out+='<div class="aviso">ℹ️ Estas personas trabajaron más de '+mx+' horas extra: <b>'+overExtra.map(esc).join(', ')+'</b>. El archivo reporta solo '+mx+' (el tope); el resto queda para que el residente lo sume a mano en los días que corresponda.</div>'; }
+    if(recorte10.length){
+      // Tope de 10 h/día del sistema externo (ver aplicarTope10). El archivo sube 10 h; el excedente hay
+      // que sumarlo a mano en OTRO día del corte para no dejar de pagar esas horas extra.
+      const items=recorte10.map(r=>esc(r.nombre)+' (falta '+fmtH(r.horas)+'h)').join(', ');
+      const totHoras=fmtH(recorte10.reduce((a,r)=>a+r.horas,0));
+      out+='<div class="aviso">⏱️ <b>Tope de 10 h/día</b> del sistema al subir: a estas personas se les recortó la extra para no pasar de 10 h en el día: <b>'+items+'</b>. '
+        + 'El archivo sube 10 h; <b>faltan '+totHoras+'h</b> de extra que hay que sumar en <b>otro día</b> del corte para no dejar de pagarlas.</div>';
+    }
     if(sinCodigo.length) out+='<div class="aviso">⚠️ Sin código Navision (la columna A queda incompleta "| NOMBRE"): <b>'+sinCodigo.map(esc).join(', ')+'</b>. Consigue su código en Navision/RRHH y ponlo en PERSONAL antes de importar.</div>';
     if(avisosProyDefecto.length) out+='<div class="aviso">⚠️ No se pudo determinar el proyecto habitual de: '+avisosProyDefecto.map(esc).join(', ')+'. Se incluyeron en 3701 por defecto — mover a mano si corresponde.</div>';
     msg.innerHTML=out;
