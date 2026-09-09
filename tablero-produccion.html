@@ -398,7 +398,7 @@ body{background:var(--bg);color:var(--text);font-size:14px;
   <div class="blk">
     <div class="secH">
       <div class="syne secT">Por qué vamos así</div>
-      <div style="font-size:13px;color:var(--muted)">horas · utilización · eficiencia · y a qué ritmo avanzamos</div>
+      <div style="font-size:13px;color:var(--muted)">horas · utilización · eficiencia · y a qué velocidad va la máquina</div>
       <div class="rule"></div>
       <div class="secA" style="text-align:right;max-width:470px" id="chainNote"></div>
     </div>
@@ -925,43 +925,34 @@ function evolucion(){
   });
 }
 
-/* VELOCIDAD = a qué ritmo va la obra contra el ritmo que fijó el plan.
+/* VELOCIDAD DE LA MAQUINARIA — a qué ritmo produjo la máquina contra lo que
+ * DEBERÍA producir con las horas que tuvo disponibles, a su rendimiento nominal.
  *
- *     avance real     = ejecutado acumulado desde el acta ÷ contrato
- *     avance previsto = plan acumulado hasta esa fecha    ÷ contrato
- *     VELOCIDAD       = avance real ÷ avance previsto
+ *     producción esperada = rendimiento nominal (m³/h) × horas de standby
+ *     VELOCIDAD           = producción real ÷ producción esperada
  *
- * 100% = se va al ritmo pactado. 83% = se lleva el 83% del avance que a estas
- * alturas debería haberse llevado. Es una medida de ATRASO, que es lo que se
- * pregunta en la reunión, y no depende de lo ambicioso que fuera el mes: un mes
- * flojo no la sube y un mes exigente no la hunde.
+ * 100% = la máquina produjo exactamente lo que su tiempo disponible daba al
+ * ritmo de catálogo. Por encima, fue MÁS RÁPIDA de lo esperado (rindió más por
+ * hora, o estiró sus horas); por debajo, más lenta. Es la maquinaria mirada
+ * completa, y de hecho es el producto de las dos columnas de al lado:
  *
- * Por qué NO es el cumplimiento del mes: cumplir el 100% de un plan mensual
- * modesto no recupera nada del atraso acumulado. Son dos preguntas distintas y
- * las dos están en la página — el mes, en «planificado vs ejecutado»; el ritmo,
- * aquí.
+ *     VELOCIDAD = eficiencia (m³/h real ÷ nominal) × utilización (horas ÷ standby)
  *
- * El previsto se topa en 100%: la suma de los planes mensuales pasa del contrato
- * (105–110% según la partida), y sin tope el ritmo previsto seguiría subiendo
- * después de que el contrato ya estuviera cumplido.
+ * NO es el avance del contrato ni el cumplimiento del plan del mes —cada uno
+ * tiene su propio apartado más abajo—. Aquí sólo habla la máquina.
  *
- * Se calcula sobre `TM2.per` en el PINTADO, no en el motor, para que funcione
- * igual con cualquier foto, vieja o nueva, sin volver a leer los Excel.
+ * EL STANDBY es el tiempo disponible de verdad: días con parte × horas
+ * programadas (6,4 propia / 5 alquilada), menos mantenimiento y paradas que se
+ * repercuten al dueño. Por eso la velocidad se ancla al standby y NO a las horas
+ * operadas que teclea el digitador: si faltan horas por anotar, la eficiencia se
+ * cae pero la velocidad aguanta, porque el tiempo disponible no depende de lo que
+ * se alcanzó a teclear.
+ *
+ * Necesita el standby, que sólo traen las fotos generadas desde que existe el
+ * modelo. En una foto anterior no hay días por máquina y no se puede reconstruir:
+ * se dice «—, pulsa Actualizar», igual que la utilización, en vez de enseñar un
+ * número que no es.
  */
-function ritmo(pk, act){
-  const con=((TM2.avance||[]).find(a=>a.k===act)||{}).plan||0;
-  if(!con) return null;
-  let eje=0, plan=0, visto=false;
-  for(const x of TM2.per){
-    if(x.p < TM2.desde) continue;
-    const r=x.a[act]||{};
-    eje += r.prod||0; plan += r.plan_per||0;
-    if(x.p===pk){ visto=true; break; }
-  }
-  if(!visto) return null;
-  const real=eje/con, esp=Math.min(1, plan/con);
-  return { real, esp, vel: esp>0 ? real/esp : null };
-}
 
 /* ------------------------------------------- cadena «Por qué vamos así» */
 function cadena(sel_p){
@@ -1023,8 +1014,6 @@ function cadena(sel_p){
        calcular con lo que hay. */
     const dmaq=vivas.reduce((s,q)=>s+(q.dias||0),0);
     const equiv=(dmaq>0&&r.dias>0)?dmaq/r.dias:eqReal;
-    const den=(r.meta_dia||0)*(dmaq>0?dmaq:eqReal*(r.dias||0));
-    const vel=den>0?r.prod/den:null;
 
     const row=el('div','chainR');row.tabIndex=0;row.setAttribute('role','button');
     if(abierta)row.style.background='var(--grid)';
@@ -1088,55 +1077,36 @@ function cadena(sel_p){
              :f1(comp(m.mh))+' de '+f1(comp(m.meta_hora))+' m³ hora-máquina',
       m.dudoso?0:Math.min(1,ef));
     // --- velocidad
-    /* CUMPLIMIENTO DEL PLAN, no «velocidad contra la meta de la máquina».
-    
-       Lo que había medía la producción contra lo que las máquinas PODRÍAN hacer
-       a su rendimiento nominal. Eso castiga por algo que no se decide en obra:
-       si el plan del mes solo pide el 23% de la capacidad de la maquinaria
-       —porque hay poco terreno, o hay frentes por liberar—, ni haciendo el plan
-       entero se pasa del 23%. En marzo-2026 el BTC cumplió el 103% del plan y la
-       pantalla decía 24%. Ese número no informa: desanima.
-    
-       La aritmética explica por qué, y se cumple en las 46 filas con plan:
-    
-           velocidad vieja = (plan ÷ capacidad) × (ejecutado ÷ plan)
-                           =    exigencia       ×    cumplimiento
-    
-       O sea, la cifra mezclaba lo ambicioso que fue el PLAN con lo bien que se
-       ejecutó. Aquí se separan y manda el cumplimiento, que es lo que el equipo
-       controla y lo que cuadra con «planificado vs ejecutado» de más abajo.
-    
-       LA MEDICIÓN DE MAQUINARIA NO SE PIERDE —el jefe pidió conservarla— y de
-       hecho se lee mejor partida en dos: cuánto pidió el plan de la máquina y
-       cuánto se usó de verdad. La distancia entre esas dos cifras ES la historia
-       de la maquinaria del mes. */
-    const plan = r.plan_per || 0;
-    const cumpl = plan>0 ? r.prod/plan : null;
-    const rt = ritmo(p.p, a.k);
+    /* VELOCIDAD DE LA MAQUINARIA (ver el bloque de arriba): producción real
+       contra lo que el tiempo disponible daba a ritmo nominal. Rendimiento de la
+       máquina, no avance del contrato —eso vive en su propio apartado— ni
+       cumplimiento del plan del mes —que vive en «planificado vs ejecutado»—. */
+    /* VELOCIDAD anclada al STANDBY, no a las horas operadas: producción real ÷
+       (rendimiento nominal × horas disponibles). Sobrevive a las horas que el
+       digitador no alcanzó a teclear, porque el tiempo disponible sale de los
+       días con parte, no de las horas operadas. Sin standby en la foto → «—». */
+    const espProd = (m.sb_aj!=null && m.sb_aj>0) ? m.meta_hora*m.sb_aj : null;   // producción esperada a ritmo nominal
+    const vel = espProd ? m.prod/espProd : null;
     const vc=el('div','velC');
     vc.appendChild(el('div','eq','→'));
     const vv=el('div','v');
-    const principal = (rt && rt.vel!=null) ? rt.vel : null;
-    const big=el('div','syne big', principal==null?'—':pct(principal));
-    vv.append(big,el('div','u','del ritmo previsto'));
+    const big=el('div','syne big', vel==null?'—':pct(vel));
+    vv.append(big,el('div','u','del rendimiento esperado'));
     const vb=el('div','velBar');const vi=el('i');
-    vi.style.width=anchoObj(principal);vb.appendChild(vi);
-    marca100(vb,'ritmo previsto: 100%');
+    vi.style.width=anchoObj(vel);vb.appendChild(vi);
+    marca100(vb,'rendimiento esperado: 100%');
     vc.append(vv,vb);
-    if(rt && rt.vel!=null){
-      /* Dos lecturas distintas, y por eso van rotuladas «acumulado» y «este mes»:
-         el ritmo mide TODA la carrera desde el acta —avance real contra el que a
-         esta fecha tocaba llevar—, mientras que el cumplimiento mira SÓLO el mes.
-         Pueden ir en sentidos distintos sin contradicción: cumplir el 100% del
-         plan de un mes no borra el atraso que se arrastra de los meses anteriores,
-         sólo evita que crezca. Sin los rótulos, un 98% de ritmo junto a un 100%
-         de cumplimiento se lee como un error, y no lo es. */
-      vc.append(el('div','s','acumulado: avance '+pct(rt.real)+' del contrato · a esta fecha tocaba '+pct(rt.esp)));
-      vc.append(el('div','s', cumpl!=null
-        ? 'este mes cumplió el '+pct(cumpl)+' de su plan'
-        : 'este mes no trae plan en CALCULOS'));
+    if(vel!=null){
+      /* Se dice de dónde sale, en compacto y con las mismas cifras que las dos
+         columnas de al lado: lo que produjo contra lo que su tiempo disponible
+         daba a ritmo de catálogo. La velocidad ES el cociente de esas dos. */
+      vc.append(el('div','s',f0(comp(m.prod))+' m³ de '+f0(comp(espProd))+
+        ' m³ que daban sus '+f1(m.sb_aj)+' h disponibles a ritmo nominal'));
+      vc.append(el('div','s', vel>=1
+        ? 'más rápida que lo esperado — rindió por encima del catálogo'
+        : 'eficiencia × utilización, la maquinaria mirada completa'));
     } else {
-      vc.append(el('div','s','sin plan acumulado para medir el ritmo'));
+      vc.append(el('div','s','sin standby en esta foto — pulsa «Actualizar»'));
     }
 
     row.append(ac,l1,l2,l3,vc);
