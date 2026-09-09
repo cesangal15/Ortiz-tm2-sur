@@ -128,12 +128,18 @@ body{background:var(--bg);color:var(--text);font-size:14px;
 .mt{margin-top:26px;}
 
 /* ---------- zonas de gráfico ---------- */
-.plot{display:grid;grid-template-columns:58px 1fr;gap:0 12px;align-items:end;}
+.plot,.plot3{display:grid;gap:0 12px;align-items:end;}
+.plot{grid-template-columns:58px 1fr;}
+.plot3{grid-template-columns:58px 1fr 46px;}
 /* Sin esto la columna 1fr no encoge por debajo del ancho «natural» de la tira
    de barras, y en el móvil la página se salía por la derecha. */
-.plot>*{min-width:0;}
-.plot>.ymax{grid-column:1;} .plot>.zona,.plot>.bajo{grid-column:2;}
-@media(max-width:760px){ .plot{grid-template-columns:44px 1fr;} }
+.plot>*,.plot3>*{min-width:0;}
+.plot3>.ymax{grid-column:1;} .plot3>.zona{grid-column:2;}
+.plot3>.eje{grid-column:3;}  .plot3>.bajo{grid-column:2;}
+@media(max-width:760px){
+  .plot{grid-template-columns:44px 1fr;}
+  .plot3{grid-template-columns:44px 1fr 34px;}
+}
 .ymax{font-size:10.5px;color:var(--muted);text-align:right;padding-bottom:3px;line-height:1.25;
   font-variant-numeric:tabular-nums;}
 .ymax span{display:block;font-size:9.5px;}
@@ -177,6 +183,16 @@ body{background:var(--bg);color:var(--text);font-size:14px;
 .zona .fondo>span{flex:1;min-width:0;}
 .zona .bars{height:100%;position:relative;}
 .zona svg{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;}
+/* Eje secundario de las medias, ROTULADO. Sirve para leer la TENDENCIA de cada
+   partida: en la escala de las barras, subbase y BTC viven entre el 4% y el 22%
+   de la altura y su curva es una raya casi plana. En logarítmico las cuatro
+   reparten el alto y se les ve la pendiente, que es lo que se quiere mirar.
+   El precio es que la distancia vertical deja de ser proporcional a la
+   diferencia — por eso el eje va rotulado con sus marcas y declarado en la
+   leyenda. Una segunda escala sin rótulo es una trampa; rotulada es una lupa. */
+.eje{position:relative;height:var(--altoDia);}
+.eje>b{position:absolute;right:0;font-size:9.5px;font-weight:400;color:var(--muted);
+  font-variant-numeric:tabular-nums;transform:translateY(-50%);white-space:nowrap;}
 .bajo{display:flex;flex-direction:column;gap:6px;padding-top:5px;}
 .climaT{font-size:11px;color:var(--muted);padding-top:6px;}
 .clima{display:flex;gap:6px;}
@@ -225,9 +241,16 @@ body{background:var(--bg);color:var(--text);font-size:14px;
 .velC .eq{position:absolute;left:7px;top:1px;font-size:15px;color:var(--accent-txt);}
 .velC .v{display:flex;align-items:baseline;gap:6px;}
 .velC .big{font-size:34px;line-height:1;}
-.velBar{height:10px;background:var(--grid);margin-top:7px;overflow:hidden;}
+.velBar{position:relative;height:10px;background:var(--grid);margin-top:7px;}
 .velBar>i{display:block;height:100%;background:var(--accent);
   transition:width .9s cubic-bezier(.2,.85,.25,1);}
+/* Marca del 100%. Las barras llegaban hasta el borde y ahí se cortaban, así que
+   cumplir justo y superar el objetivo se dibujaban idénticos — y 11 de los 52
+   meses con plan lo superan. Ahora la barra tiene holgura hasta el 150% y esta
+   marca dice dónde está el objetivo: quedarse corto y pasarse se distinguen de
+   un vistazo, sin leer la cifra. */
+.velBar>u,.ppBar>u{position:absolute;top:-2px;bottom:-2px;width:2px;
+  background:var(--ink);opacity:.5;pointer-events:none;}
 .velC .s{font-size:10.5px;color:var(--muted);margin-top:5px;font-variant-numeric:tabular-nums;}
 .drop{border-bottom:1px solid var(--border);padding:6px 0 20px 36px;
   display:flex;flex-direction:column;gap:8px;}
@@ -272,7 +295,7 @@ body{background:var(--bg);color:var(--text);font-size:14px;
   margin-bottom:9px;}
 .pp .nm{font-size:13px;}
 .pp .plan{font-size:12px;color:var(--mut);text-align:right;font-variant-numeric:tabular-nums;}
-.ppBar{position:relative;height:24px;background:var(--grid);overflow:hidden;}
+.ppBar{position:relative;height:24px;background:var(--grid);}
 .ppBar>i{display:block;height:100%;transition:width 1s cubic-bezier(.2,.85,.25,1);}
 .ppBar>b{position:absolute;top:0;left:8px;line-height:24px;font-size:12px;
   font-weight:400;color:var(--ink);font-variant-numeric:tabular-nums;
@@ -375,13 +398,13 @@ body{background:var(--bg);color:var(--text);font-size:14px;
   <div class="blk">
     <div class="secH">
       <div class="syne secT">Por qué vamos así</div>
-      <div style="font-size:13px;color:var(--muted)">horas · utilización · eficiencia · y cuánto del plan se cumplió</div>
+      <div style="font-size:13px;color:var(--muted)">horas · utilización · eficiencia · y a qué ritmo avanzamos</div>
       <div class="rule"></div>
       <div class="secA" style="text-align:right;max-width:470px" id="chainNote"></div>
     </div>
     <div class="chainH">
       <div>Actividad</div><div>Horas operadas</div><div>Utilización</div>
-      <div>Eficiencia</div><div>Cumplimiento del plan</div>
+      <div>Eficiencia</div><div>Velocidad</div>
     </div>
     <div id="chain"></div>
   </div>
@@ -393,13 +416,14 @@ body{background:var(--bg);color:var(--text);font-size:14px;
       <div class="rule"></div>
       <div class="secN" id="capCurva"></div>
     </div>
-    <div class="plot">
+    <div class="plot3">
       <div class="ymax" id="maxDia"></div>
       <div class="zona">
         <div class="fondo" id="diaBg"></div>
         <div class="bars" id="dia"></div>
         <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" id="curvas"></svg>
       </div>
+      <div class="eje" id="ejeMed"></div>
       <div class="bajo">
         <div class="xlab" id="diaX"></div>
         <div class="climaT">Clima del día</div>
@@ -789,6 +813,16 @@ const CLIMA={'SOLEADO':['Soleado','c-sol'],'LLUVIAS PARCIALES':['Lluvias parcial
 const f0=n=>Math.round(n||0).toLocaleString('es-CO');
 const f1=n=>(n||0).toLocaleString('es-CO',{minimumFractionDigits:1,maximumFractionDigits:1});
 const pct=n=>Math.round((n||0)*100)+'%';
+/* Las barras de objetivo llegan al 150% y llevan la marca del 100% al 66,7%.
+   El 150% sale de los datos: el mes más alto del libro cumplió el 154% del plan,
+   así que con este tope casi todo cabe dentro y lo que se pase satura la barra
+   con su cifra al lado diciendo la verdad. */
+const TOPE_OBJ=1.5;
+const anchoObj=v=>Math.min(100, (v||0)/TOPE_OBJ*100)+'%';
+function marca100(barra, texto){
+  const u=el('u'); u.style.left=(100/TOPE_OBJ)+'%';
+  u.title=texto||'objetivo: 100%'; barra.appendChild(u);
+}
 
 /* Etiqueta el segmento con SU valor, en vertical dentro de la barra. Si la
    barra no da de alto para el número —a 8 px, cada dígito pide ~5,2 px más
@@ -886,6 +920,44 @@ function evolucion(){
     col.onclick=ir;g.appendChild(col);
     const s=el('span',i===sel?'sel':null,eti(p.p));s.onclick=ir;x.appendChild(s);
   });
+}
+
+/* VELOCIDAD = a qué ritmo va la obra contra el ritmo que fijó el plan.
+ *
+ *     avance real     = ejecutado acumulado desde el acta ÷ contrato
+ *     avance previsto = plan acumulado hasta esa fecha    ÷ contrato
+ *     VELOCIDAD       = avance real ÷ avance previsto
+ *
+ * 100% = se va al ritmo pactado. 83% = se lleva el 83% del avance que a estas
+ * alturas debería haberse llevado. Es una medida de ATRASO, que es lo que se
+ * pregunta en la reunión, y no depende de lo ambicioso que fuera el mes: un mes
+ * flojo no la sube y un mes exigente no la hunde.
+ *
+ * Por qué NO es el cumplimiento del mes: cumplir el 100% de un plan mensual
+ * modesto no recupera nada del atraso acumulado. Son dos preguntas distintas y
+ * las dos están en la página — el mes, en «planificado vs ejecutado»; el ritmo,
+ * aquí.
+ *
+ * El previsto se topa en 100%: la suma de los planes mensuales pasa del contrato
+ * (105–110% según la partida), y sin tope el ritmo previsto seguiría subiendo
+ * después de que el contrato ya estuviera cumplido.
+ *
+ * Se calcula sobre `TM2.per` en el PINTADO, no en el motor, para que funcione
+ * igual con cualquier foto, vieja o nueva, sin volver a leer los Excel.
+ */
+function ritmo(pk, act){
+  const con=((TM2.avance||[]).find(a=>a.k===act)||{}).plan||0;
+  if(!con) return null;
+  let eje=0, plan=0, visto=false;
+  for(const x of TM2.per){
+    if(x.p < TM2.desde) continue;
+    const r=x.a[act]||{};
+    eje += r.prod||0; plan += r.plan_per||0;
+    if(x.p===pk){ visto=true; break; }
+  }
+  if(!visto) return null;
+  const real=eje/con, esp=Math.min(1, plan/con);
+  return { real, esp, vel: esp>0 ? real/esp : null };
 }
 
 /* ------------------------------------------- cadena «Por qué vamos así» */
@@ -1038,25 +1110,24 @@ function cadena(sel_p){
        de la maquinaria del mes. */
     const plan = r.plan_per || 0;
     const cumpl = plan>0 ? r.prod/plan : null;
-    const exig  = (plan>0 && den>0) ? plan/den : null;
+    const rt = ritmo(p.p, a.k);
     const vc=el('div','velC');
     vc.appendChild(el('div','eq','→'));
     const vv=el('div','v');
-    const principal = cumpl!=null ? cumpl : vel;
+    const principal = (rt && rt.vel!=null) ? rt.vel : null;
     const big=el('div','syne big', principal==null?'—':pct(principal));
-    vv.append(big,el('div','u', cumpl!=null?'del plan':'de la capacidad'));
+    vv.append(big,el('div','u','del ritmo previsto'));
     const vb=el('div','velBar');const vi=el('i');
-    vi.style.width=Math.min(100,(principal||0)*100)+'%';vb.appendChild(vi);
+    vi.style.width=anchoObj(principal);vb.appendChild(vi);
+    marca100(vb,'ritmo previsto: 100%');
     vc.append(vv,vb);
-    if(cumpl!=null){
-      vc.append(el('div','s', f0(r.prod)+' de '+f0(plan)+' m³ del plan'));
-      if(exig!=null && vel!=null)
-        vc.append(el('div','s','el plan pedía el '+pct(exig)+' de la maquinaria · se usó el '+pct(vel)));
-    } else if(vel!=null){
-      vc.append(el('div','s','este período no trae plan en CALCULOS'));
-      vc.append(el('div','s', f0(r.prod/r.dias)+' de '+f0(den/r.dias)+' m³ al día con la máquina que hubo'));
+    if(rt && rt.vel!=null){
+      vc.append(el('div','s','avance '+pct(rt.real)+' del contrato · a esta fecha tocaba '+pct(rt.esp)));
+      vc.append(el('div','s', cumpl!=null
+        ? 'este período cumplió el '+pct(cumpl)+' de su plan'
+        : 'este período no trae plan en CALCULOS'));
     } else {
-      vc.append(el('div','s','sin partes de equipos'));
+      vc.append(el('div','s','sin plan acumulado para medir el ritmo'));
     }
 
     row.append(ac,l1,l2,l3,vc);
@@ -1186,39 +1257,72 @@ function diaria(p){
     x.appendChild(el('span',null,d.f.slice(8)));
     const c=el('span',(CLIMA[d.t]||CLIMA[''])[1]);c.title=col.title;cl.appendChild(c);
   });
-  /* Curvas punteadas: media acumulada día a día, EN LA MISMA ESCALA DE LAS
-     BARRAS. Sin eje secundario, ni lineal ni logarítmico.
+  /* Curvas punteadas: media acumulada día a día, en EJE PROPIO Y LOGARÍTMICO.
+     Vuelve a petición del usuario, y con un objetivo distinto del que tuvo la
+     primera vez: aquí no se trata de comparar una actividad con otra —eso no
+     dice nada, cada partida mueve su volumen— sino de VER LA TENDENCIA DE CADA
+     UNA. Para eso el eje compartido con las barras no sirve: subbase y BTC
+     viven entre el 4% y el 22% de la altura y su curva es una raya casi plana.
+     En logarítmico las cuatro reparten el alto y se les ve la pendiente.
 
-     Por qué se quitó el eje propio —y antes de él, el logarítmico—: los dos
-     resolvían un problema que no existía. Servían para comparar la curva de
-     una actividad con la de OTRA, y esa comparación no dice nada: excavación y
-     subbase mueven volúmenes distintos, con metas distintas y flotas distintas.
-     Que la media de excavación sea veinte veces la de subbase no es un dato de
-     desempeño, es la escala de cada partida.
+     EL PRECIO, y por eso el eje va ROTULADO con marcas a la derecha y declarado
+     en la leyenda: la distancia vertical ya no es proporcional a la diferencia.
+     Se conservan el ORDEN y las PROPORCIONES —el doble sigue por encima—, pero
+     dos curvas separadas un dedo pueden diferir en un factor de tres. Una
+     segunda escala sin rotular es una trampa; rotulada es una lupa declarada.
 
-     La comparación que SÍ importa es la de cada curva con SUS PROPIAS BARRAS:
-     ¿este día produjo por encima o por debajo de lo que va promediando el mes?
-     Esa lectura solo es exacta si comparten escala, y entonces es exacta sin
-     explicar nada. En agosto, cada curva cae en medio de su propia franja de
-     barras —subbase entre el 4% y el 16% de altura, con sus barras entre el 0%
-     y el 61%—, que es justo donde tiene que estar.
+     Y sólo se usa cuando el reparto lo pide: por debajo de un factor de 4 entre
+     la media mayor y la menor, el eje se queda LINEAL y no se le pide a la sala
+     que entienda una escala que no hace falta.
 
-     El coste es real y se acepta: las curvas de subbase y BTC van por abajo.
-     Es que van por abajo. */
+     EL SUELO SALE DE LAS MEDIAS FINALES, no del mínimo de todos los puntos: el
+     primer día de una partida que apenas arranca deja una media de 4 m³ que no
+     es el nivel de nada, y apoyar ahí el eje mandaría las cuatro curvas al
+     techo con un rótulo falso. Si el mínimo real cabe dentro de un factor de
+     60, el suelo baja hasta él y no se aplasta ninguna curva. */
   const SVGNS='http://www.w3.org/2000/svg';
   const svg=document.getElementById('curvas');svg.innerHTML='';
+  const ejeD=document.getElementById('ejeMed');if(ejeD)ejeD.innerHTML='';
   const n=p.d.length;
   const medias=vis.map((a,j)=>{
     let acc=0;
     return p.d.map((d,i)=>{ acc+=vals[i][j]; return acc/(i+1); });
   });
-  document.getElementById('capCurva').textContent=
-    'Curva punteada = media acumulada día a día, en la misma escala de las barras';
+  const pos=medias.flat().filter(v=>v>0);
+  const medHi=Math.max(1,...pos);
+  const fin=medias.map(m=>m[m.length-1]).filter(v=>v>0);
+  const suelo=fin.length?Math.min(...fin):medHi;
+  const minTodos=pos.length?Math.min(...pos):medHi;
+  const medLo=Math.min(suelo, minTodos>=medHi/60 ? minTodos : suelo);
+  const LOG=medHi/medLo>=4;
+  const lnR=Math.log(medHi)-Math.log(medLo);
+  const yMed=LOG
+    ? v=>100-(Math.log(Math.max(v,medLo))-Math.log(medLo))/lnR*100
+    : v=>100-Math.min(100,v/medHi*100);
+  document.getElementById('capCurva').innerHTML=
+    'Curva punteada = media acumulada día a día · '+
+    '<b style="color:var(--accent-txt);font-weight:700">eje propio, '+
+    (LOG?('logarítmico '+f0(medLo)+' → '+f0(medHi)):('máx '+f0(medHi)))+' m³</b>';
+  /* Marcas del eje con su línea de guía. Sin ellas la segunda escala no se
+     puede leer, y un gráfico que no deja leer su escala miente por omisión. */
+  const marcas=LOG
+    ? [0,1,2,3].map(i=>Math.exp(Math.log(medLo)+lnR*i/3))
+    : [medHi,medHi*2/3,medHi/3].filter(v=>v>0);
+  marcas.forEach(v=>{
+    const y=yMed(v);
+    const ln=document.createElementNS(SVGNS,'line');
+    ln.setAttribute('x1','0');ln.setAttribute('x2','100');
+    ln.setAttribute('y1',y.toFixed(2));ln.setAttribute('y2',y.toFixed(2));
+    ln.setAttribute('stroke','var(--rule)');ln.setAttribute('stroke-width','1');
+    ln.setAttribute('stroke-dasharray','2 6');
+    ln.setAttribute('vector-effect','non-scaling-stroke');ln.setAttribute('opacity','.75');
+    svg.appendChild(ln);
+    if(ejeD){ const b=el('b',null,f0(v));b.style.top=y.toFixed(2)+'%';ejeD.appendChild(b); }
+  });
   vis.forEach((a,j)=>{
     const pts=medias[j].map((v,i)=>{
       const px=n>1?(i+.5)/n*100:50;
-      const py=100-Math.min(100, v/max*100);
-      return px.toFixed(2)+','+py.toFixed(2);
+      return px.toFixed(2)+','+yMed(v).toFixed(2);
     }).join(' ');
     const pl=document.createElementNS(SVGNS,'polyline');
     pl.setAttribute('points',pts);pl.setAttribute('fill','none');
@@ -1265,17 +1369,19 @@ function planPeriodo(p){
     const w=el('div','pp');
     w.append(el('div','nm',nom));
     const bar=el('div','ppBar');
-    const i=el('i');i.style.width=Math.min(100,rel*100)+'%';i.style.background=col;
+    const i=el('i');i.style.width=plan>0?anchoObj(rel):'0';i.style.background=col;
     i.style.opacity=k==='noaprov'?'.55':'1';
     const b=el('b',null,plan>0?f0(r.prod)+' · '+pct(rel):f0(r.prod)+' m³');
     bar.append(i,b);
+    if(plan>0) marca100(bar,'plan del período: 100%');
     w.append(bar,el('div','plan',plan>0?f0(plan):'—'));
     c.appendChild(w);
   });
   const nt=el('div','nota');
   nt.innerHTML=hay
     ? 'Ejecutado del período contra lo planificado para él, en m³ compactos. '+
-      'La cifra de la derecha es el plan. Sale de la hoja <b>CALCULOS</b>.'
+      'La cifra de la derecha es el plan; la marca vertical, el <b>100%</b> — la barra '+
+      'sigue hasta el 150% para que pasarse del plan se vea. Sale de la hoja <b>CALCULOS</b>.'
     : 'Este período no trae planificado en la hoja <b>CALCULOS</b>, así que sólo se ve lo ejecutado.';
   c.appendChild(nt);
 }
