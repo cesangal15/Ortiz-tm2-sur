@@ -1000,7 +1000,15 @@ function cadena(sel_p){
        nueva, que sería lo peor de las dos cosas. */
     const hayU = m.util!=null || (m.sb_aj!=null && m.sb_aj>0);
     const ut = hayU ? (m.util!=null ? m.util : Math.min(1, m.horas/m.sb_aj)) : null;
-    const ef=m.meta_hora?m.mh/m.meta_hora:0;
+    /* Eficiencia y velocidad en COMPACTO, la unidad del resto del tablero. La
+       vara `m.meta_hora` YA viene en compacto —es la meta diaria del acta ÷ 8 h,
+       tal cual la fija el jefe en CALCULOS— así que se compara contra la
+       producción por hora también en compacto, comp(m.mh). Antes se comparaba el
+       m³/h SUELTO contra esa vara compacta y la eficiencia salía inflada por el
+       factor 1,3 (un 115% real era ~89%). `dudoso` usa la misma unidad. */
+    const mhC=comp(m.mh);
+    const ef=m.meta_hora?mhC/m.meta_hora:0;
+    const dudoso=m.meta_hora?mhC>2.5*m.meta_hora:false;
     const abierta=abierto===a.k;
     /* Los equipos se cuentan AQUÍ, sobre el detalle por máquina, y no se toma
        el número que venga en la foto: las fotos guardadas antes de esta
@@ -1072,10 +1080,10 @@ function cadena(sel_p){
       }
     }
     const l2=mk('×',hayU?pct(ut):'—','',subU,ut||0);
-    const l3=mk('×',m.dudoso?'—':pct(ef),'',
-      m.dudoso?'horas incompletas en este centro de coste'
-             :f1(comp(m.mh))+' de '+f1(comp(m.meta_hora))+' m³ hora-máquina',
-      m.dudoso?0:Math.min(1,ef));
+    const l3=mk('×',dudoso?'—':pct(ef),'',
+      dudoso?'horas incompletas en este centro de coste'
+             :f1(mhC)+' de '+f1(m.meta_hora)+' m³ hora-máquina',
+      dudoso?0:Math.min(1,ef));
     // --- velocidad
     /* VELOCIDAD DE LA MAQUINARIA (ver el bloque de arriba): producción real
        contra lo que el tiempo disponible daba a ritmo nominal. Rendimiento de la
@@ -1085,8 +1093,8 @@ function cadena(sel_p){
        (rendimiento nominal × horas disponibles). Sobrevive a las horas que el
        digitador no alcanzó a teclear, porque el tiempo disponible sale de los
        días con parte, no de las horas operadas. Sin standby en la foto → «—». */
-    const espProd = (m.sb_aj!=null && m.sb_aj>0) ? m.meta_hora*m.sb_aj : null;   // producción esperada a ritmo nominal
-    const vel = espProd ? m.prod/espProd : null;
+    const espProd = (m.sb_aj!=null && m.sb_aj>0) ? m.meta_hora*m.sb_aj : null;   // producción esperada a ritmo nominal, en COMPACTO (la vara ya es compacta)
+    const vel = espProd ? comp(m.prod)/espProd : null;
     const vc=el('div','velC');
     vc.appendChild(el('div','eq','→'));
     const vv=el('div','v');
@@ -1100,7 +1108,7 @@ function cadena(sel_p){
       /* Se dice de dónde sale, en compacto y con las mismas cifras que las dos
          columnas de al lado: lo que produjo contra lo que su tiempo disponible
          daba a ritmo de catálogo. La velocidad ES el cociente de esas dos. */
-      vc.append(el('div','s',f0(comp(m.prod))+' m³ de '+f0(comp(espProd))+
+      vc.append(el('div','s',f0(comp(m.prod))+' m³ de '+f0(espProd)+
         ' m³ que daban sus '+f1(m.sb_aj)+' h disponibles a ritmo nominal'));
       vc.append(el('div','s', vel>=1
         ? 'más rápida que lo esperado — rindió por encima del catálogo'
@@ -1179,17 +1187,17 @@ function cadena(sel_p){
         'volquetas y la RT-02 quedan fuera: mueven obra, pero no producen estos m³.';
       if(m.grupos&&m.grupos.length){
         txt+='<br><br>El terraplén reparte la producción por grupo, cada uno contra SUS horas: '+
-          m.grupos.map(g=>'<b>'+g.tipo.toLowerCase()+'</b> '+pct(g.cuota)+' → '+f1(g.mh)+' m³/h en '+
+          m.grupos.map(g=>'<b>'+g.tipo.toLowerCase()+'</b> '+pct(g.cuota)+' → '+f1(comp(g.mh))+' m³/h en '+
           f1(g.horas)+' h').join(' · ')+'.';
       }
       /* Cuando la eficiencia se deja sin cifra hay que decir POR QUÉ con números,
          no con una etiqueta. Y desde que existe el standby se puede enseñar la
          prueba directa: cuántas horas trae el parte por día trabajado frente a
          las que la máquina está programada para hacer. */
-      if(m.dudoso){
+      if(dudoso){
         txt+='<br><br><b>Por qué la eficiencia se queda sin cifra.</b> Con estas horas el '+
-          'cálculo daría <b>'+f1(comp(m.mh))+' m³/h</b>, '+f1(m.mh/m.meta_hora)+' veces la meta de '+
-          f1(comp(m.meta_hora))+'. Una máquina no hace eso: lo que falla es el divisor, no la máquina.';
+          'cálculo daría <b>'+f1(mhC)+' m³/h</b>, '+f1(mhC/m.meta_hora)+' veces la meta de '+
+          f1(m.meta_hora)+'. Una máquina no hace eso: lo que falla es el divisor, no la máquina.';
         /* Solo los días de las máquinas que cuentan: si se suman también los del
            parte vacío, el promedio sale diluido y las horas programadas por día
            dejan de ser 6,4 o 5 para caer en un número que no es de nadie. */
