@@ -48,6 +48,7 @@
   .chk-presente{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);white-space:nowrap;}
   .chk-presente input{width:auto;}
   .motivo-sel{min-width:220px;flex:1;}
+  .turno-cap-sel{font-size:11px;padding:4px 8px;border-radius:8px;background:var(--input-bg);border:1px solid var(--border);color:var(--text);max-width:210px;cursor:pointer;}
   .sin-asignar{border:1px solid var(--border);border-radius:12px;padding:14px 16px;background:var(--surface2);}
   .sin-asignar.alerta{border-color:rgba(245,166,35,0.5);background:rgba(245,166,35,0.08);}
   .sin-asignar h3{font-family:'Syne',sans-serif;font-size:12px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;color:var(--muted);}
@@ -446,11 +447,29 @@ function toggleOverride(pidx){
   render();
 }
 function setOverride(pidx, campo, v){ STATE.personas[pidx][campo]=v; }
-// Capataz: activa/desactiva su horario editable. Al activarlo, siembra la jornada estándar del día
-// (entrada/salida del turno) para que el usuario solo extienda la salida si trabajó extras.
+// D159b: horas BASE del capataz según su turno. Antes se mandaba SIEMPRE turno 1 (jornada diurna del
+// día, 7.5h), así que un capataz en el turno NOCTURNO (8.5h base) se clasificaba mal en el Parte (lo
+// leía como turno 1). Ahora el capataz tiene su propio selector de turno (`turno_cap`): sus horas base
+// salen de ese turno (o de la jornada del día en domingo/festivo, donde no hay turnos) y se mandan ese
+// turno + esas horas. El override "ajustar horario" sigue igual para teclearle extras / dom-fest.
+function horasBaseCapataz(p){
+  const j=STATE.jornada||{};
+  if(j.tipo==='domfest') return { entrada:j.entrada||'', salida:j.salida||'' };
+  const t=turnoHoras((p&&p.turno_cap)||'1', STATE.fecha);
+  return t ? { entrada:t.entrada, salida:t.salida } : { entrada:j.entrada||'', salida:j.salida||'' };
+}
+function setTurnoCapataz(pidx, v){
+  const p=STATE.personas[pidx]; if(!p) return;
+  p.turno_cap=v;
+  // Si ya tenía el horario ajustado a mano, re-siémbralo con las horas del nuevo turno (base de extras).
+  if(p.hora_entrada_ov!=null){ const hb=horasBaseCapataz(p); p.hora_entrada_ov=hb.entrada; p.hora_salida_ov=hb.salida; }
+  render();
+}
+// Capataz: activa/desactiva su horario editable. Al activarlo, siembra las horas base de SU turno
+// (D159b) para que el usuario solo extienda la salida si trabajó extras.
 function toggleOverrideCapataz(pidx){
   const p=STATE.personas[pidx];
-  if(p.hora_entrada_ov==null){ p.hora_entrada_ov=STATE.jornada.entrada||''; p.hora_salida_ov=STATE.jornada.salida||''; }
+  if(p.hora_entrada_ov==null){ const hb=horasBaseCapataz(p); p.hora_entrada_ov=hb.entrada; p.hora_salida_ov=hb.salida; }
   else { p.hora_entrada_ov=null; p.hora_salida_ov=null; }
   render();
 }
@@ -594,6 +613,16 @@ function render(){
       html+= cc
         ? `<span class="badge asig" title="Centro de costo propio de supervisión del capataz (no es la actividad de la cuadrilla)">👷 ${esc(cc.split('|')[0].trim())}</span>`
         : `<span class="badge" title="No se pudo determinar el proyecto: asigna primero un centro de costo a algún bloque de la cuadrilla">👷 sin CC aún</span>`;
+      // D159b: selector de turno del capataz (define su jornada base en el Parte). Solo con TURNOS
+      // cargada y en día hábil; en domingo/festivo no hay turnos (jornada única del día).
+      const turnosCap=turnosDisponibles();
+      if(turnosCap.length && STATE.jornada.tipo!=='domfest'){
+        const tc=String(p.turno_cap||'1');
+        html+=`<select class="turno-cap-sel" title="Turno del capataz — define su jornada base (ordinarias/recargo nocturno) en el Parte" onchange="setTurnoCapataz(${p._pid},this.value)">`
+          + turnosCap.map(tn=>{ const t=turnoHoras(tn, STATE.fecha); const rango=t?` · ${esc(t.entrada)}–${esc(t.salida)}${t.cruza_medianoche?' (+1)':''}`:'';
+              return `<option value="${esc(tn)}" ${tn===tc?'selected':''}>Turno ${esc(tn)}${rango}</option>`; }).join('')
+          + '</select>';
+      }
       html+=` <button class="link-ov" onclick="toggleOverrideCapataz(${p._pid})">${tieneOv?'usar jornada estándar':'ajustar horario'}</button>`;
       if(tieneOv){
         capatazOv=`<div class="miembro-ov"><input type="time" value="${esc(p.hora_entrada_ov)}" onchange="setOverride(${p._pid},'hora_entrada_ov',this.value)">`
@@ -727,14 +756,16 @@ async function enviar(){
     const over=[];
     personas.filter(p=>p.presente).forEach(p=>{
       const b=STATE.bloques.find(x=>x.id===p.bloqueId);
-      // Capataz: no tiene bloque; sus horas salen de su override o de la jornada estándar del día.
-      const baseEnt=esCapataz(p)?(STATE.jornada.entrada||''):(b?b.hora_entrada:p.hora_entrada);
-      const baseSal=esCapataz(p)?(STATE.jornada.salida||''):(b?b.hora_salida:p.hora_salida);
+      // Capataz: no tiene bloque; sus horas salen de su override o de la jornada base de SU turno (D159b).
+      const baseCap=esCapataz(p)?horasBaseCapataz(p):null;
+      const baseEnt=esCapataz(p)?baseCap.entrada:(b?b.hora_entrada:p.hora_entrada);
+      const baseSal=esCapataz(p)?baseCap.salida:(b?b.hora_salida:p.hora_salida);
       const he=p.hora_entrada_ov!=null?p.hora_entrada_ov:baseEnt;
       const hs=p.hora_salida_ov!=null?p.hora_salida_ov:baseSal;
-      // D77: cada persona se compara contra el ESTÁNDAR de SU turno (el del bloque; capataz = turno 1).
-      const topeP=esCapataz(p)?topeDeTurno('1'):topeDeTurno(b?b.turno:'1');
-      const h=horasTrabajadas(he,hs,cfg,descansoDeBloque(b));
+      // D77/D159b: cada persona se compara contra el ESTÁNDAR de SU turno (el del bloque; el capataz, el suyo).
+      const topeP=esCapataz(p)?topeDeTurno(p.turno_cap||'1'):topeDeTurno(b?b.turno:'1');
+      const descanso=esCapataz(p)?descansoDeTurnoRow(turnoHoras(p.turno_cap||'1', STATE.fecha)):descansoDeBloque(b);
+      const h=horasTrabajadas(he,hs,cfg,descanso);
       if(h!=null && h>topeP+maxExtra+0.001) over.push(`  • ${p.nombre} — ${h.toFixed(1)}h (estándar del día: ${topeP}h + ${maxExtra}h extra)`);
     });
     if(over.length){
@@ -757,14 +788,16 @@ async function enviar(){
         hora_entrada:'', hora_salida:'', presente:'No', motivo_ausencia:p.motivo, observacion:'', turno:'' };
     }
     if(esCapataz(p)){
-      // Capataz presente: CC propio de supervisión (37xx.I010305), prefijo por mayoría. Por defecto la
-      // jornada estándar del día (turno 1); si se le ajustó el horario, van sus horas reales para que el
-      // Parte le calcule extras/dom-fest igual que a un trabajador. No entra a bloques (extiende D72f).
+      // Capataz presente: CC propio de supervisión (37xx.I010305), prefijo por mayoría. D159b: sus horas
+      // base salen de SU turno (`turno_cap`, no siempre el 1), y se manda ese turno para que el Parte le
+      // calcule bien ordinarias/recargo nocturno/extras (antes, en el turno nocturno de 8.5h lo leía como
+      // turno 1 = 7.5h). Si se le ajustó el horario, van sus horas reales. No entra a bloques (extiende D72f).
       const cc=ccCapataz();
-      const he=p.hora_entrada_ov!=null?p.hora_entrada_ov:(STATE.jornada.entrada||'');
-      const hs=p.hora_salida_ov!=null?p.hora_salida_ov:(STATE.jornada.salida||'');
+      const hb=horasBaseCapataz(p);
+      const he=p.hora_entrada_ov!=null?p.hora_entrada_ov:hb.entrada;
+      const hs=p.hora_salida_ov!=null?p.hora_salida_ov:hb.salida;
       return { codigo:p.codigo, cedula:p.cedula, nombre:p.nombre, cargo:p.cargo, cc:cc, proyecto:proyectoFromCC(cc),
-        hora_entrada:he, hora_salida:hs, presente:'Si', motivo_ausencia:'', observacion:'', turno:'1' };
+        hora_entrada:he, hora_salida:hs, presente:'Si', motivo_ausencia:'', observacion:'', turno:String(p.turno_cap||'1') };
     }
     const b=STATE.bloques.find(x=>x.id===p.bloqueId);
     const he = p.hora_entrada_ov!=null ? p.hora_entrada_ov : (b?b.hora_entrada:p.hora_entrada);
