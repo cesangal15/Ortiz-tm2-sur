@@ -1019,6 +1019,12 @@ function volquetasDelDia(e){
 function doGet(e){
   _t0 = Date.now();   // D100: siembra el cronómetro de servidor (`_ms` en la respuesta)
   const a=((e.parameter.action)||'').toLowerCase();
+  // D159: ÚNICA lectura pública, y va ANTES de la puerta. El tablero de producción se comparte por
+  // enlace con los directivos, que no tienen usuario en la plataforma y no traen token. Devuelve
+  // solo la foto YA PUBLICADA —producción, horas de máquina y avance—, nunca datos de personas, y
+  // no escribe nada. Publicarla sigue pidiendo token y rol (tablero_guardar), que es lo que de
+  // verdad hay que guardar.
+  if(a==='tablero')     return tableroLeer();
   // D109: puerta única. La identidad sale del TOKEN y sobrescribe lo que venga en la petición, así
   // que el resto del archivo puede seguir leyendo `usuario` igual que siempre — pero ya autenticado.
   const ses=sesion_(e, null);
@@ -1035,7 +1041,6 @@ function doGet(e){
   if(a==='flota')       return flotaLeer(e);        // D139: estancias + avisos para la pestaña Flota
   if(a==='acumulado_drenajes') return acumuladoDrenajes(e);
   if(a==='maquinaria_produccion') return maquinariaProduccion(e);
-  if(a==='tablero')     return tableroLeer();       // D158: foto del tablero de producción
   if(a==='debug')       return debug(e);
   return json({ok:true, msg:'API viva', version:'v11'});
 }
@@ -2549,6 +2554,12 @@ function endurecerClaves(){
  * QUIÉN PUEDE PUBLICAR: admin y jefe. Los dos manejan los Excel de origen. El
  * guard es el del servidor (D109), no el del cliente: el rol sale del token
  * firmado, así que escribir `rol: admin` en el navegador no sirve de nada.
+ *
+ * QUIÉN PUEDE LEERLA: cualquiera (D159). El tablero se comparte por enlace con
+ * los directivos, que no tienen usuario, así que `action=tablero` se despacha
+ * en doGet ANTES de la puerta de sesión. Lo que devuelve son cifras de obra —no
+ * hay personas en la foto— y no escribe nada. Asimétrico a propósito: leer es
+ * de todos, publicar es de dos.
  * =========================================================================*/
 const TABLERO_HEADERS = ['orden','texto'];
 const TABLERO_TROZO   = 40000;
@@ -2558,7 +2569,7 @@ function puedePublicarTablero_(body){
   return _permiso_(body, TABLERO_ROLES_PUBLICAN, [], 'publicar la foto del tablero');
 }
 
-// GET ?action=tablero -> {ok, foto:{...}|null, meta:{...}}
+// GET ?action=tablero -> {ok, foto:{...}|null, meta:{...}}   SIN token: lectura pública (D159).
 // Sin foto publicada devuelve foto:null y el tablero se queda con la suya: nunca una pantalla vacía.
 function tableroLeer(){
   const ss=ss_(), sh=ss.getSheetByName('TABLERO');

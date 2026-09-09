@@ -1566,19 +1566,19 @@ async function recalcular(oProd,oMaq){
  * =========================================================================*/
 const API = 'https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec';
 
-/* El token de sesión (D109) va a mano en las dos únicas llamadas de esta página,
-   en vez de cargar `auth.js`: son dos, y así el tablero sigue siendo UN archivo
-   que se puede abrir suelto. Es el mismo token firmado que emite el login; sin
-   él el servidor no deja publicar. */
+/* El token de sesión (D109) va a mano en la única llamada que lo necesita, en
+   vez de cargar `auth.js`: así el tablero sigue siendo UN archivo que se puede
+   abrir suelto. Es el mismo token firmado que emite el login; sin él el
+   servidor no deja PUBLICAR. Leer la foto no lo pide (D159): es público. */
 function token(){ try{ return localStorage.getItem('tm2_token')||''; }catch(e){ return ''; } }
 
-/* Trae la foto publicada. Nunca lanza: si algo falla, la página se queda con la
-   que ya está pintada, que es siempre mejor que un hueco. */
+/* Trae la foto publicada. Va SIN token: la lectura es pública (D159), porque el
+   directivo que abre el enlace no tiene sesión que mandar. Nunca lanza: si algo
+   falla, la página se queda con la que ya está pintada, que es siempre mejor
+   que un hueco. */
 async function fotoCompartida(){
   try{
-    const t = token();
-    const r = await fetch(API+'?action=tablero'+(t?'&token='+encodeURIComponent(t):''),
-                          { cache:'no-store' });
+    const r = await fetch(API+'?action=tablero', { cache:'no-store' });
     if(!r.ok) return null;
     const d = await r.json();
     if(!d || d.ok===false || !d.foto || !d.foto.per || !d.foto.per.length) return null;
@@ -1695,33 +1695,31 @@ function pedirArchivos(){
 
 
 /* ===========================================================================
- * QUIÉN ENTRA Y QUÉ PUEDE TOCAR (D158)
+ * QUIÉN ENTRA Y QUÉ PUEDE TOCAR (D158, abierta al público en D159)
  *
- * El tablero deja de ser solo del admin: lo ven también el jefe y los dos
- * residentes, tierras y drenajes. Cada uno vuelve a SU panel con el botón de
- * la cabecera, así que no hace falta una pantalla de decisión intermedia —
- * jefe.html, residente.html y seleccion-reporte.html ya hacen ese papel.
+ * ESTA PÁGINA ES PÚBLICA. Se comparte por enlace con los directivos, que no
+ * tienen usuario en la plataforma ni tienen por qué tenerlo: abren el enlace y
+ * la ven, sin login y sin instalar nada. Quien SÍ entra por la plataforma la
+ * sigue teniendo en su panel —jefe.html, residente.html, seleccion-reporte.html—
+ * y además le sale el botón de volver, que el visitante público no necesita.
  *
- * QUÉ ES ESTE PORTERO Y QUÉ NO ES. Es de cortesía, no de seguridad: los datos
- * van EMBEBIDOS en este archivo, así que quien tenga la URL o el archivo los
- * tiene. No hay forma de evitarlo en una página estática, y por eso mismo no
- * se finge lo contrario. Lo que sí hace: evita que alguien caiga aquí sin
- * sesión y mantiene el patrón del resto del sitio.
+ * QUÉ QUEDA A LA VISTA: producción, horas de máquina y avance. Ni nombres de
+ * personas, ni usuarios, ni claves — la foto no los lleva. Las CIFRAS DE OBRA
+ * sí las ve cualquiera que tenga el enlace: es la decisión que se tomó, no un
+ * descuido.
  *
- * SIN SESIÓN Y FUERA DEL SITIO (file://) NO EXPULSA. La página tiene que
- * abrirse en la sala aunque no haya red y aunque sea una copia suelta del
- * archivo — es su razón de ser. Si no hay servidor, no hay a dónde mandar.
+ * EL PORTERO DE ANTES SE FUE, Y NO PROTEGÍA NADA. Los datos van EMBEBIDOS en
+ * este archivo: quien tiene la URL tiene los números, con sesión o sin ella.
+ * Aquel desvío a index.html era de cortesía y ahora estorbaba. Lo que sí se
+ * guarda de verdad es ESCRIBIR, y eso lo decide el SERVIDOR con el token
+ * firmado (D109), no este archivo.
  *
  * QUIÉN PUEDE ACTUALIZAR. Los botones de «Actualizar» y «Elegir archivos»
- * releen los dos Excel y sustituyen la foto de datos. Los tienen el ADMIN y el
- * JEFE, que son los dos que manejan esos archivos; los residentes no, porque
- * quien elige el Excel equivocado antes de una reunión ve cifras que no son y
- * no tiene cómo notarlo. Ellos se quedan con la foto que trae el archivo, que
- * es la que se presenta, y con el renglón que dice de cuándo es.
- *
- * Actualizar NO le cambia los datos a nadie más: la foto nueva se guarda en el
- * navegador de quien pulsó el botón. Para que la vea el resto hay que volver a
- * publicar la página.
+ * releen los dos Excel y publican la foto PARA TODOS. Los tienen el ADMIN y el
+ * JEFE, que son los dos que manejan esos archivos; los residentes y el público
+ * no, porque quien elige el Excel equivocado antes de una reunión ve cifras
+ * que no son y no tiene cómo notarlo. El resto ve la foto publicada y el
+ * renglón que dice de cuándo es.
  * =========================================================================*/
 const PUEDEN_ACTUALIZAR=['admin','jefe'];
 const PANEL={ admin:'menu.html', jefe:'jefe.html', residente:'residente.html',
@@ -1732,17 +1730,26 @@ function sesion(){
   try{ return { rol:localStorage.getItem('rol')||'', usuario:localStorage.getItem('usuario')||'' }; }
   catch(e){ return { rol:'', usuario:'' }; }
 }
+/* Quién está mirando. Cadena vacía = visitante público, o una copia suelta del
+   archivo: ve el tablero entero, en solo lectura. Ya no expulsa a nadie, así
+   que nunca devuelve null y la página siempre se pinta. */
 function portero(){
   const {rol}=sesion();
-  if(PANEL[rol]) return rol;
-  if(location.protocol==='http:'||location.protocol==='https:'){ location.href='index.html'; return null; }
-  return '';                     // copia suelta del archivo: se abre igual
+  return PANEL[rol] ? rol : '';
 }
 function segunRol(rol){
   const v=$('volver');
   if(v && PANEL[rol]){
     v.textContent='← Volver';
     v.onclick=()=>{ location.href=PANEL[rol]; };
+    v.hidden=false;
+  }else if(v && location.protocol!=='file:'){
+    /* Visitante público: no hay panel al que volver. El mismo botón le sirve
+       de entrada a quien es de la obra y llegó por el enlace sin sesión. Dice
+       «Iniciar sesión» y no «Entrar» a propósito: el directivo tiene que leer
+       de un vistazo que eso NO es para él —ya está dentro— y seguir de largo. */
+    v.textContent='Iniciar sesión';
+    v.onclick=()=>{ location.href='index.html'; };
     v.hidden=false;
   }
   if(PUEDEN_ACTUALIZAR.indexOf(rol)>=0) return;
@@ -1800,13 +1807,11 @@ try{const s=localStorage.getItem(LS_DAT);
     if(s){const d=JSON.parse(s); if(d&&d.per&&d.per.length) TM2=d;}}catch(e){}
 sel=TM2.per.length-1;
 const ROL=portero();
-if(ROL!==null){
-  segunRol(ROL);
-  wire();
-  pinta();
-  logCC();
-  sincronizar();          // en segundo plano; si no hay red, no pasa nada
-}
+segunRol(ROL);
+wire();
+pinta();
+logCC();
+sincronizar();            // en segundo plano; si no hay red, no pasa nada
 </script>
 </body>
 </html>
