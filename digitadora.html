@@ -156,7 +156,7 @@
 <script src="auth.js"></script>
 <script>
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
-const TIPOS = ['Terraplén','Puente','ODL','ODT','Botadero'];
+const TIPOS = ['Terraplén','Puente','UF3','ODL','ODT','Botadero'];
 
 let FECHA = '';
 let grupos = [];   // {gid, placa, origen, destino, tipo_destino, uf, cub, esDefault, viajes, modo, cantAgr, renglones:[{rid,pk,remision,hs,hl,conductor}], renAgr:{pk,remision,conductor}}
@@ -205,7 +205,7 @@ function ccDe(t, pkDestM){
   const n=normTipo(t);
   if(n==='terraplen'){ const proy=(pkDestM!=null && pkDestM<=30000)?'3701':'3702'; return proy+'.02.11'; } // proyecto por PK destino (D04) + .02.11
   if(n==='puente') return '3701.11.03';  // fijo (confirmado por el usuario)
-  return '';                              // ODL / ODT / Botadero: CC en blanco, lo pone la digitadora
+  return '';                              // UF3 / ODL / ODT / Botadero: CC en blanco, lo pone la digitadora
 }
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function fmtNum(n){ if(n==null||n==='') return ''; const x=Number(n); if(isNaN(x)) return ''; return String(x).replace('.', ','); }
