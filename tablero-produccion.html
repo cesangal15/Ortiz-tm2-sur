@@ -516,6 +516,13 @@ const COH = { excavacion:['EXC'], terraplen:['BULL','MOTO'], subbase:['MOTO'], b
 /* El terraplén reparte la producción por grupo y mide cada uno contra SUS
    horas, como el informe mensual. */
 const SPLIT = { terraplen:{ BULLDOZER:0.75, MOTONIVELADORA:0.25 } };
+/* Vara por TIPO para el terraplén, en m³/h compactos. El bulldozer mueve el
+   grueso del volumen y la motoniveladora nivela, así que rinden muy distinto:
+   no se les puede medir a las dos con el 85 combinado. Derivadas del 85 y del
+   reparto 75/25 (85 = 0,75·127,5 + 0,25·42,5), promedian 85 cuando trabaja un
+   bulldozer y una moto. Así un día de solo motos se juzga contra 42,5, no
+   contra 85, que lo mataba. Decisión del usuario (varas derivadas). */
+const META_TIPO = { BULLDOZER:127.5, MOTONIVELADORA:42.5 };
 
 const ALIAS = { NG002:'FNG002', FNG02:'FNG002' };
 /* El mismo equipo se escribe de varias formas: MO003/MO-03/MO03. */
@@ -1012,8 +1019,20 @@ function cadena(sel_p){
        m³/h SUELTO contra esa vara compacta y la eficiencia salía inflada por el
        factor 1,3 (un 115% real era ~89%). `dudoso` usa la misma unidad. */
     const mhC=comp(m.mh);
-    const ef=m.meta_hora?mhC/m.meta_hora:0;
-    const dudoso=m.meta_hora?mhC>2.5*m.meta_hora:false;
+    /* EFICIENCIA = producción real ÷ producción esperada, todo compacto. Para
+       una partida de un solo tipo, esperada = vara × horas (equivale a m³/h ÷
+       vara). Para el TERRAPLÉN cada tipo lleva su propia vara (META_TIPO) y la
+       esperada se suma por tipo, con las horas de las máquinas que de verdad
+       trabajaron: un día de solo motos se mide contra 42,5, no contra 85. */
+    const vivasT=m.maq.filter(q=>(q.h+q.perd)>0);
+    const capOp = SPLIT[a.k]
+      ? vivasT.reduce((sx,q)=> sx + (META_TIPO[q.tipo]||m.meta_hora)*q.h, 0)
+      : m.meta_hora*m.horas;
+    const ef = capOp>0 ? comp(m.prod)/capOp : 0;
+    /* «Dudoso» = la producción sale a más de 2,5× lo que las máquinas presentes
+       podían dar. No es que rindieran de más: faltan horas por anotar (o las
+       produjo una máquina cargada a otro centro de coste). Se deja sin cifra. */
+    const dudoso = ef>2.5;
     const abierta=abierto===a.k;
     /* Los equipos se cuentan AQUÍ, sobre el detalle por máquina, y no se toma
        el número que venga en la foto: las fotos guardadas antes de esta
@@ -1085,9 +1104,12 @@ function cadena(sel_p){
       }
     }
     const l2=mk('×',hayU?pct(ut):'—','',subU,ut||0);
+    const subEf = SPLIT[a.k]
+      ? f0(comp(m.prod))+' de '+f0(capOp)+' m³ al ritmo de cada tipo'
+      : f1(mhC)+' de '+f1(m.meta_hora)+' m³ hora-máquina';
     const l3=mk('×',dudoso?'—':pct(ef),'',
-      dudoso?'horas incompletas en este centro de coste'
-             :f1(mhC)+' de '+f1(m.meta_hora)+' m³ hora-máquina',
+      dudoso?'horas incompletas: el parte no cuadra con lo producido'
+             :subEf,
       dudoso?0:Math.min(1,ef));
     // --- velocidad
     /* VELOCIDAD DE LA MAQUINARIA (ver el bloque de arriba): producción real
@@ -1192,18 +1214,20 @@ function cadena(sel_p){
         'motoniveladora (03.01), BTC motoniveladora y finisher (03.03). Vibros, minicargadores, '+
         'volquetas y la RT-02 quedan fuera: mueven obra, pero no producen estos m³.';
       if(m.grupos&&m.grupos.length){
-        txt+='<br><br>El terraplén reparte la producción por grupo, cada uno contra SUS horas: '+
-          m.grupos.map(g=>'<b>'+g.tipo.toLowerCase()+'</b> '+pct(g.cuota)+' → '+f1(comp(g.mh))+' m³/h en '+
-          f1(g.horas)+' h').join(' · ')+'.';
+        txt+='<br><br>El terraplén mide cada tipo contra SU vara —bulldozer '+
+          f1(META_TIPO.BULLDOZER)+', motoniveladora '+f1(META_TIPO.MOTONIVELADORA)+
+          ' m³/h—, no contra el 85 combinado: '+
+          m.grupos.map(g=>'<b>'+g.tipo.toLowerCase()+'</b> '+f1(comp(g.mh))+' m³/h en '+
+          f1(g.horas)+' h (vara '+f1(META_TIPO[g.tipo]||m.meta_hora)+')').join(' · ')+'.';
       }
       /* Cuando la eficiencia se deja sin cifra hay que decir POR QUÉ con números,
          no con una etiqueta. Y desde que existe el standby se puede enseñar la
          prueba directa: cuántas horas trae el parte por día trabajado frente a
          las que la máquina está programada para hacer. */
       if(dudoso){
-        txt+='<br><br><b>Por qué la eficiencia se queda sin cifra.</b> Con estas horas el '+
-          'cálculo daría <b>'+f1(mhC)+' m³/h</b>, '+f1(mhC/m.meta_hora)+' veces la meta de '+
-          f1(m.meta_hora)+'. Una máquina no hace eso: lo que falla es el divisor, no la máquina.';
+        txt+='<br><br><b>Por qué la eficiencia se queda sin cifra.</b> La producción sale a <b>'+
+          f1(ef)+' veces</b> lo que las máquinas presentes podían dar a su ritmo. '+
+          'Una máquina no hace eso: faltan horas por anotar, no es que rindiera de más.';
         /* Solo los días de las máquinas que cuentan: si se suman también los del
            parte vacío, el promedio sale diluido y las horas programadas por día
            dejan de ser 6,4 o 5 para caer en un número que no es de nadie. */
