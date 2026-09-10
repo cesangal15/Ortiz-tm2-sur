@@ -485,11 +485,13 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
 const FC_DEFECTO = 1.3;                         // suelto -> compacto (CALCULOS)
 const DESDE = '2025-08';                        // donde arranca el acta
 const CONTRATO = { excavacion:620671, terraplen:480586, subbase:86552, base:43759 };
-const META_D = { excavacion:850, terraplen:680, subbase:430.769230769231, base:430.769230769231 };
-/* Respaldo por si CALCULOS no trae la fila «rendimiento esperado». Es META_D÷8
-   (subbase y BTC = 430,77÷8 = 53,85; antes estaban a mano en 43,75 y 58,75, que
-   era el error de «aparecen distintos»). Lo normal es que se lea del archivo. */
-const META_H = { excavacion:106.25, terraplen:85, subbase:53.8462, base:53.8462 };
+/* Rendimiento esperado POR MÁQUINA, en compacto/día = «proyectado suelto equipo»
+   de CALCULOS ÷ fc. De respaldo por si el archivo no trae la fila; lo normal es
+   leerlo del Excel. Excavación 1105/1,3=850 · terraplén 585/1,3=450 · subbase
+   455/1,3=350 · BTC 611/1,3=470. */
+const META_D = { excavacion:850, terraplen:450, subbase:350, base:470 };
+/* La vara por hora es META_D ÷ 8. */
+const META_H = { excavacion:106.25, terraplen:56.25, subbase:43.75, base:58.75 };
 const NOMBRE = { excavacion:'Excavación', terraplen:'Terraplén', subbase:'Subbase', base:'BTC / Base' };
 
 /* Flota del reparto. El resto de la obra —vibros, minis, volquetas, la RT-02—
@@ -605,25 +607,26 @@ function leerPlan(wb){
   return out;
 }
 
-/* RENDIMIENTO ESPERADO por partida, leído del ARCHIVO en vez de a mano. Está en
-   CALCULOS, en la fila rotulada «rendimiento esperado» (columna O), en COMPACTO
-   por día y por máquina: excavación 850, terraplén 680, subbase y BTC 430,77.
-   La vara por hora es ese número ÷ 8 (regla del jefe: la jornada de referencia
-   son 8 h). Se busca la fila por su rótulo, no por su número, para que aguante
-   si el jefe inserta filas; si no aparece, se cae a META_D (los mismos valores
-   por defecto). Columnas: P=excavación(15) Q=terraplén(16) R=subbase(17)
-   T=BTC(19), como el resto de CALCULOS. Así, cuando el jefe corrija un
-   rendimiento, entra solo al pulsar «Actualizar». */
+/* RENDIMIENTO POR MÁQUINA, leído del ARCHIVO. Está en CALCULOS, en la fila
+   «PROYECTADO SUELTO equipo» (columna O), en SUELTO POR EQUIPO: excavación 1105,
+   terraplén 585, subbase 455, BTC 611. Se lee ESA fila, NO la de «rendimiento
+   esperado», porque esa última ya viene multiplicada por el # de equipos (con 2
+   máquinas de terraplén da 1.170/1,3 = 900, que es el total de la flota, no el
+   ritmo de UNA máquina). El proyectado suelto es por equipo, así que no cambia
+   cuando el jefe mueve el # de equipos. Devuelve el valor tal cual (suelto); en
+   `construir` se pasa a compacto ÷ fc y a hora ÷ 8. Se busca por rótulo para que
+   aguante inserciones de filas; si no aparece, cae a META_D. Columnas:
+   P=excavación(15) Q=terraplén(16) R=subbase(17) T=BTC(19). */
 const REND_COL = { excavacion:15, terraplen:16, subbase:17, base:19 };
-function leerRendimiento(wb){
+function leerProyectado(wb){
   if (!wb.Sheets['CALCULOS']) return {};
   for (const r of filas(wb,'CALCULOS')){
     const et = String(r[14]==null?'':r[14]).toLowerCase();
-    if (et.indexOf('rendimiento esperado') < 0) continue;
+    if (et.indexOf('proyectado suelto') < 0) continue;
     const o = {};
     for (const [act,col] of Object.entries(REND_COL)){
       const v = num(r[col]);
-      if (v > 0) o[act] = v;                 // sólo pisa el defecto si trae número
+      if (v > 0) o[act] = v;                 // suelto por equipo; sólo pisa si trae número
     }
     return o;
   }
@@ -676,11 +679,15 @@ function construir(wbProd, wbMaq){
   const FC = FC_DEFECTO;
   const KEY = { excavacion:'exc', terraplen:'ter', subbase:'sub', base:'bas' };
   const ACTS = Object.keys(KEY);
-  /* Rendimiento esperado del ARCHIVO (CALCULOS «rendimiento esperado», compacto
-     por día). La vara por hora es ÷ 8. Lo que no venga en el archivo se queda con
-     META_D de respaldo. Un solo punto: de aquí salen las varas de toda la página. */
-  const REND = leerRendimiento(wbProd);
-  const metaD = Object.assign({}, META_D, REND);
+  /* Vara POR MÁQUINA del ARCHIVO: «proyectado suelto equipo» de CALCULOS (suelto
+     por equipo) ÷ fc = compacto/día por máquina; ÷ 8 = compacto/hora. Se lee el
+     proyectado suelto y NO el «rendimiento esperado», porque ese último ya está
+     multiplicado por el # de equipos y daría el total de la flota, no el ritmo de
+     una máquina. Lo que no venga en el archivo cae a META_D. Un solo punto: de
+     aquí salen las varas de toda la página. */
+  const REND = leerProyectado(wbProd);
+  const metaD = Object.assign({}, META_D);
+  ACTS.forEach(k => { if (REND[k] > 0) metaD[k] = +(REND[k]/FC).toFixed(4); });
   const metaH = {}; ACTS.forEach(k => metaH[k] = +(metaD[k]/8).toFixed(4));
 
   const pers = [...new Set(dias.map(d=>d.p))].sort();
@@ -1049,16 +1056,16 @@ function cadena(sel_p){
     const hayU = m.util!=null || (m.sb_aj!=null && m.sb_aj>0);
     const ut = hayU ? (m.util!=null ? m.util : Math.min(1, m.horas/m.sb_aj)) : null;
     /* Eficiencia y velocidad en COMPACTO, la unidad del resto del tablero. La
-       vara `m.meta_hora` YA viene en compacto —es la meta diaria del acta ÷ 8 h,
-       tal cual la fija el jefe en CALCULOS— así que se compara contra la
+       vara `m.meta_hora` YA viene en compacto —proyectado suelto por equipo de
+       CALCULOS ÷ fc ÷ 8 h— así que se compara contra la
        producción por hora también en compacto, comp(m.mh). Antes se comparaba el
        m³/h SUELTO contra esa vara compacta y la eficiencia salía inflada por el
        factor 1,3 (un 115% real era ~89%). */
     const mhC=comp(m.mh);
     /* EFICIENCIA = m³/h real ÷ vara de la partida, todo compacto. La vara
-       (m.meta_hora) es la meta diaria del acta ÷ 8 h, la MISMA para toda la
-       partida — el terraplén incluye motos y bulldozer con el mismo rendimiento
-       estándar, por decisión del jefe (las varas por tipo quedaron en pausa).
+       (m.meta_hora) es el proyectado suelto por equipo ÷ fc ÷ 8 h, POR MÁQUINA,
+       la MISMA para toda la partida — el terraplén incluye motos y bulldozer con
+       el mismo rendimiento estándar (las varas por tipo quedaron en pausa).
        SIEMPRE se muestra la cifra, salga alta o baja: el equipo interpreta el
        motivo y cómo proceder (decisión del jefe). No se oculta nada. */
     const ef=m.meta_hora?mhC/m.meta_hora:0;
