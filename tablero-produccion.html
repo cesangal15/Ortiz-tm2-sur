@@ -483,8 +483,20 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
  * ==========================================================================*/
 
 const FC_DEFECTO = 1.3;                         // suelto -> compacto (CALCULOS)
-const DESDE = '2025-08';                        // donde arranca el acta
-const CONTRATO = { excavacion:620671, terraplen:480586, subbase:86552, base:43759 };
+const DESDE = '2025-08';                        // arranque histórico (ya no se usa en el avance)
+/* CONTRATO TOTAL de la obra, en m³ compactos (cuadro «Programado» del jefe, UF1+UF2).
+   La excavación es la COMÚN; el préstamo va como partida aparte. Reemplaza a los
+   números de antes, que no eran los del contrato real. */
+const CONTRATO = { excavacion:747202.97, terraplen:665465.73, subbase:84203.87,
+                   base:92573.49, prestamo:168462 };
+/* AVANCE ANCLADO AL ACTA. El acumulado NO se re-suma desde el histórico —no cuadraba
+   con el acta—: se parte de la producción oficial DE ORIGEN HASTA EL 15-AGO-2026
+   (cuadro «Producción» del jefe, compacto, UF1+UF2) y se le suma sólo lo ejecutado
+   DESDE EL 16-AGO. Excavación = común; préstamo aparte. Es un corte fijo, va a mano. */
+const BASE_CORTE = '2026-08-16';                // desde aquí se suma lo diario
+const BASE_ACUM  = { excavacion:549153.95, terraplen:385854.98, subbase:46523.83,
+                     base:38103.26, prestamo:51895 };
+const AV_FIELD   = { excavacion:'apr', terraplen:'ter', subbase:'sub', base:'bas' };
 /* Rendimiento esperado POR MÁQUINA, en compacto/día = «proyectado suelto equipo»
    de CALCULOS ÷ fc. De respaldo por si el archivo no trae la fila; lo normal es
    leerlo del Excel. Excavación 1105/1,3=850 · terraplén 585/1,3=450 · subbase
@@ -810,9 +822,16 @@ function construir(wbProd, wbMaq){
     return { p, d:dd.map(({p:_,...q})=>q), a, split, m };
   });
 
+  /* Base oficial (hasta 15-ago) + producción diaria desde el 16-ago, en compacto.
+     La excavación usa la COMÚN (columna apr), no el total excavado. */
+  const desde16 = dias.filter(d => d.f >= BASE_CORTE);
   const avance = ACTS.map(act => ({ k:act, n:NOMBRE[act].replace(' / Base',''),
-    eje:+(dias.filter(d=>d.p>=DESDE).reduce((s,d)=>s+d[KEY[act]],0)/FC).toFixed(1),
+    eje:+(BASE_ACUM[act] + desde16.reduce((s,d)=>s+(d[AV_FIELD[act]]||0),0)/FC).toFixed(1),
     plan:CONTRATO[act] }));
+  /* El préstamo es partida propia del contrato, aparte de la excavación común. */
+  avance.push({ k:'prestamo', n:'Excavación préstamo',
+    eje:+(BASE_ACUM.prestamo + desde16.reduce((s,d)=>s+(d.pre||0),0)/FC).toFixed(1),
+    plan:CONTRATO.prestamo });
 
   return { fc:FC, desde:DESDE, per, avance,
     maq_periodos: per.filter(x=>x.m).map(x=>x.p),
@@ -1426,21 +1445,22 @@ function planPeriodo(p){
 function avance(){
   const c=document.getElementById('avance');c.innerHTML='';
   TM2.avance.forEach(a=>{
-    const act=ACT.find(z=>z.k===a.k)||ACT[0];   // el nombre, de una sola fuente
+    const act=ACT.find(z=>z.k===a.k)||ACT[0];   // color de una sola fuente
     const r=a.plan?a.eje/a.plan:0;
     const w=el('div','av');
     const row=el('div','r');
     const rt=el('div');rt.style.cssText='display:flex;align-items:baseline;gap:7px;';
     const p=el('div','syne pc',pct(r));p.style.fontWeight='700';
     rt.append(p,el('div','of',f0(a.eje)+' / '+f0(a.plan)+' m³'));
-    row.append(el('div','nm',act.n),rt);
+    row.append(el('div','nm',a.n||act.n),rt);
     const bar=el('div','avBar');const i=el('i');
     i.style.width=Math.min(100,r*100)+'%';i.style.background=act.c;bar.appendChild(i);
     w.append(row,bar);c.appendChild(w);
   });
   const nt=el('div','nota');
-  nt.innerHTML='En m³ compactos, acumulado desde <b>'+eti(TM2.desde)+
-    '</b>, que es donde arranca el acta.';
+  nt.innerHTML='En m³ compactos. Base: producción de origen <b>hasta el 15-ago-2026</b> '+
+    '(del acta); de ahí suma lo ejecutado <b>desde el 16-ago</b>. La excavación es sólo '+
+    'la <b>común</b>; el préstamo va como partida aparte.';
   c.appendChild(nt);
 }
 
