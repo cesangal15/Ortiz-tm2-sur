@@ -501,13 +501,16 @@ const NOMTIPO = { EXC:'EXCAVADORA', BULL:'BULLDOZER', MOTO:'MOTONIVELADORA', FIN
 
 /* HORAS PROGRAMADAS AL DÍA — el «standby» del que habla el jefe.
    NO se lee del libro: su columna Standby viene vacía o mal. Se calcula con la
-   regla de siempre (D10, y ya está por máquina en la hoja MAQUINAS):
-   6,4 h/día las PROPIAS de Ortiz, 5 h/día las ALQUILADAS a terceros.
-   De esta flota son alquiladas NH69, CAT320 y MC705; el resto, propias. */
-const HPROG = { EXC001:6.4, EXC013:6.4, EXC014:6.4, EXC015:6.4, CAT320:5,
-                BL005:6.4, BL009:6.4, NH69:5,
-                MO03:6.4, MO04:6.4, MO09:6.4, MC705:5, FNG002:6.4 };
-const HPROG_DEF = 6.4;              // una máquina nueva se supone propia
+   JORNADA NORMAL DE 8 h/día para toda máquina (decisión del jefe): se mide contra
+   el día completo, no contra las horas contratadas —castiga más, pero es el
+   estándar real—. Antes se usaban 6,4 h las propias y 5 las alquiladas; esa
+   distinción queda en pausa (alquiladas: NH69, CAT320, MC705). Al standby se le
+   siguen restando las paradas de taller (mtto/varada/avería), que se le cobran
+   al dueño; la lluvia no. */
+const HPROG = { EXC001:8, EXC013:8, EXC014:8, EXC015:8, CAT320:8,
+                BL005:8, BL009:8, NH69:8,
+                MO03:8, MO04:8, MO09:8, MC705:8, FNG002:8 };
+const HPROG_DEF = 8;               // jornada normal de 8 h para toda máquina
 
 /* Centro de coste -> actividad. Es la regla; lo que cambia cada mes es qué CC
    lleva cada parte, y eso se lee del archivo, así que las correcciones del jefe
@@ -761,7 +764,7 @@ function construir(wbProd, wbMaq){
         /* STANDBY DEL PERÍODO = suma de (días × horas programadas) de cada
            máquina que de verdad estuvo. La del parte vacío —cero operadas y
            cero perdidas— NO suma standby: casi siempre es el digitador
-           repitiendo la máquina un fin de semana, y cargarle 6,4 h de standby
+           repitiendo la máquina un fin de semana, y cargarle 8 h de standby
            a algo que nunca se usó hunde la utilización por un error de tecleo. */
         const vivas = maq.filter(q=>(q.h+q.perd)>0);
         const sb = +vivas.reduce((s,q)=>s+q.sb,0).toFixed(1);
@@ -985,9 +988,10 @@ function evolucion(){
  * NO es el avance del contrato ni el cumplimiento del plan del mes —cada uno
  * tiene su propio apartado más abajo—. Aquí sólo habla la máquina.
  *
- * EL STANDBY es el tiempo disponible de verdad: días con parte × horas
- * programadas (6,4 propia / 5 alquilada), menos mantenimiento y paradas que se
- * repercuten al dueño. Por eso la velocidad se ancla al standby y NO a las horas
+ * EL STANDBY es el tiempo disponible: días con parte × 8 h (la jornada normal,
+ * decisión del jefe), menos mantenimiento y paradas de taller que se repercuten
+ * al dueño (la lluvia no se resta). Por eso la velocidad se ancla al standby y NO
+ * a las horas
  * operadas que teclea el digitador: si faltan horas por anotar, la eficiencia se
  * cae pero la velocidad aguanta, porque el tiempo disponible no depende de lo que
  * se alcanzó a teclear.
@@ -1035,8 +1039,8 @@ function cadena(sel_p){
     if(!m) return;
     const perd=m.perd||0;
     /* UTILIZACIÓN = horas operadas ÷ standby ajustado, donde el standby son las
-       horas programadas de cada máquina (6,4 propia / 5 alquilada) por sus días
-       de parte, menos mantenimiento y paradas. Por encima del standby es 100% y
+       8 h de jornada normal por sus días de parte, menos mantenimiento y paradas
+       de taller (la lluvia no se resta). Por encima del standby es 100% y
        lo que sobra se dice como ganancia.
        `m.util` sólo viene en las fotos generadas a partir de este cambio; en una
        anterior no hay días por máquina y el standby NO se puede reconstruir, así
@@ -1192,14 +1196,14 @@ function cadena(sel_p){
         const vacia = (q.h+q.perd)===0;
         /* Standby de ESTA máquina: sus días de parte por sus horas programadas,
            menos su mantenimiento y sus paradas. La celda lleva la cuenta en el
-           title para que nadie tenga que fiarse: «17 días × 6,4 h propia». */
+           title para que nadie tenga que fiarse: «17 días × 8 h». */
         const sbq = (!vacia && q.sb_aj!=null) ? q.sb_aj : null;
         const u = (sbq!=null && sbq>0) ? Math.min(1, q.h/sbq) : null;
         const t=el('div','mtR');
         if(vacia) t.style.opacity='.5';
         const cSb=el('div','num', vacia?'—':(sbq!=null?f1(sbq):'—'));
-        if(!vacia && q.dias!=null) cSb.title=q.dias+' días × '+f1(q.hprog)+' h ('+
-          (q.hprog>=6?'propia':'alquilada')+')'+(q.ajuste>0?' − '+f1(q.ajuste)+' h de mtto y paradas':'');
+        if(!vacia && q.dias!=null) cSb.title=q.dias+' días × '+f1(q.hprog)+' h'+
+          (q.ajuste>0?' − '+f1(q.ajuste)+' h de mtto y paradas':'');
         const cUt=el('div','num', vacia?'no cuenta':(u!=null?pct(u):'—'));
         if(vacia){ cUt.style.fontSize='10.5px'; cUt.style.color='var(--accent-txt)';
                    cUt.title='Parte sin horas operadas ni perdidas: no suma standby '+
@@ -1251,7 +1255,7 @@ function cadena(sel_p){
           f1(m.meta_hora)+'. Una máquina no hace eso: lo que falla es el divisor, no la máquina.';
         /* Solo los días de las máquinas que cuentan: si se suman también los del
            parte vacío, el promedio sale diluido y las horas programadas por día
-           dejan de ser 6,4 o 5 para caer en un número que no es de nadie. */
+           dejan de ser 8 para caer en un número que no es de nadie. */
         const dm=(m.maq||[]).filter(q=>(q.h+q.perd)>0).reduce((s,q)=>s+(q.dias||0),0);
         if(dm>0) txt+=' El parte trae <b>'+f1(m.horas)+' h</b> repartidas en <b>'+dm+
           ' días</b> de máquina — '+f1(m.horas/dm)+' h por día, cuando lo programado son '+
