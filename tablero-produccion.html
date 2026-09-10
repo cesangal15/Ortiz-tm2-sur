@@ -750,21 +750,14 @@ function construir(wbProd, wbMaq){
           sb:+(q.dias.size*(HPROG[q.cod]||HPROG_DEF)).toFixed(1),
           sb_aj:+Math.max(0, q.dias.size*(HPROG[q.cod]||HPROG_DEF)-q.ajuste).toFixed(1) }))
           .sort((x,y)=>y.h-x.h);
-        let mh, grupos = null;
-        if (SPLIT[act]){
-          const porTipo = {};
-          for (const q of maq){ porTipo[q.tipo] = (porTipo[q.tipo]||0) + q.h; }
-          let numr=0, den=0; grupos=[];
-          for (const [tp,cuota] of Object.entries(SPLIT[act])){
-            const hh = porTipo[tp]; if (!hh) continue;
-            grupos.push({ tipo:tp, cuota, horas:+hh.toFixed(1),
-                          prod:Math.round(suelto*cuota), mh:+(suelto*cuota/hh).toFixed(2) });
-            numr += suelto*cuota; den += hh;
-          }
-          mh = den>0 ? +(numr/den).toFixed(2) : 0;
-        } else {
-          mh = +(suelto/g.horas).toFixed(2);
-        }
+        /* Rendimiento = producción ÷ horas operadas, DIRECTO, para toda partida.
+           El reparto 75/25 del terraplén (bulldozer/moto) queda EN PAUSA por
+           decisión del jefe: cuando un período traía horas de un solo tipo, el
+           reparto acreditaba solo su cuota (25% si eran motos) y el m³/h salía
+           a la cuarta parte de lo real —43 en vez de 173—, que no cuadra con
+           «producción ÷ horas». Ahora es la división de siempre, motos incluidas. */
+        const grupos = null;
+        const mh = +(suelto/g.horas).toFixed(2);
         /* STANDBY DEL PERÍODO = suma de (días × horas programadas) de cada
            máquina que de verdad estuvo. La del parte vacío —cero operadas y
            cero perdidas— NO suma standby: casi siempre es el digitador
