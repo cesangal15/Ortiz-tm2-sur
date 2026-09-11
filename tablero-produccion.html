@@ -1496,7 +1496,10 @@ function aprov(p){
     const l=el('div','l');const sw=el('span','sw');sw.style.background=col;
     l.append(sw,el('span',null,nm));
     const rr=el('div','r');
-    rr.append(el('div','syne v',f0(comp(s[k]))+' m³'),el('div','p',tot>0?pct(s[k]/tot):'—'));
+    /* `s[k]` YA viene en compacto: el motor divide `apr/pre/nap` por FC al armar
+       el split. Aplicarle `comp()` aquí volvía a dividir por 1,3 —doble conversión—
+       y el común salía 15.868 en vez de los 20.628 reales (26.816 suelto ÷ 1,3). */
+    rr.append(el('div','syne v',f0(s[k])+' m³'),el('div','p',tot>0?pct(s[k]/tot):'—'));
     r.append(l,rr);c.appendChild(r);
   });
   const nt=el('div','nota');nt.style.marginTop='10px';
