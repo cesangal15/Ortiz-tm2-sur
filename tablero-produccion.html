@@ -521,16 +521,16 @@ const NOMTIPO = { EXC:'EXCAVADORA', BULL:'BULLDOZER', MOTO:'MOTONIVELADORA', FIN
 
 /* HORAS PROGRAMADAS AL DÍA — el «standby» del que habla el jefe.
    NO se lee del libro: su columna Standby viene vacía o mal. Se calcula con la
-   JORNADA NORMAL DE 8 h/día para toda máquina (decisión del jefe): se mide contra
-   el día completo, no contra las horas contratadas —castiga más, pero es el
-   estándar real—. Antes se usaban 6,4 h las propias y 5 las alquiladas; esa
-   distinción queda en pausa (alquiladas: NH69, CAT320, MC705). Al standby se le
-   siguen restando las paradas de taller (mtto/varada/avería), que se le cobran
-   al dueño; la lluvia no. */
-const HPROG = { EXC001:8, EXC013:8, EXC014:8, EXC015:8, CAT320:8,
-                BL005:8, BL009:8, NH69:8,
-                MO03:8, MO04:8, MO09:8, MC705:8, FNG002:8 };
-const HPROG_DEF = 8;               // jornada normal de 8 h para toda máquina
+   JORNADA CONTRATADA de cada máquina: 6,4 h las PROPIAS de Ortiz, 5 h las
+   ALQUILADAS a terceros (NH69, CAT320, MC705). Este standby es el de la
+   UTILIZACIÓN (cuánto de su tiempo contratado usó). La VELOCIDAD NO usa esto:
+   va sobre 8 h/día, que es como se calcula el rendimiento (proyectado ÷ 8) —son
+   cosas distintas. Al standby se le restan las paradas de taller (mtto/varada/
+   avería), que se le cobran al dueño; la lluvia no. */
+const HPROG = { EXC001:6.4, EXC013:6.4, EXC014:6.4, EXC015:6.4, CAT320:5,
+                BL005:6.4, BL009:6.4, NH69:5,
+                MO03:6.4, MO04:6.4, MO09:6.4, MC705:5, FNG002:6.4 };
+const HPROG_DEF = 6.4;             // una máquina nueva se supone propia
 
 /* Centro de coste -> actividad. Es la regla; lo que cambia cada mes es qué CC
    lleva cada parte, y eso se lee del archivo, así que las correcciones del jefe
@@ -789,7 +789,7 @@ function construir(wbProd, wbMaq){
         /* STANDBY DEL PERÍODO = suma de (días × horas programadas) de cada
            máquina que de verdad estuvo. La del parte vacío —cero operadas y
            cero perdidas— NO suma standby: casi siempre es el digitador
-           repitiendo la máquina un fin de semana, y cargarle 8 h de standby
+           repitiendo la máquina un fin de semana, y cargarle 6,4 h de standby
            a algo que nunca se usó hunde la utilización por un error de tecleo. */
         const vivas = maq.filter(q=>(q.h+q.perd)>0);
         const sb = +vivas.reduce((s,q)=>s+q.sb,0).toFixed(1);
@@ -1005,34 +1005,26 @@ function evolucion(){
 /* VELOCIDAD DE LA MAQUINARIA — a qué ritmo produjo la máquina contra lo que
  * DEBERÍA producir con las horas que tuvo disponibles, a su rendimiento nominal.
  *
- *     VELOCIDAD = eficiencia (m³/h real ÷ nominal) × utilización (horas ÷ standby)
+ *     producción esperada = rendimiento nominal × 8 h/día × días-máquina
+ *     VELOCIDAD           = producción real ÷ producción esperada
  *
- * Es EXACTAMENTE el producto de las dos columnas de al lado, para que las tres
- * se lean de corrido y la velocidad no pueda salir por encima de la eficiencia.
- * 100% = la máquina produjo lo que su tiempo disponible daba al ritmo de
- * catálogo; por encima fue MÁS RÁPIDA (rindió más por hora), por debajo más lenta.
+ * Va sobre 8 h/día PORQUE ASÍ SE CALCULA EL RENDIMIENTO (proyectado suelto ÷ fc
+ * ÷ 8): la vara es «lo que una máquina debería hacer en un día de 8 h», así que
+ * la velocidad la mide contra esa misma base. Es, en el fondo, la vieja medida
+ * por DÍAS-MÁQUINA a jornada completa: producción ÷ (proyectado × días-máquina).
+ * 100% = hizo lo que se esperaba de cada día que estuvo; por debajo, más lenta;
+ * por encima, más rápida. Castiga más que las 6,4 h, pero es el estándar real.
  *
- * POR QUÉ EL PRODUCTO Y NO «producción ÷ (vara × standby)»: para las partidas sin
- * reparto por tipo las dos fórmulas dan lo mismo, pero el TERRAPLÉN se reparte
- * 75% bulldozer / 25% motoniveladora, y si un tipo no trae horas en el parte, la
- * eficiencia sólo acredita la cuota del tipo que sí las trae. Aquel cociente
- * usaba la producción ENTERA contra el standby y disparaba la velocidad por
- * encima de la eficiencia (143% con eficiencia 45%). Como producto de las dos,
- * cuadra siempre.
+ * OJO — NO es la utilización. La UTILIZACIÓN va contra las 6,4/5 h CONTRATADAS
+ * (cuánto de su tiempo pagado usó la máquina); la VELOCIDAD va contra las 8 h del
+ * rendimiento. Son cosas distintas y por eso la velocidad NO es eficiencia ×
+ * utilización: usan bases de horas distintas.
  *
  * NO es el avance del contrato ni el cumplimiento del plan del mes —cada uno
  * tiene su propio apartado más abajo—. Aquí sólo habla la máquina.
  *
- * EL STANDBY es el tiempo disponible: días con parte × 8 h (la jornada normal,
- * decisión del jefe), menos mantenimiento y paradas de taller que se repercuten
- * al dueño (la lluvia no se resta). Por eso la velocidad se ancla al standby y NO
- * a las horas
- * operadas que teclea el digitador: si faltan horas por anotar, la eficiencia se
- * cae pero la velocidad aguanta, porque el tiempo disponible no depende de lo que
- * se alcanzó a teclear.
- *
- * Necesita el standby, que sólo traen las fotos generadas desde que existe el
- * modelo. En una foto anterior no hay días por máquina y no se puede reconstruir:
+ * Necesita los DÍAS POR MÁQUINA (para el × 8). En una foto anterior sin días por
+ * máquina no se puede reconstruir:
  * se dice «—, pulsa Actualizar», igual que la utilización, en vez de enseñar un
  * número que no es.
  */
@@ -1074,9 +1066,10 @@ function cadena(sel_p){
     if(!m) return;
     const perd=m.perd||0;
     /* UTILIZACIÓN = horas operadas ÷ standby ajustado, donde el standby son las
-       8 h de jornada normal por sus días de parte, menos mantenimiento y paradas
-       de taller (la lluvia no se resta). Por encima del standby es 100% y
-       lo que sobra se dice como ganancia.
+       horas CONTRATADAS de cada máquina (6,4 propia / 5 alquilada) por sus días
+       de parte, menos mantenimiento y paradas de taller (la lluvia no se resta).
+       Es el tiempo PAGADO; la velocidad, en cambio, va sobre 8 h. Por encima del
+       standby es 100% y lo que sobra se dice como ganancia.
        `m.util` sólo viene en las fotos generadas a partir de este cambio; en una
        anterior no hay días por máquina y el standby NO se puede reconstruir, así
        que se dice que falta en vez de enseñar el número viejo con la etiqueta
@@ -1182,9 +1175,12 @@ function cadena(sel_p){
        (rendimiento nominal × horas disponibles). Sobrevive a las horas que el
        digitador no alcanzó a teclear, porque el tiempo disponible sale de los
        días con parte, no de las horas operadas. Sin standby en la foto → «—». */
-    /* El producto de las dos columnas. Sólo falta cuando la foto no trae standby
-       (no se puede calcular la utilización); en ese caso se pide «Actualizar». */
-    const vel = (ut!=null) ? ef*ut : null;
+    /* VELOCIDAD sobre 8 h/día (la base del rendimiento), NO sobre el standby de
+       6,4 de la utilización: producción real ÷ (vara × 8 h × días-máquina). Es
+       independiente de la utilización —usan horas distintas— y equivale a la
+       vieja medida por días-máquina a jornada completa. */
+    const espVel = (m.meta_hora && dmaq>0) ? m.meta_hora*8*dmaq : null;
+    const vel = espVel ? comp(m.prod)/espVel : null;
     const vc=el('div','velC');
     vc.appendChild(el('div','eq','→'));
     const vv=el('div','v');
@@ -1195,14 +1191,15 @@ function cadena(sel_p){
     marca100(vb,'rendimiento esperado: 100%');
     vc.append(vv,vb);
     if(vel!=null){
-      /* Las mismas dos cifras de las columnas de al lado, para que se vea que la
-         velocidad es su producto. */
-      vc.append(el('div','s','eficiencia '+pct(ef)+' × utilización '+pct(ut)));
+      /* Lo que produjo contra lo que darían sus días-máquina a 8 h/día a ritmo
+         nominal. Es la base del rendimiento, no el standby de la utilización. */
+      vc.append(el('div','s',f0(comp(m.prod))+' m³ de '+f0(espVel)+
+        ' m³ que darían sus '+f1(dmaq)+' días-máquina a 8 h a ritmo nominal'));
       vc.append(el('div','s', vel>=1
         ? 'más rápida que lo esperado — rindió por encima del catálogo'
-        : 'la maquinaria mirada completa: cómo rindió y cuánto aprovechó sus horas'));
+        : 'sobre la jornada de 8 h, como el rendimiento — distinto de la utilización'));
     } else {
-      vc.append(el('div','s','sin standby en esta foto — pulsa «Actualizar»'));
+      vc.append(el('div','s','sin días por máquina en esta foto — pulsa «Actualizar»'));
     }
 
     row.append(ac,l1,l2,l3,vc);
@@ -1229,14 +1226,14 @@ function cadena(sel_p){
         const vacia = (q.h+q.perd)===0;
         /* Standby de ESTA máquina: sus días de parte por sus horas programadas,
            menos su mantenimiento y sus paradas. La celda lleva la cuenta en el
-           title para que nadie tenga que fiarse: «17 días × 8 h». */
+           title para que nadie tenga que fiarse: «17 días × 6,4 h propia». */
         const sbq = (!vacia && q.sb_aj!=null) ? q.sb_aj : null;
         const u = (sbq!=null && sbq>0) ? Math.min(1, q.h/sbq) : null;
         const t=el('div','mtR');
         if(vacia) t.style.opacity='.5';
         const cSb=el('div','num', vacia?'—':(sbq!=null?f1(sbq):'—'));
-        if(!vacia && q.dias!=null) cSb.title=q.dias+' días × '+f1(q.hprog)+' h'+
-          (q.ajuste>0?' − '+f1(q.ajuste)+' h de mtto y paradas':'');
+        if(!vacia && q.dias!=null) cSb.title=q.dias+' días × '+f1(q.hprog)+' h ('+
+          (q.hprog>=6?'propia':'alquilada')+')'+(q.ajuste>0?' − '+f1(q.ajuste)+' h de mtto y paradas':'');
         const cUt=el('div','num', vacia?'no cuenta':(u!=null?pct(u):'—'));
         if(vacia){ cUt.style.fontSize='10.5px'; cUt.style.color='var(--accent-txt)';
                    cUt.title='Parte sin horas operadas ni perdidas: no suma standby '+
