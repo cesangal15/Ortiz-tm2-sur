@@ -1638,7 +1638,14 @@ function token(){ try{ return localStorage.getItem('tm2_token')||''; }catch(e){ 
    que un hueco. */
 async function fotoCompartida(){
   try{
-    const r = await fetch(API+'?action=tablero', { cache:'no-store' });
+    /* Manda el token SI lo tiene. La lectura es pública (D159) y el servidor ya
+       no lo exige, pero mientras el Apps Script no esté redesplegado con ese
+       cambio, el servidor viejo SÍ lo pide: sin token, rechazaba la lectura y la
+       foto compartida no cargaba (se quedaba con la incrustada, «no se actualiza»).
+       Con el token cuando existe, funciona contra el servidor viejo y el nuevo;
+       el directivo sin token lo leerá igual en cuanto se redespliegue. */
+    const t = token();
+    const r = await fetch(API+'?action=tablero'+(t?'&token='+encodeURIComponent(t):''), { cache:'no-store' });
     if(!r.ok) return null;
     const d = await r.json();
     if(!d || d.ok===false || !d.foto || !d.foto.per || !d.foto.per.length) return null;
