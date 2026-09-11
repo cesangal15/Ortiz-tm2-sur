@@ -1634,10 +1634,10 @@ const API = 'https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15
 /* El token de sesión (D109) va a mano en la única llamada que lo necesita, en
    vez de cargar `auth.js`: así el tablero sigue siendo UN archivo que se puede
    abrir suelto. Es el mismo token firmado que emite el login; sin él el
-   servidor no deja PUBLICAR. Leer la foto no lo pide (D159): es público. */
+   servidor no deja PUBLICAR. Leer la foto no lo pide (D161): es público. */
 function token(){ try{ return localStorage.getItem('tm2_token')||''; }catch(e){ return ''; } }
 
-/* Trae la foto publicada. Va SIN token: la lectura es pública (D159), porque el
+/* Trae la foto publicada. Va SIN token: la lectura es pública (D161), porque el
    directivo que abre el enlace no tiene sesión que mandar. Nunca lanza: si algo
    falla, la página se queda con la que ya está pintada, que es siempre mejor
    que un hueco. */
@@ -1760,7 +1760,7 @@ function pedirArchivos(){
 
 
 /* ===========================================================================
- * QUIÉN ENTRA Y QUÉ PUEDE TOCAR (D158, abierta al público en D159)
+ * QUIÉN ENTRA Y QUÉ PUEDE TOCAR (D158, abierta al público en D161)
  *
  * ESTA PÁGINA ES PÚBLICA. Se comparte por enlace con los directivos, que no
  * tienen usuario en la plataforma ni tienen por qué tenerlo: abren el enlace y

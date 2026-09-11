@@ -172,7 +172,9 @@ const ORIGENES = {
   'Complementario': {actividad:'Excavación aprovechable (masivo)', item:'Excavaciones en material común APROVECHABLE', cc:'02.05', label:'PK Complementario'},
   'Otro':           {actividad:'Excavación aprovechable (masivo)', item:'Excavaciones en material común APROVECHABLE', cc:'02.05', label:'Otro origen'},
 };
-const TIPOS = ['Terraplén','Puente','ODL','ODT','Botadero'];
+// UF3: material excavado aquí que se envió a la UF3. Se trata IGUAL que Puente (cuenta para la
+// excavación del origen y sale en la nota/observación del reporte, pero NO genera fila de terraplén).
+const TIPOS = ['Terraplén','Puente','UF3','ODL','ODT','Botadero'];
 // PK fijo de cada origen (Problema 2.12): la EXCAVACIÓN se registra DONDE SE HIZO EL CORTE = el origen.
 // Masivo 1/2 y Diviso tienen PK confirmado (todos ≤30 → UF1/3701). Complementario/Otro usan el PK que
 // teclea la chequeadora en "Especifica el origen" (origenTexto).
@@ -463,7 +465,7 @@ function getCantidades(){
   const ufO=ufFromPk(origenPk), proyO=proyectoFromUf(ufO);
   const rows=[];
   // Split por DESTINO (D67): lo que va al Botadero se DESCARTA => excavación NO APROVECHABLE.
-  // El resto de destinos (Terraplén/Puente/ODL/ODT) sigue con la actividad del origen (aprovechable
+  // El resto de destinos (Terraplén/Puente/UF3/ODL/ODT) sigue con la actividad del origen (aprovechable
   // o préstamo). destM3 acumula Σ m³ por tipo de destino para la observación indicativa (a dónde fue).
   let aproM3=0, aproViajes=0, botaM3=0, botaViajes=0;
   const destM3={}, destOrden=[];

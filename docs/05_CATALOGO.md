@@ -165,7 +165,8 @@ propia en el reporte del capataz** (`Terraplén con crudo de río`, §1), junto 
 distinción de material se hace por actividad, no por origen. El **fresado** sigue sin actividad propia.
 
 ## 3. Tipos de destino (chequeadora) — CONFIRMADO
-Terraplén (genera fila de terraplén) · Puente · ODL · Botadero (solo excavación).
+Terraplén (genera fila de terraplén) · Puente · UF3 (D160) · ODL · ODT · Botadero.
+Solo **Terraplén** genera fila de terraplén; el resto solo cuenta para la excavación del origen (Botadero va como excavación NO APROVECHABLE, D67). **Puente/UF3/ODL/ODT** cuentan para la excavación y salen en la nota del reporte, pero no en la suma del terraplén (UF3 = destino, no confundir con el material `Terraplén de UF3` del capataz, §1).
 
 ## 4. Máquinas — CONFIRMADO en app
 

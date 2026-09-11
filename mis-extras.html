@@ -41,6 +41,12 @@
   .err{background:rgba(231,76,60,0.1);border:1px solid rgba(231,76,60,0.3);border-radius:10px;padding:11px 14px;font-size:13px;color:var(--error-txt);margin-top:14px;}
   .edit-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 9px;border-radius:10px;border:1px solid rgba(245,166,35,0.4);color:var(--accent-txt);margin-left:8px;vertical-align:middle;}
   .loading,.empty-state{text-align:center;padding:34px;color:var(--muted);font-size:14px;}
+  .modo-tabs{display:flex;gap:8px;margin-bottom:14px;}
+  .modo-tab{flex:1;padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--muted);font-family:'Syne',sans-serif;font-weight:700;font-size:13px;cursor:pointer;}
+  .modo-tab.activo{background:linear-gradient(135deg,var(--accent),var(--accent2));color:var(--btn-txt);border-color:transparent;}
+  .dow-row{display:flex;gap:6px;flex-wrap:wrap;}
+  .dow-chip{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text);background:var(--input-bg);border:1px solid var(--border);border-radius:8px;padding:7px 11px;cursor:pointer;user-select:none;}
+  .dow-chip input{margin:0;cursor:pointer;}
 </style>
 </head>
 <body>
@@ -71,7 +77,7 @@ const DEFAULT_CC = '3701.I010303| JEFES DE ÁREA DE PRODUCCIÓN Y RESIDENTES';
 function ccConProyecto(cc, proy){ return String(cc).replace(/^\d{4}/, proy); }   // cambia el prefijo 37xx
 const DEFAULT_CC_ALT = ccConProyecto(DEFAULT_CC, '3702');
 
-let STATE = { usuario:'', config:{}, festivos:[], catCC:[], catCCUsados:[], fecha:'', editando:false };
+let STATE = { usuario:'', config:{}, festivos:[], catCC:[], catCCUsados:[], fecha:'', editando:false, modo:'dia' };
 
 window.onload = function(){
   // Guard de sesión (§6): SOLO admin. El resto se redirige a index.html.
@@ -117,10 +123,11 @@ function render(){
   const resto = STATE.catCCUsados.concat(STATE.catCC.filter(cc=>STATE.catCCUsados.indexOf(cc)<0));
   const ccOrden = defaults.concat(resto.filter(cc=>defaults.indexOf(cc)<0));
   const recursoVacio = !String(STATE.config.admin_recurso||'').trim();
+  const ccDefault = (function(){ try{ return localStorage.getItem(LAST_CC_KEY)||DEFAULT_CC; }catch(e){ return DEFAULT_CC; } })();
   let h='';
   // D120/D124: los topes salen de CONFIG (los mismos que usa el backend y `clasificarHoras`), no de
   // números escritos en el texto — que era justo por donde el 7h se quedó desactualizado.
-  h+='<p class="intro">Registra tus horas de un día puntual. En <b>día normal</b>: solo la extra (máx <b>'+topeExtraDia()+'h</b>, columna E/F, sin ordinarias). '
+  h+='<p class="intro">Registra tus horas extra de un <b>día puntual</b> o de <b>varios días de una vez</b> (rango). En <b>día normal</b>: solo la extra (máx <b>'+topeExtraDia()+'h</b>, columna E/F, sin ordinarias). '
     + 'En <b>domingo/festivo</b>: las primeras <b>'+topeDomFest()+'h</b> a <b>ordinarias dom/fest</b> (columna D) y lo que pase, hasta <b>'+topeExtraDia()+'h</b>, a <b>extras dom/fest</b> (columna H). '
     + 'Con tu centro de costo; tu jornada normal va por fuera del sistema. Los días sin registro no apareces. Guardar dos veces el mismo día <b>reemplaza</b> lo anterior.</p>';
 
@@ -128,7 +135,17 @@ function render(){
     h+='<div class="aviso">⚠️ Falta configurar <b>admin_recurso</b> en la hoja CONFIG (tu «No. Recurso» de Navision, formato <code>código| NOMBRE</code>). Puedes guardar tus extras igual, pero <b>no se exportarán</b> al Parte hasta que lo configures.</div>';
   }
 
-  h+='<div class="card">';
+  // Datalist de CC compartido por las dos tarjetas (día / rango).
+  h+=`<datalist id="ccList">${ccOrden.map(cc=>`<option value="${esc(cc)}">`).join('')}</datalist>`;
+
+  // Toggle de modo: un día (comportamiento de siempre) o varios días por rango.
+  h+='<div class="modo-tabs">'
+    + '<button type="button" id="tabDia" class="modo-tab activo" onclick="setModo(\'dia\')">Un día</button>'
+    + '<button type="button" id="tabRango" class="modo-tab" onclick="setModo(\'rango\')">Varios días (rango)</button>'
+    + '</div>';
+
+  // ---------- Tarjeta: UN DÍA ----------
+  h+='<div class="card" id="cardDia">';
   h+='<div class="row">';
   h+=`<div class="field"><label>Fecha <span id="editBadge"></span></label><input type="date" id="f_fecha" value="${esc(STATE.fecha)}" onchange="onFechaChange(this.value)"></div>`;
   h+=`<div class="field" style="max-width:150px;"><label id="horasLabel">Horas (máx 2)</label><input type="number" id="f_horas" value="2" min="0.5" max="2" step="0.5" oninput="actualizarPreview()"></div>`;
@@ -136,7 +153,6 @@ function render(){
 
   h+='<div class="row" style="margin-top:12px;">';
   h+=`<div class="field"><label>Centro de Costo</label><input type="text" id="f_cc" list="ccList" placeholder="Buscar CC por código o nombre…" oninput="actualizarPreview()"><div class="tipo-nota">Por defecto tu CC de sobrecosto; cambia el prefijo <b>3701</b>↔<b>3702</b> si corresponde (ambos están en la lista).</div></div>`;
-  h+=`<datalist id="ccList">${ccOrden.map(cc=>`<option value="${esc(cc)}">`).join('')}</datalist>`;
   h+='</div>';
 
   h+='<div class="row" style="margin-top:12px;">';
@@ -157,8 +173,129 @@ function render(){
   h+='<div id="msg"></div>';
   h+='</div>';
 
+  // ---------- Tarjeta: RANGO DE DÍAS ----------
+  // Misma extra (horas · tipo · CC) para cada día del rango. Se omiten domingos y festivos: esos días
+  // llevan otra regla (col D + H) y se registran uno a uno en la pestaña «Un día». Se guarda llamando
+  // al MISMO endpoint `extras_admin` un día a la vez (upsert por fecha, D107), sin endpoint nuevo.
+  const dowLabels=[['L',1],['M',2],['X',3],['J',4],['V',5],['S',6]];
+  h+='<div class="card" id="cardRango" style="display:none;">';
+  h+='<div class="row">';
+  h+=`<div class="field"><label>Desde</label><input type="date" id="r_desde" value="${esc(STATE.fecha)}" oninput="actualizarPreviewRango()"></div>`;
+  h+=`<div class="field"><label>Hasta</label><input type="date" id="r_hasta" value="${esc(STATE.fecha)}" oninput="actualizarPreviewRango()"></div>`;
+  h+='</div>';
+
+  h+='<div class="row" style="margin-top:12px;">';
+  h+='<div class="field"><label>Días de la semana</label><div class="dow-row" id="dowRow">'
+    + dowLabels.map(([lab,n])=>`<label class="dow-chip"><input type="checkbox" id="r_dow_${n}" checked oninput="actualizarPreviewRango()">${lab}</label>`).join('')
+    + '</div><div class="tipo-nota">Se omiten <b>domingos y festivos</b> automáticamente (esos van uno a uno en «Un día»).</div></div>';
+  h+='</div>';
+
+  h+='<div class="row" style="margin-top:12px;">';
+  h+='<div class="field" style="max-width:150px;"><label>Horas (máx '+topeExtraDia()+')</label><input type="number" id="r_horas" value="2" min="0.5" max="'+topeExtraDia()+'" step="0.5" oninput="actualizarPreviewRango()"></div>';
+  h+='<div class="field"><label>Tipo de extra</label><select id="r_tipo" onchange="actualizarPreviewRango()">'
+    + '<option value="diurna">Extra diurna</option>'
+    + '<option value="nocturna">Extra nocturna</option>'
+    + '</select><div class="tipo-nota">Mismo tipo para todo el rango (día normal, columna E/F).</div></div>';
+  h+='</div>';
+
+  h+='<div class="row" style="margin-top:12px;">';
+  h+=`<div class="field"><label>Centro de Costo</label><input type="text" id="r_cc" list="ccList" value="${esc(ccDefault)}" placeholder="Buscar CC por código o nombre…" oninput="actualizarPreviewRango()"><div class="tipo-nota">Mismo CC para todos los días del rango.</div></div>`;
+  h+='</div>';
+
+  h+='<div class="proj-live" id="rangoPreview" style="margin-top:8px;">Se crearán: <b>—</b></div>';
+  h+='<div class="btns"><button class="btn" id="saveRangoBtn" onclick="guardarRango()">Guardar rango</button></div>';
+  h+='<div id="msgRango"></div>';
+  h+='</div>';
+
   document.getElementById('container').innerHTML=h;
   actualizarPreview();
+  actualizarPreviewRango();
+}
+
+// Alterna entre las tarjetas «Un día» y «Rango de días». Solo estilo/visibilidad: cada tarjeta conserva
+// sus propios campos y su propio botón.
+function setModo(m){
+  STATE.modo=m;
+  const cardDia=document.getElementById('cardDia'), cardRango=document.getElementById('cardRango');
+  if(cardDia) cardDia.style.display = m==='dia'?'':'none';
+  if(cardRango) cardRango.style.display = m==='rango'?'':'none';
+  const tabDia=document.getElementById('tabDia'), tabRango=document.getElementById('tabRango');
+  if(tabDia) tabDia.classList.toggle('activo', m==='dia');
+  if(tabRango) tabRango.classList.toggle('activo', m==='rango');
+  if(m==='rango') actualizarPreviewRango(); else actualizarPreview();
+}
+
+// Fechas locales (sin zona): parseo y formato 'YYYY-MM-DD' sin pasar por toISOString (D50).
+function parseFechaLocal(s){ const p=String(s||'').split('-'); if(p.length<3) return null; return new Date(Number(p[0]),Number(p[1])-1,Number(p[2])); }
+function fmtFechaLocal(d){ const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), dd=String(d.getDate()).padStart(2,'0'); return y+'-'+m+'-'+dd; }
+
+// Días 'YYYY-MM-DD' del rango que SÍ reciben la extra: dentro de [desde,hasta], con el día de la semana
+// marcado, y NUNCA domingo ni festivo (se omiten a propósito, ver tarjeta de rango).
+function diasSeleccionadosRango(){
+  const desde=(document.getElementById('r_desde')||{}).value||'';
+  const hasta=(document.getElementById('r_hasta')||{}).value||'';
+  const out=[];
+  const d0=parseFechaLocal(desde), d1=parseFechaLocal(hasta);
+  if(!d0 || !d1 || desde>hasta) return out;
+  const dowSel={}; [1,2,3,4,5,6].forEach(n=>{ const cb=document.getElementById('r_dow_'+n); dowSel[n]=cb?cb.checked:false; });
+  let d=new Date(d0.getTime()), guard=0;
+  while(d<=d1 && guard<400){
+    const fs=fmtFechaLocal(d), dow=d.getDay();
+    if(dow!==0 && STATE.festivos.indexOf(fs)<0 && dowSel[dow]) out.push(fs);
+    d.setDate(d.getDate()+1); guard++;
+  }
+  return out;
+}
+
+function actualizarPreviewRango(){
+  const el=document.getElementById('rangoPreview'); if(!el) return;
+  // Recorta el campo de horas al tope, igual que en la tarjeta de un día.
+  const horasInp=document.getElementById('r_horas');
+  if(horasInp && parseFloat(horasInp.value)>topeExtraDia()) horasInp.value=topeExtraDia();
+  const dias=diasSeleccionadosRango();
+  const cc=((document.getElementById('r_cc')||{}).value||'').trim();
+  const proj=proyectoFromCC(cc);
+  if(!dias.length){
+    el.innerHTML='Se crearán: <b>0 días</b>. Revisa el rango y los días de la semana (se omiten domingos y festivos).';
+    return;
+  }
+  const muestra = dias.length>10 ? dias.slice(0,10).map(esc).join(', ')+` …y ${dias.length-10} más` : dias.map(esc).join(', ');
+  el.innerHTML='Se crearán <b>'+dias.length+' día(s)</b>: '+muestra+'.'
+    + (proj?` Proyecto <b>${esc(proj)}</b>.`:'')
+    + ' Se omiten domingos y festivos.';
+}
+
+// Guarda la misma extra en cada día del rango, uno a uno (endpoint `extras_admin`, upsert por fecha).
+async function guardarRango(){
+  const cc=((document.getElementById('r_cc')||{}).value||'').trim();
+  const horas=parseFloat(document.getElementById('r_horas').value);
+  const tipo=document.getElementById('r_tipo').value;
+  const msg=document.getElementById('msgRango');
+  if(!cc){ msg.innerHTML='<div class="err">Falta el Centro de Costo.</div>'; return; }
+  const maxH=topeExtraDia();
+  if(isNaN(horas) || horas<=0 || horas>maxH){ msg.innerHTML='<div class="err">Las horas deben ser mayor que 0 y máximo '+maxH+' (día normal).</div>'; return; }
+  const dias=diasSeleccionadosRango();
+  if(!dias.length){ msg.innerHTML='<div class="err">No hay días para guardar. Revisa el rango y los días de la semana (se omiten domingos y festivos).</div>'; return; }
+  if(!confirm('Se guardarán '+dias.length+' día(s) con '+horas+'h de extra '+tipo+'.\nReemplaza lo que ya tengas registrado esos días.\n\n¿Continuar?')) return;
+  const btn=document.getElementById('saveRangoBtn'); btn.disabled=true;
+  let ok=0; const fail=[];
+  for(let i=0;i<dias.length;i++){
+    const fecha=dias[i];
+    msg.innerHTML='<div class="aviso">⏳ Guardando '+(i+1)+' de '+dias.length+' ('+esc(fecha)+')…</div>';
+    try{
+      const resp=await fetch(APPS_SCRIPT_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify({ action:'extras_admin', fecha, cc, horas, tipo, reporta:STATE.usuario }) });
+      const data=await resp.json();
+      if(data && data.ok) ok++; else fail.push(fecha+' ('+esc((data&&data.error)||'error')+')');
+    }catch(err){ fail.push(fecha+' (sin conexión)'); }
+  }
+  btn.disabled=false;
+  try{ localStorage.setItem(LAST_CC_KEY, cc); }catch(e){}
+  let out='<div class="ok">✓ Guardados '+ok+' de '+dias.length+' día(s).</div>';
+  if(fail.length) out+='<div class="err">⚠️ No se pudieron guardar: '+fail.join(', ')+'</div>';
+  msg.innerHTML=out;
+  // Si el día abierto en la pestaña «Un día» quedó dentro del rango, refréscalo para que muestre lo nuevo.
+  if(dias.indexOf(STATE.fecha)>=0) cargarFecha(STATE.fecha);
 }
 
 // GET del día: si existe registro, prellena (modo edición); si no, deja los valores por defecto
