@@ -497,11 +497,9 @@ const BASE_CORTE = '2026-08-16';                // desde aquí se suma lo diario
 const BASE_ACUM  = { excavacion:549153.95, terraplen:385854.98, subbase:46523.83,
                      base:38103.26, prestamo:51895 };
 /* Getter de la producción de cada partida para el avance, en suelto (se pasa a
-   compacto ÷ fc al sumar). La EXCAVACIÓN común se calcula como total − préstamo −
-   no aprovechable, NO se lee la columna «VOLUMEN APROV. UF1» del DATOS —que es
-   solo UF1 y dejaba fuera la común de UF2, descuadrando el aprovechamiento contra
-   el planificado—. Así común + préstamo + no aprov = total excavado siempre. */
-const AV_GET = { excavacion:d=>(d.exc||0)-(d.pre||0)-(d.nap||0),
+   compacto ÷ fc al sumar). La EXCAVACIÓN común se lee de la columna «VOLUMEN
+   APROV. UF1» del DATOS (campo `apr`), tal cual — sin inventar. */
+const AV_GET = { excavacion:d=>d.apr||0,
                  terraplen:d=>d.ter||0, subbase:d=>d.sub||0, base:d=>d.bas||0 };
 /* Rendimiento esperado POR MÁQUINA, en compacto/día = «proyectado suelto equipo»
    de CALCULOS ÷ fc. De respaldo por si el archivo no trae la fila; lo normal es
@@ -823,9 +821,9 @@ function construir(wbProd, wbMaq){
                   plan_per:+((PLAN[p]||{}).noaprov||0).toFixed(0),
                   dias:dd.filter(d=>d.nap>0).length, soloPlan:true };
     /* Común = total excavado − préstamo − no aprov (UF1+UF2). Antes se leía `apr`
-       (columna UF1 del DATOS) y faltaba la común de UF2: el aprovechamiento no
-       sumaba lo mismo que el excavado del bloque «planificado vs ejecutado». */
-    const split = { apr:+(dd.reduce((s,d)=>s+(d.exc-d.pre-d.nap),0)/FC).toFixed(1),
+       El común, el préstamo y el no aprovechable se leen TAL CUAL de sus columnas
+       del DATOS (apr=F, pre=G, nap=H); no se derivan del total. */
+    const split = { apr:+(dd.reduce((s,d)=>s+d.apr,0)/FC).toFixed(1),
                     pre:+(dd.reduce((s,d)=>s+d.pre,0)/FC).toFixed(1),
                     nap:+(dd.reduce((s,d)=>s+d.nap,0)/FC).toFixed(1) };
     return { p, d:dd.map(({p:_,...q})=>q), a, split, m };
