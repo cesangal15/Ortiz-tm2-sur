@@ -15,8 +15,10 @@
    *
    * Sin login: la identidad la da el EQUIPO (?eq=CODIGO en la URL, impreso como QR
    * en la cabina). Solo CREA filas `pendiente`; todo error se corrige en revisión.
-   * Pensado para celular con guantes: controles de ≥52px, una columna, poco texto.
-   * Estilo: el de las capturas de obra (tema.css, DM Sans/Syne, ámbar).
+   * Pensado para celular con guantes: controles de ≥52px, una columna, tres pasos
+   * numerados, poco texto. Estilo: el de las capturas (tema.css, DM Sans/Syne).
+   * `?demo=1` (o `?eq=DEMO`): modo de prueba con datos de ejemplo, no llama al
+   * servidor ni guarda nada — para enseñar la pantalla y ensayar.
    * ==========================================================================*/
   *{box-sizing:border-box;margin:0;padding:0;}
   body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:0 0 110px;}
@@ -29,8 +31,10 @@
   .chip-med{display:inline-block;font-family:'Syne',sans-serif;font-size:11px;font-weight:700;letter-spacing:1px;padding:6px 10px;border-radius:20px;border:1px solid var(--border);background:var(--surface);color:var(--accent-txt);}
   .container{max-width:600px;margin:0 auto;padding:16px 14px;}
   .card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:16px;margin-bottom:14px;}
-  .section-title{font-family:'Syne',sans-serif;font-size:12px;letter-spacing:2px;color:var(--accent-txt);text-transform:uppercase;margin-bottom:14px;display:flex;align-items:center;gap:8px;}
-  .section-title::after{content:'';flex:1;height:1px;background:var(--border);}
+  .paso{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+  .paso .n{width:30px;height:30px;border-radius:50%;background:var(--accent);color:var(--btn-txt);font-family:'Syne',sans-serif;font-weight:800;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .paso h2{font-family:'Syne',sans-serif;font-size:15px;font-weight:800;}
+  .paso p{font-size:12px;color:var(--muted);}
   .field{margin-bottom:14px;}
   .field:last-child{margin-bottom:0;}
   label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:6px;letter-spacing:0.5px;text-transform:uppercase;}
@@ -42,32 +46,36 @@
   select:focus,input:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(245,166,35,0.12);}
   select option,optgroup{background:var(--surface);}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-  .field-error{border-color:var(--error)!important;}
+  .field-error,.picker-btn.field-error{border-color:var(--error)!important;}
   .hint{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.4;}
   .hint b{color:var(--accent-txt);font-weight:600;}
   .hint.err{color:var(--error-txt);}
   /* botón-selector (abre el buscador a pantalla completa) */
-  .picker-btn{width:100%;min-height:52px;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:17px;padding:13px 40px 13px 14px;text-align:left;cursor:pointer;position:relative;}
+  .picker-btn{width:100%;min-height:52px;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:17px;padding:11px 40px 11px 14px;text-align:left;cursor:pointer;position:relative;line-height:1.25;}
   .picker-btn.vacio{color:var(--muted);}
   .picker-btn::after{content:'⌄';position:absolute;right:14px;top:50%;transform:translateY(-60%);color:var(--muted);font-size:20px;}
-  .picker-btn small{display:block;font-size:12px;color:var(--muted);margin-top:2px;}
+  .picker-btn small{display:block;font-size:12px;color:var(--muted);margin-top:2px;white-space:normal;}
+  .picker-btn b{font-weight:600;}
   /* tramo */
   .tramo{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px;}
   .tramo-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
   .tramo-num{font-family:'Syne',sans-serif;font-size:12px;color:var(--accent-txt);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;}
-  .btn-del{background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;min-width:40px;height:40px;font-size:16px;cursor:pointer;line-height:1;flex-shrink:0;padding:0 10px;}
+  .btn-del{background:none;border:1px solid var(--border);color:var(--muted);border-radius:8px;min-width:40px;height:40px;font-size:14px;cursor:pointer;line-height:1;flex-shrink:0;padding:0 10px;font-family:'DM Sans',sans-serif;}
   .btn-del:hover{border-color:var(--error);color:var(--error-txt);}
+  .bloque{border-top:1px dashed var(--border);padding-top:12px;margin-top:12px;}
+  .bloque-t{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--muted);margin-bottom:10px;font-weight:600;}
   .medidor{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-  .medidor input{font-size:20px;font-weight:600;text-align:center;font-variant-numeric:tabular-nums;}
+  .medidor input{font-size:22px;font-weight:600;text-align:center;font-variant-numeric:tabular-nums;}
+  .medidor .sub{font-size:11px;color:var(--muted);text-align:center;margin-top:5px;line-height:1.3;}
   .total-box{margin-top:10px;display:flex;align-items:center;justify-content:space-between;background:var(--input-bg);border:1px dashed var(--border);border-radius:10px;padding:10px 14px;}
   .total-box .t-label{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);}
-  .total-box .t-val{font-family:'Syne',sans-serif;font-size:24px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
+  .total-box .t-val{font-family:'Syne',sans-serif;font-size:26px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
   .total-box .t-val small{font-size:12px;color:var(--muted);font-family:'DM Sans',sans-serif;font-weight:400;margin-left:4px;}
   .total-box.alto .t-val{color:var(--accent-txt);}
   .total-box.mal .t-val{color:var(--error-txt);}
   .total-box.mal{border-color:var(--error);}
   .sugs{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
-  .sug{background:var(--input-bg);border:1px solid var(--border);border-radius:20px;padding:8px 12px;font-size:13px;color:var(--text);cursor:pointer;line-height:1.2;max-width:100%;}
+  .sug{background:var(--input-bg);border:1px solid var(--border);border-radius:20px;padding:9px 13px;font-size:13px;color:var(--text);cursor:pointer;line-height:1.2;max-width:100%;text-align:left;font-family:'DM Sans',sans-serif;}
   .sug:active,.sug:hover{border-color:var(--accent);}
   .sug.mas{color:var(--accent-txt);border-style:dashed;}
   details.opc{margin-bottom:14px;}
@@ -75,7 +83,26 @@
   details.opc summary::before{content:'+ ';}
   details.opc[open] summary::before{content:'− ';}
   details.opc summary::-webkit-details-marker{display:none;}
+  /* reparto por porcentaje */
+  .toggle{display:flex;align-items:center;gap:10px;background:var(--input-bg);border:1px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer;min-height:52px;font-family:'DM Sans',sans-serif;color:var(--text);width:100%;text-align:left;font-size:14px;}
+  .toggle .sw{width:44px;height:26px;border-radius:13px;background:var(--border);position:relative;flex-shrink:0;transition:background .2s;}
+  .toggle .sw::after{content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:var(--surface);transition:left .2s;}
+  .toggle.on .sw{background:var(--accent);}
+  .toggle.on .sw::after{left:21px;}
+  .toggle small{display:block;color:var(--muted);font-size:12px;}
+  .rep{margin-top:10px;}
+  .rep-row{display:grid;grid-template-columns:minmax(0,1fr) 76px 40px;gap:8px;align-items:start;margin-bottom:8px;}
+  .rep-row input{text-align:center;padding-left:6px;padding-right:6px;font-weight:600;}
+  .rep-row .pr{grid-column:1 / span 2;display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;align-items:center;margin-top:-2px;}
+  .rep-row .pr label{margin:0;}
+  .rep-row .pr input{text-align:left;font-weight:400;min-height:44px;padding:8px 12px;font-size:15px;}
+  .rep-sum{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--muted);margin:4px 0 8px;}
+  .rep-sum b{font-family:'Syne',sans-serif;font-size:16px;color:var(--success-txt);}
+  .rep-sum.mal b{color:var(--error-txt);}
+  .rep-quick{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;}
+  .rep-quick button{background:var(--input-bg);border:1px solid var(--border);border-radius:20px;padding:8px 12px;font-size:12px;color:var(--accent-txt);cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:600;}
   .btn-add{width:100%;padding:14px;background:var(--input-bg);border:1px dashed var(--border);border-radius:10px;color:var(--accent-txt);font-family:'Syne',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;cursor:pointer;text-transform:uppercase;min-height:52px;}
+  .btn-add.mini{min-height:44px;padding:10px;font-size:11px;}
   .btn-add:hover{border-color:var(--accent);background:rgba(245,166,35,0.05);}
   .btn-sec{width:100%;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:'Syne',sans-serif;font-size:13px;font-weight:700;letter-spacing:1px;cursor:pointer;text-transform:uppercase;min-height:52px;margin-top:10px;}
   .btn-sec:hover{border-color:var(--accent);}
@@ -87,9 +114,14 @@
   .resumen b{color:var(--text);}
   .resumen .r-row{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;background:var(--input-bg);}
   .resumen .r-row.mal{border-color:var(--error);}
+  .resumen .falta{margin-top:8px;background:rgba(239,106,92,0.08);border:1px solid var(--error);border-radius:10px;padding:10px 12px;color:var(--text);}
+  .resumen .falta b{color:var(--error-txt);}
+  .resumen .listo{margin-top:8px;color:var(--success-txt);font-weight:600;}
   .aviso{border:1px solid rgba(245,166,35,0.45);background:rgba(245,166,35,0.08);border-radius:10px;padding:10px 12px;font-size:13px;color:var(--text);line-height:1.5;margin-bottom:12px;}
   .aviso.error{border-color:var(--error);background:rgba(239,106,92,0.08);}
   .aviso b{color:var(--accent-txt);}
+  .demo-bar{background:var(--accent);color:var(--btn-txt);font-family:'Syne',sans-serif;font-size:12px;font-weight:700;letter-spacing:1px;padding:8px 14px;text-align:center;display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;}
+  .demo-bar select{width:auto;min-height:34px;padding:5px 30px 5px 10px;font-size:13px;border-radius:8px;background-color:var(--surface);color:var(--text);font-weight:400;}
   .hidden{display:none!important;}
   /* pantallas de estado */
   .estado{text-align:center;padding:50px 20px;}
@@ -104,10 +136,11 @@
   .picker-top{padding:12px 14px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;gap:10px;align-items:center;}
   .picker-top input{flex:1;font-size:18px;}
   .picker-top button{min-width:52px;height:52px;border-radius:10px;border:1px solid var(--border);background:var(--input-bg);color:var(--text);font-size:20px;cursor:pointer;}
+  .picker-tit{padding:10px 14px 0;font-size:12px;color:var(--muted);}
   .picker-list{flex:1;overflow-y:auto;padding:8px 10px 30px;}
-  .picker-item{width:100%;text-align:left;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:17px;cursor:pointer;min-height:56px;}
-  .picker-item small{display:block;font-size:12px;color:var(--muted);margin-top:2px;}
-  .picker-item.sel{border-color:var(--accent);}
+  .picker-item{width:100%;text-align:left;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:13px 14px;margin-bottom:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:17px;cursor:pointer;min-height:56px;line-height:1.25;}
+  .picker-item small{display:block;font-size:13px;color:var(--muted);margin-top:3px;}
+  .picker-item.sel{border-color:var(--accent);background:rgba(245,166,35,0.06);}
   .picker-grp{font-family:'Syne',sans-serif;font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin:12px 4px 6px;}
   .picker-vacio{color:var(--muted);text-align:center;padding:30px;}
   /* hoja "día sin operación" */
@@ -123,6 +156,7 @@
 </style>
 </head>
 <body>
+<div class="demo-bar hidden" id="demoBar">MODO DE PRUEBA · nada se guarda <select id="demoEq" onchange="cambiarDemo(this.value)"></select></div>
 <div class="header">
   <div class="header-left">
     <div class="label">Parte digital · Maquinaria</div>
@@ -156,8 +190,9 @@
 <div id="formMain" class="hidden">
 <div class="container">
   <div id="avisoTop" class="aviso hidden"></div>
+
   <div class="card">
-    <div class="section-title">Parte</div>
+    <div class="paso"><div class="n">1</div><div><h2>El parte</h2><p>Copia estos datos del parte físico.</p></div></div>
     <div class="grid2">
       <div class="field">
         <label>Fecha <span class="req">*</span></label>
@@ -174,12 +209,13 @@
     </div>
   </div>
 
+  <div class="paso" style="margin:18px 0 10px;"><div class="n">2</div><div><h2>El trabajo de hoy</h2><p>Un tramo por cada centro de coste. Si el parte reparte por porcentaje, usa el interruptor «Repartir».</p></div></div>
   <div id="tramos"></div>
-  <button class="btn-add" onclick="addTramo()">+ Otro tramo (cambio de centro de coste)</button>
+  <button class="btn-add" onclick="addTramo()">+ Otro tramo (cambió de centro de coste con medidor)</button>
   <button class="btn-sec" onclick="abrirSinOperacion()">Día sin operación (domingo · festivo · taller · disponible)</button>
 
-  <div class="card" id="resumenCard" style="margin-top:14px;">
-    <div class="section-title">Resumen</div>
+  <div class="card" id="resumenCard" style="margin-top:18px;">
+    <div class="paso"><div class="n">3</div><div><h2>Revisar y enviar</h2><p>Así queda el parte. Si falta algo, aquí se dice.</p></div></div>
     <div class="resumen" id="resumenBody"></div>
   </div>
 </div>
@@ -209,6 +245,7 @@
     <input type="text" id="pickerBuscar" placeholder="Buscar…" autocomplete="off">
     <button type="button" onclick="cerrarPicker()" aria-label="Cerrar">✕</button>
   </div>
+  <div class="picker-tit" id="pickerTit"></div>
   <div class="picker-list" id="pickerList"></div>
 </div>
 
@@ -233,16 +270,87 @@
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyUEC1BVZc6K_IVsK-gjql7HD15sAJxDxwkmVIwz8j-gFLdoNht5IEb5fZY9Jduyac/exec";
 const API = APPS_SCRIPT_URL + '?mod=parte';
 
+/* ---------- MODO DE PRUEBA (?demo=1 o ?eq=DEMO) ----------
+ * Datos de ejemplo en el propio archivo: sirve para enseñar la pantalla y ensayar sin señal y sin
+ * guardar nada. Lo que se «envía» solo se muestra en la confirmación. */
+const PARAMS = new URLSearchParams(location.search);
+const DEMO = (window.PARTE_DEMO===true) || PARAMS.get('demo')==='1' || (PARAMS.get('eq')||'').toUpperCase()==='DEMO';
+const DEMO_DATOS = {
+  equipos: [
+    { codigo:'VOL048', tipo:'VOLQUETAS DOBLETROQUE', placa:'NNM180', proveedor:'ORTIZ CONSTRUCCIONES Y PROYECTOS S.A.', medidor:'KM', activo:true, ultimo:{ final:27120, fecha:'2026-09-10', hora_a:'17:00', origen:'bandeja' } },
+    { codigo:'CR026',  tipo:'VIBROCOMPACTADOR', placa:'POCR026', proveedor:'ORTIZ CONSTRUCCIONES Y PROYECTOS S.A.', medidor:'HOROMETRO', activo:true, ultimo:{ final:1698, fecha:'2026-09-10', hora_a:'16:30', origen:'bandeja' } },
+    { codigo:'EXC015', tipo:'EXCAVADORAS', placa:'MC706830', proveedor:'ORTIZ CONSTRUCCIONES Y PROYECTOS S.A.', medidor:'HOROMETRO', activo:true, ultimo:{ final:2711.6, fecha:'2026-09-10', hora_a:'17:00', origen:'bandeja' } },
+    { codigo:'MO004',  tipo:'MOTONIVELADORAS', placa:'MC725594', proveedor:'ORTIZ CONSTRUCCIONES Y PROYECTOS S.A.', medidor:'HOROMETRO', activo:true, ultimo:{ final:2337, fecha:'2026-09-09', hora_a:'17:00', origen:'catalogo' } },
+    { codigo:'RT-02',  tipo:'RETROCARGADOR', placa:'', proveedor:'MAQUISABANA', medidor:'HOROMETRO', activo:true, ultimo:{ final:7049.6, fecha:'2026-09-10', hora_a:'17:00', origen:'bandeja' } }
+  ],
+  operadores: ['Adonis Polo','Aleixer Lizarazo','Alexander Garcia','Alexander Sanchez','Anthony Riales','Brayan Castel','Carlos Valdiviejo','Cristian Sepulveda','Ever Coronel','Farid Navarro','Franklin Basto','German Florez','Gisela Vera','Jaime Niño','Javier Ayala','Jeiner Ortiz','Johan Rugeles','Jorge Sepulveda','Jose Miguel Prada','Jose Robles','Luis Hurtado','Luis Rincon','Mauricio Merchan','Nelson Rangel','Nicolle Bermudez','Oscar Ramirez','Reinaldo Florez','Richard Almeida','Ruideiver Montes','Samuel Camacho','Samuel Carrillo','Wilmar Pahuana','Wilson Lozano','Yeison Fernandez','Yerson Sandoval'],
+  cc: [
+    { centro_coste:'3701.02.07', proyecto:'3701', descripcion_cc:'Terraplenes (solo conformación)', usos:504 },
+    { centro_coste:'3702.02.11', proyecto:'3702', descripcion_cc:'Transporte de material para terraplén', usos:460 },
+    { centro_coste:'3701.02.11', proyecto:'3701', descripcion_cc:'Transporte de material para terraplén', usos:457 },
+    { centro_coste:'3702.02.07', proyecto:'3702', descripcion_cc:'Terraplenes (solo conformación)', usos:417 },
+    { centro_coste:'3701.05.04', proyecto:'3701', descripcion_cc:'Terraplén en MSR', usos:376 },
+    { centro_coste:'3701.03.01', proyecto:'3701', descripcion_cc:'Subbase granular', usos:316 },
+    { centro_coste:'3701.02.05', proyecto:'3701', descripcion_cc:'Excavación común', usos:243 },
+    { centro_coste:'3703.03.06', proyecto:'3703', descripcion_cc:'Base granular', usos:560 },
+    { centro_coste:'3703.03.02', proyecto:'3703', descripcion_cc:'Subbase granular', usos:421 },
+    { centro_coste:'3703.02.05', proyecto:'3703', descripcion_cc:'Excavación sin clasificar', usos:263 },
+    { centro_coste:'3701.03.03', proyecto:'3701', descripcion_cc:'Base granular', usos:172 },
+    { centro_coste:'3702.03.01', proyecto:'3702', descripcion_cc:'Subbase granular', usos:157 },
+    { centro_coste:'3701.02.10', proyecto:'3701', descripcion_cc:'Excavación de préstamo', usos:132 },
+    { centro_coste:'3701.02.08', proyecto:'3701', descripcion_cc:'Conformación de botadero (ZODME)', usos:82 },
+    { centro_coste:'3701.I0408', proyecto:'3701', descripcion_cc:'Paisajismo y zonas verdes', usos:88 },
+    { centro_coste:'3701.06.02', proyecto:'3701', descripcion_cc:'Rellenos con material seleccionado', usos:34 },
+    { centro_coste:'3701.06.01', proyecto:'3701', descripcion_cc:'Excavaciones varias sin clasificar', usos:32 },
+    { centro_coste:'3702.06.05', proyecto:'3702', descripcion_cc:'Tubería de concreto reforzado', usos:48 },
+    { centro_coste:'3701.07.01', proyecto:'3701', descripcion_cc:'Cunetas en concreto', usos:11 },
+    { centro_coste:'Taller', proyecto:'', descripcion_cc:'Taller / mantenimiento / equipo varado', usos:0, pseudo:true },
+    { centro_coste:'Disponible', proyecto:'', descripcion_cc:'Disponible (sin frente, lluvia, sin operador)', usos:0, pseudo:true },
+    { centro_coste:'Domingo/Festivo', proyecto:'', descripcion_cc:'Domingo o festivo', usos:0, pseudo:true }
+  ],
+  sugerencias: {
+    'VOLQUETAS DOBLETROQUE': ['Cargue terraplen','Terraplen','Viaje corte de talud','Disponible por lluvia','Domingo','Taller'],
+    'VIBROCOMPACTADOR': ['Compactacion en berma, material base y sub base','Compactacion sub base y base','Compactacion terraplen','Compactando terraplen PR14+400','Conformacion terraplen','Disponible por lluvia'],
+    'EXCAVADORAS': ['Cargue terraplen','Cargue de volquetas','Cargue de material','Corte y cargue de material','Cargando terraplen y cortando talud','Descapote'],
+    'MOTONIVELADORAS': ['Extendiendo y conformando terraplen','Extendido terraplen','Cereo terraplen','Conformando terraplen','Cereo sub base','Aproximacion terraplen'],
+    'RETROCARGADOR': ['Excavacion de tuberia para solado, movimiento de tuberia y colocacion','Descalificada de berma de ampliacion','Llenado de terraza de ODT','Arreglo acceso de mixer']
+  }
+};
+function demoEquipo(eq){
+  const lista=DEMO_DATOS.equipos.map(q=>({ codigo:q.codigo, tipo:q.tipo, placa:q.placa }));
+  const q=DEMO_DATOS.equipos.find(x=>x.codigo.replace(/[^A-Z0-9]/gi,'').toUpperCase()===String(eq||'').replace(/[^A-Z0-9]/gi,'').toUpperCase());
+  if(!q) return { ok:true, equipo:null, equipos:lista, hoy:hoyBogota() };
+  return { ok:true, equipo:{ codigo:q.codigo, tipo:q.tipo, placa:q.placa, proveedor:q.proveedor, medidor:q.medidor, activo:q.activo }, ultimo:q.ultimo,
+    operadores:DEMO_DATOS.operadores, cc:DEMO_DATOS.cc, sugerencias:DEMO_DATOS.sugerencias[q.tipo]||[], hoy:hoyBogota() };
+}
+function demoReporte(payload){
+  // imita las alertas del servidor para que la confirmación se vea igual que en real
+  const filas=[]; let finalPrevio=ULTIMO?ULTIMO.final:null, guardadas=0;
+  payload.tramos.forEach(t=>{
+    const partes = (t.reparto&&t.reparto.length>1) ? t.reparto : [null];
+    partes.forEach(p=>{
+      const alertas=[];
+      if(!p && finalPrevio!==null && num(t.inicial)!==null && Math.abs(num(t.inicial)-finalPrevio)>0.001) alertas.push('INICIAL_DISTINTO');
+      const tot=(num(t.final)!==null&&num(t.inicial)!==null)?num(t.final)-num(t.inicial):0, tope=TOPES[EQ.medidor];
+      if(!p && tope && tot>tope.alerta) alertas.push('TOTAL_ALTO');
+      filas.push({ id_registro:'demo', alertas:alertas }); guardadas++;
+    });
+    if(num(t.final)!==null) finalPrevio=num(t.final);
+  });
+  return { ok:true, guardadas:guardadas, duplicadas:0, filas:filas };
+}
+
 /* ---------- estado ---------- */
 let EQ = null;            // {codigo,tipo,placa,proveedor,medidor,activo}
 let ULTIMO = null;        // {final,fecha,hora_a,origen}
 let OPERADORES = [], CC = [], SUGS = [], TOPES = {HOROMETRO:{bloquea:24,alerta:12,unidad:'h'},KM:{bloquea:700,alerta:400,unidad:'km'}};
 let HOY = hoyBogota();
-let tramos = [];          // [{id, inicial, final, hora_de, hora_a, cc, pr, uf, desc, varada, lluvia, obs, iniPre}]
+let tramos = [];          // [{id, inicial, final, hora_de, hora_a, cc, pr, uf, desc, varada, lluvia, obs, iniPre, reparto:null|[{cc,pct,pr}]}]
 let operador = '';
-let pickerCtx = null;     // {tipo:'operador'|'cc', tramoId}
+let pickerCtx = null;     // {tipo:'operador'|'cc', tramoId, repIdx}
 let enviando = false;
 let ultimoEnvio = null;   // para "Reportar otro tramo"
+let intento = false;      // ya intentó enviar: se marcan en rojo los campos que faltan
 
 function hoyBogota(){ return new Date().toLocaleDateString('en-CA',{timeZone:'America/Bogota'}); }
 function ayer(f){ const d=new Date(f+'T12:00:00'); d.setDate(d.getDate()-1); return d.toISOString().slice(0,10); }
@@ -254,20 +362,31 @@ function norm(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').t
 function uuid(){ if(window.crypto && crypto.randomUUID) return crypto.randomUUID(); return 'p-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10); }
 function keyOp(){ return 'tm2_parte_op_'+(EQ?EQ.codigo:''); }
 function mostrar(id){ ['pantallaQR','pantallaError','formMain','pantallaOk'].forEach(p=>document.getElementById(p).classList.toggle('hidden', p!==id)); document.getElementById('submitBar').classList.toggle('hidden', id!=='formMain'); }
+function ccDe(cc){ return CC.find(x=>x.centro_coste===cc); }
+function ccLabelHTML(cc){ const c=ccDe(cc); if(!c) return '<b>'+esc(cc||'')+'</b>'; return '<b>'+esc(c.centro_coste)+'</b>'+(c.descripcion_cc?'<small>'+esc(c.descripcion_cc)+'</small>':''); }
+function ccTexto(cc){ const c=ccDe(cc); return c ? c.centro_coste+(c.descripcion_cc?' · '+c.descripcion_cc:'') : (cc||''); }
 
 /* ---------- carga ---------- */
 async function cargar(){
-  const eq=(new URLSearchParams(location.search).get('eq')||'').trim();
+  const eq=(PARAMS.get('eq')||'').trim();
   let data;
-  try{
-    const r=await fetch(API+'&op=equipo&eq='+encodeURIComponent(eq), {cache:'no-store'});
-    data=await r.json();
-  }catch(e){
-    document.getElementById('errorMsg').textContent='Sin señal o el servidor no responde. Revisa la conexión del teléfono y vuelve a intentar.';
-    mostrar('pantallaError'); return;
+  if(DEMO){
+    document.getElementById('demoBar').classList.remove('hidden');
+    const sel=document.getElementById('demoEq');
+    sel.innerHTML=DEMO_DATOS.equipos.map(q=>'<option value="'+esc(q.codigo)+'">'+esc(q.codigo)+' · '+esc(q.tipo)+'</option>').join('');
+    const cod = (eq && eq.toUpperCase()!=='DEMO') ? eq : DEMO_DATOS.equipos[0].codigo;
+    sel.value=cod; data=demoEquipo(cod);
+  } else {
+    try{
+      const r=await fetch(API+'&op=equipo&eq='+encodeURIComponent(eq), {cache:'no-store'});
+      data=await r.json();
+    }catch(e){
+      document.getElementById('errorMsg').textContent='Sin señal o el servidor no responde. Revisa la conexión del teléfono y vuelve a intentar.';
+      mostrar('pantallaError'); return;
+    }
   }
   if(data.hoy) HOY=data.hoy;
-  if(!eq || !data.ok || !data.equipo){
+  if((!eq && !DEMO) || !data.ok || !data.equipo){
     // pantalla "escanea tu QR" + selector de respaldo
     const sel=document.getElementById('selEquipo');
     const lista=(data.equipos||[]);
@@ -285,13 +404,14 @@ async function cargar(){
   const f=document.getElementById('fecha'); f.value=HOY; f.max=HOY; f.min=ayer(HOY);
   operador = localStorage.getItem(keyOp()) || '';
   pintarOperador();
-  const av=document.getElementById('avisoTop');
+  const av=document.getElementById('avisoTop'); av.classList.add('hidden');
   if(!EQ.medidor){ av.innerHTML='Este equipo está <b>sin medidor definido</b> en el catálogo (PARTE_EQUIPOS). Se registra sin horómetro/kilometraje y quien revisa lo verá con la alerta <b>SIN_MEDIDOR</b>.'; av.classList.remove('hidden'); }
   else if(!ULTIMO){ av.innerHTML='No hay un <b>medidor anterior</b> registrado para este equipo: escribe el inicial tal como está en el parte físico.'; av.classList.remove('hidden'); }
   else if(!EQ.activo){ av.innerHTML='Este equipo figura <b>inactivo</b> en el catálogo. El parte se guarda igual y lo revisa maquinaria.'; av.classList.remove('hidden'); }
-  tramos=[]; addTramo();
+  tramos=[]; intento=false; addTramo();
   mostrar('formMain');
 }
+function cambiarDemo(cod){ const u=new URL(location.href); u.searchParams.set('demo','1'); u.searchParams.set('eq',cod); history.replaceState(null,'',u.toString()); PARAMS.set('eq',cod); cargar(); }
 function abrirEquipoElegido(){
   const v=document.getElementById('selEquipo').value;
   if(!v){ document.getElementById('qrError').textContent='Elige un equipo de la lista.'; return; }
@@ -306,11 +426,13 @@ function pintarOperador(){
 }
 
 /* ---------- tramos ---------- */
-function addTramo(){
+function nuevoTramo(base){
   const prev=tramos[tramos.length-1];
   const iniPre = prev ? (prev.final!==''?prev.final:prev.inicial) : (ULTIMO ? ULTIMO.final : '');
-  const t={ id:uuid(), inicial: iniPre===null?'':iniPre, final:'', hora_de: prev ? prev.hora_a : '', hora_a:'', cc: prev ? '' : '', pr: prev?prev.pr:'', uf:'', desc:'', varada:'', lluvia:'', obs:'', iniPre: iniPre===null?'':iniPre };
-  tramos.push(t); render();
+  return Object.assign({ id:uuid(), inicial: iniPre===null?'':iniPre, final:'', hora_de: prev ? prev.hora_a : '', hora_a:'', cc:'', pr: prev?prev.pr:'', uf:'', desc:'', varada:'', lluvia:'', obs:'', iniPre: iniPre===null?'':iniPre, reparto:null }, base||{});
+}
+function addTramo(){
+  const t=nuevoTramo(); tramos.push(t); render();
   if(tramos.length>1){ const el=document.getElementById('tramo-'+t.id); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); }
 }
 function delTramo(id){
@@ -323,18 +445,18 @@ function render(){
   tramos.forEach(t=>{ pintarTotal(t.id); pintarSugs(t.id); });
   pintarResumen();
 }
-function ccLabel(cc){ const c=CC.find(x=>x.centro_coste===cc); if(!c) return cc||''; return c.centro_coste+(c.descripcion_cc?' · '+c.descripcion_cc:''); }
 function tramoHTML(t,i){
   const sinMed=!EQ.medidor;
   const unidad = EQ.medidor==='KM' ? 'km' : 'h';
+  const rep = !!t.reparto;
   return '<div class="tramo" id="tramo-'+t.id+'">'
    +'<div class="tramo-head"><div class="tramo-num">Tramo '+(i+1)+(tramos.length>1?' de '+tramos.length:'')+'</div>'
    +(tramos.length>1?'<button class="btn-del" onclick="delTramo(\''+t.id+'\')" title="Quitar tramo">✕ quitar</button>':'')+'</div>'
    +(sinMed ? '' :
      '<div class="field"><label>'+(EQ.medidor==='KM'?'Kilometraje':'Horómetro')+' <span class="req">*</span></label>'
      +'<div class="medidor">'
-     +'<div><input type="number" inputmode="decimal" step="0.1" placeholder="Inicial" value="'+esc(t.inicial)+'" oninput="setT(\''+t.id+'\',\'inicial\',this.value)"><div class="hint" style="text-align:center">inicial</div></div>'
-     +'<div><input type="number" inputmode="decimal" step="0.1" placeholder="Final" value="'+esc(t.final)+'" oninput="setT(\''+t.id+'\',\'final\',this.value)"><div class="hint" style="text-align:center">final</div></div>'
+     +'<div><input type="number" inputmode="decimal" step="0.1" placeholder="Inicial" value="'+esc(t.inicial)+'" oninput="setT(\''+t.id+'\',\'inicial\',this.value)"><div class="sub">INICIAL<br>'+(i===0?'con que arrancó':'donde terminó el anterior')+'</div></div>'
+     +'<div><input type="number" inputmode="decimal" step="0.1" placeholder="Final" value="'+esc(t.final)+'" oninput="setT(\''+t.id+'\',\'final\',this.value)"><div class="sub">FINAL<br>lo que marca al terminar</div></div>'
      +'</div>'
      +'<div class="total-box" id="total-'+t.id+'"><span class="t-label">Total</span><span class="t-val">—<small>'+unidad+'</small></span></div>'
      +'<div class="hint" id="hintIni-'+t.id+'"></div>'
@@ -343,12 +465,17 @@ function tramoHTML(t,i){
    +'<div class="field"><label>Hora de</label><input type="time" value="'+esc(t.hora_de)+'" oninput="setT(\''+t.id+'\',\'hora_de\',this.value)"></div>'
    +'<div class="field"><label>Hora a</label><input type="time" value="'+esc(t.hora_a)+'" oninput="setT(\''+t.id+'\',\'hora_a\',this.value)"></div>'
    +'</div>'
-   +'<div class="field"><label>Centro de coste <span class="req">*</span></label>'
-   +'<button type="button" class="picker-btn '+(t.cc?'':'vacio')+'" id="cc-'+t.id+'" onclick="abrirPicker(\'cc\',\''+t.id+'\')">'+(t.cc?esc(ccLabel(t.cc)):'Toca para elegir…')+'</button></div>'
-   +'<div class="grid2">'
+   +'<div class="bloque"><div class="bloque-t">¿A qué centro de coste va?</div>'
+   +(rep ? '' :
+     '<div class="field"><label>Centro de coste <span class="req">*</span></label>'
+     +'<button type="button" class="picker-btn '+(t.cc?'':'vacio')+'" id="cc-'+t.id+'" onclick="abrirPicker(\'cc\',\''+t.id+'\')">'+(t.cc?ccLabelHTML(t.cc):'Toca para elegir…')+'</button></div>')
+   +'<button type="button" class="toggle'+(rep?' on':'')+'" onclick="toggleReparto(\''+t.id+'\')"><span class="sw"></span><span>Repartir entre varios centros de coste<small>cuando el parte dice «50 % aquí y 50 % allá» sin medidor intermedio</small></span></button>'
+   +(rep ? repartoHTML(t) : '')
+   +'</div>'
+   +'<div class="grid2" style="margin-top:12px">'
    +'<div class="field"><label>PR <span class="opt">(número)</span></label><input type="number" inputmode="numeric" placeholder="ej. 14400" value="'+esc(t.pr)+'" oninput="setT(\''+t.id+'\',\'pr\',this.value)"><div class="hint">14400 = PR14+400</div></div>'
    +'<div class="field"><label>UF</label><select onchange="setT(\''+t.id+'\',\'uf\',this.value)">'
-   +['','1','2','3'].map(u=>'<option value="'+u+'"'+(t.uf===u?' selected':'')+'>'+(u||'—')+'</option>').join('')+'</select><div class="hint">se deriva del CC</div></div>'
+   +['','1','2','3'].map(u=>'<option value="'+u+'"'+(t.uf===u?' selected':'')+'>'+(u||'—')+'</option>').join('')+'</select><div class="hint">'+(rep?'por cada CC del reparto':'se deriva del CC')+'</div></div>'
    +'</div>'
    +'<div class="field"><label>Descripción del trabajo</label>'
    +'<textarea rows="2" placeholder="ej. Cargue terraplen PR14+400" oninput="setT(\''+t.id+'\',\'desc\',this.value)">'+esc(t.desc)+'</textarea>'
@@ -362,12 +489,45 @@ function tramoHTML(t,i){
    +'<textarea rows="2" oninput="setT(\''+t.id+'\',\'obs\',this.value)">'+esc(t.obs)+'</textarea></div>'
    +'</div>';
 }
+/* ---------- reparto por porcentaje ---------- */
+function repartoHTML(t){
+  const rep=t.reparto, suma=rep.reduce((a,r)=>a+(num(r.pct)||0),0), tot=totalDe(t), tope=TOPES[EQ.medidor];
+  return '<div class="rep" id="rep-'+t.id+'">'
+    +'<div class="rep-quick">'+[[50,50],[70,30],[30,70]].map(p=>'<button type="button" onclick="repRapido(\''+t.id+'\','+JSON.stringify(p)+')">'+p.join(' / ')+'</button>').join('')+'<button type="button" onclick="repIguales(\''+t.id+'\')">partes iguales</button></div>'
+    +rep.map((r,j)=>'<div class="rep-row">'
+      +'<button type="button" class="picker-btn '+(r.cc?'':'vacio')+'" id="ccr-'+t.id+'-'+j+'" onclick="abrirPicker(\'cc\',\''+t.id+'\','+j+')">'+(r.cc?ccLabelHTML(r.cc):'Centro de coste '+(j+1)+'…')+'</button>'
+      +'<input type="number" inputmode="decimal" min="0" max="100" step="1" placeholder="%" value="'+esc(r.pct)+'" oninput="setRep(\''+t.id+'\','+j+',\'pct\',this.value)" aria-label="porcentaje">'
+      +'<button type="button" class="btn-del" onclick="delRep(\''+t.id+'\','+j+')" title="Quitar"'+(rep.length<=2?' disabled style="opacity:.35"':'')+'>✕</button>'
+      +'<div class="pr"><label>PR</label><input type="number" inputmode="numeric" placeholder="(el del tramo)" value="'+esc(r.pr)+'" oninput="setRep(\''+t.id+'\','+j+',\'pr\',this.value)"></div>'
+      +'</div>').join('')
+    +'<div class="rep-sum'+(Math.abs(suma-100)>0.5?' mal':'')+'"><span>'+(tot!==null&&tope?rep.map(r=>fmt(tot*(num(r.pct)||0)/100)+' '+tope.unidad).join(' + '):'los porcentajes deben sumar 100 %')+'</span><b>'+fmt(suma)+' %</b></div>'
+    +'<button type="button" class="btn-add mini" onclick="addRep(\''+t.id+'\')">+ Agregar centro de coste</button>'
+    +'</div>';
+}
+function toggleReparto(id){
+  const t=tramos.find(x=>x.id===id); if(!t) return;
+  if(t.reparto){ t.cc=t.reparto[0].cc||t.cc; t.uf=ufDe(t.cc); t.reparto=null; }
+  else { t.reparto=[{ cc:t.cc||'', pct:50, pr:'' },{ cc:'', pct:50, pr:'' }]; t.cc=''; t.uf=''; }
+  render();
+}
+function setRep(id,j,k,v){ const t=tramos.find(x=>x.id===id); if(!t||!t.reparto||!t.reparto[j]) return; t.reparto[j][k]=v; if(k==='pct') pintarRepSuma(t); pintarResumen(); }
+function pintarRepSuma(t){
+  const box=document.querySelector('#rep-'+t.id+' .rep-sum'); if(!box) return;
+  const suma=t.reparto.reduce((a,r)=>a+(num(r.pct)||0),0), tot=totalDe(t), tope=TOPES[EQ.medidor];
+  box.classList.toggle('mal', Math.abs(suma-100)>0.5);
+  box.innerHTML='<span>'+(tot!==null&&tope?t.reparto.map(r=>fmt(tot*(num(r.pct)||0)/100)+' '+tope.unidad).join(' + '):'los porcentajes deben sumar 100 %')+'</span><b>'+fmt(suma)+' %</b>';
+}
+function addRep(id){ const t=tramos.find(x=>x.id===id); if(!t||!t.reparto) return; t.reparto.push({ cc:'', pct:'', pr:'' }); render(); }
+function delRep(id,j){ const t=tramos.find(x=>x.id===id); if(!t||!t.reparto||t.reparto.length<=2) return; t.reparto.splice(j,1); render(); }
+function repRapido(id,p){ const t=tramos.find(x=>x.id===id); if(!t||!t.reparto) return; while(t.reparto.length<2) t.reparto.push({cc:'',pct:'',pr:''}); t.reparto=t.reparto.slice(0,2); t.reparto[0].pct=p[0]; t.reparto[1].pct=p[1]; render(); }
+function repIguales(id){ const t=tramos.find(x=>x.id===id); if(!t||!t.reparto) return; const n=t.reparto.length, base=Math.floor(100/n*100)/100; t.reparto.forEach((r,j)=>{ r.pct = j===n-1 ? Math.round((100-base*(n-1))*100)/100 : base; }); render(); }
+
 function setT(id, k, v){
   const t=tramos.find(x=>x.id===id); if(!t) return;
   t[k]=v;
   if(k==='cc'){ t.uf=ufDe(v); const el=document.querySelector('#tramo-'+id+' select'); if(el) el.value=t.uf; }
   if(k==='inicial'||k==='final'){
-    pintarTotal(id);
+    pintarTotal(id); if(t.reparto) pintarRepSuma(t);
     // el siguiente tramo arranca donde termina este (si el operador no lo cambió a mano)
     const i=tramos.indexOf(t), sig=tramos[i+1];
     if(k==='final' && sig && (sig.inicial===''||String(sig.inicial)===String(sig.iniPre))){ sig.inicial=v; sig.iniPre=v; const el=document.querySelector('#tramo-'+sig.id+' .medidor input'); if(el) el.value=v; pintarTotal(sig.id); }
@@ -387,7 +547,8 @@ function pintarTotal(id){
   const h=document.getElementById('hintIni-'+id);
   if(h){
     const i=tramos.indexOf(t);
-    if(i===0 && ULTIMO && num(t.inicial)!==null && Math.abs(num(t.inicial)-ULTIMO.final)>0.001)
+    if(tot!==null && tot<0) h.innerHTML='<span class="err">El final es menor que el inicial: revisa los dos números.</span>';
+    else if(i===0 && ULTIMO && num(t.inicial)!==null && Math.abs(num(t.inicial)-ULTIMO.final)>0.001)
       h.innerHTML='El inicial cambió: el último registrado era <b>'+fmt(ULTIMO.final)+'</b>'+(ULTIMO.fecha?' ('+ULTIMO.fecha+')':'')+'. Se enviará marcado para revisión.';
     else if(i===0 && ULTIMO) h.innerHTML='Inicial precargado del último parte'+(ULTIMO.fecha?' ('+ULTIMO.fecha+')':'')+'. Cámbialo solo si el parte físico dice otra cosa.';
     else h.innerHTML='';
@@ -407,9 +568,10 @@ function pintarSugs(id){
 function usarSug(id, txt){ const t=tramos.find(x=>x.id===id); t.desc=txt; const ta=document.querySelector('#tramo-'+id+' textarea'); if(ta) ta.value=txt; pintarSugs(id); pintarResumen(); }
 
 /* ---------- buscador (operador / CC) ---------- */
-function abrirPicker(tipo, tramoId){
-  pickerCtx={tipo:tipo, tramoId:tramoId};
-  const inp=document.getElementById('pickerBuscar'); inp.value=''; inp.placeholder= tipo==='operador' ? 'Buscar operador…' : 'Buscar centro de coste…';
+function abrirPicker(tipo, tramoId, repIdx){
+  pickerCtx={tipo:tipo, tramoId:tramoId, repIdx:(repIdx===undefined?null:repIdx)};
+  const inp=document.getElementById('pickerBuscar'); inp.value=''; inp.placeholder= tipo==='operador' ? 'Buscar operador por nombre…' : 'Buscar por código o por nombre…';
+  document.getElementById('pickerTit').textContent = tipo==='operador' ? 'Toca tu nombre' : 'Toca el centro de coste del parte';
   document.getElementById('picker').classList.remove('hidden');
   pintarPicker(); setTimeout(()=>inp.focus(), 50);
 }
@@ -425,10 +587,11 @@ function pintarPicker(){
     if(q && !items.some(o=>norm(o)===q)) html+='<button type="button" class="picker-item" onclick="elegir(document.getElementById(\'pickerBuscar\').value.trim())">➕ Usar «'+esc(document.getElementById('pickerBuscar').value.trim())+'» <small>nombre que no está en la lista (maquinaria lo revisa)</small></button>';
   } else {
     const t=tramos.find(x=>x.id===pickerCtx.tramoId);
+    const actual = t ? (pickerCtx.repIdx===null ? t.cc : (t.reparto&&t.reparto[pickerCtx.repIdx]?t.reparto[pickerCtx.repIdx].cc:'')) : '';
     const items=CC.filter(c=>!q || norm(c.centro_coste+' '+c.descripcion_cc+' '+c.proyecto).indexOf(q)>=0);
     const reales=items.filter(c=>!c.pseudo), pseudo=items.filter(c=>c.pseudo);
     const frec=reales.slice(0, q?reales.length:12), resto=q?[]:reales.slice(12);
-    const item=c=>'<button type="button" class="picker-item'+(t&&t.cc===c.centro_coste?' sel':'')+'" onclick="elegir('+JSON.stringify(c.centro_coste).replace(/"/g,'&quot;')+')"><b>'+esc(c.centro_coste)+'</b>'+(c.descripcion_cc?'<small>'+esc(c.descripcion_cc)+'</small>':'')+(c.proyecto?'<small>proyecto '+esc(c.proyecto)+' · UF'+ufDe(c.centro_coste)+'</small>':'')+'</button>';
+    const item=c=>'<button type="button" class="picker-item'+(actual===c.centro_coste?' sel':'')+'" onclick="elegir('+JSON.stringify(c.centro_coste).replace(/"/g,'&quot;')+')"><b>'+esc(c.centro_coste)+'</b>'+(c.descripcion_cc?'<small>'+esc(c.descripcion_cc)+'</small>':'')+(c.proyecto?'<small>proyecto '+esc(c.proyecto)+' · UF'+ufDe(c.centro_coste)+'</small>':'')+'</button>';
     if(frec.length) html+='<div class="picker-grp">'+(q?'Centros de coste':'Más usados')+'</div>'+frec.map(item).join('');
     if(resto.length) html+='<div class="picker-grp">Todos</div>'+resto.map(item).join('');
     if(pseudo.length) html+='<div class="picker-grp">Sin operación</div>'+pseudo.map(item).join('');
@@ -438,7 +601,10 @@ function pintarPicker(){
 function elegir(v){
   if(!pickerCtx) return;
   if(pickerCtx.tipo==='operador'){ operador=String(v||'').trim(); try{ localStorage.setItem(keyOp(), operador); }catch(e){} pintarOperador(); }
-  else { setT(pickerCtx.tramoId,'cc',v); const b=document.getElementById('cc-'+pickerCtx.tramoId); if(b){ b.textContent=ccLabel(v); b.classList.remove('vacio'); } }
+  else if(pickerCtx.repIdx!==null){
+    const t=tramos.find(x=>x.id===pickerCtx.tramoId); if(t&&t.reparto&&t.reparto[pickerCtx.repIdx]){ t.reparto[pickerCtx.repIdx].cc=v; const b=document.getElementById('ccr-'+t.id+'-'+pickerCtx.repIdx); if(b){ b.innerHTML=ccLabelHTML(v); b.classList.remove('vacio'); } pintarResumen(); }
+  }
+  else { setT(pickerCtx.tramoId,'cc',v); const b=document.getElementById('cc-'+pickerCtx.tramoId); if(b){ b.innerHTML=ccLabelHTML(v); b.classList.remove('vacio'); } }
   cerrarPicker();
 }
 
@@ -448,7 +614,7 @@ function cerrarSinOperacion(){ document.getElementById('sheetSinOp').classList.a
 function sinOperacion(motivo, cc){
   cerrarSinOperacion();
   const ini = ULTIMO ? ULTIMO.final : (num(tramos[0]&&tramos[0].inicial));
-  tramos=[{ id:uuid(), inicial: ini===null||ini===undefined?'':ini, final: ini===null||ini===undefined?'':ini, hora_de:'', hora_a:'', cc:cc, pr:'', uf:'', desc:motivo, varada:'', lluvia:'', obs:'', iniPre: ini===null||ini===undefined?'':ini }];
+  tramos=[nuevoTramo({ inicial: ini===null||ini===undefined?'':ini, final: ini===null||ini===undefined?'':ini, hora_de:'', hora_a:'', cc:cc, pr:'', uf:'', desc:motivo, iniPre: ini===null||ini===undefined?'':ini, reparto:null })];
   if(!operador && /sin operador/i.test(motivo)){ operador='Sin operador'; pintarOperador(); }
   render();
   window.scrollTo({top:0,behavior:'smooth'});
@@ -472,9 +638,24 @@ function validar(){
       else if(b<a) errs.push(n+'el final ('+fmt(b)+') es menor que el inicial ('+fmt(a)+').');
       else if(tope && b-a>tope.bloquea) errs.push(n+'el total ('+fmt(b-a)+' '+tope.unidad+') pasa de '+tope.bloquea+' '+tope.unidad+'. Revisa el medidor.');
     }
-    if(!t.cc) errs.push(n+'falta el centro de coste.');
+    if(t.reparto){
+      if(t.reparto.some(r=>!r.cc)) errs.push(n+'falta un centro de coste del reparto.');
+      if(t.reparto.some(r=>!(num(r.pct)>0))) errs.push(n+'cada centro de coste del reparto necesita su porcentaje.');
+      const suma=t.reparto.reduce((a,r)=>a+(num(r.pct)||0),0);
+      if(Math.abs(suma-100)>0.5) errs.push(n+'los porcentajes suman '+fmt(suma)+' % y deben sumar 100 %.');
+    } else if(!t.cc) errs.push(n+'falta el centro de coste.');
   });
   return errs;
+}
+function marcarFaltantes(){
+  if(!intento) return;
+  document.getElementById('reporteNum').classList.toggle('field-error', !document.getElementById('reporteNum').value.trim());
+  document.getElementById('btnOperador').classList.toggle('field-error', !operador);
+  tramos.forEach(t=>{
+    const b=document.getElementById('cc-'+t.id); if(b) b.classList.toggle('field-error', !t.cc);
+    if(t.reparto) t.reparto.forEach((r,j)=>{ const rb=document.getElementById('ccr-'+t.id+'-'+j); if(rb) rb.classList.toggle('field-error', !r.cc); });
+    if(EQ.medidor){ const ins=document.querySelectorAll('#tramo-'+t.id+' .medidor input'); if(ins.length===2){ ins[0].classList.toggle('field-error', num(t.inicial)===null); ins[1].classList.toggle('field-error', num(t.final)===null || (num(t.inicial)!==null && num(t.final)<num(t.inicial))); } }
+  });
 }
 function pintarResumen(){
   if(!EQ) return;
@@ -484,51 +665,69 @@ function pintarResumen(){
   let html='';
   tramos.forEach((t,i)=>{
     const tot=totalDe(t);
+    let cc = t.reparto ? t.reparto.map(r=>(r.cc?esc(ccTexto(r.cc)):'<span style="color:var(--error-txt)">sin CC</span>')+' <b>'+fmt(num(r.pct)||0)+' %</b>'+(tot!==null&&tope?' ('+fmt(tot*(num(r.pct)||0)/100)+' '+tope.unidad+')':'')).join('<br>')
+                        : (t.cc?esc(ccTexto(t.cc)):'<span style="color:var(--error-txt)">sin centro de coste</span>')+(t.uf?' · UF'+t.uf:'');
     html+='<div class="r-row">'
-      +'<b>Tramo '+(i+1)+'</b> · '+(t.cc?esc(t.cc):'<span style="color:var(--error-txt)">sin CC</span>')+(t.uf?' · UF'+t.uf:'')+(t.pr?' · PR '+esc(t.pr):'')
+      +'<b>Tramo '+(i+1)+'</b>'+(t.pr?' · PR '+esc(t.pr):'')+((t.hora_de||t.hora_a)?' · '+esc(t.hora_de||'?')+'–'+esc(t.hora_a||'?'):'')
       +(EQ.medidor?'<br>'+esc(t.inicial||'—')+' → '+esc(t.final||'—')+' = <b>'+(tot===null?'—':fmt(tot))+' '+(tope?tope.unidad:'')+'</b>':'')
-      +((t.hora_de||t.hora_a)?' · '+esc(t.hora_de||'?')+'–'+esc(t.hora_a||'?'):'')
-      +(t.desc?'<br>'+esc(t.desc):'')
+      +'<br>'+cc
+      +(t.desc?'<br><i>'+esc(t.desc)+'</i>':'')
       +'</div>';
   });
   html+='<div>'+esc(EQ.codigo)+' · '+esc(document.getElementById('fecha').value||'sin fecha')+' · parte nº <b>'+esc(document.getElementById('reporteNum').value||'—')+'</b> · <b>'+esc(operador||'sin operador')+'</b></div>';
-  if(errs.length) html+='<div class="hint err" style="margin-top:8px">'+errs.map(esc).join('<br>')+'</div>';
+  if(errs.length) html+='<div class="falta"><b>Antes de enviar:</b><br>'+errs.map(esc).join('<br>')+'</div>';
+  else html+='<div class="listo">✓ Todo listo. Pulsa ENVIAR PARTE.</div>';
   b.innerHTML=html;
   document.getElementById('btnSubmit').disabled = enviando;
+  marcarFaltantes();
 }
 document.getElementById('fecha').addEventListener('input', pintarResumen);
 document.getElementById('reporteNum').addEventListener('input', pintarResumen);
 
 /* ---------- envío ---------- */
+function armarPayload(){
+  const fecha=document.getElementById('fecha').value, reporte=document.getElementById('reporteNum').value.trim();
+  return { mod:'parte', op:'reporte', codigo:EQ.codigo, origen:'qr',
+    tramos: tramos.map((t,i)=>{
+      const o={ id_registro:t.id, fecha:fecha, reporte_num:reporte, operador:operador,
+        inicial: EQ.medidor?num(t.inicial):'', final: EQ.medidor?num(t.final):'',
+        inicial_modificado: (i===0 && ULTIMO && num(t.inicial)!==null && Math.abs(num(t.inicial)-ULTIMO.final)>0.001) ? 'SI' : 'NO',
+        hora_de:t.hora_de, hora_a:t.hora_a, centro_coste:t.cc, pr:num(t.pr)===null?'':num(t.pr), uf:t.uf||ufDe(t.cc),
+        descripcion_trabajo:t.desc.trim(), horas_varada:num(t.varada)===null?'':num(t.varada), horas_lluvia:num(t.lluvia)===null?'':num(t.lluvia),
+        observaciones:t.obs.trim() };
+      if(t.reparto) o.reparto=t.reparto.map(r=>({ centro_coste:r.cc, pct:num(r.pct), pr:num(r.pr)===null?'':num(r.pr), uf:ufDe(r.cc) }));
+      return o; }) };
+}
 async function enviar(){
   if(enviando) return;
+  intento=true;
   const errs=validar();
-  if(errs.length){ alert('Revisa antes de enviar:\n\n• '+errs.join('\n• ')); pintarResumen(); return; }
-  const fecha=document.getElementById('fecha').value, reporte=document.getElementById('reporteNum').value.trim();
-  const payload={ mod:'parte', op:'reporte', codigo:EQ.codigo, origen:'qr',
-    tramos: tramos.map((t,i)=>({
-      id_registro:t.id, fecha:fecha, reporte_num:reporte, operador:operador,
-      inicial: EQ.medidor?num(t.inicial):'', final: EQ.medidor?num(t.final):'',
-      inicial_modificado: (i===0 && ULTIMO && num(t.inicial)!==null && Math.abs(num(t.inicial)-ULTIMO.final)>0.001) ? 'SI' : 'NO',
-      hora_de:t.hora_de, hora_a:t.hora_a, centro_coste:t.cc, pr:num(t.pr)===null?'':num(t.pr), uf:t.uf||ufDe(t.cc),
-      descripcion_trabajo:t.desc.trim(), horas_varada:num(t.varada)===null?'':num(t.varada), horas_lluvia:num(t.lluvia)===null?'':num(t.lluvia),
-      observaciones:t.obs.trim() })) };
+  if(errs.length){ pintarResumen(); document.getElementById('resumenCard').scrollIntoView({behavior:'smooth',block:'start'}); alert('Revisa antes de enviar:\n\n• '+errs.join('\n• ')); return; }
+  const payload=armarPayload(), fecha=payload.tramos[0].fecha, reporte=payload.tramos[0].reporte_num;
   enviando=true; const btn=document.getElementById('btnSubmit'); btn.disabled=true; btn.textContent='ENVIANDO…';
   let data=null;
-  try{
-    const r=await fetch(APPS_SCRIPT_URL, { method:'POST', headers:{'Content-Type':'text/plain'}, body:JSON.stringify(payload) });
-    data=await r.json();
-  }catch(e){ data={ok:false, error:'Sin señal o el servidor no respondió. El parte NO se envió: acércate a una zona con señal y vuelve a pulsar ENVIAR (no se duplica).'}; }
+  if(DEMO){ await new Promise(r=>setTimeout(r,400)); data=demoReporte(payload); }
+  else {
+    try{
+      const r=await fetch(APPS_SCRIPT_URL, { method:'POST', headers:{'Content-Type':'text/plain'}, body:JSON.stringify(payload) });
+      data=await r.json();
+    }catch(e){ data={ok:false, error:'Sin señal o el servidor no respondió. El parte NO se envió: acércate a una zona con señal y vuelve a pulsar ENVIAR (no se duplica).'}; }
+  }
   enviando=false; btn.disabled=false; btn.textContent='ENVIAR PARTE →';
   if(!data || !data.ok){ alert('No se guardó:\n\n'+((data&&data.error)||'error desconocido')); return; }
   ultimoEnvio={ fecha:fecha, reporte:reporte, tramos:tramos.slice(), filas:data.filas||[] };
   const alertas=(data.filas||[]).reduce((a,f)=>a.concat(f.alertas||[]),[]);
   const okT=document.getElementById('okTramos');
-  okT.innerHTML=tramos.map((t,i)=>{ const f=(data.filas||[])[i]||{}; const tot=totalDe(t);
-    return '<div class="r-row"><b>Tramo '+(i+1)+'</b> · '+esc(t.cc)+(EQ.medidor?' · '+esc(t.inicial)+' → '+esc(t.final)+' = <b>'+(tot===null?'—':fmt(tot))+'</b>':'')+(t.desc?'<br>'+esc(t.desc):'')
-      +((f.alertas&&f.alertas.length)?'<br><span style="color:var(--accent-txt)">Para revisión: '+esc(f.alertas.join(', '))+'</span>':'')+'</div>'; }).join('');
+  let k=0;
+  okT.innerHTML=tramos.map((t,i)=>{ const tot=totalDe(t), tope=TOPES[EQ.medidor];
+    const partes = t.reparto ? t.reparto : [null];
+    return partes.map((p,j)=>{ const f=(data.filas||[])[k++]||{};
+      const cc = p ? ccTexto(p.cc)+' · '+fmt(num(p.pct)||0)+' %'+(tot!==null&&tope?' = '+fmt(tot*(num(p.pct)||0)/100)+' '+tope.unidad:'') : ccTexto(t.cc);
+      return '<div class="r-row"><b>Tramo '+(i+1)+(p?' · parte '+(j+1)+' de '+partes.length:'')+'</b><br>'+esc(cc)+(!p&&EQ.medidor?'<br>'+esc(t.inicial)+' → '+esc(t.final)+' = <b>'+(tot===null?'—':fmt(tot))+' '+(tope?tope.unidad:'')+'</b>':'')+(t.desc?'<br><i>'+esc(t.desc)+'</i>':'')
+        +((f.alertas&&f.alertas.length)?'<br><span style="color:var(--accent-txt)">Para revisión: '+esc(f.alertas.join(', '))+'</span>':'')+'</div>'; }).join(''); }).join('');
   document.getElementById('okMsg').innerHTML='<b>'+esc(EQ.codigo)+'</b> · '+esc(fecha)+' · parte nº '+esc(reporte)+' · '+esc(operador)+'<br>'
-    +((data.guardadas||0)+(data.duplicadas||0))+' tramo(s) registrado(s) como <b>pendiente</b> de revisión.'
+    +((data.guardadas||0)+(data.duplicadas||0))+' fila(s) registrada(s) como <b>pendiente</b> de revisión.'
+    +(DEMO?'<br><span style="color:var(--accent-txt)">Modo de prueba: no se guardó nada.</span>':'')
     +(alertas.length?'<br><span style="color:var(--accent-txt)">Quedó marcado para que maquinaria lo mire ('+esc([...new Set(alertas)].join(', '))+'). No tienes que hacer nada más.</span>':'');
   // el último final ahora es el del último tramo enviado
   const ultT=tramos[tramos.length-1]; if(EQ.medidor && num(ultT.final)!==null) ULTIMO={ final:num(ultT.final), fecha:fecha, hora_a:ultT.hora_a, origen:'bandeja' };
@@ -537,12 +736,13 @@ async function enviar(){
 function otroTramo(){
   // mismo parte físico, mismo operador, mismo día: un tramo nuevo que arranca donde terminó el anterior
   const u=ultimoEnvio, prev=u?u.tramos[u.tramos.length-1]:null;
-  tramos=[{ id:uuid(), inicial: ULTIMO?ULTIMO.final:'', final:'', hora_de: prev?prev.hora_a:'', hora_a:'', cc:'', pr: prev?prev.pr:'', uf:'', desc:'', varada:'', lluvia:'', obs:'', iniPre: ULTIMO?ULTIMO.final:'' }];
+  tramos=[]; intento=false;
+  tramos=[nuevoTramo({ inicial: ULTIMO?ULTIMO.final:'', hora_de: prev?prev.hora_a:'', pr: prev?prev.pr:'', iniPre: ULTIMO?ULTIMO.final:'' })];
   if(u){ document.getElementById('fecha').value=u.fecha; document.getElementById('reporteNum').value=u.reporte; }
   render(); mostrar('formMain'); window.scrollTo(0,0);
 }
 function nuevoParte(){
-  tramos=[]; document.getElementById('reporteNum').value=''; document.getElementById('fecha').value=HOY;
+  tramos=[]; intento=false; document.getElementById('reporteNum').value=''; document.getElementById('fecha').value=HOY;
   addTramo(); mostrar('formMain'); window.scrollTo(0,0);
 }
 

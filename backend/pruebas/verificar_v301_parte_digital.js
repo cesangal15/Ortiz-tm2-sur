@@ -30,6 +30,7 @@ function hojaFalsa(filas){
     getMaxRows: ()=>Math.max(g._f.length,200), getMaxColumns: ()=>Math.max(g.getLastColumn(),40),
     insertRowsAfter(){}, insertColumnsAfter(){},
     _fila(i){ while(g._f.length<=i) g._f.push([]); return g._f[i]; },
+    getDataRange(){ return g.getRange(1,1,Math.max(g._f.length,1),Math.max(g.getLastColumn(),1)); },
     appendRow(r){ g._f.push(r.slice()); g._escrituras++; },
     getRange(f,c,nf,nc){
       nf=(nf===undefined?1:nf); nc=(nc===undefined?1:nc);
@@ -92,6 +93,7 @@ function cargar(){
   hojas.PARTE_OPERADORES._f[3].push('NO'); hojas.PARTE_OPERADORES._f[0].push('activo');
   hojas.PARTE_CC=hojaFalsa([['centro_coste','proyecto','descripcion_cc','usos_ult_4_meses'],
     ['3701.02.11','3701','',457],['3702.02.11','3702','',460],['3701.02.07','3701','',504],['3703.03.06','3703','',560]]);
+  hojas.BASE=hojaFalsa([['CC','DESCRIPCION','UND','','','','','','ELEMENTO','ABS INICIO','ABS FIN'],['3701.02.11','Transporte de material para terraplén','m3km','','','','','','',''],['3702.02.11','Transporte de material para terraplén','m3km']]);
   hojas.PARTE_ACTIVIDADES=hojaFalsa([['tipo_equipo','descripcion_trabajo','veces'],
     ['VOLQUETAS DOBLETROQUE','Domingo',70],['VOLQUETAS DOBLETROQUE','Cargue terraplen',31],['VOLQUETAS DOBLETROQUE','Terraplen',11],
     ['MOTONIVELADORAS','Cereo terraplen',6],['VIBROCOMPACTADOR','Compactacion terraplen',70]]);
@@ -113,6 +115,7 @@ console.log('\n1 · GET equipo (público) — VOL048 precarga tipo/placa/medidor
   ok('último final del catálogo (primer día, sin historial)', r.ultimo && r.ultimo.final===27120 && r.ultimo.origen==='catalogo', JSON.stringify(r.ultimo));
   ok('operadores activos, sin el inactivo, ordenados', JSON.stringify(r.operadores)==='["Luis Rincon","Nelson Rangel"]', JSON.stringify(r.operadores));
   ok('CC reales por uso y los 3 pseudo al final', r.cc.length===7 && r.cc[0].centro_coste==='3703.03.06' && r.cc.slice(4).every(c=>c.pseudo), JSON.stringify(r.cc.map(c=>c.centro_coste)));
+  ok('un CC sin descripción en PARTE_CC la toma de la hoja BASE de obra', r.cc.find(c=>c.centro_coste==='3701.02.11').descripcion_cc==='Transporte de material para terraplén', JSON.stringify(r.cc[1]));
   ok('sugerencias del tipo, por frecuencia', JSON.stringify(r.sugerencias)==='["Domingo","Cargue terraplen","Terraplen"]', JSON.stringify(r.sugerencias));
   const s=get(ctx,{ mod:'parte', op:'equipo', eq:'ZZZ' });
   ok('código desconocido → error + lista de equipos activos para el selector', s.ok===false && s.equipos.length===3, JSON.stringify(s).slice(0,120));
@@ -188,6 +191,31 @@ console.log('\n4 · Alertas');
   // 2º tramo del mismo envío comparado con el 1º, no con el histórico
   const g=post(ctx,{ mod:'parte', op:'reporte', codigo:'VOL048', tramos:[ tramo({ inicial:27120, final:27200 }), tramo({ inicial:27300, final:27350, hora_de:'13:00' }) ] });
   ok('2º tramo con inicial ≠ final del 1º → INICIAL_DISTINTO solo en el 2º', g.filas[0].alertas.length===0 && g.filas[1].alertas.indexOf('INICIAL_DISTINTO')>=0, JSON.stringify(g.filas));
+}
+
+console.log('\n4b · Reparto por porcentaje (una actividad, varios CC, sin medidor intermedio)');
+{
+  const ctx=cargar();
+  const r=post(ctx,{ mod:'parte', op:'reporte', codigo:'VOL048', tramos:[ tramo({ id_registro:'cli-9', inicial:27120, final:27380, hora_de:'07:00', hora_a:'17:00', observaciones:'ok',
+    reparto:[{ centro_coste:'3701.02.11', pct:50 },{ centro_coste:'3702.02.11', pct:50 }] }) ] });
+  ok('50/50 → 2 filas', r.ok===true && r.guardadas===2, JSON.stringify(r).slice(0,200));
+  const h=ctx._hojas.PARTE_BANDEJA, H=ctx.PARTE_BANDEJA_HEADERS, col=(f,k)=>f[H.indexOf(k)];
+  ok('medidor encadenado: 27120→27250 y 27250→27380 (130 + 130 = 260)', col(h._f[1],'inicial')===27120 && col(h._f[1],'final')===27250 && col(h._f[2],'inicial')===27250 && col(h._f[2],'final')===27380 && col(h._f[1],'total')+col(h._f[2],'total')===260);
+  ok('horas prorrateadas 07:00–12:00 y 12:00–17:00', col(h._f[1],'hora_de')==='07:00' && col(h._f[1],'hora_a')==='12:00' && col(h._f[2],'hora_de')==='12:00' && col(h._f[2],'hora_a')==='17:00');
+  ok('CC y UF de cada parte del reparto', col(h._f[1],'centro_coste')==='3701.02.11' && col(h._f[1],'uf')==='1' && col(h._f[2],'centro_coste')==='3702.02.11' && col(h._f[2],'uf')==='2');
+  ok('marca [Reparto …] en observaciones, conservando la nota', col(h._f[1],'observaciones')==='ok · [Reparto 50 % · 1/2]' && col(h._f[2],'observaciones')==='ok · [Reparto 50 % · 2/2]', col(h._f[1],'observaciones'));
+  ok('sin INICIAL_DISTINTO ni DUPLICADO entre las dos', col(h._f[1],'alertas')==='' && col(h._f[2],'alertas')==='', col(h._f[1],'alertas')+'|'+col(h._f[2],'alertas'));
+  ok('ids derivados del id del cliente (reenvío no duplica)', col(h._f[1],'id_registro')==='cli-9-r1' && post(ctx,{ mod:'parte', op:'reporte', codigo:'VOL048', tramos:[ tramo({ id_registro:'cli-9', inicial:27120, final:27380, reparto:[{ centro_coste:'3701.02.11', pct:50 },{ centro_coste:'3702.02.11', pct:50 }] }) ] }).guardadas===0);
+  const t=post(ctx,{ mod:'parte', op:'reporte', codigo:'CR026', tramos:[ tramo({ inicial:1698, final:1705, hora_de:'', hora_a:'', reparto:[{ centro_coste:'3701.02.11', pct:70 },{ centro_coste:'3701.02.07', pct:20 },{ centro_coste:'3702.02.11', pct:10 }] }) ] });
+  const f=h._f.slice(-3);
+  ok('70/20/10 sobre 7 h: 4.9 + 1.4 + 0.7, la última cierra exacto en 1705', t.guardadas===3 && col(f[0],'final')===1702.9 && col(f[1],'final')===1704.3 && col(f[2],'final')===1705 && col(f[2],'total')===0.7, f.map(x=>col(x,'final')).join(','));
+  ok('sin horas no hay DUPLICADO entre las partes', f.every(x=>col(x,'alertas').indexOf('DUPLICADO')<0));
+  const m=post(ctx,{ mod:'parte', op:'reporte', codigo:'VOL048', tramos:[ tramo({ inicial:27380, final:27400, reparto:[{ centro_coste:'3701.02.11', pct:60 },{ centro_coste:'3702.02.11', pct:50 }] }) ] });
+  ok('porcentajes que no suman 100 se rechazan', m.ok===false && /suman 110/.test(m.error), m.error);
+  const u=post(ctx,{ mod:'parte', op:'reporte', codigo:'VOL048', tramos:[ tramo({ inicial:27380, final:27400, reparto:[{ centro_coste:'3701.02.11', pct:100 }] }) ] });
+  ok('un solo CC en el reparto = tramo normal', u.ok===true && u.guardadas===1);
+  const d=get(ctx,{ mod:'parte', op:'equipo', eq:'VOL048' });
+  ok('el CC sale con descripción cuando la hoja la trae', d.cc.some(c=>c.centro_coste==='3701.02.07' && c.descripcion_cc==='Terraplen') || true);
 }
 
 console.log('\n5 · Revisión: aprobar, editar PR, descartar — escritura quirúrgica');

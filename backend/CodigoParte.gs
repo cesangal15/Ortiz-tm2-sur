@@ -15,6 +15,7 @@
  * Enrutado (el diff en Codigo.gs son dos líneas, una en doGet y otra en doPost):
  *   GET  ?mod=parte&op=equipo&eq=CODIGO         PÚBLICO  → datos del equipo + último final + listas
  *   POST {mod:'parte', op:'reporte', ...}        PÚBLICO  → inserta 1..n filas `pendiente` con alertas
+ *        (un tramo con `reparto:[{centro_coste,pct}]` se abre en una fila por CC, medidor y horas prorrateados)
  *   GET  ?mod=parte&op=bandeja&fecha=            TOKEN    → pendientes + revisadas + faltantes del día
  *   POST {mod:'parte', op:'revisar', cambios:[]} TOKEN    → cambia estado / edita campos (por id_registro)
  *   GET  ?mod=parte&op=base&desde=&hasta=        TOKEN    → aprobados del rango + filas en orden Excel
@@ -172,7 +173,7 @@ function parteCC_(){
     const cc=parteTexto_(r.centro_coste); if(!cc || !parteSiNo_(r.activo, true)) return;
     const k=normTexto(cc); if(vistos[k]) return; vistos[k]=1;
     const esPseudo=PARTE_CC_PSEUDO.some(function(p){ return normTexto(p.centro_coste)===k; });
-    out.push({ centro_coste:cc, proyecto:parteTexto_(r.proyecto), descripcion_cc:parteTexto_(r.descripcion_cc),
+    out.push({ centro_coste:cc, proyecto:parteTexto_(r.proyecto), descripcion_cc:parteTexto_(r.descripcion_cc) || parteDescBase_(cc),
                usos:parteNum_(r.usos_ult_4_meses)||0, pseudo:esPseudo });
   });
   PARTE_CC_PSEUDO.forEach(function(p){ if(!vistos[normTexto(p.centro_coste)]) out.push({ centro_coste:p.centro_coste, proyecto:'', descripcion_cc:p.descripcion_cc, usos:0, pseudo:true }); });
@@ -183,6 +184,15 @@ function parteCC_(){
     if(b.usos!==a.usos) return b.usos-a.usos;
     return a.centro_coste<b.centro_coste?-1:1;
   });
+}
+// Descripción del ítem desde la hoja BASE de obra (tabla de ítems A–H, D68) cuando PARTE_CC no la trae:
+// misma fuente que usa DATA, sin mantener dos catálogos. Sin BASE (o sin el ítem) devuelve ''.
+function parteDescBase_(cc){
+  try{
+    const items=getBaseItems(); if(!items) return '';
+    const cand=items[String(cc==null?'':cc).trim()] || items[ccCorto(cc)];
+    return (cand && cand.length) ? String(cand[0].desc||'') : '';
+  }catch(err){ return ''; }
 }
 function parteEsPseudoCC_(cc){ const k=normTexto(cc); return PARTE_CC_PSEUDO.some(function(p){ return normTexto(p.centro_coste)===k; }); }
 // Tipo normalizado sin plural para emparejar "MOTONIVELADORA" con "MOTONIVELADORAS", "COMPACTADORES" con "COMPACTADOR".
@@ -279,6 +289,55 @@ function parteEquipo(e){
     topes:PARTE_TOPES, hoy:parteHoy_() });
 }
 
+/* ---------- reparto por porcentaje ----------
+ * En el parte físico es corriente «50 % a este centro de coste y 50 % a este otro» SIN medidor
+ * intermedio (una sola actividad, varios CC). El tramo llega con el medidor completo y
+ * `reparto:[{centro_coste, pct, pr?, uf?}]`; aquí se abre en N filas encadenadas —la primera
+ * arranca en el inicial, cada una termina en inicial + total × %acumulado y la última cierra EXACTO
+ * en el final (sin restos de redondeo)—, con las horas repartidas en la misma proporción. Así el
+ * Excel recibe una fila por CC, igual que hoy, y el kilometraje/horómetro sigue cuadrando de una
+ * fila a la siguiente. La observación lleva la marca «[Reparto 50 % · 1/2]» para quien revisa. */
+function parteMinAHora_(m){ m=Math.round(m); return ('0'+Math.floor(m/60)%24).slice(-2)+':'+('0'+(m%60)).slice(-2); }
+function parteExpandirReparto_(tramos){
+  const out=[];
+  for(let i=0;i<tramos.length;i++){
+    const t=tramos[i]||{};
+    const rep=Array.isArray(t.reparto) ? t.reparto.filter(function(r){ return r && (parteTexto_(r.centro_coste) || parteNum_(r.pct)!==null); }) : [];
+    if(rep.length<2){ out.push(t); continue; }
+    const n=i+1;
+    let suma=0;
+    for(let j=0;j<rep.length;j++){
+      const pct=parteNum_(rep[j].pct);
+      if(!parteTexto_(rep[j].centro_coste)) return { error:'Tramo '+n+': el reparto tiene un centro de coste vacío. No se guardó nada.' };
+      if(pct===null || pct<=0) return { error:'Tramo '+n+': cada centro de coste del reparto necesita un porcentaje mayor que 0. No se guardó nada.' };
+      suma+=pct;
+    }
+    if(Math.abs(suma-100)>0.5) return { error:'Tramo '+n+': los porcentajes del reparto suman '+parteRedondea_(suma)+' % y deben sumar 100 %. No se guardó nada.' };
+    const ini=parteNum_(t.inicial), fin=parteNum_(t.final);
+    const total=(ini!==null && fin!==null) ? fin-ini : null;
+    const mDe=parteHoraMin_(t.hora_de), mA=parteHoraMin_(t.hora_a), conHoras=(mDe>=0 && mA>=0 && mA>mDe);
+    let acum=0, iniAct=ini, minAct=mDe;
+    for(let j=0;j<rep.length;j++){
+      const r=rep[j], pct=parteNum_(r.pct), ultimo=(j===rep.length-1); acum+=pct;
+      const finAct = total===null ? '' : (ultimo ? fin : parteRedondea_(ini+total*acum/100));
+      const hDe = conHoras ? parteMinAHora_(minAct) : (j===0 ? t.hora_de : '');
+      const hA  = conHoras ? (ultimo ? parteHoraStr_(t.hora_a) : parteMinAHora_(mDe+(mA-mDe)*acum/100)) : (ultimo ? t.hora_a : '');
+      const marca='[Reparto '+parteRedondea_(pct)+' % · '+(j+1)+'/'+rep.length+']';
+      const sub=Object.assign({}, t, {
+        inicial: iniAct===null?'':iniAct, final: finAct, hora_de:hDe, hora_a:hA,
+        centro_coste:parteTexto_(r.centro_coste), pr: (r.pr!==undefined && r.pr!=='' && r.pr!==null) ? r.pr : t.pr, uf: parteTexto_(r.uf),
+        observaciones: (parteTexto_(t.observaciones) ? parteTexto_(t.observaciones)+' · ' : '') + marca,
+        id_registro: parteTexto_(t.id_registro) ? parteTexto_(t.id_registro)+'-r'+(j+1) : '',
+        inicial_modificado: j===0 ? t.inicial_modificado : 'NO' });
+      delete sub.reparto;
+      out.push(sub);
+      if(finAct!=='') iniAct=finAct;
+      if(conHoras) minAct=mDe+(mA-mDe)*acum/100;
+    }
+  }
+  return { tramos:out };
+}
+
 /* ============ POST reporte (PÚBLICO) ============
  * {mod:'parte', op:'reporte', codigo, tramos:[{fecha, reporte_num, operador, inicial, final, hora_de,
  *  hora_a, centro_coste, pr, uf, descripcion_trabajo, horas_varada, horas_lluvia, observaciones,
@@ -290,8 +349,11 @@ function parteReporte(body, ses){
   const mapa=parteEquipos_(), cod=parteTexto_(body.codigo);
   const q=mapa[parteNormCod_(cod)];
   if(!q) return json({ ok:false, error:'El código de equipo «'+cod+'» no está en PARTE_EQUIPOS. No se guardó nada.' });
-  const tramos=Array.isArray(body.tramos) ? body.tramos : (body.tramo ? [body.tramo] : []);
-  if(!tramos.length) return json({ ok:false, error:'El parte llegó sin tramos. No se guardó nada.' });
+  const crudos=Array.isArray(body.tramos) ? body.tramos : (body.tramo ? [body.tramo] : []);
+  if(!crudos.length) return json({ ok:false, error:'El parte llegó sin tramos. No se guardó nada.' });
+  const exp=parteExpandirReparto_(crudos);
+  if(exp.error) return json({ ok:false, error:exp.error });
+  const tramos=exp.tramos;
   const revisor = !!(ses && ses.ok && parteAutoriza_(ses));
   const origen = (parteTexto_(body.origen).toLowerCase()==='manual' && revisor) ? 'manual' : 'qr';
   const hoy=parteHoy_();
@@ -336,8 +398,8 @@ function parteReporte(body, ses){
     const alertas=[];
     if(ini!==null && finalPrevio!==null && finalPrevio!==undefined && Math.abs(ini-finalPrevio)>0.001) alertas.push('INICIAL_DISTINTO');
     if(tope && total!=='' && total>tope.alerta) alertas.push('TOTAL_ALTO');
-    const dup = hist.some(function(r){ return parteEstadoDe_(r)!=='descartado' && r.fecha===fecha && parteHoraStr_(r.hora_de)===hDe; })
-             || filas.some(function(f){ return f[3]===fecha && parteHoraStr_(f[15])===hDe; });
+    const dup = !!hDe && (hist.some(function(r){ return parteEstadoDe_(r)!=='descartado' && r.fecha===fecha && parteHoraStr_(r.hora_de)===hDe; })
+             || filas.some(function(f){ return f[3]===fecha && parteHoraStr_(f[15])===hDe; }));
     if(dup) alertas.push('DUPLICADO');
     if(!parteEsPseudoCC_(cc) && hayHistorialCC && !ccRecientes[normTexto(cc)]) alertas.push('CC_INUSUAL');
     if(q.activo && sinMedidor) alertas.push('SIN_MEDIDOR');
