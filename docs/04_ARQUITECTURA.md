@@ -312,9 +312,9 @@ Reemplaza al digitador del parte físico de maquinaria. **No toca** BANDEJA/DATA
 │        el último final · final · total en vivo · hora de/a · CC (buscador: más usados,     │
 │        todos, «sin operación») · PR · UF derivada · descripción + sugerencias por tipo ·   │
 │        varada/lluvia (plegado) · observaciones                                             │
-│      · «+ Otro tramo» (inicial = final anterior, hora_de = hora_a anterior; 1 fila/tramo)  │
-│      · «Repartir entre varios CC» (%): un tramo → N filas encadenadas, medidor y horas       │
-│        prorrateados, marca [Reparto x % · i/N] en observaciones · `?demo=1` modo de prueba   │
+│      · UN medidor del día + lista de CC (cada uno con % y PR): 1 CC → 1 fila; varios → N   │
+│        filas encadenadas, medidor y horas prorrateados, marca [Reparto x % · i/N] ·          │
+│        `?demo=1` modo de prueba (sin «+ Otro tramo», decisión del dueño)                    │
 │      · «Día sin operación» (domingo · festivo · taller · disponible · lluvia · sin op.)    │
 │      · sin `eq` válido → «Escanea el QR de tu equipo» + selector de respaldo               │
 │      · solo CREA filas `pendiente`; localStorage guarda el último operador por equipo      │

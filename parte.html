@@ -93,6 +93,8 @@
   .rep{margin-top:10px;}
   .rep-row{display:grid;grid-template-columns:minmax(0,1fr) 76px 40px;gap:8px;align-items:start;margin-bottom:8px;}
   .rep-row input{text-align:center;padding-left:6px;padding-right:6px;font-weight:600;}
+  .rep.uno .rep-row{grid-template-columns:minmax(0,1fr);}
+  .rep.uno .rep-row .pr{grid-column:1;}
   .rep-row .pr{grid-column:1 / span 2;display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;align-items:center;margin-top:-2px;}
   .rep-row .pr label{margin:0;}
   .rep-row .pr input{text-align:left;font-weight:400;min-height:44px;padding:8px 12px;font-size:15px;}
@@ -209,9 +211,8 @@
     </div>
   </div>
 
-  <div class="paso" style="margin:18px 0 10px;"><div class="n">2</div><div><h2>El trabajo de hoy</h2><p>Un tramo por cada centro de coste. Si el parte reparte por porcentaje, usa el interruptor «Repartir».</p></div></div>
+  <div class="paso" style="margin:18px 0 10px;"><div class="n">2</div><div><h2>El trabajo de hoy</h2><p>El medidor del día y a qué centros de coste va. Si fue a varios, cada uno con su porcentaje.</p></div></div>
   <div id="tramos"></div>
-  <button class="btn-add" onclick="addTramo()">+ Otro tramo (cambió de centro de coste con medidor)</button>
   <button class="btn-sec" onclick="abrirSinOperacion()">Día sin operación (domingo · festivo · taller · disponible)</button>
 
   <div class="card" id="resumenCard" style="margin-top:18px;">
@@ -228,7 +229,7 @@
   <p id="okMsg"></p>
   <div class="resumen res-tramos" id="okTramos"></div>
   <div style="max-width:360px;margin:0 auto;">
-    <button class="btn-submit" onclick="otroTramo()">REPORTAR OTRO TRAMO →</button>
+    <button class="btn-submit" onclick="otroTramo()">AGREGAR OTRO REGISTRO →</button>
     <button class="btn-sec" onclick="nuevoParte()">Nuevo parte (otro día)</button>
   </div>
 </div>
@@ -448,14 +449,13 @@ function render(){
 function tramoHTML(t,i){
   const sinMed=!EQ.medidor;
   const unidad = EQ.medidor==='KM' ? 'km' : 'h';
-  const rep = !!t.reparto;
+  if(!t.reparto) t.reparto=[{ cc:t.cc||'', pct:100, pr:'' }];
+  const rep = true;
   return '<div class="tramo" id="tramo-'+t.id+'">'
-   +'<div class="tramo-head"><div class="tramo-num">Tramo '+(i+1)+(tramos.length>1?' de '+tramos.length:'')+'</div>'
-   +(tramos.length>1?'<button class="btn-del" onclick="delTramo(\''+t.id+'\')" title="Quitar tramo">✕ quitar</button>':'')+'</div>'
    +(sinMed ? '' :
      '<div class="field"><label>'+(EQ.medidor==='KM'?'Kilometraje':'Horómetro')+' <span class="req">*</span></label>'
      +'<div class="medidor">'
-     +'<div><input type="number" inputmode="decimal" step="0.1" placeholder="Inicial" value="'+esc(t.inicial)+'" oninput="setT(\''+t.id+'\',\'inicial\',this.value)"><div class="sub">INICIAL<br>'+(i===0?'con que arrancó':'donde terminó el anterior')+'</div></div>'
+     +'<div><input type="number" inputmode="decimal" step="0.1" placeholder="Inicial" value="'+esc(t.inicial)+'" oninput="setT(\''+t.id+'\',\'inicial\',this.value)"><div class="sub">INICIAL<br>con que arrancó el día</div></div>'
      +'<div><input type="number" inputmode="decimal" step="0.1" placeholder="Final" value="'+esc(t.final)+'" oninput="setT(\''+t.id+'\',\'final\',this.value)"><div class="sub">FINAL<br>lo que marca al terminar</div></div>'
      +'</div>'
      +'<div class="total-box" id="total-'+t.id+'"><span class="t-label">Total</span><span class="t-val">—<small>'+unidad+'</small></span></div>'
@@ -465,17 +465,8 @@ function tramoHTML(t,i){
    +'<div class="field"><label>Hora de</label><input type="time" value="'+esc(t.hora_de)+'" oninput="setT(\''+t.id+'\',\'hora_de\',this.value)"></div>'
    +'<div class="field"><label>Hora a</label><input type="time" value="'+esc(t.hora_a)+'" oninput="setT(\''+t.id+'\',\'hora_a\',this.value)"></div>'
    +'</div>'
-   +'<div class="bloque"><div class="bloque-t">¿A qué centro de coste va?</div>'
-   +(rep ? '' :
-     '<div class="field"><label>Centro de coste <span class="req">*</span></label>'
-     +'<button type="button" class="picker-btn '+(t.cc?'':'vacio')+'" id="cc-'+t.id+'" onclick="abrirPicker(\'cc\',\''+t.id+'\')">'+(t.cc?ccLabelHTML(t.cc):'Toca para elegir…')+'</button></div>')
-   +'<button type="button" class="toggle'+(rep?' on':'')+'" onclick="toggleReparto(\''+t.id+'\')"><span class="sw"></span><span>Repartir entre varios centros de coste<small>cuando el parte dice «50 % aquí y 50 % allá» sin medidor intermedio</small></span></button>'
-   +(rep ? repartoHTML(t) : '')
-   +'</div>'
-   +'<div class="grid2" style="margin-top:12px">'
-   +'<div class="field"><label>PR <span class="opt">(número)</span></label><input type="number" inputmode="numeric" placeholder="ej. 14400" value="'+esc(t.pr)+'" oninput="setT(\''+t.id+'\',\'pr\',this.value)"><div class="hint">14400 = PR14+400</div></div>'
-   +'<div class="field"><label>UF</label><select onchange="setT(\''+t.id+'\',\'uf\',this.value)">'
-   +['','1','2','3'].map(u=>'<option value="'+u+'"'+(t.uf===u?' selected':'')+'>'+(u||'—')+'</option>').join('')+'</select><div class="hint">'+(rep?'por cada CC del reparto':'se deriva del CC')+'</div></div>'
+   +'<div class="bloque"><div class="bloque-t">¿A qué centro de coste va? <span class="req">*</span></div>'
+   +repartoHTML(t)
    +'</div>'
    +'<div class="field"><label>Descripción del trabajo</label>'
    +'<textarea rows="2" placeholder="ej. Cargue terraplen PR14+400" oninput="setT(\''+t.id+'\',\'desc\',this.value)">'+esc(t.desc)+'</textarea>'
@@ -491,24 +482,18 @@ function tramoHTML(t,i){
 }
 /* ---------- reparto por porcentaje ---------- */
 function repartoHTML(t){
-  const rep=t.reparto, suma=rep.reduce((a,r)=>a+(num(r.pct)||0),0), tot=totalDe(t), tope=TOPES[EQ.medidor];
-  return '<div class="rep" id="rep-'+t.id+'">'
-    +'<div class="rep-quick">'+[[50,50],[70,30],[30,70]].map(p=>'<button type="button" onclick="repRapido(\''+t.id+'\','+JSON.stringify(p)+')">'+p.join(' / ')+'</button>').join('')+'<button type="button" onclick="repIguales(\''+t.id+'\')">partes iguales</button></div>'
+  const rep=t.reparto, varios=rep.length>1, suma=rep.reduce((a,r)=>a+(num(r.pct)||0),0), tot=totalDe(t), tope=TOPES[EQ.medidor];
+  return '<div class="rep'+(varios?'':' uno')+'" id="rep-'+t.id+'">'
+    +(varios ? '<div class="rep-quick">'+[[50,50],[70,30],[30,70]].map(p=>'<button type="button" onclick="repRapido(\''+t.id+'\','+JSON.stringify(p)+')">'+p.join(' / ')+'</button>').join('')+'<button type="button" onclick="repIguales(\''+t.id+'\')">partes iguales</button></div>' : '')
     +rep.map((r,j)=>'<div class="rep-row">'
-      +'<button type="button" class="picker-btn '+(r.cc?'':'vacio')+'" id="ccr-'+t.id+'-'+j+'" onclick="abrirPicker(\'cc\',\''+t.id+'\','+j+')">'+(r.cc?ccLabelHTML(r.cc):'Centro de coste '+(j+1)+'…')+'</button>'
-      +'<input type="number" inputmode="decimal" min="0" max="100" step="1" placeholder="%" value="'+esc(r.pct)+'" oninput="setRep(\''+t.id+'\','+j+',\'pct\',this.value)" aria-label="porcentaje">'
-      +'<button type="button" class="btn-del" onclick="delRep(\''+t.id+'\','+j+')" title="Quitar"'+(rep.length<=2?' disabled style="opacity:.35"':'')+'>✕</button>'
-      +'<div class="pr"><label>PR</label><input type="number" inputmode="numeric" placeholder="(el del tramo)" value="'+esc(r.pr)+'" oninput="setRep(\''+t.id+'\','+j+',\'pr\',this.value)"></div>'
+      +'<button type="button" class="picker-btn '+(r.cc?'':'vacio')+'" id="ccr-'+t.id+'-'+j+'" onclick="abrirPicker(\'cc\',\''+t.id+'\','+j+')">'+(r.cc?ccLabelHTML(r.cc):(varios?'Centro de coste '+(j+1)+'…':'Toca para elegir…'))+'</button>'
+      +(varios ? '<input type="number" inputmode="decimal" min="0" max="100" step="1" placeholder="%" value="'+esc(r.pct)+'" oninput="setRep(\''+t.id+'\','+j+',\'pct\',this.value)" aria-label="porcentaje">'
+               +'<button type="button" class="btn-del" onclick="delRep(\''+t.id+'\','+j+')" title="Quitar">✕</button>' : '')
+      +'<div class="pr"><label>PR</label><input type="number" inputmode="numeric" placeholder="ej. 14400 = PR14+400" value="'+esc(r.pr)+'" oninput="setRep(\''+t.id+'\','+j+',\'pr\',this.value)"></div>'
       +'</div>').join('')
-    +'<div class="rep-sum'+(Math.abs(suma-100)>0.5?' mal':'')+'"><span>'+(tot!==null&&tope?rep.map(r=>fmt(tot*(num(r.pct)||0)/100)+' '+tope.unidad).join(' + '):'los porcentajes deben sumar 100 %')+'</span><b>'+fmt(suma)+' %</b></div>'
-    +'<button type="button" class="btn-add mini" onclick="addRep(\''+t.id+'\')">+ Agregar centro de coste</button>'
+    +(varios ? '<div class="rep-sum'+(Math.abs(suma-100)>0.5?' mal':'')+'"><span>'+(tot!==null&&tope?rep.map(r=>fmt(tot*(num(r.pct)||0)/100)+' '+tope.unidad).join(' + '):'los porcentajes deben sumar 100 %')+'</span><b>'+fmt(suma)+' %</b></div>' : '')
+    +'<button type="button" class="btn-add mini" onclick="addRep(\''+t.id+'\')">+ '+(varios?'Otro centro de coste':'Fue a otro centro de coste también (se reparte por %)')+'</button>'
     +'</div>';
-}
-function toggleReparto(id){
-  const t=tramos.find(x=>x.id===id); if(!t) return;
-  if(t.reparto){ t.cc=t.reparto[0].cc||t.cc; t.uf=ufDe(t.cc); t.reparto=null; }
-  else { t.reparto=[{ cc:t.cc||'', pct:50, pr:'' },{ cc:'', pct:50, pr:'' }]; t.cc=''; t.uf=''; }
-  render();
 }
 function setRep(id,j,k,v){ const t=tramos.find(x=>x.id===id); if(!t||!t.reparto||!t.reparto[j]) return; t.reparto[j][k]=v; if(k==='pct') pintarRepSuma(t); pintarResumen(); }
 function pintarRepSuma(t){
@@ -517,8 +502,8 @@ function pintarRepSuma(t){
   box.classList.toggle('mal', Math.abs(suma-100)>0.5);
   box.innerHTML='<span>'+(tot!==null&&tope?t.reparto.map(r=>fmt(tot*(num(r.pct)||0)/100)+' '+tope.unidad).join(' + '):'los porcentajes deben sumar 100 %')+'</span><b>'+fmt(suma)+' %</b>';
 }
-function addRep(id){ const t=tramos.find(x=>x.id===id); if(!t||!t.reparto) return; t.reparto.push({ cc:'', pct:'', pr:'' }); render(); }
-function delRep(id,j){ const t=tramos.find(x=>x.id===id); if(!t||!t.reparto||t.reparto.length<=2) return; t.reparto.splice(j,1); render(); }
+function addRep(id){ const t=tramos.find(x=>x.id===id); if(!t||!t.reparto) return; t.reparto.push({ cc:'', pct:'', pr:'' }); repIguales(id); }
+function delRep(id,j){ const t=tramos.find(x=>x.id===id); if(!t||!t.reparto||t.reparto.length<=1) return; t.reparto.splice(j,1); if(t.reparto.length===1) t.reparto[0].pct=100; else repIguales(id); render(); }
 function repRapido(id,p){ const t=tramos.find(x=>x.id===id); if(!t||!t.reparto) return; while(t.reparto.length<2) t.reparto.push({cc:'',pct:'',pr:''}); t.reparto=t.reparto.slice(0,2); t.reparto[0].pct=p[0]; t.reparto[1].pct=p[1]; render(); }
 function repIguales(id){ const t=tramos.find(x=>x.id===id); if(!t||!t.reparto) return; const n=t.reparto.length, base=Math.floor(100/n*100)/100; t.reparto.forEach((r,j)=>{ r.pct = j===n-1 ? Math.round((100-base*(n-1))*100)/100 : base; }); render(); }
 
@@ -614,7 +599,7 @@ function cerrarSinOperacion(){ document.getElementById('sheetSinOp').classList.a
 function sinOperacion(motivo, cc){
   cerrarSinOperacion();
   const ini = ULTIMO ? ULTIMO.final : (num(tramos[0]&&tramos[0].inicial));
-  tramos=[nuevoTramo({ inicial: ini===null||ini===undefined?'':ini, final: ini===null||ini===undefined?'':ini, hora_de:'', hora_a:'', cc:cc, pr:'', uf:'', desc:motivo, iniPre: ini===null||ini===undefined?'':ini, reparto:null })];
+  tramos=[nuevoTramo({ inicial: ini===null||ini===undefined?'':ini, final: ini===null||ini===undefined?'':ini, hora_de:'', hora_a:'', cc:cc, pr:'', uf:'', desc:motivo, iniPre: ini===null||ini===undefined?'':ini, reparto:[{ cc:cc, pct:100, pr:'' }] })];
   if(!operador && /sin operador/i.test(motivo)){ operador='Sin operador'; pintarOperador(); }
   render();
   window.scrollTo({top:0,behavior:'smooth'});
@@ -631,19 +616,20 @@ function validar(){
   if(!operador) errs.push('Falta el operador.');
   const tope=TOPES[EQ.medidor];
   tramos.forEach((t,i)=>{
-    const n='Tramo '+(i+1)+': ';
+    const n='';
     if(EQ.medidor){
       const a=num(t.inicial), b=num(t.final);
       if(a===null||b===null) errs.push(n+'faltan el medidor inicial o final.');
       else if(b<a) errs.push(n+'el final ('+fmt(b)+') es menor que el inicial ('+fmt(a)+').');
       else if(tope && b-a>tope.bloquea) errs.push(n+'el total ('+fmt(b-a)+' '+tope.unidad+') pasa de '+tope.bloquea+' '+tope.unidad+'. Revisa el medidor.');
     }
-    if(t.reparto){
-      if(t.reparto.some(r=>!r.cc)) errs.push(n+'falta un centro de coste del reparto.');
-      if(t.reparto.some(r=>!(num(r.pct)>0))) errs.push(n+'cada centro de coste del reparto necesita su porcentaje.');
-      const suma=t.reparto.reduce((a,r)=>a+(num(r.pct)||0),0);
-      if(Math.abs(suma-100)>0.5) errs.push(n+'los porcentajes suman '+fmt(suma)+' % y deben sumar 100 %.');
-    } else if(!t.cc) errs.push(n+'falta el centro de coste.');
+    const rep=t.reparto||[];
+    if(!rep.length || rep.some(r=>!r.cc)) errs.push(rep.length>1 ? 'Falta un centro de coste del reparto.' : 'Falta el centro de coste.');
+    if(rep.length>1){
+      if(rep.some(r=>!(num(r.pct)>0))) errs.push('Cada centro de coste necesita su porcentaje.');
+      const suma=rep.reduce((a,r)=>a+(num(r.pct)||0),0);
+      if(Math.abs(suma-100)>0.5) errs.push('Los porcentajes suman '+fmt(suma)+' % y deben sumar 100 %.');
+    }
   });
   return errs;
 }
@@ -652,7 +638,6 @@ function marcarFaltantes(){
   document.getElementById('reporteNum').classList.toggle('field-error', !document.getElementById('reporteNum').value.trim());
   document.getElementById('btnOperador').classList.toggle('field-error', !operador);
   tramos.forEach(t=>{
-    const b=document.getElementById('cc-'+t.id); if(b) b.classList.toggle('field-error', !t.cc);
     if(t.reparto) t.reparto.forEach((r,j)=>{ const rb=document.getElementById('ccr-'+t.id+'-'+j); if(rb) rb.classList.toggle('field-error', !r.cc); });
     if(EQ.medidor){ const ins=document.querySelectorAll('#tramo-'+t.id+' .medidor input'); if(ins.length===2){ ins[0].classList.toggle('field-error', num(t.inicial)===null); ins[1].classList.toggle('field-error', num(t.final)===null || (num(t.inicial)!==null && num(t.final)<num(t.inicial))); } }
   });
@@ -665,10 +650,11 @@ function pintarResumen(){
   let html='';
   tramos.forEach((t,i)=>{
     const tot=totalDe(t);
-    let cc = t.reparto ? t.reparto.map(r=>(r.cc?esc(ccTexto(r.cc)):'<span style="color:var(--error-txt)">sin CC</span>')+' <b>'+fmt(num(r.pct)||0)+' %</b>'+(tot!==null&&tope?' ('+fmt(tot*(num(r.pct)||0)/100)+' '+tope.unidad+')':'')).join('<br>')
-                        : (t.cc?esc(ccTexto(t.cc)):'<span style="color:var(--error-txt)">sin centro de coste</span>')+(t.uf?' · UF'+t.uf:'');
+    const rep=t.reparto||[], varios=rep.length>1;
+    let cc = rep.length ? rep.map(r=>(r.cc?esc(ccTexto(r.cc)):'<span style="color:var(--error-txt)">sin centro de coste</span>')+(r.pr?' · PR '+esc(r.pr):'')+(varios?' <b>'+fmt(num(r.pct)||0)+' %</b>'+(tot!==null&&tope?' ('+fmt(tot*(num(r.pct)||0)/100)+' '+tope.unidad+')':''):'')).join('<br>')
+                        : '<span style="color:var(--error-txt)">sin centro de coste</span>';
     html+='<div class="r-row">'
-      +'<b>Tramo '+(i+1)+'</b>'+(t.pr?' · PR '+esc(t.pr):'')+((t.hora_de||t.hora_a)?' · '+esc(t.hora_de||'?')+'–'+esc(t.hora_a||'?'):'')
+      +'<b>'+esc(EQ.codigo)+'</b>'+((t.hora_de||t.hora_a)?' · '+esc(t.hora_de||'?')+'–'+esc(t.hora_a||'?'):'')
       +(EQ.medidor?'<br>'+esc(t.inicial||'—')+' → '+esc(t.final||'—')+' = <b>'+(tot===null?'—':fmt(tot))+' '+(tope?tope.unidad:'')+'</b>':'')
       +'<br>'+cc
       +(t.desc?'<br><i>'+esc(t.desc)+'</i>':'')
@@ -692,10 +678,10 @@ function armarPayload(){
       const o={ id_registro:t.id, fecha:fecha, reporte_num:reporte, operador:operador,
         inicial: EQ.medidor?num(t.inicial):'', final: EQ.medidor?num(t.final):'',
         inicial_modificado: (i===0 && ULTIMO && num(t.inicial)!==null && Math.abs(num(t.inicial)-ULTIMO.final)>0.001) ? 'SI' : 'NO',
-        hora_de:t.hora_de, hora_a:t.hora_a, centro_coste:t.cc, pr:num(t.pr)===null?'':num(t.pr), uf:t.uf||ufDe(t.cc),
+        hora_de:t.hora_de, hora_a:t.hora_a, centro_coste:(t.reparto&&t.reparto[0]?t.reparto[0].cc:t.cc), pr:num(t.reparto&&t.reparto[0]?t.reparto[0].pr:t.pr)===null?'':num(t.reparto&&t.reparto[0]?t.reparto[0].pr:t.pr), uf:ufDe(t.reparto&&t.reparto[0]?t.reparto[0].cc:t.cc),
         descripcion_trabajo:t.desc.trim(), horas_varada:num(t.varada)===null?'':num(t.varada), horas_lluvia:num(t.lluvia)===null?'':num(t.lluvia),
         observaciones:t.obs.trim() };
-      if(t.reparto) o.reparto=t.reparto.map(r=>({ centro_coste:r.cc, pct:num(r.pct), pr:num(r.pr)===null?'':num(r.pr), uf:ufDe(r.cc) }));
+      if(t.reparto && t.reparto.length>1) o.reparto=t.reparto.map(r=>({ centro_coste:r.cc, pct:num(r.pct), pr:num(r.pr)===null?'':num(r.pr), uf:ufDe(r.cc) }));
       return o; }) };
 }
 async function enviar(){
@@ -720,10 +706,10 @@ async function enviar(){
   const okT=document.getElementById('okTramos');
   let k=0;
   okT.innerHTML=tramos.map((t,i)=>{ const tot=totalDe(t), tope=TOPES[EQ.medidor];
-    const partes = t.reparto ? t.reparto : [null];
+    const partes = (t.reparto&&t.reparto.length>1) ? t.reparto : [null];
     return partes.map((p,j)=>{ const f=(data.filas||[])[k++]||{};
-      const cc = p ? ccTexto(p.cc)+' · '+fmt(num(p.pct)||0)+' %'+(tot!==null&&tope?' = '+fmt(tot*(num(p.pct)||0)/100)+' '+tope.unidad:'') : ccTexto(t.cc);
-      return '<div class="r-row"><b>Tramo '+(i+1)+(p?' · parte '+(j+1)+' de '+partes.length:'')+'</b><br>'+esc(cc)+(!p&&EQ.medidor?'<br>'+esc(t.inicial)+' → '+esc(t.final)+' = <b>'+(tot===null?'—':fmt(tot))+' '+(tope?tope.unidad:'')+'</b>':'')+(t.desc?'<br><i>'+esc(t.desc)+'</i>':'')
+      const cc = p ? ccTexto(p.cc)+' · '+fmt(num(p.pct)||0)+' %'+(tot!==null&&tope?' = '+fmt(tot*(num(p.pct)||0)/100)+' '+tope.unidad:'') : ccTexto(t.reparto&&t.reparto[0]?t.reparto[0].cc:t.cc);
+      return '<div class="r-row"><b>'+(p?'Parte '+(j+1)+' de '+partes.length:esc(EQ.codigo))+'</b><br>'+esc(cc)+(!p&&EQ.medidor?'<br>'+esc(t.inicial)+' → '+esc(t.final)+' = <b>'+(tot===null?'—':fmt(tot))+' '+(tope?tope.unidad:'')+'</b>':'')+(t.desc?'<br><i>'+esc(t.desc)+'</i>':'')
         +((f.alertas&&f.alertas.length)?'<br><span style="color:var(--accent-txt)">Para revisión: '+esc(f.alertas.join(', '))+'</span>':'')+'</div>'; }).join(''); }).join('');
   document.getElementById('okMsg').innerHTML='<b>'+esc(EQ.codigo)+'</b> · '+esc(fecha)+' · parte nº '+esc(reporte)+' · '+esc(operador)+'<br>'
     +((data.guardadas||0)+(data.duplicadas||0))+' fila(s) registrada(s) como <b>pendiente</b> de revisión.'

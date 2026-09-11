@@ -113,28 +113,28 @@ const server=http.createServer((req,res)=>{
     ok('total en vivo = 130 km', (await $(pg,'.total-box .t-val').first().textContent()).startsWith('130'));
     await $(pg,'.tramo input[type=time]').nth(0).fill('07:00'); await $(pg,'.tramo input[type=time]').nth(1).fill('12:00');
     await $(pg,'.tramo .picker-btn').first().click(); await $(pg,'#pickerBuscar').fill('3701.02.11'); await $(pg,'.picker-item').first().click();
-    ok('CC elegido y UF derivada = 1', (await $(pg,'.tramo .picker-btn').first().textContent()).includes('3701.02.11') && await $(pg,'.tramo select').first().inputValue()==='1');
-    await $(pg,'.tramo input[type=number]').nth(2).fill('14400');
+    ok('CC elegido (código + descripción de la BASE)', (await $(pg,'.tramo .picker-btn').first().textContent()).includes('3701.02.11'));
+    await $(pg,'.rep-row .pr input').first().fill('14400');
     await $(pg,'.tramo .sug').first().click();
     ok('sugerencia de actividad al textarea', (await $(pg,'.tramo textarea').first().inputValue())!=='');
     await pg.screenshot({ path:path.join(OUT,'parte_390_tramo1.png'), fullPage:true });
-    await $(pg,'.btn-add').click(); await pg.waitForSelector('.tramo:nth-of-type(2)');
-    const ini2=$(pg,'.tramo').nth(1).locator('.medidor input').first();
-    ok('«+ Otro tramo»: el 2º arranca en 27250 y a las 12:00', await ini2.inputValue()==='27250' && await $(pg,'.tramo').nth(1).locator('input[type=time]').first().inputValue()==='12:00');
-    await $(pg,'.tramo').nth(1).locator('.medidor input').nth(1).fill('27400');
-    await $(pg,'.tramo').nth(1).locator('input[type=time]').nth(1).fill('17:00');
-    await $(pg,'.tramo').nth(1).locator('.picker-btn').click(); await $(pg,'#pickerBuscar').fill('3702.02.11'); await $(pg,'.picker-item').first().click();
-    ok('2º tramo UF=2', await $(pg,'.tramo').nth(1).locator('select').inputValue()==='2');
+    // fue a otro CC también: aparece el % y la fila nueva
+    await pg.click('.rep button:has-text("otro centro de coste")'); await pg.waitForSelector('.rep-row:nth-of-type(3)');
+    ok('«Fue a otro centro de coste también» abre el reparto a 50/50 conservando el primero', (await $(pg,'.rep-row').count())===2 && await $(pg,'.rep-row input[aria-label=porcentaje]').first().inputValue()==='50' && (await $(pg,'.rep-row .picker-btn').first().textContent()).includes('3701.02.11'));
+    await $(pg,'.rep-row .picker-btn').nth(1).click(); await $(pg,'#pickerBuscar').fill('3702.02.11'); await $(pg,'.picker-item').first().click();
+    await $(pg,'.rep-row .pr input').nth(1).fill('35200');
+    await $(pg,'.tramo input[type=time]').nth(1).fill('17:00');
+    await $(pg,'.tramo .medidor input').nth(1).fill('27400');
     await $(pg,'#btnSubmit').click(); await pg.waitForSelector('#pantallaOk:not(.hidden)');
     ok('pantalla de confirmación con resumen', (await $(pg,'#okMsg').textContent()).includes('2 fila(s)'));
     await pg.screenshot({ path:path.join(OUT,'parte_390_ok.png'), fullPage:true });
     const h=ctx._hojas.PARTE_BANDEJA;
-    ok('2 filas pendiente en PARTE_BANDEJA con totales 130 y 150', h._f.length===3 && col(h._f[1],'total')===130 && col(h._f[2],'total')===150 && col(h._f[1],'estado')==='pendiente');
-    ok('UF 1 y 2, mismo nº de parte, origen qr', col(h._f[1],'uf')==='1' && col(h._f[2],'uf')==='2' && col(h._f[2],'reporte_num')==='0457' && col(h._f[2],'origen')==='qr');
+    ok('2 filas pendiente en PARTE_BANDEJA: 27120→27260 y 27260→27400 (140 + 140)', h._f.length===3 && col(h._f[1],'total')===140 && col(h._f[2],'total')===140 && col(h._f[2],'final')===27400 && col(h._f[1],'estado')==='pendiente');
+    ok('UF 1 y 2, PR propio de cada CC, mismo nº de parte, origen qr', col(h._f[1],'uf')==='1' && col(h._f[2],'uf')==='2' && col(h._f[1],'pr')===14400 && col(h._f[2],'pr')===35200 && col(h._f[2],'reporte_num')==='0457' && col(h._f[2],'origen')==='qr');
     ok('sin alertas', col(h._f[1],'alertas')==='' && col(h._f[2],'alertas')==='');
     // «Reportar otro tramo»: arranca en 27400
-    await pg.click('text=REPORTAR OTRO TRAMO'); await pg.waitForSelector('#formMain:not(.hidden)');
-    ok('«Reportar otro tramo» conserva nº de parte y arranca en 27400', await $(pg,'#reporteNum').inputValue()==='0457' && await $(pg,'.tramo .medidor input').first().inputValue()==='27400');
+    await pg.click('text=AGREGAR OTRO REGISTRO'); await pg.waitForSelector('#formMain:not(.hidden)');
+    ok('«Agregar otro registro» conserva nº de parte y arranca en 27400', await $(pg,'#reporteNum').inputValue()==='0457' && await $(pg,'.tramo .medidor input').first().inputValue()==='27400');
     await pg.context().close();
   }
 
@@ -187,8 +187,8 @@ const server=http.createServer((req,res)=>{
     await $(pg,'#reporteNum').fill('0470'); await $(pg,'#btnOperador').click(); await $(pg,'.picker-item').first().click();
     await $(pg,'.tramo .medidor input').first().fill('2337'); await $(pg,'.tramo .medidor input').nth(1).fill('2345');
     await $(pg,'.tramo input[type=time]').nth(0).fill('07:00'); await $(pg,'.tramo input[type=time]').nth(1).fill('15:00');
-    await $(pg,'.tramo .toggle').click(); await pg.waitForSelector('.rep');
-    ok('el interruptor abre dos renglones de reparto a 50/50', (await $(pg,'.rep-row').count())===2 && await $(pg,'.rep-row input[aria-label=porcentaje]').first().inputValue()==='50');
+    await pg.click('.rep button:has-text("otro centro de coste")'); await pg.waitForSelector('.rep-quick');
+    ok('«Fue a otro centro de coste también» abre dos renglones a 50/50', (await $(pg,'.rep-row').count())===2 && await $(pg,'.rep-row input[aria-label=porcentaje]').first().inputValue()==='50');
     await $(pg,'.rep-row .picker-btn').nth(0).click(); await $(pg,'#pickerBuscar').fill('3701.02.11'); await $(pg,'.picker-item').first().click();
     await $(pg,'.rep-row .picker-btn').nth(1).click(); await $(pg,'#pickerBuscar').fill('3702.02.11'); await $(pg,'.picker-item').first().click();
     ok('el resumen muestra 4 h + 4 h', /4 h/.test(await $(pg,'.rep-sum').textContent()) && (await $(pg,'.rep-sum b').textContent())==='100 %');
@@ -203,7 +203,7 @@ const server=http.createServer((req,res)=>{
     const f=ctx._hojas.PARTE_BANDEJA._f.slice(antes);
     ok('llegan 2 filas: 2337→2342.6 (5.6 h, 70 %) y 2342.6→2345 (2.4 h, 30 %)', f.length===2 && col(f[0],'final')===2342.6 && col(f[0],'total')===5.6 && col(f[1],'inicial')===2342.6 && col(f[1],'total')===2.4, f.map(x=>col(x,'inicial')+'→'+col(x,'final')).join(' | '));
     ok('horas 07:00–12:36 y 12:36–15:00, CC 3701.02.11 / 3702.02.11', col(f[0],'hora_a')==='12:36' && col(f[1],'hora_de')==='12:36' && col(f[1],'hora_a')==='15:00' && col(f[0],'centro_coste')==='3701.02.11' && col(f[1],'centro_coste')==='3702.02.11');
-    ok('la confirmación desglosa el reparto', /parte 1 de 2/.test(await $(pg,'#okTramos').textContent()) && /70 %/.test(await $(pg,'#okTramos').textContent()));
+    ok('la confirmación desglosa el reparto', /Parte 1 de 2/.test(await $(pg,'#okTramos').textContent()) && /70 %/.test(await $(pg,'#okTramos').textContent()));
     await pg.context().close();
     // modo demo: sin servidor
     const pd=await pagina({width:390,height:844});
@@ -238,7 +238,7 @@ const server=http.createServer((req,res)=>{
     ok('al editar, la tarjeta queda marcada y aparece «Guardar»', await $(pg,'.fila.dirty button:has-text("Guardar")').count()===1);
     await $(pg,'.fila.dirty button:has-text("Aprobar")').click(); await pg.waitForFunction(()=>document.querySelectorAll('#pendientes .fila').length===5);
     const h=ctx._hojas.PARTE_BANDEJA, fV=h._f.find(r=>col(r,'codigo')==='VOL048' && col(r,'hora_de')==='07:00');
-    ok('la fila quedó aprobada con PR 14500 y revisado_por=admin, el resto intacto', col(fV,'estado')==='aprobado' && col(fV,'pr')===14500 && col(fV,'revisado_por')==='admin' && col(fV,'total')===130);
+    ok('la fila quedó aprobada con PR 14500 y revisado_por=admin, el resto intacto', col(fV,'estado')==='aprobado' && col(fV,'pr')===14500 && col(fV,'revisado_por')==='admin' && col(fV,'total')===140);
     // descartar la de CR026
     await $(pg,'#pendientes .fila').filter({hasText:'CR026'}).first().locator('button:has-text("Descartar")').click();
     await pg.waitForFunction(()=>document.querySelectorAll('#pendientes .fila').length===4);
@@ -267,7 +267,7 @@ const server=http.createServer((req,res)=>{
     const L=l=>{ let n=0; for(const ch of l) n=n*26+(ch.charCodeAt(0)-64); return n-2; };
     const vol=lineas.map(l=>l.split('\t')).find(c=>c[L('F')]==='VOL048' && c[L('AL')]==='07:00');
     const [d,m,y]=HOY.split('-').reverse();
-    ok('fecha dd/mm/aaaa en C, KM en V/W, M/N vacías, PR editado en AD, decimales con coma', vol[L('C')]===d+'/'+m+'/'+y && vol[L('V')]==='27120' && vol[L('W')]==='27250' && vol[L('M')]==='' && vol[L('AD')]==='14500' && vol[L('AQ')]==='Nelson Rangel', JSON.stringify(vol));
+    ok('fecha dd/mm/aaaa en C, KM en V/W, M/N vacías, PR editado en AD, decimales con coma', vol[L('C')]===d+'/'+m+'/'+y && vol[L('V')]==='27120' && vol[L('W')]==='27260' && vol[L('M')]==='' && vol[L('AD')]==='14500' && vol[L('AQ')]==='Nelson Rangel', JSON.stringify(vol));
     const exc=lineas.map(l=>l.split('\t')).find(c=>c[L('F')]==='EXC015');
     ok('horómetro con decimal en coma (2711,6) en M/N', exc[L('M')]==='2711,6' && exc[L('N')]==='2711,6', JSON.stringify(exc));
     // edición en Base
