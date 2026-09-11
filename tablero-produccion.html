@@ -452,11 +452,6 @@ body{background:var(--bg);color:var(--text);font-size:14px;
         <div class="rule"></div>
       </div>
       <div id="aprov" style="margin-top:13px"></div>
-      <div class="secH mt">
-        <div class="syne secT2">De dónde salen los números</div>
-        <div class="rule"></div>
-      </div>
-      <div class="pie" id="pie" style="margin-top:13px"></div>
     </div>
   </div>
 </div></div>
@@ -711,39 +706,56 @@ function construir(wbProd, wbMaq){
   for (const d of dias) porPer[d.p].push(d);
   for (const p of pers) porPer[p].sort((a,b)=> a.f < b.f ? -1 : 1);
 
-  // horas agrupadas por período y actividad
-  const hAgg = {};
-  for (const x of H.partes){
-    const a = ((hAgg[x.p] = hAgg[x.p] || {})[x.act] = hAgg[x.p][x.act] ||
-      { horas:0, mtto:0, varada:0, lluvia:0, averia:0, maq:{} });
-    a.horas += x.h; a.mtto += x.mtto; a.varada += x.varada;
-    a.lluvia += x.lluvia; a.averia += x.averia;
-    const q = (a.maq[x.cod] = a.maq[x.cod] || { cod:x.cod, tipo:x.tipo, h:0, perd:0,
-                                                uf:new Set(), dias:new Set(),
-                                                lluvia:0, ajuste:0 });
-    q.h += x.h; q.perd += x.mtto + x.varada + x.lluvia + x.averia; q.uf.add(x.uf);
-    q.lluvia += x.lluvia;                       // se nombra, no se descuenta
-    q.ajuste += x.mtto + x.varada + x.averia;   // esto sí sale del standby
-    /* Días DISTINTOS en que esta máquina tuvo parte en esta actividad: es lo que
-       multiplica a sus horas programadas para dar su standby del período. Un
-       mismo día con dos partes (dos centros de coste de la misma actividad) es
-       UN día, no dos: por eso un Set y no un contador. */
-    q.dias.add(x.f);
+  /* Horas agrupadas por período y actividad. Es una función porque se llama TRES
+     veces: con todos los partes (el total de siempre) y con los de cada UF por
+     separado. Cada parte trae su `uf` (3701 → UF1, 3702 → UF2), así que las horas
+     de máquina SÍ vienen partidas por UF en origen; lo que las fundía era esta
+     agregación, que juntaba en una sola máquina lo que hizo en las dos. */
+  function agregaHoras(partes){
+    const hAgg = {};
+    for (const x of partes){
+      const a = ((hAgg[x.p] = hAgg[x.p] || {})[x.act] = hAgg[x.p][x.act] ||
+        { horas:0, mtto:0, varada:0, lluvia:0, averia:0, maq:{} });
+      a.horas += x.h; a.mtto += x.mtto; a.varada += x.varada;
+      a.lluvia += x.lluvia; a.averia += x.averia;
+      const q = (a.maq[x.cod] = a.maq[x.cod] || { cod:x.cod, tipo:x.tipo, h:0, perd:0,
+                                                  uf:new Set(), dias:new Set(),
+                                                  lluvia:0, ajuste:0 });
+      q.h += x.h; q.perd += x.mtto + x.varada + x.lluvia + x.averia; q.uf.add(x.uf);
+      q.lluvia += x.lluvia;                       // se nombra, no se descuenta
+      q.ajuste += x.mtto + x.varada + x.averia;   // esto sí sale del standby
+      /* Días DISTINTOS en que esta máquina tuvo parte en esta actividad: es lo que
+         multiplica a sus horas programadas para dar su standby del período. Un
+         mismo día con dos partes (dos centros de coste de la misma actividad) es
+         UN día, no dos: por eso un Set y no un contador. */
+      q.dias.add(x.f);
+    }
+    return hAgg;
   }
+  const hAgg  = agregaHoras(H.partes);
+  const hAggU = { UF1: agregaHoras(H.partes.filter(x=>x.uf==='UF1')),
+                  UF2: agregaHoras(H.partes.filter(x=>x.uf==='UF2')) };
 
-  const per = pers.map(p => {
-    const dd = porPer[p];
+  /* BLOQUE de un período para UN ámbito: la producción por actividad (`a`) y la
+     maquinaria (`m`). `suf` es el sufijo de la columna de producción del DATOS:
+     '' = total, '1' = UF1, '2' = UF2. Con esto el filtro de UF llega también a
+     horas, utilización, eficiencia y velocidad (lo pidió el jefe), calculadas
+     con las máquinas y la producción de ESA UF y no con el total. La excavación
+     no viene partida por UF en el DATOS (una sola columna), así que con sufijo
+     se omite —igual que ya hacían las gráficas—. */
+  function bloque(p, dd, hP, suf){
     const a = {};
     for (const act of ACTS){
-      const k = KEY[act];
-      const prod = dd.reduce((s,d)=>s+d[k],0) / FC;          // compacto
-      const nd = dd.filter(d=>d[k]>0).length;
+      if (suf && act==='excavacion') continue;
+      const k = KEY[act]+suf;
+      const prod = dd.reduce((s,d)=>s+(d[k]||0),0) / FC;     // compacto
+      const nd = dd.filter(d=>(d[k]||0)>0).length;
       /* EQUIPOS = los que de verdad estuvieron. Una máquina cuyo parte trae CERO
          horas operadas y CERO horas perdidas no estuvo: es un parte vacío, y
          contarla infla el denominador de la velocidad y hunde el porcentaje.
          Si trae horas perdidas SÍ cuenta —estuvo asignada y no produjo, que es
          justo lo que la velocidad tiene que reflejar. */
-      const _mq = ((hAgg[p]||{})[act]||{}).maq;
+      const _mq = ((hP||{})[act]||{}).maq;
       const _vivas = _mq ? Object.values(_mq).filter(q=>(q.h+q.perd)>0) : [];
       const eq = _vivas.length;
       /* LA META SE PROYECTA SOBRE DÍAS-MÁQUINA, no sobre máquinas × días.
@@ -764,11 +776,12 @@ function construir(wbProd, wbMaq){
                  plan_per: +((PLAN[p]||{})[act]||0).toFixed(0) };
     }
     let m = null;
-    if (hAgg[p]){
+    if (hP){
       m = {};
       for (const act of ACTS){
-        const g = hAgg[p][act]; if (!g || g.horas<=0) continue;
-        const suelto = dd.reduce((s,d)=>s+d[KEY[act]],0);     // los m³/h van en suelto
+        if (suf && act==='excavacion') continue;   // sin desglose por UF en el DATOS
+        const g = hP[act]; if (!g || g.horas<=0) continue;
+        const suelto = dd.reduce((s,d)=>s+(d[KEY[act]+suf]||0),0);   // los m³/h van en suelto
         const maq = Object.values(g.maq).map(q=>({ cod:q.cod, tipo:q.tipo,
           uf:[...q.uf].sort().join('·')||'—', h:+q.h.toFixed(1), perd:+q.perd.toFixed(1),
           lluvia:+q.lluvia.toFixed(1), ajuste:+q.ajuste.toFixed(1),
@@ -814,19 +827,30 @@ function construir(wbProd, wbMaq){
       }
       if (!Object.keys(m).length) m = null;
     }
+    return { a, m };
+  }
+
+  const per = pers.map(p => {
+    const dd = porPer[p];
+    /* El total (lo de siempre) y, aparte, el bloque de cada UF para que el filtro
+       llegue a la zona de maquinaria. `a` y `m` siguen siendo el total: las fotos
+       viejas y todo lo que ya leía de ahí no cambian. */
+    const T = bloque(p, dd, hAgg[p], '');
+    const a = T.a, m = T.m;
+    const ufb = { UF1: bloque(p, dd, hAggU.UF1[p], '1'),
+                  UF2: bloque(p, dd, hAggU.UF2[p], '2') };
     /* El no aprovechable no es una partida del contrato, pero SÍ se planifica y
        se sigue en el período —sale de la excavación—, así que va como una fila
        más del bloque planificado vs ejecutado. */
     a.noaprov = { prod:+(dd.reduce((s,d)=>s+d.nap,0)/FC).toFixed(1),
                   plan_per:+((PLAN[p]||{}).noaprov||0).toFixed(0),
                   dias:dd.filter(d=>d.nap>0).length, soloPlan:true };
-    /* Común = total excavado − préstamo − no aprov (UF1+UF2). Antes se leía `apr`
-       El común, el préstamo y el no aprovechable se leen TAL CUAL de sus columnas
+    /* El común, el préstamo y el no aprovechable se leen TAL CUAL de sus columnas
        del DATOS (apr=F, pre=G, nap=H); no se derivan del total. */
     const split = { apr:+(dd.reduce((s,d)=>s+d.apr,0)/FC).toFixed(1),
                     pre:+(dd.reduce((s,d)=>s+d.pre,0)/FC).toFixed(1),
                     nap:+(dd.reduce((s,d)=>s+d.nap,0)/FC).toFixed(1) };
-    return { p, d:dd.map(({p:_,...q})=>q), a, split, m };
+    return { p, d:dd.map(({p:_,...q})=>q), a, split, m, uf:ufb };
   });
 
   /* Base oficial (hasta 15-ago) + producción diaria desde el 16-ago, en compacto.
@@ -843,6 +867,7 @@ function construir(wbProd, wbMaq){
   return { fc:FC, desde:DESDE, per, avance,
     maq_periodos: per.filter(x=>x.m).map(x=>x.p),
     metas_hora: metaH, cc: H.cc, corte_horas: H.corte, atraso_horas: 2,
+    corte_prod: dias.length ? dias.map(d=>d.f).sort().slice(-1)[0] : '',
     descartes: { fuera_flota:H.descartadas, horas_negativas:H.negativas },
     fuente:'TM2_SUR_REPORTE_DIARIO_OBRA · hojas DATOS y CALCULOS',
     fuente_horas:'BASE MAQUINARIA (partes diarios) · horas por centro de coste',
@@ -1035,17 +1060,31 @@ function cadena(sel_p){
      de días por detrás—, así que la cadena RETROCEDE al último período cerrado
      que sí los tiene, y lo dice. Es lo que hacía el lienzo original: más vale la
      cadena del mes cerrado que un hueco en mitad de la presentación. */
-  let p=sel_p, retro='';
-  if(!p.m){
-    const i=TM2.per.findIndex(x=>x.p===sel_p.p);
-    for(let j=i;j>=0;j--){ if(TM2.per[j].m){ p=TM2.per[j]; break; } }
-    if(p.m) retro='Período en curso sin partes de horas todavía — cadena y desglose '+
-      'del último período cerrado ('+eti(p.p)+')';
-  }
-  if(!p.m){
+  /* ÁMBITO. Con el filtro de UF puesto, horas, utilización, eficiencia y
+     velocidad salen del bloque de ESA UF (el motor lo trae en `p.uf`), calculado
+     con sus máquinas y su producción; sin filtro, el total de siempre en `p.a`/`p.m`.
+     Una foto guardada antes de este cambio no trae `p.uf`: se dice y se pide
+     Actualizar, en vez de enseñar el total con la etiqueta de una UF. */
+  const amb = q => uf==='Todo' ? { a:q.a, m:q.m } : ((q.uf && q.uf[uf]) || { a:{}, m:null });
+  if(uf!=='Todo' && !sel_p.uf){
     nota.textContent='';
     const v=el('div','nota');
-    v.innerHTML='Sin partes de maquinaria para '+eti(sel_p.p)+'. Los partes diarios cubren de <b>'+
+    v.innerHTML='Esta foto no trae la maquinaria desglosada por UF — pulsa «Actualizar» para verla.';
+    v.style.padding='18px 0';c.appendChild(v);
+    return;
+  }
+  let p=sel_p, retro='', B=amb(p);
+  if(!B.m){
+    const i=TM2.per.findIndex(x=>x.p===sel_p.p);
+    for(let j=i;j>=0;j--){ const Bj=amb(TM2.per[j]); if(Bj.m){ p=TM2.per[j]; B=Bj; break; } }
+    if(B.m) retro='Período en curso sin partes de horas todavía — cadena y desglose '+
+      'del último período cerrado ('+eti(p.p)+')';
+  }
+  if(!B.m){
+    nota.textContent='';
+    const v=el('div','nota');
+    v.innerHTML='Sin partes de maquinaria para '+eti(sel_p.p)+(uf==='Todo'?'':' en '+uf)+
+      '. Los partes diarios cubren de <b>'+
       eti(TM2.maq_periodos[0])+'</b> a <b>'+eti(TM2.maq_periodos[TM2.maq_periodos.length-1])+
       '</b>; fuera de ahí sólo hay producción, así que la cadena no se puede calcular.';
     v.style.padding='18px 0';c.appendChild(v);
@@ -1053,14 +1092,11 @@ function cadena(sel_p){
   }
   const av=[];
   if(retro) av.push(retro);
-  if(uf!=='Todo') av.push('La cadena se calcula sobre la producción total; el filtro '+uf+
-    ' aplica a las series diarias y por período');
-  av.push('Horas de máquina al '+TM2.corte_horas+' — el parte del digitador va unos '+
-    TM2.atraso_horas+' días por detrás de la producción');
+  if(uf!=='Todo') av.push('Sólo '+uf+' · la excavación no viene partida por UF');
   nota.textContent=av.join(' · ');
-  const maxH=Math.max(1,...ACT.map(a=>(p.m[a.k]||{}).horas||0));
+  const maxH=Math.max(1,...ACT.map(a=>(B.m[a.k]||{}).horas||0));
   ACT.forEach(a=>{
-    const m=p.m[a.k], r=p.a[a.k];
+    const m=B.m[a.k], r=B.a[a.k]||{dias:0};
     if(!m) return;
     const perd=m.perd||0;
     /* UTILIZACIÓN = horas operadas ÷ standby ajustado, donde el standby son las
@@ -1189,13 +1225,9 @@ function cadena(sel_p){
     marca100(vb,'rendimiento esperado: 100%');
     vc.append(vv,vb);
     if(vel!=null){
-      /* Lo que produjo contra lo que darían sus días-máquina a 8 h/día a ritmo
-         nominal. Es la base del rendimiento, no el standby de la utilización. */
-      vc.append(el('div','s',f0(comp(m.prod))+' m³ de '+f0(espVel)+
-        ' m³ que darían sus '+f1(dmaq)+' días-máquina a 8 h a ritmo nominal'));
-      vc.append(el('div','s', vel>=1
-        ? 'más rápida que lo esperado — rindió por encima del catálogo'
-        : 'sobre la jornada de 8 h, como el rendimiento — distinto de la utilización'));
+      /* Solo lo que lleva contra lo que debería llevar. El jefe pidió quitar la
+         explicación de debajo: se queda el dato pelado, «5.016 m³ de 6.110 m³». */
+      vc.append(el('div','s',f0(comp(m.prod))+' m³ de '+f0(espVel)+' m³'));
     } else {
       vc.append(el('div','s','sin días por máquina en esta foto — pulsa «Actualizar»'));
     }
@@ -1436,13 +1468,14 @@ function planPeriodo(p){
     w.append(bar,el('div','plan',plan>0?f0(plan):'—'));
     c.appendChild(w);
   });
-  const nt=el('div','nota');
-  nt.innerHTML=hay
-    ? 'Ejecutado del período contra lo planificado para él, en m³ compactos. '+
-      'La cifra de la derecha es el plan; la marca vertical, el <b>100%</b> — la barra '+
-      'sigue hasta el 150% para que pasarse del plan se vea. Sale de la hoja <b>CALCULOS</b>.'
-    : 'Este período no trae planificado en la hoja <b>CALCULOS</b>, así que sólo se ve lo ejecutado.';
-  c.appendChild(nt);
+  /* Sin nota explicativa cuando hay plan (el jefe la pidió fuera). Solo se avisa
+     cuando el período NO trae planificado, porque ahí las barras aparecen vacías
+     y sin ese aviso no se entendería por qué. */
+  if(!hay){
+    const nt=el('div','nota');
+    nt.innerHTML='Este período no trae planificado en la hoja <b>CALCULOS</b>, así que sólo se ve lo ejecutado.';
+    c.appendChild(nt);
+  }
 }
 
 /* ------------------------------------------------------------- avance */
@@ -1461,11 +1494,6 @@ function avance(){
     i.style.width=Math.min(100,r*100)+'%';i.style.background=act.c;bar.appendChild(i);
     w.append(row,bar);c.appendChild(w);
   });
-  const nt=el('div','nota');
-  nt.innerHTML='En m³ compactos. Base: producción de origen <b>hasta el 15-ago-2026</b> '+
-    '(del acta); de ahí suma lo ejecutado <b>desde el 16-ago</b>. La excavación es sólo '+
-    'la <b>común</b>; el préstamo va como partida aparte.';
-  c.appendChild(nt);
 }
 
 /* --------------------------------------------------- aprovechamiento */
@@ -1541,16 +1569,26 @@ function logCC(){
          horas_flota:x.flota,horas_totales:x.horas,partes:x.filas})));
        console.groupEnd(); }catch(e){}
 }
+/* Último día con producción, derivado de los propios períodos. Sirve de respaldo
+   para fotos guardadas antes de que el motor trajera `corte_prod`. */
+function ultimaProd(){
+  try{
+    let mx='';
+    for(const p of TM2.per) for(const d of p.d) if(d.f>mx) mx=d.f;
+    return mx;
+  }catch(e){ return ''; }
+}
 function pintaEstado(){
-  const g=TM2.generado?('<b>'+TM2.generado+'</b>'):'la copia incluida';
-  let s='Datos de '+g;
-  if(TM2.corte_horas) s+=' · horas de máquina hasta <b>'+TM2.corte_horas+'</b> '+
-    '(el parte del digitador va ~'+TM2.atraso_horas+' días por detrás)';
-  if(TM2.leidoDe) s+=' · leído de <b>'+TM2.leidoDe+'</b>';
-  /* La fecha del propio Excel: es lo que delata «le di a Actualizar y no cambia».
-     Si el archivo recordado apunta a una copia antigua, aquí se ve el desfase de
-     un vistazo, sin tener que abrir nada. */
-  if(TM2.leidoFecha) s+=' · archivo del <b>'+TM2.leidoFecha+'</b>';
+  /* El renglón queda al mínimo (decisión del jefe): solo hasta qué fecha llega
+     cada fuente. «Producción actualizada al X» = último día con producción en el
+     Excel; «maquinaria al Y» = corte de los partes diarios, que suele ir un par de
+     días por detrás. Sin fechas (una foto vieja sin ese dato) se dice de cuándo es. */
+  const prod = TM2.corte_prod || ultimaProd();
+  const maq  = TM2.corte_horas || '';
+  let s;
+  if(prod && maq) s='Producción actualizada al <b>'+prod+'</b> y maquinaria al <b>'+maq+'</b>';
+  else if(prod)   s='Producción actualizada al <b>'+prod+'</b>';
+  else            s='Datos de '+(TM2.generado?('<b>'+TM2.generado+'</b>'):'la copia incluida');
   estado(s,false);
   if(!$('btnAct')) return;        // solo lectura: los botones ni existen
   leeH('prod').then(h=>{
@@ -1867,18 +1905,8 @@ function pinta(){
   const p=TM2.per[sel];
   document.getElementById('perT').textContent=eti(p.p);
   document.getElementById('perR').textContent=rango(p.p)+' · '+p.d.length+' días registrados';
-  document.getElementById('perC').textContent=
-    TM2.corte_horas?('Corte '+TM2.corte_horas+' · horas de máquina'):'';
+  document.getElementById('perC').textContent='';
   controles();evolucion();cadena(p);diaria(p);planPeriodo(p);avance();aprov(p);pintaEstado();
-  document.getElementById('pie').innerHTML=
-    'Producción de <b>'+TM2.fuente+'</b> · horas de <b>'+TM2.fuente_horas+'</b>. '+
-    '<b>Todo en m³ compactos</b>, que es como los mide el acta. El Excel registra '+
-    'la producción en suelto; aquí se divide por el factor de '+f1(TM2.fc||1.3)+
-    ' para hablar en una sola unidad y que no haya que preguntarse nunca si un '+
-    'número es suelto o compacto. El rendimiento por máquina va en la misma '+
-    'unidad, m³ compactos por hora de operación. '+
-    'Reproduce la hoja GRAFICOS con diferencia 0,0 en las cuatro partidas. '+
-    '<b>Equipos por período tomados de los partes reales</b>, no de la flota de hoy.';
 }
 try{const g=localStorage.getItem('tm2-tema');if(g)document.documentElement.setAttribute('data-tema',g);}catch(e){}
 try{const s=localStorage.getItem(LS_DAT);
