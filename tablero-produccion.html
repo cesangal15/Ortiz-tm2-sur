@@ -1544,6 +1544,10 @@ function pintaEstado(){
   if(TM2.corte_horas) s+=' · horas de máquina hasta <b>'+TM2.corte_horas+'</b> '+
     '(el parte del digitador va ~'+TM2.atraso_horas+' días por detrás)';
   if(TM2.leidoDe) s+=' · leído de <b>'+TM2.leidoDe+'</b>';
+  /* La fecha del propio Excel: es lo que delata «le di a Actualizar y no cambia».
+     Si el archivo recordado apunta a una copia antigua, aquí se ve el desfase de
+     un vistazo, sin tener que abrir nada. */
+  if(TM2.leidoFecha) s+=' · archivo del <b>'+TM2.leidoFecha+'</b>';
   estado(s,false);
   if(!$('btnAct')) return;        // solo lectura: los botones ni existen
   leeH('prod').then(h=>{
@@ -1578,6 +1582,12 @@ async function recalcular(oProd,oMaq){
     const wm=oMaq?await leerLibro(oMaq,['BASE MAQUINARIA']):null;
     const d=MOTOR.construir(wp,wm);
     d.leidoDe = (oProd instanceof File) ? oProd.name : 'enlace configurado';
+    /* Fecha de modificación del propio Excel leído. Es la prueba de que
+       «Actualizar» agarró el archivo de HOY y no una copia vieja recordada:
+       si aquí sale una fecha atrasada, el problema es el archivo, no el motor. */
+    d.leidoFecha = (oProd instanceof File && oProd.lastModified)
+      ? new Date(oProd.lastModified).toISOString().slice(0,16).replace('T',' ')
+      : '';
     TM2=d; guardaDatos(d);
     sel=TM2.per.length-1; abierto=null;
     pinta();
